@@ -2,4 +2,6 @@
 
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
 
-A Rust library for Euler and Venn Diagrams
+A Rust library for Euler and Venn Diagrams. This is a rewrite of the eulerr R
+package, designed to be more flexible, faster, and support multiple language
+bindings.
