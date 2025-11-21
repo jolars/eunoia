@@ -155,17 +155,33 @@ task dev
 
 ## Project Structure
 
+We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of `module/mod.rs`):
+
 ```
 eunoia/
 ├── src/
-│   ├── lib.rs           # Main library and diagram builder
-│   ├── geometry/        # Geometric primitives
-│   │   ├── coord.rs     # 2D coordinates
-│   │   ├── operations.rs # Geometric operation traits
-│   │   └── shapes/      # Shape implementations (Circle, etc.)
-│   └── math.rs          # Mathematical algorithms (MDS, optimization)
-└── tests/               # Integration tests
+│   ├── lib.rs              # Main API surface, re-exports
+│   ├── diagram.rs          # Diagram module definition
+│   ├── diagram/            # Diagram submodules
+│   │   ├── builder.rs      # DiagramBuilder
+│   │   ├── combination.rs  # Combination struct
+│   │   └── input.rs        # InputType enum
+│   ├── error.rs            # Error types
+│   ├── geometry.rs         # Geometry module definition
+│   ├── geometry/           # Geometric primitives
+│   │   ├── coord.rs        # 2D coordinates
+│   │   ├── operations.rs   # Geometric operation traits
+│   │   ├── shapes.rs       # Shapes module definition
+│   │   └── shapes/         # Shape implementations
+│   │       └── circle.rs   # Circle shape
+│   └── solver.rs           # (future) Solver module definition
+│       └── solver/         # (future) Optimization algorithms
+│           ├── layout.rs   # MDS initialization
+│           └── optimize.rs # Main optimization loop
+└── tests/                  # Integration tests
 ```
+
+**Note**: We avoid the old `mod.rs` pattern in favor of the cleaner Rust 2018+ style.
 
 ## Areas for Contribution
 
