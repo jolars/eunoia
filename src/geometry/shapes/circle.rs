@@ -1,3 +1,5 @@
+//! Circle shape implementation.
+
 use crate::geometry::coord::Coord;
 use crate::geometry::operations::Area;
 use crate::geometry::operations::Contains;
@@ -5,18 +7,42 @@ use crate::geometry::operations::Distance;
 use crate::geometry::operations::IntersectionArea;
 use crate::geometry::operations::Intersects;
 
+/// A circle defined by a center point and radius.
+///
+/// Circles are the simplest shape for Euler and Venn diagrams and are often
+/// sufficient for many use cases. They have the advantage of being rotationally
+/// symmetric, which simplifies some computations.
+///
+/// # Examples
+///
+/// ```
+/// use eunoia::geometry::shapes::circle::Circle;
+/// use eunoia::geometry::coord::Coord;
+/// use eunoia::geometry::operations::{Area, IntersectionArea};
+///
+/// let c1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
+/// let c2 = Circle::new(Coord::new(3.0, 0.0), 1.0);
+///
+/// let area1 = c1.area();
+/// let overlap = c1.intersection_area(&c2);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Circle {
     center: Coord,
     radius: f64,
 }
 
 impl Area for Circle {
+    /// Computes the area of the circle using the formula A = πr².
     fn area(&self) -> f64 {
         std::f64::consts::PI * self.radius * self.radius
     }
 }
 
 impl Distance for Circle {
+    /// Computes the minimum distance between the boundaries of two circles.
+    ///
+    /// Returns 0.0 if the circles overlap or touch.
     fn distance(&self, other: &Self) -> f64 {
         let center_distance = self.center.distance(&other.center);
         let radius_sum = self.radius + other.radius;
@@ -30,6 +56,10 @@ impl Distance for Circle {
 }
 
 impl Contains for Circle {
+    /// Checks if this circle completely contains another circle.
+    ///
+    /// Returns `true` if the other circle lies entirely within or on the
+    /// boundary of this circle.
     fn contains(&self, other: &Self) -> bool {
         let center_distance = self.center.distance(&other.center);
         center_distance + other.radius <= self.radius
@@ -37,6 +67,11 @@ impl Contains for Circle {
 }
 
 impl Intersects for Circle {
+    /// Checks if two circles intersect (share any common points).
+    ///
+    /// Note: This implementation returns `true` if circles are separate,
+    /// which appears to be inverted from the typical definition. This may
+    /// need correction.
     fn intersects(&self, other: &Self) -> bool {
         let center_distance = self.center.distance(&other.center);
         center_distance >= self.radius + other.radius
@@ -44,6 +79,18 @@ impl Intersects for Circle {
 }
 
 impl IntersectionArea for Circle {
+    /// Computes the area of intersection between two circles.
+    ///
+    /// Uses the standard geometric formula for circle-circle intersection:
+    /// - Returns 0 if circles don't overlap
+    /// - Returns area of smaller circle if one contains the other
+    /// - Otherwise computes the lens-shaped intersection area
+    ///
+    /// # Algorithm
+    ///
+    /// For two circles with radii r1 and r2 separated by distance d, the
+    /// intersection area is computed using the formula involving circular
+    /// segments from both circles.
     fn intersection_area(&self, other: &Self) -> f64 {
         let d = self.center.distance(&other.center);
 
@@ -69,14 +116,31 @@ impl IntersectionArea for Circle {
 }
 
 impl Circle {
+    /// Creates a new circle with the specified center and radius.
+    ///
+    /// # Arguments
+    ///
+    /// * `center` - The center point of the circle
+    /// * `radius` - The radius of the circle (must be positive)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::circle::Circle;
+    /// use eunoia::geometry::coord::Coord;
+    ///
+    /// let circle = Circle::new(Coord::new(1.0, 2.0), 3.0);
+    /// ```
     pub fn new(center: Coord, radius: f64) -> Self {
         Circle { center, radius }
     }
 
+    /// Returns a reference to the circle's center point.
     pub fn center(&self) -> &Coord {
         &self.center
     }
 
+    /// Returns the circle's radius.
     pub fn radius(&self) -> f64 {
         self.radius
     }
