@@ -28,23 +28,6 @@ pub mod geometry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
 
-/// Trait for computing intersection areas between shapes.
-///
-/// This trait allows different shape types to compute their area of overlap,
-/// which is essential for evaluating diagram quality and computing loss functions.
-pub trait Intersects<S> {
-    /// Computes the area of intersection between this shape and another.
-    ///
-    /// # Arguments
-    ///
-    /// * `other` - The other shape to intersect with
-    ///
-    /// # Returns
-    ///
-    /// The area of intersection in square units. Returns 0.0 if shapes don't intersect.
-    fn intersection_area(&self, other: &S) -> f64;
-}
-
 /// Trait for shapes that can be parameterized for optimization.
 ///
 /// This trait enables shapes to expose their degrees of freedom (position, size, rotation)
