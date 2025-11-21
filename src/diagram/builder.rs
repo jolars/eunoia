@@ -1,23 +1,23 @@
-//! Builder for constructing diagrams.
+//! Builder for constructing diagram specifications.
 
-use super::{Combination, Diagram, InputType};
+use super::{Combination, DiagramSpec, InputType};
 use crate::error::DiagramError;
 use std::collections::{HashMap, HashSet};
 
-/// Builder for creating diagrams with a fluent API.
+/// Builder for creating diagram specifications with a fluent API.
 ///
 /// # Examples
 ///
 /// ```
 /// use eunoia::{DiagramBuilder, InputType};
 ///
-/// let diagram = DiagramBuilder::new()
+/// let spec = DiagramBuilder::new()
 ///     .set("A", 5.0)
 ///     .set("B", 2.0)
 ///     .intersection(&["A", "B"], 1.0)
 ///     .input_type(InputType::Disjoint)
 ///     .build()
-///     .expect("Failed to build diagram");
+///     .expect("Failed to build diagram specification");
 /// ```
 #[derive(Debug, Default)]
 pub struct DiagramBuilder {
@@ -97,7 +97,7 @@ impl DiagramBuilder {
         self
     }
 
-    /// Builds the diagram, validating all inputs.
+    /// Builds the diagram specification, validating all inputs.
     ///
     /// # Errors
     ///
@@ -111,14 +111,14 @@ impl DiagramBuilder {
     /// ```
     /// use eunoia::{DiagramBuilder, InputType};
     ///
-    /// let diagram = DiagramBuilder::new()
+    /// let spec = DiagramBuilder::new()
     ///     .set("A", 5.0)
     ///     .set("B", 2.0)
     ///     .intersection(&["A", "B"], 1.0)
     ///     .build()
-    ///     .expect("Failed to build diagram");
+    ///     .expect("Failed to build diagram specification");
     /// ```
-    pub fn build(self) -> Result<Diagram, DiagramError> {
+    pub fn build(self) -> Result<DiagramSpec, DiagramError> {
         // Check that we have at least one set
         if self.combinations.is_empty() {
             return Err(DiagramError::EmptySets);
@@ -158,7 +158,7 @@ impl DiagramBuilder {
             }
         }
 
-        Ok(Diagram {
+        Ok(DiagramSpec {
             combinations: self.combinations,
             input_type: self.input_type.unwrap_or_default(),
             set_names,
@@ -172,20 +172,20 @@ mod tests {
 
     #[test]
     fn test_builder_simple() {
-        let diagram = DiagramBuilder::new()
+        let spec = DiagramBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .build()
             .unwrap();
 
-        assert_eq!(diagram.set_names().len(), 2);
-        assert!(diagram.set_names().contains("A"));
-        assert!(diagram.set_names().contains("B"));
+        assert_eq!(spec.set_names().len(), 2);
+        assert!(spec.set_names().contains("A"));
+        assert!(spec.set_names().contains("B"));
     }
 
     #[test]
     fn test_builder_with_intersection() {
-        let diagram = DiagramBuilder::new()
+        let spec = DiagramBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .intersection(&["A", "B"], 1.0)
@@ -193,8 +193,8 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(diagram.input_type(), InputType::Disjoint);
-        assert_eq!(diagram.combinations().len(), 3);
+        assert_eq!(spec.input_type(), InputType::Disjoint);
+        assert_eq!(spec.combinations().len(), 3);
     }
 
     #[test]
@@ -222,14 +222,14 @@ mod tests {
 
     #[test]
     fn test_input_type_default() {
-        let diagram = DiagramBuilder::new().set("A", 5.0).build().unwrap();
+        let spec = DiagramBuilder::new().set("A", 5.0).build().unwrap();
 
-        assert_eq!(diagram.input_type(), InputType::Union);
+        assert_eq!(spec.input_type(), InputType::Union);
     }
 
     #[test]
     fn test_three_way_intersection() {
-        let diagram = DiagramBuilder::new()
+        let spec = DiagramBuilder::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .set("C", 12.0)
@@ -240,13 +240,13 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(diagram.set_names().len(), 3);
-        assert_eq!(diagram.combinations().len(), 7);
+        assert_eq!(spec.set_names().len(), 3);
+        assert_eq!(spec.combinations().len(), 7);
     }
 
     #[test]
     fn test_get_combination() {
-        let diagram = DiagramBuilder::new()
+        let spec = DiagramBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .intersection(&["A", "B"], 1.0)
@@ -254,9 +254,9 @@ mod tests {
             .unwrap();
 
         let combo_ab = Combination::new(&["A", "B"]);
-        assert_eq!(diagram.get_combination(&combo_ab), Some(1.0));
+        assert_eq!(spec.get_combination(&combo_ab), Some(1.0));
 
         let combo_ac = Combination::new(&["A", "C"]);
-        assert_eq!(diagram.get_combination(&combo_ac), None);
+        assert_eq!(spec.get_combination(&combo_ac), None);
     }
 }

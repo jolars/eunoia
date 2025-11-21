@@ -1,6 +1,6 @@
-//! Diagram representation and construction.
+//! Diagram specification and construction.
 //!
-//! This module provides types for defining Euler and Venn diagrams through
+//! This module provides types for defining Euler and Venn diagram specifications through
 //! set combinations and their values.
 
 mod builder;
@@ -15,11 +15,11 @@ use std::collections::{HashMap, HashSet};
 
 /// Represents a complete Euler or Venn diagram specification.
 ///
-/// This contains the input data (set sizes and intersections) along with
-/// metadata needed for optimization. The actual geometric shapes will be
-/// computed during the layout process.
+/// This contains the input data (set sizes and intersections) that describes
+/// what the diagram should represent. The actual geometric shapes will be
+/// computed during the fitting process.
 #[derive(Debug, Clone)]
-pub struct Diagram {
+pub struct DiagramSpec {
     /// Map from combinations to their values.
     pub(crate) combinations: HashMap<Combination, f64>,
 
@@ -30,13 +30,13 @@ pub struct Diagram {
     pub(crate) set_names: HashSet<String>,
 }
 
-impl Diagram {
-    /// Returns the input type for this diagram.
+impl DiagramSpec {
+    /// Returns the input type for this diagram specification.
     pub fn input_type(&self) -> InputType {
         self.input_type
     }
 
-    /// Returns the set names in this diagram.
+    /// Returns the set names in this diagram specification.
     pub fn set_names(&self) -> &HashSet<String> {
         &self.set_names
     }
@@ -51,3 +51,4 @@ impl Diagram {
         self.combinations.get(combination).copied()
     }
 }
+

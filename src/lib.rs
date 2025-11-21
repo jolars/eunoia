@@ -14,13 +14,13 @@
 //! ```rust
 //! use eunoia::{DiagramBuilder, InputType};
 //!
-//! let diagram = DiagramBuilder::new()
+//! let spec = DiagramBuilder::new()
 //!     .set("A", 5.0)
 //!     .set("B", 2.0)
 //!     .intersection(&["A", "B"], 1.0)
 //!     .input_type(InputType::Disjoint)
 //!     .build()
-//!     .expect("Failed to build diagram");
+//!     .expect("Failed to build diagram specification");
 //! ```
 
 pub mod diagram;
@@ -28,5 +28,5 @@ pub mod error;
 pub mod geometry;
 
 // Re-export main API types
-pub use diagram::{Combination, Diagram, DiagramBuilder, InputType};
+pub use diagram::{Combination, DiagramBuilder, DiagramSpec, InputType};
 pub use error::DiagramError;
