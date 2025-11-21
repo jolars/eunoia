@@ -283,7 +283,7 @@ mod tests {
         let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
         let circle2 = Circle::new(Coord::new(1.0, 0.0), 1.0);
         let area = circle1.intersection_area(&circle2);
-        
+
         // For two unit circles with centers 1 apart, there's a known formula
         // The intersection area should be positive and less than π
         assert!(area > 0.0);
@@ -304,7 +304,7 @@ mod tests {
         let circle1 = Circle::new(Coord::new(0.0, 0.0), 3.0);
         let circle2 = Circle::new(Coord::new(2.0, 0.0), 1.0);
         let area = circle1.intersection_area(&circle2);
-        
+
         // Should be positive and at most the smaller circle's area
         assert!(area > 0.0);
         assert!(area <= std::f64::consts::PI * 1.0 * 1.0);
