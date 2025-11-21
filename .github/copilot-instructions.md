@@ -193,12 +193,21 @@ dedicated repositories as thin wrappers around this core library.
 
 ## Dependencies
 
-Keep dependencies minimal for core library:
+Core dependencies:
 
-- Standard library for most operations
-- Consider `nalgebra` for linear algebra (MDS)
-- Consider `argmin` or `optimization` crate for optimization
-- Development plotting: `plotters` (feature-gated)
+- **`nalgebra`** (0.34.1) - Linear algebra for MDS and matrix operations
+- **`argmin`** (0.11.0) - Optimization algorithms (gradient-based and derivative-free)
+- Standard library for basic operations
+
+Optional/future dependencies:
+
+- Development plotting: `plotters` (feature-gated, for debugging/visualization)
+
+Keep the dependency footprint minimal. New dependencies should be carefully considered for:
+- Compile time impact
+- Binary size (important for WASM)
+- Maintenance burden
+- License compatibility
 
 **Note**: The project uses **Rust Edition 2021** for compatibility with rextendr (R bindings framework). This is specified in `Cargo.toml` and should not be changed without consideration for downstream binding compatibility.
 
