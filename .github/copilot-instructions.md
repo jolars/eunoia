@@ -98,9 +98,35 @@ dedicated repositories as thin wrappers around this core library.
 - Keep functions focused and single-purpose
 - Use traits for polymorphism over shapes
 - **Use Rust Edition 2021** (for compatibility with rextendr R bindings)
+- **Use modern module organization** (Rust 2018+): `module.rs` + `module/` instead of `module/mod.rs`
 - **Format code with `cargo fmt`** before committing
 - **All code must pass
   `cargo clippy --all-targets --all-features -- -D warnings`**
+
+### Module Organization
+
+Use the Rust 2018+ module system:
+
+```
+src/
+├── lib.rs
+├── diagram.rs           # Module definition
+├── diagram/             # Submodules of diagram
+│   ├── builder.rs
+│   ├── combination.rs
+│   └── input.rs
+├── solver.rs            # Module definition
+└── solver/              # Submodules of solver
+    ├── layout.rs
+    └── optimize.rs
+```
+
+**Do NOT use** the old `mod.rs` style:
+```
+src/
+├── diagram/
+│   └── mod.rs          # ❌ Avoid this pattern
+```
 
 ### Commit Guidelines
 
