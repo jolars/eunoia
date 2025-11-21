@@ -67,13 +67,14 @@ impl DiagramSpec {
         self.union_areas.get(combination).copied()
     }
 
-    /// Preprocess the specification for fitting.
+    /// Preprocess the specification for fitting (internal use).
     ///
     /// This:
     /// 1. Removes empty sets (area < ε)
     /// 2. Removes combinations containing empty sets
     /// 3. Computes pairwise relationships (subset, disjoint)
-    pub fn preprocess(&self) -> Result<PreprocessedSpec, DiagramError> {
+    #[allow(dead_code)]
+    pub(crate) fn preprocess(&self) -> Result<PreprocessedSpec, DiagramError> {
         const EPSILON: f64 = 1e-10; // sqrt of machine epsilon
 
         // 1. Find empty sets (use union areas to determine empty sets)
@@ -128,6 +129,7 @@ impl DiagramSpec {
         })
     }
 
+    #[allow(dead_code)]
     fn compute_pairwise_relations(
         set_names: &[String],
         union_areas: &HashMap<Combination, f64>,
@@ -244,27 +246,34 @@ impl DiagramSpec {
     }
 }
 
-pub struct PreprocessedSpec {
+/// Preprocessed specification ready for fitting (internal).
+///
+/// This is created by filtering out empty sets from a DiagramSpec and
+/// computing additional metadata needed for optimization.
+#[allow(dead_code)]
+pub(crate) struct PreprocessedSpec {
     /// Non-empty set names in canonical order
-    pub set_names: Vec<String>,
+    pub(crate) set_names: Vec<String>,
 
     /// Mapping from set name to index in set_names
-    pub set_to_idx: HashMap<String, usize>,
+    pub(crate) set_to_idx: HashMap<String, usize>,
 
     /// All non-empty combinations with their disjoint areas
-    pub disjoint_areas: HashMap<Combination, f64>,
+    pub(crate) disjoint_areas: HashMap<Combination, f64>,
 
     /// All non-empty combinations with their union areas  
-    pub union_areas: HashMap<Combination, f64>,
+    pub(crate) union_areas: HashMap<Combination, f64>,
 
     /// Number of non-empty sets
-    pub n_sets: usize,
+    pub(crate) n_sets: usize,
 
     /// Pairwise relationships
-    pub relationships: PairwiseRelations,
+    pub(crate) relationships: PairwiseRelations,
 }
 
-pub struct PairwiseRelations {
+/// Pairwise relationships between sets (internal).
+#[allow(dead_code)]
+pub(crate) struct PairwiseRelations {
     /// radii[i] = sqrt(area[i] / π) for set i
     pub radii: Vec<f64>,
 
