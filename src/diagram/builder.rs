@@ -9,9 +9,9 @@ use std::collections::{HashMap, HashSet};
 /// # Examples
 ///
 /// ```
-/// use eunoia::{DiagramBuilder, InputType};
+/// use eunoia::{DiagramSpecBuilder, InputType};
 ///
-/// let spec = DiagramBuilder::new()
+/// let spec = DiagramSpecBuilder::new()
 ///     .set("A", 5.0)
 ///     .set("B", 2.0)
 ///     .intersection(&["A", "B"], 1.0)
@@ -20,15 +20,15 @@ use std::collections::{HashMap, HashSet};
 ///     .expect("Failed to build diagram specification");
 /// ```
 #[derive(Debug, Default)]
-pub struct DiagramBuilder {
+pub struct DiagramSpecBuilder {
     combinations: HashMap<Combination, f64>,
     input_type: Option<InputType>,
 }
 
-impl DiagramBuilder {
+impl DiagramSpecBuilder {
     /// Creates a new diagram builder.
     pub fn new() -> Self {
-        DiagramBuilder {
+        DiagramSpecBuilder {
             combinations: HashMap::new(),
             input_type: None,
         }
@@ -44,9 +44,9 @@ impl DiagramBuilder {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::DiagramBuilder;
+    /// use eunoia::DiagramSpecBuilder;
     ///
-    /// let builder = DiagramBuilder::new()
+    /// let builder = DiagramSpecBuilder::new()
     ///     .set("A", 10.0);
     /// ```
     pub fn set(mut self, name: impl Into<String>, value: f64) -> Self {
@@ -65,9 +65,9 @@ impl DiagramBuilder {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::DiagramBuilder;
+    /// use eunoia::DiagramSpecBuilder;
     ///
-    /// let builder = DiagramBuilder::new()
+    /// let builder = DiagramSpecBuilder::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .intersection(&["A", "B"], 2.0);
@@ -87,9 +87,9 @@ impl DiagramBuilder {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::{DiagramBuilder, InputType};
+    /// use eunoia::{DiagramSpecBuilder, InputType};
     ///
-    /// let builder = DiagramBuilder::new()
+    /// let builder = DiagramSpecBuilder::new()
     ///     .input_type(InputType::Disjoint);
     /// ```
     pub fn input_type(mut self, input_type: InputType) -> Self {
@@ -109,9 +109,9 @@ impl DiagramBuilder {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::{DiagramBuilder, InputType};
+    /// use eunoia::{DiagramSpecBuilder, InputType};
     ///
-    /// let spec = DiagramBuilder::new()
+    /// let spec = DiagramSpecBuilder::new()
     ///     .set("A", 5.0)
     ///     .set("B", 2.0)
     ///     .intersection(&["A", "B"], 1.0)
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_builder_simple() {
-        let spec = DiagramBuilder::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .build()
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_intersection() {
-        let spec = DiagramBuilder::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .intersection(&["A", "B"], 1.0)
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_builder_undefined_set_error() {
-        let result = DiagramBuilder::new()
+        let result = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .intersection(&["A", "B"], 1.0)
             .build();
@@ -209,27 +209,27 @@ mod tests {
 
     #[test]
     fn test_builder_negative_value_error() {
-        let result = DiagramBuilder::new().set("A", -5.0).build();
+        let result = DiagramSpecBuilder::new().set("A", -5.0).build();
 
         assert!(matches!(result, Err(DiagramError::InvalidValue { .. })));
     }
 
     #[test]
     fn test_builder_empty_error() {
-        let result = DiagramBuilder::new().build();
+        let result = DiagramSpecBuilder::new().build();
         assert!(matches!(result, Err(DiagramError::EmptySets)));
     }
 
     #[test]
     fn test_input_type_default() {
-        let spec = DiagramBuilder::new().set("A", 5.0).build().unwrap();
+        let spec = DiagramSpecBuilder::new().set("A", 5.0).build().unwrap();
 
         assert_eq!(spec.input_type(), InputType::Union);
     }
 
     #[test]
     fn test_three_way_intersection() {
-        let spec = DiagramBuilder::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .set("C", 12.0)
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_get_combination() {
-        let spec = DiagramBuilder::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .intersection(&["A", "B"], 1.0)

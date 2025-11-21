@@ -12,9 +12,9 @@
 //! ## Example
 //!
 //! ```rust
-//! use eunoia::{DiagramBuilder, InputType};
+//! use eunoia::{DiagramSpecBuilder, InputType};
 //!
-//! let spec = DiagramBuilder::new()
+//! let spec = DiagramSpecBuilder::new()
 //!     .set("A", 5.0)
 //!     .set("B", 2.0)
 //!     .intersection(&["A", "B"], 1.0)
@@ -25,8 +25,10 @@
 
 pub mod diagram;
 pub mod error;
+pub mod fitter;
 pub mod geometry;
 
 // Re-export main API types
-pub use diagram::{Combination, DiagramBuilder, DiagramSpec, InputType};
+pub use diagram::{Combination, DiagramSpecBuilder, InputType};
 pub use error::DiagramError;
+pub use fitter::{Fitter, Layout};

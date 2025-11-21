@@ -7,7 +7,7 @@ mod builder;
 mod combination;
 mod input;
 
-pub use builder::DiagramBuilder;
+pub use builder::DiagramSpecBuilder;
 pub use combination::Combination;
 pub use input::InputType;
 
@@ -51,4 +51,3 @@ impl DiagramSpec {
         self.combinations.get(combination).copied()
     }
 }
-

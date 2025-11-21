@@ -13,12 +13,14 @@ We welcome contributions to eunoia! This guide will help you get started.
 ### Setting Up Your Development Environment
 
 1. Fork and clone the repository:
+
    ```bash
    git clone https://github.com/yourusername/eunoia.git
    cd eunoia
    ```
 
 2. Install dependencies (if needed):
+
    ```bash
    # The project uses standard Rust tooling
    cargo build
@@ -36,6 +38,7 @@ We welcome contributions to eunoia! This guide will help you get started.
 ### Making Changes
 
 1. **Create a branch** for your work:
+
    ```bash
    git checkout -b feat/your-feature-name
    # or
@@ -59,7 +62,8 @@ We welcome contributions to eunoia! This guide will help you get started.
 
 - **Format code**: `cargo fmt` (or `task fmt`)
 - **Check formatting**: `cargo fmt -- --check` (or `task fmt-check`)
-- **Lint code**: `cargo clippy --all-targets --all-features -- -D warnings` (or `task lint`)
+- **Lint code**: `cargo clippy --all-targets --all-features -- -D warnings` (or
+  `task lint`)
 
 All code must pass these checks with no warnings.
 
@@ -90,6 +94,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -99,15 +104,17 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 - `chore`: Maintenance tasks
 
 **Examples:**
+
 ```
 feat(geometry): add ellipse shape implementation
 fix(circle): correct intersection area calculation
-docs(api): update DiagramBuilder examples
+docs(api): update DiagramSpecBuilder examples
 test(shapes): add edge cases for containment
 ```
 
-**Breaking changes:**
-Add `!` after type/scope or include `BREAKING CHANGE:` in the footer:
+**Breaking changes:** Add `!` after type/scope or include `BREAKING CHANGE:` in
+the footer:
+
 ```
 feat(api)!: redesign builder API
 
@@ -119,11 +126,13 @@ BREAKING CHANGE: Builder methods now return Result
 ### Pull Request Process
 
 1. **Ensure all checks pass**:
+
    ```bash
    task dev
    ```
 
 2. **Push your branch**:
+
    ```bash
    git push origin feat/your-feature-name
    ```
@@ -141,7 +150,8 @@ BREAKING CHANGE: Builder methods now return Result
 Quick checklist:
 
 - [ ] Code is formatted (`cargo fmt -- --check` passes)
-- [ ] No clippy warnings (`cargo clippy --all-targets --all-features -- -D warnings` passes)
+- [ ] No clippy warnings
+      (`cargo clippy --all-targets --all-features -- -D warnings` passes)
 - [ ] All tests pass (`cargo test` succeeds)
 - [ ] New features have tests
 - [ ] Public APIs are documented
@@ -149,13 +159,15 @@ Quick checklist:
 - [ ] Branch is up to date with main
 
 Or simply run:
+
 ```bash
 task dev
 ```
 
 ## Project Structure
 
-We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of `module/mod.rs`):
+We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of
+`module/mod.rs`):
 
 ```
 eunoia/
@@ -163,7 +175,7 @@ eunoia/
 │   ├── lib.rs              # Main API surface, re-exports
 │   ├── diagram.rs          # Diagram module definition
 │   ├── diagram/            # Diagram submodules
-│   │   ├── builder.rs      # DiagramBuilder
+│   │   ├── builder.rs      # DiagramSpecBuilder
 │   │   ├── combination.rs  # Combination struct
 │   │   └── input.rs        # InputType enum
 │   ├── error.rs            # Error types
@@ -181,7 +193,8 @@ eunoia/
 └── tests/                  # Integration tests
 ```
 
-**Note**: We avoid the old `mod.rs` pattern in favor of the cleaner Rust 2018+ style.
+**Note**: We avoid the old `mod.rs` pattern in favor of the cleaner Rust 2018+
+style.
 
 ## Areas for Contribution
 
@@ -198,14 +211,17 @@ We welcome contributions in these areas:
 
 ## Getting Help
 
-- Check the [documentation](.github/copilot-instructions.md) for detailed guidelines
+- Check the [documentation](.github/copilot-instructions.md) for detailed
+  guidelines
 - Open an issue for questions or discussions
 - Review existing issues and PRs for context
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project (see LICENSE file).
+By contributing, you agree that your contributions will be licensed under the
+same license as the project (see LICENSE file).
 
 ## Thank You!
 
-Thank you for contributing to eunoia! Your help makes this project better for everyone.
+Thank you for contributing to eunoia! Your help makes this project better for
+everyone.
