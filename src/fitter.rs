@@ -1,10 +1,13 @@
 //! Fitter for creating diagram layouts from specifications.
 
 mod layout;
+mod optimal_separation;
 
 pub use layout::Layout;
+pub use optimal_separation::solve_optimal_separation;
 
 use crate::diagram::{Combination, DiagramSpec};
+use crate::error::DiagramError;
 use crate::geometry::coord::Coord;
 use crate::geometry::shapes::circle::Circle;
 use std::collections::HashMap;
@@ -74,10 +77,13 @@ impl<'a> Fitter<'a> {
     ///     .build()
     ///     .unwrap();
     ///
-    /// let layout = Fitter::new(&spec).fit();
+    /// let layout = Fitter::new(&spec).fit().unwrap();
     /// println!("Loss: {}", layout.loss());
     /// ```
-    pub fn fit(self) -> Layout {
+    pub fn fit(self) -> Result<Layout, DiagramError> {
+        // TODO: Use preprocessed spec for initial layout based on MDS
+        // let _preprocessed = self.spec.preprocess()?;
+
         let mut shapes = Vec::new();
         let mut set_to_shape = HashMap::new();
 
@@ -96,7 +102,9 @@ impl<'a> Fitter<'a> {
         }
 
         // Create and return the layout
-        Layout::new(shapes, set_to_shape, self.spec, 0)
+        let layout = Layout::new(shapes, set_to_shape, self.spec, 0);
+
+        Ok(layout)
     }
 }
 
@@ -113,7 +121,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let layout = Fitter::new(&spec).fit();
+        let layout = Fitter::new(&spec).fit().unwrap();
 
         assert_eq!(layout.shapes().len(), 2);
         assert!(layout.loss() >= 0.0);
@@ -128,7 +136,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let layout = Fitter::new(&spec).fit();
+        let layout = Fitter::new(&spec).fit().unwrap();
 
         assert_eq!(layout.shapes().len(), 2);
         assert_eq!(layout.requested().len(), 3); // A, B, A&B

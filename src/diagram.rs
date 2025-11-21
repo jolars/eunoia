@@ -136,18 +136,19 @@ impl DiagramSpec {
     ) -> Result<PairwiseRelations, DiagramError> {
         let n = set_names.len();
 
-        // Compute radii for single sets
-        let mut radii = vec![0.0; n];
+        // Compute areas for single sets
+        let mut set_areas = vec![0.0; n];
         for (i, set_name) in set_names.iter().enumerate() {
             let combo = Combination::new(&[set_name]);
             if let Some(&area) = union_areas.get(&combo) {
-                radii[i] = (area / std::f64::consts::PI).sqrt();
+                set_areas[i] = area;
             }
         }
 
         // Initialize relationship matrices
         let mut subset = vec![vec![false; n]; n];
         let mut disjoint = vec![vec![false; n]; n];
+        let mut overlap_areas = vec![vec![0.0; n]; n];
 
         // Check all pairs
         for i in 0..n {
@@ -162,6 +163,10 @@ impl DiagramSpec {
                 let area_i = union_areas.get(&combo_i).copied().unwrap_or(0.0);
                 let area_j = union_areas.get(&combo_j).copied().unwrap_or(0.0);
                 let area_ij = union_areas.get(&combo_ij).copied().unwrap_or(0.0);
+
+                // Store overlap area
+                overlap_areas[i][j] = area_ij;
+                overlap_areas[j][i] = area_ij;
 
                 // Check if disjoint (intersection is zero)
                 if area_ij < 1e-10 {
@@ -181,9 +186,11 @@ impl DiagramSpec {
         }
 
         Ok(PairwiseRelations {
-            radii,
+            n_sets: n,
             subset,
             disjoint,
+            set_areas,
+            overlap_areas,
         })
     }
 
@@ -274,14 +281,46 @@ pub(crate) struct PreprocessedSpec {
 /// Pairwise relationships between sets (internal).
 #[allow(dead_code)]
 pub(crate) struct PairwiseRelations {
-    /// radii[i] = sqrt(area[i] / π) for set i
-    pub radii: Vec<f64>,
+    /// Number of sets
+    pub(crate) n_sets: usize,
 
     /// subset[i][j] = true if set j ⊆ set i
-    pub subset: Vec<Vec<bool>>,
+    pub(crate) subset: Vec<Vec<bool>>,
 
     /// disjoint[i][j] = true if sets i and j are disjoint
-    pub disjoint: Vec<Vec<bool>>,
+    pub(crate) disjoint: Vec<Vec<bool>>,
+
+    /// Original union areas for each set (for shape sizing)
+    pub(crate) set_areas: Vec<f64>,
+
+    /// Desired overlap areas between pairs [i][j]
+    pub(crate) overlap_areas: Vec<Vec<f64>>,
+}
+
+impl PairwiseRelations {
+    /// Check if set j is a subset of set i.
+    #[allow(dead_code)]
+    pub(crate) fn is_subset(&self, i: usize, j: usize) -> bool {
+        self.subset[i][j]
+    }
+
+    /// Check if sets i and j are disjoint.
+    #[allow(dead_code)]
+    pub(crate) fn is_disjoint(&self, i: usize, j: usize) -> bool {
+        self.disjoint[i][j]
+    }
+
+    /// Get the area of set i.
+    #[allow(dead_code)]
+    pub(crate) fn set_area(&self, i: usize) -> f64 {
+        self.set_areas[i]
+    }
+
+    /// Get the desired overlap area between sets i and j.
+    #[allow(dead_code)]
+    pub(crate) fn overlap_area(&self, i: usize, j: usize) -> f64 {
+        self.overlap_areas[i][j]
+    }
 }
 
 #[cfg(test)]

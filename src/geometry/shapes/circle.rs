@@ -1,11 +1,10 @@
 //! Circle shape implementation.
 
-use crate::geometry::coord::Coord;
-use crate::geometry::operations::Area;
 use crate::geometry::operations::Contains;
 use crate::geometry::operations::Distance;
 use crate::geometry::operations::IntersectionArea;
 use crate::geometry::operations::Intersects;
+use crate::geometry::{coord::Coord, operations::Area};
 
 /// A circle defined by a center point and radius.
 ///
@@ -143,6 +142,11 @@ impl Circle {
     /// Returns the circle's radius.
     pub fn radius(&self) -> f64 {
         self.radius
+    }
+
+    /// Sets the center of the circle.
+    pub fn set_center(&mut self, center: Coord) {
+        self.center = center;
     }
 }
 
