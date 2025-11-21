@@ -78,6 +78,8 @@ Generate area-proportional Euler and Venn diagrams by:
 - Prefer explicit types for clarity in geometric code
 - Keep functions focused and single-purpose
 - Use traits for polymorphism over shapes
+- **Format code with `cargo fmt`** before committing
+- **All code must pass `cargo clippy --all-targets --all-features -- -D warnings`**
 
 ### Error Handling
 - Use `Result<T, E>` for fallible operations
@@ -133,8 +135,10 @@ Generate area-proportional Euler and Venn diagrams by:
 - ✅ Coordinate system (`Coord`)
 - ✅ Circle implementation with geometric operations
 - ✅ Trait-based design for operations
-- ⏳ No unit tests yet (HIGH PRIORITY)
-- ⏳ No documentation yet (HIGH PRIORITY)
+- ✅ DiagramBuilder with fluent API for input
+- ✅ Comprehensive unit tests (38 tests)
+- ✅ Full documentation with doc tests (13 doc tests)
+- ✅ Clippy-clean codebase (passes with `-D warnings`)
 - ❌ Math module (MDS, optimization) not implemented
 - ❌ Other shapes (ellipse, rectangle, triangle) not implemented
 - ❌ Polygon conversion utilities not implemented
@@ -154,15 +158,18 @@ Keep dependencies minimal for core library:
 ### When Adding Code
 - Write tests first or alongside implementation (TDD encouraged)
 - Document public APIs immediately
+- **Run `cargo fmt` to format code**
 - Run `cargo test` to ensure tests pass
 - Run `cargo doc --open` to verify documentation
-- Run `cargo clippy` for linting
+- **Run `cargo clippy --all-targets --all-features -- -D warnings` for linting (must pass with no warnings)**
 
 ### When Reviewing Code
 - Verify geometric correctness with test cases
 - Check numerical stability (divide by zero, sqrt of negative, etc.)
 - Ensure proper error handling
 - Confirm documentation is clear and accurate
+- Verify code is formatted with `cargo fmt`
+- Ensure clippy passes with `-D warnings` flag
 
 ### Mathematical References
 - Refer to eulerr paper/source for algorithm details
