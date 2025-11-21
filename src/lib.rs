@@ -26,7 +26,7 @@
 pub mod geometry;
 
 use std::collections::{HashMap, HashSet};
-use std::fmt;
+use std::fmt::{self, Display};
 
 /// Trait for computing intersection areas between shapes.
 ///
@@ -107,7 +107,7 @@ pub enum DiagramError {
     InvalidCombination(String),
 }
 
-impl fmt::Display for DiagramError {
+impl Display for DiagramError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DiagramError::UndefinedSet(set) => {
@@ -170,7 +170,7 @@ impl Combination {
     }
 }
 
-impl fmt::Display for Combination {
+impl Display for Combination {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.sets.join("&"))
     }
