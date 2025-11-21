@@ -84,7 +84,7 @@ impl<'a> Fitter<'a> {
         // Create initial circles (simple grid placement)
         for (i, set_name) in self.spec.set_names().iter().enumerate() {
             let combo = Combination::new(&[set_name]);
-            if let Some(area) = self.spec.get_combination(&combo) {
+            if let Some(area) = self.spec.get_union(&combo) {
                 let radius = (area / std::f64::consts::PI).sqrt();
                 // Simple grid placement for now
                 let x = (i as f64) * 3.0 * radius;

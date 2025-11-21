@@ -158,9 +158,25 @@ impl DiagramSpecBuilder {
             }
         }
 
+        // Convert to both disjoint and union representations
+        let input_type = self.input_type.unwrap_or_default();
+        let (disjoint_areas, union_areas) = match input_type {
+            InputType::Disjoint => {
+                let disjoint = self.combinations;
+                let union = DiagramSpec::disjoint_to_union_static(&disjoint)?;
+                (disjoint, union)
+            }
+            InputType::Union => {
+                let union = self.combinations;
+                let disjoint = DiagramSpec::union_to_disjoint_static(&union)?;
+                (disjoint, union)
+            }
+        };
+
         Ok(DiagramSpec {
-            combinations: self.combinations,
-            input_type: self.input_type.unwrap_or_default(),
+            disjoint_areas,
+            union_areas,
+            input_type,
             set_names,
         })
     }
@@ -181,6 +197,10 @@ mod tests {
         assert_eq!(spec.set_names().len(), 2);
         assert!(spec.set_names().contains("A"));
         assert!(spec.set_names().contains("B"));
+
+        // Both representations should be available
+        assert!(spec.get_union(&Combination::new(&["A"])).is_some());
+        assert!(spec.get_disjoint(&Combination::new(&["A"])).is_some());
     }
 
     #[test]
@@ -194,7 +214,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(spec.input_type(), InputType::Disjoint);
-        assert_eq!(spec.combinations().len(), 3);
+        assert_eq!(spec.disjoint_areas().len(), 3);
+        assert_eq!(spec.union_areas().len(), 3);
     }
 
     #[test]
@@ -241,7 +262,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(spec.set_names().len(), 3);
-        assert_eq!(spec.combinations().len(), 7);
+        assert_eq!(spec.disjoint_areas().len(), 7);
+        assert_eq!(spec.union_areas().len(), 7);
     }
 
     #[test]
@@ -254,9 +276,9 @@ mod tests {
             .unwrap();
 
         let combo_ab = Combination::new(&["A", "B"]);
-        assert_eq!(spec.get_combination(&combo_ab), Some(1.0));
+        assert_eq!(spec.get_union(&combo_ab), Some(1.0));
 
         let combo_ac = Combination::new(&["A", "C"]);
-        assert_eq!(spec.get_combination(&combo_ac), None);
+        assert_eq!(spec.get_union(&combo_ac), None);
     }
 }

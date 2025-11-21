@@ -35,6 +35,10 @@ impl Combination {
     pub fn is_empty(&self) -> bool {
         self.sets.is_empty()
     }
+
+    pub fn contains_all(&self, other: &Combination) -> bool {
+        other.sets.iter().all(|s| self.sets.contains(s))
+    }
 }
 
 impl Display for Combination {

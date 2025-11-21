@@ -37,7 +37,8 @@ impl Layout {
         spec: &DiagramSpec,
         iterations: usize,
     ) -> Self {
-        let requested = spec.combinations().clone();
+        // Use union areas for requested (what the shapes should produce)
+        let requested = spec.union_areas().clone();
         let fitted = Self::compute_fitted_areas(&shapes, &set_to_shape, spec);
         let loss = Self::compute_loss(&requested, &fitted);
 
@@ -100,7 +101,7 @@ impl Layout {
         let mut fitted = HashMap::new();
 
         // For each combination in the spec, compute its actual area
-        for combo in spec.combinations().keys() {
+        for combo in spec.union_areas().keys() {
             let area = if combo.len() == 1 {
                 // Single set - just the circle area
                 let set_name = &combo.sets()[0];
