@@ -4,3 +4,24 @@
 //! to represent sets in diagrams.
 
 pub mod circle;
+
+pub trait Shape {
+    /// Returns the area of the shape.
+    fn area(&self) -> f64;
+
+    /// Computes the minimum distance between this shape and another shape.
+    /// Returns 0.0 if the shapes overlap.
+    fn distance(&self, other: &Self) -> f64;
+
+    /// Checks if a shape contains another shape entirely within its boundaries
+    fn contains(&self, other: &Self) -> bool;
+
+    /// Checks if this shape intersects with another shape.
+    fn intersects(&self, other: &Self) -> bool;
+
+    /// Computes the area of intersection between this shape and another shape.
+    fn intersection_area(&self, other: &Self) -> f64;
+
+    /// Returns the centroid (center point) of the shape as (x, y) coordinates.
+    fn centroid(&self) -> (f64, f64);
+}

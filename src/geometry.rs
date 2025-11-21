@@ -4,5 +4,4 @@
 //! the library, including coordinates, shapes, and geometric operations.
 
 pub mod coord;
-pub mod operations;
 pub mod shapes;

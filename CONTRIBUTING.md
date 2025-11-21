@@ -182,7 +182,6 @@ eunoia/
 │   ├── geometry.rs         # Geometry module definition
 │   ├── geometry/           # Geometric primitives
 │   │   ├── coord.rs        # 2D coordinates
-│   │   ├── operations.rs   # Geometric operation traits
 │   │   ├── shapes.rs       # Shapes module definition
 │   │   └── shapes/         # Shape implementations
 │   │       └── circle.rs   # Circle shape

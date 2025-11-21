@@ -1,10 +1,9 @@
 //! Circle shape implementation.
 
-use crate::geometry::operations::Contains;
-use crate::geometry::operations::Distance;
-use crate::geometry::operations::IntersectionArea;
-use crate::geometry::operations::Intersects;
-use crate::geometry::{coord::Coord, operations::Area};
+use crate::geometry::coord::Coord;
+use crate::geometry::shapes::Shape;
+use argmin::core::{CostFunction, Error, Executor, State};
+use argmin::solver::brent::BrentOpt;
 
 /// A circle defined by a center point and radius.
 ///
@@ -16,8 +15,8 @@ use crate::geometry::{coord::Coord, operations::Area};
 ///
 /// ```
 /// use eunoia::geometry::shapes::circle::Circle;
+/// use eunoia::geometry::shapes::Shape;
 /// use eunoia::geometry::coord::Coord;
-/// use eunoia::geometry::operations::{Area, IntersectionArea};
 ///
 /// let c1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
 /// let c2 = Circle::new(Coord::new(3.0, 0.0), 1.0);
@@ -31,14 +30,16 @@ pub struct Circle {
     radius: f64,
 }
 
-impl Area for Circle {
+impl Shape for Circle {
     /// Computes the area of the circle using the formula A = πr².
     fn area(&self) -> f64 {
         std::f64::consts::PI * self.radius * self.radius
     }
-}
 
-impl Distance for Circle {
+    fn centroid(&self) -> (f64, f64) {
+        (self.center.x(), self.center.y())
+    }
+
     /// Computes the minimum distance between the boundaries of two circles.
     ///
     /// Returns 0.0 if the circles overlap or touch.
@@ -52,20 +53,12 @@ impl Distance for Circle {
             0.0
         }
     }
-}
 
-impl Contains for Circle {
-    /// Checks if this circle completely contains another circle.
-    ///
-    /// Returns `true` if the other circle lies entirely within or on the
-    /// boundary of this circle.
     fn contains(&self, other: &Self) -> bool {
         let center_distance = self.center.distance(&other.center);
         center_distance + other.radius <= self.radius
     }
-}
 
-impl Intersects for Circle {
     /// Checks if two circles intersect (share any common points).
     ///
     /// Note: This implementation returns `true` if circles are separate,
@@ -75,9 +68,7 @@ impl Intersects for Circle {
         let center_distance = self.center.distance(&other.center);
         center_distance >= self.radius + other.radius
     }
-}
 
-impl IntersectionArea for Circle {
     /// Computes the area of intersection between two circles.
     ///
     /// Uses the standard geometric formula for circle-circle intersection:
@@ -114,6 +105,27 @@ impl IntersectionArea for Circle {
     }
 }
 
+struct SeparationCost {
+    r1: f64,
+    r2: f64,
+    target_overlap: f64,
+}
+
+impl CostFunction for SeparationCost {
+    type Param = f64;
+    type Output = f64;
+
+    fn cost(&self, distance: &Self::Param) -> Result<Self::Output, Error> {
+        let c1 = Circle::new(Coord::new(0.0, 0.0), self.r1);
+        let c2 = Circle::new(Coord::new(*distance, 0.0), self.r2);
+
+        let current_overlap = c1.intersection_area(&c2);
+        let cost = (current_overlap - self.target_overlap).powi(2);
+
+        Ok(cost)
+    }
+}
+
 impl Circle {
     /// Creates a new circle with the specified center and radius.
     ///
@@ -147,6 +159,43 @@ impl Circle {
     /// Sets the center of the circle.
     pub fn set_center(&mut self, center: Coord) {
         self.center = center;
+    }
+
+    /// Computes the distance required between two circles to achieve a specified overlap area.
+    fn distance_for_overlap(
+        &self,
+        other: &Self,
+        overlap: f64,
+        tol: Option<f64>,
+        max_iter: Option<u64>,
+    ) -> Result<f64, Error> {
+        let r1 = self.radius;
+        let r2 = other.radius;
+
+        let min_distance = (r1 - r2).abs();
+        let max_distance = r1 + r2;
+
+        if overlap <= 0.0 {
+            return Ok(max_distance);
+        }
+
+        let cost_fun = SeparationCost {
+            r1,
+            r2,
+            target_overlap: overlap,
+        };
+
+        let solver = BrentOpt::new(min_distance, max_distance);
+
+        let result = Executor::new(cost_fun, solver)
+            .configure(|state| {
+                state
+                    .max_iters(max_iter.unwrap_or(100))
+                    .target_cost(tol.unwrap_or(1e-6))
+            })
+            .run()?;
+
+        Ok(*result.state.get_best_param().unwrap())
     }
 }
 

@@ -1,10 +1,8 @@
 //! Fitter for creating diagram layouts from specifications.
 
 mod layout;
-mod optimal_separation;
 
 pub use layout::Layout;
-pub use optimal_separation::solve_optimal_separation;
 
 use crate::diagram::{Combination, DiagramSpec};
 use crate::error::DiagramError;
