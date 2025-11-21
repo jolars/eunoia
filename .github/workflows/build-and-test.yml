@@ -82,20 +82,19 @@ jobs:
           fail_ci_if_error: true
           files: lcov.info
 
-  security-audit:
-    name: Security Audit
+  cargo-deny:
+    name: Cargo Deny
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v6
-      - uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: EmbarkStudios/cargo-deny-action@v2
 
   docs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

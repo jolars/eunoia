@@ -1,0 +1,4 @@
+ignore = [
+  # ignore unmaintained `paste`
+  "RUSTSEC-2024-0436",
+]
