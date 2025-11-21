@@ -3,7 +3,7 @@
 //! This module uses the existing `IntersectionArea` trait from the geometry module.
 
 use crate::geometry::coord::Coord;
-use crate::geometry::operations::{Area, IntersectionArea};
+use crate::geometry::shapes::Shape;
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::brent::BrentOpt;
 
@@ -13,7 +13,7 @@ use argmin::solver::brent::BrentOpt;
 /// shape centers while keeping their sizes fixed.
 struct SeparationCost<'a, S>
 where
-    S: IntersectionArea + Clone,
+    S: Shape + Clone,
 {
     shape1: S,
     shape2: S,
@@ -26,7 +26,7 @@ where
 
 impl<'a, S> CostFunction for SeparationCost<'a, S>
 where
-    S: IntersectionArea + Clone,
+    S: Shape + Clone,
 {
     type Param = f64;
     type Output = f64;
@@ -54,8 +54,7 @@ where
 /// Solve for the optimal distance between two shapes to achieve target overlap.
 ///
 /// This function uses Brent's method to find the center-to-center distance that
-/// produces the desired overlap area. It works with any shape that implements
-/// `IntersectionArea` and `Area`.
+/// produces the desired overlap area. It works with any `Shape`.
 ///
 /// # Arguments
 /// * `shape1` - First shape (used to determine size bounds)
@@ -81,7 +80,7 @@ pub fn solve_optimal_separation<S>(
     tolerance: Option<f64>,
 ) -> Result<f64, Error>
 where
-    S: IntersectionArea + Area + Clone,
+    S: Shape + Clone,
 {
     let tol = tolerance.unwrap_or(1e-6);
 
@@ -133,55 +132,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::operations::Distance;
-
-    // Simple test shape: a circle
-    #[derive(Clone)]
-    struct TestCircle {
-        center: Coord,
-        radius: f64,
-    }
-
-    impl Area for TestCircle {
-        fn area(&self) -> f64 {
-            std::f64::consts::PI * self.radius * self.radius
-        }
-    }
-
-    impl IntersectionArea for TestCircle {
-        fn intersection_area(&self, other: &Self) -> f64 {
-            let d = Distance::distance(&self.center, &other.center);
-
-            // Simplified: if distance >= r1 + r2, no overlap
-            if d >= self.radius + other.radius {
-                return 0.0;
-            }
-            // If distance <= |r1 - r2|, full overlap of smaller circle
-            if d <= (self.radius - other.radius).abs() {
-                return std::f64::consts::PI * self.radius.min(other.radius).powi(2);
-            }
-            // Otherwise, partial overlap (simplified approximation)
-            let overlap_fraction = 1.0
-                - (d - (self.radius - other.radius).abs())
-                    / (self.radius + other.radius - (self.radius - other.radius).abs());
-            overlap_fraction * std::f64::consts::PI * self.radius.min(other.radius).powi(2)
-        }
-    }
+    use crate::geometry::shapes::circle::Circle;
 
     #[test]
     fn test_separation_no_overlap() {
-        let c1 = TestCircle {
-            center: Coord::new(0.0, 0.0),
-            radius: 1.0,
-        };
-        let c2 = TestCircle {
-            center: Coord::new(0.0, 0.0),
-            radius: 1.0,
-        };
+        let c1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
+        let c2 = Circle::new(Coord::new(0.0, 0.0), 1.0);
 
-        let get_center = |s: &TestCircle| s.center;
-        let set_center = |s: &mut TestCircle, c: Coord| s.center = c;
-        let get_size = |s: &TestCircle| s.radius;
+        let get_center = |s: &Circle| *s.center();
+        let set_center = |s: &mut Circle, c: Coord| s.set_center(c);
+        let get_size = |s: &Circle| s.radius();
 
         let distance =
             solve_optimal_separation(&c1, &c2, 0.0, &get_center, &set_center, &get_size, None)
@@ -193,18 +153,12 @@ mod tests {
 
     #[test]
     fn test_separation_full_overlap() {
-        let c1 = TestCircle {
-            center: Coord::new(0.0, 0.0),
-            radius: 2.0,
-        };
-        let c2 = TestCircle {
-            center: Coord::new(0.0, 0.0),
-            radius: 1.0,
-        };
+        let c1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
+        let c2 = Circle::new(Coord::new(0.0, 0.0), 1.0);
 
-        let get_center = |s: &TestCircle| s.center;
-        let set_center = |s: &mut TestCircle, c: Coord| s.center = c;
-        let get_size = |s: &TestCircle| s.radius;
+        let get_center = |s: &Circle| *s.center();
+        let set_center = |s: &mut Circle, c: Coord| s.set_center(c);
+        let get_size = |s: &Circle| s.radius();
 
         let full_overlap = std::f64::consts::PI * 1.0_f64.powi(2);
         let distance = solve_optimal_separation(

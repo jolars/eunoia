@@ -1,7 +1,5 @@
 //! 2D coordinate representation.
 
-use crate::geometry::operations::Distance;
-
 /// A point in 2D Cartesian space.
 ///
 /// `Coord` represents a location using x and y coordinates. It is used as the
@@ -11,7 +9,6 @@ use crate::geometry::operations::Distance;
 ///
 /// ```
 /// use eunoia::geometry::coord::Coord;
-/// use eunoia::geometry::operations::Distance;
 ///
 /// let origin = Coord::new(0.0, 0.0);
 /// let point = Coord::new(3.0, 4.0);
@@ -52,10 +49,8 @@ impl Coord {
     pub fn y(&self) -> f64 {
         self.y
     }
-}
 
-impl Distance for Coord {
-    fn distance(&self, other: &Self) -> f64 {
+    pub fn distance(&self, other: &Self) -> f64 {
         ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()
     }
 }

@@ -1,10 +1,7 @@
 //! Circle shape implementation.
 
-use crate::geometry::operations::Contains;
-use crate::geometry::operations::Distance;
-use crate::geometry::operations::IntersectionArea;
-use crate::geometry::operations::Intersects;
-use crate::geometry::{coord::Coord, operations::Area};
+use crate::geometry::coord::Coord;
+use crate::geometry::shapes::Shape;
 
 /// A circle defined by a center point and radius.
 ///
@@ -16,8 +13,8 @@ use crate::geometry::{coord::Coord, operations::Area};
 ///
 /// ```
 /// use eunoia::geometry::shapes::circle::Circle;
+/// use eunoia::geometry::shapes::Shape;
 /// use eunoia::geometry::coord::Coord;
-/// use eunoia::geometry::operations::{Area, IntersectionArea};
 ///
 /// let c1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
 /// let c2 = Circle::new(Coord::new(3.0, 0.0), 1.0);
@@ -31,14 +28,16 @@ pub struct Circle {
     radius: f64,
 }
 
-impl Area for Circle {
+impl Shape for Circle {
     /// Computes the area of the circle using the formula A = πr².
     fn area(&self) -> f64 {
         std::f64::consts::PI * self.radius * self.radius
     }
-}
 
-impl Distance for Circle {
+    fn centroid(&self) -> (f64, f64) {
+        (self.center.x(), self.center.y())
+    }
+
     /// Computes the minimum distance between the boundaries of two circles.
     ///
     /// Returns 0.0 if the circles overlap or touch.
@@ -52,20 +51,12 @@ impl Distance for Circle {
             0.0
         }
     }
-}
 
-impl Contains for Circle {
-    /// Checks if this circle completely contains another circle.
-    ///
-    /// Returns `true` if the other circle lies entirely within or on the
-    /// boundary of this circle.
     fn contains(&self, other: &Self) -> bool {
         let center_distance = self.center.distance(&other.center);
         center_distance + other.radius <= self.radius
     }
-}
 
-impl Intersects for Circle {
     /// Checks if two circles intersect (share any common points).
     ///
     /// Note: This implementation returns `true` if circles are separate,
@@ -75,9 +66,7 @@ impl Intersects for Circle {
         let center_distance = self.center.distance(&other.center);
         center_distance >= self.radius + other.radius
     }
-}
 
-impl IntersectionArea for Circle {
     /// Computes the area of intersection between two circles.
     ///
     /// Uses the standard geometric formula for circle-circle intersection:
