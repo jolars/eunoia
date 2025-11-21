@@ -1,0 +1,38 @@
+{
+  "branches": [
+    "main"
+  ],
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogTitle": "# Changelog"
+      }
+    ],
+    "semantic-release-cargo",
+    [
+      "@semantic-release/git",
+      {
+        "message": "chore(release): release ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
+        "assets": [
+          "CHANGELOG.md",
+          "Cargo.toml",
+          "Cargo.lock"
+        ]
+      }
+    ],
+    "@semantic-release/github"
+  ]
+}
