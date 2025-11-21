@@ -97,9 +97,32 @@ dedicated repositories as thin wrappers around this core library.
 - Prefer explicit types for clarity in geometric code
 - Keep functions focused and single-purpose
 - Use traits for polymorphism over shapes
+- **Use Rust Edition 2021** (for compatibility with rextendr R bindings)
 - **Format code with `cargo fmt`** before committing
 - **All code must pass
   `cargo clippy --all-targets --all-features -- -D warnings`**
+
+### Commit Guidelines
+
+- Use [Conventional Commits](https://www.conventionalcommits.org/) format
+- Commit message format: `<type>(<scope>): <description>`
+- Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+- Examples:
+  - `feat(geometry): add ellipse shape implementation`
+  - `fix(circle): correct intersection area calculation`
+  - `docs(api): update DiagramBuilder examples`
+  - `test(shapes): add edge cases for containment`
+- Breaking changes: Add `!` after type/scope or `BREAKING CHANGE:` in footer
+- Keep commits atomic and focused on a single concern
+
+### Versioning
+
+- Follow [Semantic Versioning](https://semver.org/) (SemVer)
+- Version format: `MAJOR.MINOR.PATCH`
+- MAJOR: Incompatible API changes
+- MINOR: Backwards-compatible new functionality
+- PATCH: Backwards-compatible bug fixes
+- Pre-1.0.0: API is not yet stable (current status)
 
 ### Error Handling
 
@@ -177,6 +200,8 @@ Keep dependencies minimal for core library:
 - Consider `argmin` or `optimization` crate for optimization
 - Development plotting: `plotters` (feature-gated)
 
+**Note**: The project uses **Rust Edition 2021** for compatibility with rextendr (R bindings framework). This is specified in `Cargo.toml` and should not be changed without consideration for downstream binding compatibility.
+
 ## Working with This Codebase
 
 ### Task Runner
@@ -237,6 +262,9 @@ You can run these instead of manual cargo commands for convenience.
 ## Notes
 
 - This is a library crate, not a binary
+- **Uses Rust Edition 2021** for compatibility with rextendr (R bindings)
+- **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0
+- **Uses Conventional Commits** for clear change history
 - API stability is important for language bindings (maintained in separate
   repositories)
 - **Only WASM bindings** will be part of this repository
