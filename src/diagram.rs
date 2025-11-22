@@ -116,7 +116,16 @@ impl DiagramSpec {
             }
         }
 
-        // 3. Compute pairwise relationships
+        // 3. Compute set areas
+        let mut set_areas = vec![0.0; n_sets];
+        for (i, set_name) in non_empty_sets.iter().enumerate() {
+            let combo = Combination::new(&[set_name]);
+            if let Some(&area) = filtered_union.get(&combo) {
+                set_areas[i] = area;
+            }
+        }
+
+        // 4. Compute pairwise relationships
         let relationships = Self::compute_pairwise_relations(&non_empty_sets, &filtered_union)?;
 
         Ok(PreprocessedSpec {
@@ -125,6 +134,7 @@ impl DiagramSpec {
             disjoint_areas: filtered_disjoint,
             union_areas: filtered_union,
             n_sets,
+            set_areas,
             relationships,
         })
     }
@@ -135,15 +145,6 @@ impl DiagramSpec {
         union_areas: &HashMap<Combination, f64>,
     ) -> Result<PairwiseRelations, DiagramError> {
         let n = set_names.len();
-
-        // Compute areas for single sets
-        let mut set_areas = vec![0.0; n];
-        for (i, set_name) in set_names.iter().enumerate() {
-            let combo = Combination::new(&[set_name]);
-            if let Some(&area) = union_areas.get(&combo) {
-                set_areas[i] = area;
-            }
-        }
 
         // Initialize relationship matrices
         let mut subset = vec![vec![false; n]; n];
@@ -189,7 +190,6 @@ impl DiagramSpec {
             n_sets: n,
             subset,
             disjoint,
-            set_areas,
             overlap_areas,
         })
     }
@@ -257,7 +257,6 @@ impl DiagramSpec {
 ///
 /// This is created by filtering out empty sets from a DiagramSpec and
 /// computing additional metadata needed for optimization.
-#[allow(dead_code)]
 pub(crate) struct PreprocessedSpec {
     /// Non-empty set names in canonical order
     pub(crate) set_names: Vec<String>,
@@ -274,12 +273,14 @@ pub(crate) struct PreprocessedSpec {
     /// Number of non-empty sets
     pub(crate) n_sets: usize,
 
+    /// Union areas for each set (for shape sizing)
+    pub(crate) set_areas: Vec<f64>,
+
     /// Pairwise relationships
     pub(crate) relationships: PairwiseRelations,
 }
 
 /// Pairwise relationships between sets (internal).
-#[allow(dead_code)]
 pub(crate) struct PairwiseRelations {
     /// Number of sets
     pub(crate) n_sets: usize,
@@ -289,9 +290,6 @@ pub(crate) struct PairwiseRelations {
 
     /// disjoint[i][j] = true if sets i and j are disjoint
     pub(crate) disjoint: Vec<Vec<bool>>,
-
-    /// Original union areas for each set (for shape sizing)
-    pub(crate) set_areas: Vec<f64>,
 
     /// Desired overlap areas between pairs [i][j]
     pub(crate) overlap_areas: Vec<Vec<f64>>,
@@ -308,12 +306,6 @@ impl PairwiseRelations {
     #[allow(dead_code)]
     pub(crate) fn is_disjoint(&self, i: usize, j: usize) -> bool {
         self.disjoint[i][j]
-    }
-
-    /// Get the area of set i.
-    #[allow(dead_code)]
-    pub(crate) fn set_area(&self, i: usize) -> f64 {
-        self.set_areas[i]
     }
 
     /// Get the desired overlap area between sets i and j.

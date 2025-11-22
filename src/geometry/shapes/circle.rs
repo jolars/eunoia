@@ -160,43 +160,40 @@ impl Circle {
     pub fn set_center(&mut self, center: Coord) {
         self.center = center;
     }
+}
 
-    /// Computes the distance required between two circles to achieve a specified overlap area.
-    fn distance_for_overlap(
-        &self,
-        other: &Self,
-        overlap: f64,
-        tol: Option<f64>,
-        max_iter: Option<u64>,
-    ) -> Result<f64, Error> {
-        let r1 = self.radius;
-        let r2 = other.radius;
+/// Computes the distance required between two circles to achieve a specified overlap area.
+pub(crate) fn distance_for_overlap(
+    r1: f64,
+    r2: f64,
+    overlap: f64,
+    tol: Option<f64>,
+    max_iter: Option<u64>,
+) -> Result<f64, Error> {
+    let min_distance = (r1 - r2).abs();
+    let max_distance = r1 + r2;
 
-        let min_distance = (r1 - r2).abs();
-        let max_distance = r1 + r2;
-
-        if overlap <= 0.0 {
-            return Ok(max_distance);
-        }
-
-        let cost_fun = SeparationCost {
-            r1,
-            r2,
-            target_overlap: overlap,
-        };
-
-        let solver = BrentOpt::new(min_distance, max_distance);
-
-        let result = Executor::new(cost_fun, solver)
-            .configure(|state| {
-                state
-                    .max_iters(max_iter.unwrap_or(100))
-                    .target_cost(tol.unwrap_or(1e-6))
-            })
-            .run()?;
-
-        Ok(*result.state.get_best_param().unwrap())
+    if overlap <= 0.0 {
+        return Ok(max_distance);
     }
+
+    let cost_fun = SeparationCost {
+        r1,
+        r2,
+        target_overlap: overlap,
+    };
+
+    let solver = BrentOpt::new(min_distance, max_distance);
+
+    let result = Executor::new(cost_fun, solver)
+        .configure(|state| {
+            state
+                .max_iters(max_iter.unwrap_or(100))
+                .target_cost(tol.unwrap_or(1e-6))
+        })
+        .run()?;
+
+    Ok(*result.state.get_best_param().unwrap())
 }
 
 #[cfg(test)]

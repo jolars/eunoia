@@ -7,6 +7,7 @@ pub use layout::Layout;
 use crate::diagram::{Combination, DiagramSpec};
 use crate::error::DiagramError;
 use crate::geometry::coord::Coord;
+use crate::geometry::shapes::circle::distance_for_overlap;
 use crate::geometry::shapes::circle::Circle;
 use std::collections::HashMap;
 
@@ -80,7 +81,24 @@ impl<'a> Fitter<'a> {
     /// ```
     pub fn fit(self) -> Result<Layout, DiagramError> {
         // TODO: Use preprocessed spec for initial layout based on MDS
-        // let _preprocessed = self.spec.preprocess()?;
+        let spec = self.spec.preprocess()?;
+
+        let n_sets = spec.n_sets;
+
+        // To create an initial layout, we use circles and MDS to position them.
+        let n_pairs = n_sets * (n_sets - 1) / 2;
+
+        let mut optimal_distances: Vec<f64> = Vec::with_capacity(n_pairs);
+
+        for i in 0..n_sets {
+            for j in (i + 1)..n_sets {
+                let overlap = spec.relationships.overlap_area(i, j);
+                let r1 = (spec.set_areas[i] / std::f64::consts::PI).sqrt();
+                let r2 = (spec.set_areas[j] / std::f64::consts::PI).sqrt();
+                let desired_distance = distance_for_overlap(r1, r2, overlap, None, None).unwrap();
+                optimal_distances.push(desired_distance);
+            }
+        }
 
         let mut shapes = Vec::new();
         let mut set_to_shape = HashMap::new();
