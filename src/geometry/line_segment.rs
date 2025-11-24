@@ -10,7 +10,7 @@ use crate::geometry::point::Point;
 /// # Examples
 ///
 /// ```
-/// use eunoia::geometry::line::LineSegment;
+/// use eunoia::geometry::line_segment::LineSegment;
 /// use eunoia::geometry::point::Point;
 ///
 /// let start = Point::new(0.0, 0.0);
@@ -35,7 +35,7 @@ impl LineSegment {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::line::LineSegment;
+    /// use eunoia::geometry::line_segment::LineSegment;
     /// use eunoia::geometry::point::Point;
     ///
     /// let segment = LineSegment::new(Point::new(0.0, 0.0), Point::new(1.0, 1.0));
@@ -59,7 +59,7 @@ impl LineSegment {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::line::LineSegment;
+    /// use eunoia::geometry::line_segment::LineSegment;
     /// use eunoia::geometry::point::Point;
     ///
     /// let segment = LineSegment::new(Point::new(0.0, 0.0), Point::new(3.0, 4.0));
@@ -74,7 +74,7 @@ impl LineSegment {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::line::LineSegment;
+    /// use eunoia::geometry::line_segment::LineSegment;
     /// use eunoia::geometry::point::Point;
     ///
     /// let segment = LineSegment::new(Point::new(0.0, 0.0), Point::new(4.0, 6.0));
@@ -105,7 +105,7 @@ impl LineSegment {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::line::LineSegment;
+    /// use eunoia::geometry::line_segment::LineSegment;
     /// use eunoia::geometry::point::Point;
     ///
     /// let segment = LineSegment::new(Point::new(0.0, 0.0), Point::new(2.0, 4.0));
