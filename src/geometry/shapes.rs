@@ -29,4 +29,7 @@ pub trait Shape {
 
     /// Returns the centroid (center point) of the shape as (x, y) coordinates.
     fn centroid(&self) -> (f64, f64);
+
+    /// Check if a point is inside the shape.
+    fn contains_point(&self, point: &Point) -> bool;
 }

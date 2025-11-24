@@ -69,6 +69,11 @@ impl Shape for Circle {
         center_distance >= self.radius + other.radius
     }
 
+    fn contains_point(&self, point: &Point) -> bool {
+        let dist = self.center.distance(point);
+        dist <= self.radius
+    }
+
     /// Computes the area of intersection between two circles.
     ///
     /// Uses the standard geometric formula for circle-circle intersection:
