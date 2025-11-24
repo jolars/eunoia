@@ -96,7 +96,7 @@
     circles = Array.from(newCircles);
   }
   
-  // Calculate SVG viewBox to fit all circles
+  // Calculate SVG viewBox to fit all circles with proper padding
   $: viewBox = (() => {
     if (circles.length === 0) return '0 0 400 400';
     
@@ -109,12 +109,36 @@
     const minY = Math.min(...ys.map((y, i) => y - rs[i]));
     const maxY = Math.max(...ys.map((y, i) => y + rs[i]));
     
-    const padding = 20;
-    const width = maxX - minX + padding * 2;
-    const height = maxY - minY + padding * 2;
+    const width = maxX - minX;
+    const height = maxY - minY;
     
-    return `${minX - padding} ${minY - padding} ${width} ${height}`;
+    // Add padding as a percentage of the size (10% on each side)
+    const paddingPercent = 0.1;
+    const paddingX = width * paddingPercent;
+    const paddingY = height * paddingPercent;
+    
+    return `${minX - paddingX} ${minY - paddingY} ${width + 2 * paddingX} ${height + 2 * paddingY}`;
   })();
+  
+  // Calculate appropriate stroke width and font size based on viewBox dimensions
+  $: avgRadius = circles.length > 0 
+    ? circles.reduce((sum, c) => sum + c.radius, 0) / circles.length 
+    : 1;
+  $: strokeWidth = avgRadius * 0.02; // 2% of average radius
+  
+  // Font size based on the viewBox dimensions, not individual circles
+  $: viewBoxDimension = (() => {
+    if (circles.length === 0) return 400;
+    const xs = circles.map(c => c.x);
+    const ys = circles.map(c => c.y);
+    const rs = circles.map(c => c.radius);
+    const minX = Math.min(...xs.map((x, i) => x - rs[i]));
+    const maxX = Math.max(...xs.map((x, i) => x + rs[i]));
+    const minY = Math.min(...ys.map((y, i) => y - rs[i]));
+    const maxY = Math.max(...ys.map((y, i) => y + rs[i]));
+    return Math.max(maxX - minX, maxY - minY);
+  })();
+  $: fontSize = viewBoxDimension * 0.05; // 5% of viewBox dimension
 </script>
 
 <div class="min-h-screen bg-gray-50 p-8">
@@ -199,14 +223,6 @@
               class="w-full h-auto border border-gray-200 rounded"
               preserveAspectRatio="xMidYMid meet"
             >
-              <!-- Grid lines for reference -->
-              <defs>
-                <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-                  <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(0,0,0,0.05)" stroke-width="1"/>
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-              
               <!-- Circles -->
               {#each circles as circle, i}
                 <circle
@@ -215,14 +231,15 @@
                   r={circle.radius}
                   fill={colors[i % colors.length]}
                   stroke={colors[i % colors.length].replace('0.3', '1')}
-                  stroke-width="2"
+                  stroke-width={strokeWidth}
                 />
                 <text
                   x={circle.x}
                   y={circle.y}
                   text-anchor="middle"
                   dominant-baseline="middle"
-                  class="text-sm font-semibold"
+                  font-size={fontSize}
+                  class="font-semibold"
                 >
                   {String.fromCharCode(65 + i)}
                 </text>
