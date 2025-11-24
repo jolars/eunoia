@@ -81,27 +81,11 @@ impl<'a> Fitter<'a> {
     /// println!("Loss: {}", layout.loss());
     /// ```
     pub fn fit(self) -> Result<Layout, DiagramError> {
-        // TODO: Use preprocessed spec for initial layout based on MDS
         let spec = self.spec.preprocess()?;
-
         let n_sets = spec.n_sets;
 
-        // To create an initial layout, we use circles and MDS to position them.
-
-        let mut optimal_distances = vec![vec![0.0; n_sets]; n_sets];
-
-        for i in 0..n_sets {
-            for j in (i + 1)..n_sets {
-                let overlap = spec.relationships.overlap_area(i, j);
-                let r1 = (spec.set_areas[i] / std::f64::consts::PI).sqrt();
-                let r2 = (spec.set_areas[j] / std::f64::consts::PI).sqrt();
-
-                let desired_distance = distance_for_overlap(r1, r2, overlap, None, None).unwrap();
-
-                optimal_distances[i][j] = desired_distance;
-                optimal_distances[j][i] = desired_distance;
-            }
-        }
+        // Compute optimal distances for circle centers based on desired overlaps
+        let optimal_distances = Self::compute_optimal_distances(&spec)?;
 
         let initial_params =
             initial_layout::compute_initial_layout(&optimal_distances, &spec.relationships, 10)
@@ -129,6 +113,38 @@ impl<'a> Fitter<'a> {
         let layout = Layout::new(shapes, set_to_shape, self.spec, 0);
 
         Ok(layout)
+    }
+
+    /// Compute optimal distances between circle centers based on desired overlaps.
+    ///
+    /// For each pair of sets, this calculates the distance between circle centers
+    /// that would produce the desired overlap area given their radii.
+    fn compute_optimal_distances(
+        spec: &crate::diagram::PreprocessedSpec,
+    ) -> Result<Vec<Vec<f64>>, DiagramError> {
+        let n_sets = spec.n_sets;
+        let mut optimal_distances = vec![vec![0.0; n_sets]; n_sets];
+
+        for i in 0..n_sets {
+            for j in (i + 1)..n_sets {
+                let overlap = spec.relationships.overlap_area(i, j);
+                let r1 = (spec.set_areas[i] / std::f64::consts::PI).sqrt();
+                let r2 = (spec.set_areas[j] / std::f64::consts::PI).sqrt();
+
+                let desired_distance =
+                    distance_for_overlap(r1, r2, overlap, None, None).map_err(|_| {
+                        DiagramError::InvalidCombination(format!(
+                            "Could not compute distance for sets {} and {}",
+                            i, j
+                        ))
+                    })?;
+
+                optimal_distances[i][j] = desired_distance;
+                optimal_distances[j][i] = desired_distance;
+            }
+        }
+
+        Ok(optimal_distances)
     }
 }
 
