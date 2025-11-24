@@ -1,8 +1,9 @@
-//! Geometric primitives and operations for Euler and Venn diagrams.
+//! Geometric primitives and operations.
 //!
 //! This module provides the foundational geometric types and traits used throughout
 //! the library, including points, shapes, and geometric operations.
 
 pub mod line;
+pub mod line_segment;
 pub mod point;
 pub mod shapes;
