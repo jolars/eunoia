@@ -103,6 +103,33 @@ impl Shape for Circle {
 
         part1 + part2 - part3
     }
+
+    /// Computes the points of intersection between two circles.
+    fn intersection_points(&self, other: &Self) -> Vec<Point> {
+        let d = self.center.distance(&other.center);
+
+        if d > self.radius + other.radius || d < (self.radius - other.radius).abs() {
+            return vec![]; // No intersection points
+        }
+
+        let a = (self.radius * self.radius - other.radius * other.radius + d * d) / (2.0 * d);
+        let h = (self.radius * self.radius - a * a).sqrt();
+
+        let p2_x = self.center.x() + a * (other.center.x() - self.center.x()) / d;
+        let p2_y = self.center.y() + a * (other.center.y() - self.center.y()) / d;
+
+        let rx = -(other.center.y() - self.center.y()) * (h / d);
+        let ry = (other.center.x() - self.center.x()) * (h / d);
+
+        let intersection1 = Point::new(p2_x + rx, p2_y + ry);
+        let intersection2 = Point::new(p2_x - rx, p2_y - ry);
+
+        if intersection1 == intersection2 {
+            vec![intersection1]
+        } else {
+            vec![intersection1, intersection2]
+        }
+    }
 }
 
 struct SeparationCost {
@@ -508,5 +535,125 @@ mod tests {
 
         assert!(distance >= min_distance);
         assert!(distance <= max_distance);
+    }
+
+    #[test]
+    fn test_intersection_points_no_intersection() {
+        // Circles too far apart
+        let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let c2 = Circle::new(Point::new(5.0, 0.0), 1.0);
+
+        let points = c1.intersection_points(&c2);
+        assert_eq!(points.len(), 0);
+    }
+
+    #[test]
+    fn test_intersection_points_one_inside_other() {
+        // One circle completely inside the other
+        let c1 = Circle::new(Point::new(0.0, 0.0), 3.0);
+        let c2 = Circle::new(Point::new(0.0, 0.0), 1.0);
+
+        let points = c1.intersection_points(&c2);
+        assert_eq!(points.len(), 0);
+    }
+
+    #[test]
+    fn test_intersection_points_touching_externally() {
+        // Circles touch at exactly one point (externally)
+        let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let c2 = Circle::new(Point::new(4.0, 0.0), 2.0);
+
+        let points = c1.intersection_points(&c2);
+        assert_eq!(points.len(), 1);
+
+        // The touching point should be at (2.0, 0.0)
+        assert!(approx_eq(points[0].x(), 2.0));
+        assert!(approx_eq(points[0].y(), 0.0));
+    }
+
+    #[test]
+    fn test_intersection_points_two_points() {
+        // Circles intersect at two points
+        let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let c2 = Circle::new(Point::new(2.0, 0.0), 2.0);
+
+        let points = c1.intersection_points(&c2);
+        assert_eq!(points.len(), 2);
+
+        // Both points should be on the circles
+        for point in &points {
+            let dist_to_c1 = c1.center.distance(point);
+            let dist_to_c2 = c2.center.distance(point);
+            assert!(approx_eq(dist_to_c1, c1.radius));
+            assert!(approx_eq(dist_to_c2, c2.radius));
+        }
+
+        // Points should be at (1.0, sqrt(3)) and (1.0, -sqrt(3))
+        let expected_x = 1.0;
+        let expected_y = 3.0_f64.sqrt();
+
+        // Check one point is at (1.0, sqrt(3))
+        let found_positive = points
+            .iter()
+            .any(|p| approx_eq(p.x(), expected_x) && approx_eq(p.y(), expected_y));
+        // Check other point is at (1.0, -sqrt(3))
+        let found_negative = points
+            .iter()
+            .any(|p| approx_eq(p.x(), expected_x) && approx_eq(p.y(), -expected_y));
+
+        assert!(found_positive);
+        assert!(found_negative);
+    }
+
+    #[test]
+    fn test_intersection_points_vertical_alignment() {
+        // Test with circles aligned vertically
+        let c1 = Circle::new(Point::new(0.0, 0.0), 1.5);
+        let c2 = Circle::new(Point::new(0.0, 2.0), 1.5);
+
+        let points = c1.intersection_points(&c2);
+        assert_eq!(points.len(), 2);
+
+        // Both points should be equidistant from both centers
+        for point in &points {
+            let dist_to_c1 = c1.center.distance(point);
+            let dist_to_c2 = c2.center.distance(point);
+            assert!(approx_eq(dist_to_c1, c1.radius));
+            assert!(approx_eq(dist_to_c2, c2.radius));
+        }
+    }
+
+    #[test]
+    fn test_intersection_points_equal_radii_partial_overlap() {
+        // Two circles with equal radii, partially overlapping
+        let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let c2 = Circle::new(Point::new(1.0, 0.0), 1.0);
+
+        let points = c1.intersection_points(&c2);
+        assert_eq!(points.len(), 2);
+
+        // The intersection points should be symmetric about the line connecting centers
+        // They should both have x-coordinate = 0.5
+        for point in &points {
+            assert!(approx_eq(point.x(), 0.5));
+        }
+    }
+
+    #[test]
+    fn test_intersection_points_different_radii() {
+        // Two circles with different radii
+        let c1 = Circle::new(Point::new(0.0, 0.0), 3.0);
+        let c2 = Circle::new(Point::new(2.0, 0.0), 1.5);
+
+        let points = c1.intersection_points(&c2);
+        assert_eq!(points.len(), 2);
+
+        // Verify both points lie on both circles
+        for point in &points {
+            let dist_to_c1 = c1.center.distance(point);
+            let dist_to_c2 = c2.center.distance(point);
+            assert!(approx_eq(dist_to_c1, c1.radius));
+            assert!(approx_eq(dist_to_c2, c2.radius));
+        }
     }
 }

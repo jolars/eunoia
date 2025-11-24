@@ -5,6 +5,8 @@
 
 pub mod circle;
 
+use crate::geometry::point::Point;
+
 pub trait Shape {
     /// Returns the area of the shape.
     fn area(&self) -> f64;
@@ -21,6 +23,9 @@ pub trait Shape {
 
     /// Computes the area of intersection between this shape and another shape.
     fn intersection_area(&self, other: &Self) -> f64;
+
+    /// Computes the intersection points between this shape and another shape.
+    fn intersection_points(&self, other: &Self) -> Vec<Point>;
 
     /// Returns the centroid (center point) of the shape as (x, y) coordinates.
     fn centroid(&self) -> (f64, f64);
