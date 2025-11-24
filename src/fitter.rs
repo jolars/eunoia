@@ -8,7 +8,7 @@ pub use layout::Layout;
 
 use crate::diagram::{Combination, DiagramSpec};
 use crate::error::DiagramError;
-use crate::geometry::coord::Coord;
+use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::distance_for_overlap;
 use crate::geometry::shapes::circle::Circle;
 use std::collections::HashMap;
@@ -127,7 +127,7 @@ impl<'a> Fitter<'a> {
             let y = final_positions[i * 2 + 1];
             let radius = final_radii[i];
 
-            shapes.push(Circle::new(Coord::new(x, y), radius));
+            shapes.push(Circle::new(Point::new(x, y), radius));
             set_to_shape.insert(set_name.clone(), i);
         }
 

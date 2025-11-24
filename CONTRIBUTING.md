@@ -181,7 +181,7 @@ eunoia/
 │   ├── error.rs            # Error types
 │   ├── geometry.rs         # Geometry module definition
 │   ├── geometry/           # Geometric primitives
-│   │   ├── coord.rs        # 2D coordinates
+│   │   ├── point.rs        # 2D points
 │   │   ├── shapes.rs       # Shapes module definition
 │   │   └── shapes/         # Shape implementations
 │   │       └── circle.rs   # Circle shape

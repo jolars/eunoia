@@ -1,6 +1,6 @@
 //! Circle shape implementation.
 
-use crate::geometry::coord::Coord;
+use crate::geometry::point::Point;
 use crate::geometry::shapes::Shape;
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::brent::BrentOpt;
@@ -16,17 +16,17 @@ use argmin::solver::brent::BrentOpt;
 /// ```
 /// use eunoia::geometry::shapes::circle::Circle;
 /// use eunoia::geometry::shapes::Shape;
-/// use eunoia::geometry::coord::Coord;
+/// use eunoia::geometry::point::Point;
 ///
-/// let c1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
-/// let c2 = Circle::new(Coord::new(3.0, 0.0), 1.0);
+/// let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+/// let c2 = Circle::new(Point::new(3.0, 0.0), 1.0);
 ///
 /// let area1 = c1.area();
 /// let overlap = c1.intersection_area(&c2);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Circle {
-    center: Coord,
+    center: Point,
     radius: f64,
 }
 
@@ -116,8 +116,8 @@ impl CostFunction for SeparationCost {
     type Output = f64;
 
     fn cost(&self, distance: &Self::Param) -> Result<Self::Output, Error> {
-        let c1 = Circle::new(Coord::new(0.0, 0.0), self.r1);
-        let c2 = Circle::new(Coord::new(*distance, 0.0), self.r2);
+        let c1 = Circle::new(Point::new(0.0, 0.0), self.r1);
+        let c2 = Circle::new(Point::new(*distance, 0.0), self.r2);
 
         let current_overlap = c1.intersection_area(&c2);
         let cost = (current_overlap - self.target_overlap).powi(2);
@@ -138,16 +138,16 @@ impl Circle {
     ///
     /// ```
     /// use eunoia::geometry::shapes::circle::Circle;
-    /// use eunoia::geometry::coord::Coord;
+    /// use eunoia::geometry::point::Point;
     ///
-    /// let circle = Circle::new(Coord::new(1.0, 2.0), 3.0);
+    /// let circle = Circle::new(Point::new(1.0, 2.0), 3.0);
     /// ```
-    pub fn new(center: Coord, radius: f64) -> Self {
+    pub fn new(center: Point, radius: f64) -> Self {
         Circle { center, radius }
     }
 
     /// Returns a reference to the circle's center point.
-    pub fn center(&self) -> &Coord {
+    pub fn center(&self) -> &Point {
         &self.center
     }
 
@@ -157,7 +157,7 @@ impl Circle {
     }
 
     /// Sets the center of the circle.
-    pub fn set_center(&mut self, center: Coord) {
+    pub fn set_center(&mut self, center: Point) {
         self.center = center;
     }
 }
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_circle_new() {
-        let center = Coord::new(1.0, 2.0);
+        let center = Point::new(1.0, 2.0);
         let circle = Circle::new(center, 5.0);
         assert_eq!(circle.radius(), 5.0);
         assert_eq!(circle.center().x(), 1.0);
@@ -217,112 +217,112 @@ mod tests {
 
     #[test]
     fn test_circle_area() {
-        let circle = Circle::new(Coord::new(0.0, 0.0), 1.0);
+        let circle = Circle::new(Point::new(0.0, 0.0), 1.0);
         assert!(approx_eq(circle.area(), std::f64::consts::PI));
 
-        let circle2 = Circle::new(Coord::new(0.0, 0.0), 2.0);
+        let circle2 = Circle::new(Point::new(0.0, 0.0), 2.0);
         assert!(approx_eq(circle2.area(), 4.0 * std::f64::consts::PI));
 
-        let circle3 = Circle::new(Coord::new(5.0, 5.0), 3.0);
+        let circle3 = Circle::new(Point::new(5.0, 5.0), 3.0);
         assert!(approx_eq(circle3.area(), 9.0 * std::f64::consts::PI));
     }
 
     #[test]
     fn test_circle_distance_no_overlap() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
-        let circle2 = Circle::new(Coord::new(5.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let circle2 = Circle::new(Point::new(5.0, 0.0), 1.0);
         assert_eq!(circle1.distance(&circle2), 3.0);
     }
 
     #[test]
     fn test_circle_distance_touching() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
-        let circle2 = Circle::new(Coord::new(2.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let circle2 = Circle::new(Point::new(2.0, 0.0), 1.0);
         assert_eq!(circle1.distance(&circle2), 0.0);
     }
 
     #[test]
     fn test_circle_distance_overlapping() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
-        let circle2 = Circle::new(Coord::new(1.0, 0.0), 2.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let circle2 = Circle::new(Point::new(1.0, 0.0), 2.0);
         assert_eq!(circle1.distance(&circle2), 0.0);
     }
 
     #[test]
     fn test_circle_contains_smaller() {
-        let large = Circle::new(Coord::new(0.0, 0.0), 5.0);
-        let small = Circle::new(Coord::new(1.0, 1.0), 2.0);
+        let large = Circle::new(Point::new(0.0, 0.0), 5.0);
+        let small = Circle::new(Point::new(1.0, 1.0), 2.0);
         assert!(large.contains(&small));
     }
 
     #[test]
     fn test_circle_contains_self() {
-        let circle = Circle::new(Coord::new(0.0, 0.0), 3.0);
+        let circle = Circle::new(Point::new(0.0, 0.0), 3.0);
         assert!(circle.contains(&circle));
     }
 
     #[test]
     fn test_circle_not_contains() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
-        let circle2 = Circle::new(Coord::new(5.0, 0.0), 2.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let circle2 = Circle::new(Point::new(5.0, 0.0), 2.0);
         assert!(!circle1.contains(&circle2));
     }
 
     #[test]
     fn test_circle_not_contains_partial_overlap() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 3.0);
-        let circle2 = Circle::new(Coord::new(2.0, 0.0), 2.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 3.0);
+        let circle2 = Circle::new(Point::new(2.0, 0.0), 2.0);
         assert!(!circle1.contains(&circle2));
     }
 
     #[test]
     fn test_circle_intersects_separate() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
-        let circle2 = Circle::new(Coord::new(5.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let circle2 = Circle::new(Point::new(5.0, 0.0), 1.0);
         assert!(circle1.intersects(&circle2));
     }
 
     #[test]
     fn test_circle_intersects_touching() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
-        let circle2 = Circle::new(Coord::new(2.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let circle2 = Circle::new(Point::new(2.0, 0.0), 1.0);
         assert!(circle1.intersects(&circle2));
     }
 
     #[test]
     fn test_circle_intersects_overlapping() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
-        let circle2 = Circle::new(Coord::new(1.0, 0.0), 2.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let circle2 = Circle::new(Point::new(1.0, 0.0), 2.0);
         assert!(!circle1.intersects(&circle2));
     }
 
     #[test]
     fn test_intersection_area_no_overlap() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
-        let circle2 = Circle::new(Coord::new(10.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let circle2 = Circle::new(Point::new(10.0, 0.0), 1.0);
         assert_eq!(circle1.intersection_area(&circle2), 0.0);
     }
 
     #[test]
     fn test_intersection_area_touching() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
-        let circle2 = Circle::new(Coord::new(2.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let circle2 = Circle::new(Point::new(2.0, 0.0), 1.0);
         let area = circle1.intersection_area(&circle2);
         assert!(approx_eq(area, 0.0));
     }
 
     #[test]
     fn test_intersection_area_complete_overlap_same_size() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
-        let circle2 = Circle::new(Coord::new(0.0, 0.0), 2.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let circle2 = Circle::new(Point::new(0.0, 0.0), 2.0);
         let expected = std::f64::consts::PI * 4.0;
         assert!(approx_eq(circle1.intersection_area(&circle2), expected));
     }
 
     #[test]
     fn test_intersection_area_one_inside_other() {
-        let large = Circle::new(Coord::new(0.0, 0.0), 5.0);
-        let small = Circle::new(Coord::new(1.0, 0.0), 2.0);
+        let large = Circle::new(Point::new(0.0, 0.0), 5.0);
+        let small = Circle::new(Point::new(1.0, 0.0), 2.0);
         let expected = std::f64::consts::PI * 4.0; // Area of smaller circle
         assert!(approx_eq(large.intersection_area(&small), expected));
         assert!(approx_eq(small.intersection_area(&large), expected));
@@ -330,8 +330,8 @@ mod tests {
 
     #[test]
     fn test_intersection_area_partial_overlap() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 1.0);
-        let circle2 = Circle::new(Coord::new(1.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let circle2 = Circle::new(Point::new(1.0, 0.0), 1.0);
         let area = circle1.intersection_area(&circle2);
 
         // For two unit circles with centers 1 apart, there's a known formula
@@ -342,8 +342,8 @@ mod tests {
 
     #[test]
     fn test_intersection_area_symmetric() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 2.0);
-        let circle2 = Circle::new(Coord::new(1.5, 0.0), 1.5);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let circle2 = Circle::new(Point::new(1.5, 0.0), 1.5);
         let area1 = circle1.intersection_area(&circle2);
         let area2 = circle2.intersection_area(&circle1);
         assert!(approx_eq(area1, area2));
@@ -351,8 +351,8 @@ mod tests {
 
     #[test]
     fn test_intersection_area_different_sizes() {
-        let circle1 = Circle::new(Coord::new(0.0, 0.0), 3.0);
-        let circle2 = Circle::new(Coord::new(2.0, 0.0), 1.0);
+        let circle1 = Circle::new(Point::new(0.0, 0.0), 3.0);
+        let circle2 = Circle::new(Point::new(2.0, 0.0), 1.0);
         let area = circle1.intersection_area(&circle2);
 
         // Should be positive and at most the smaller circle's area
@@ -405,8 +405,8 @@ mod tests {
         let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
 
         // Verify the result by computing the actual overlap at this distance
-        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
-        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let c1 = Circle::new(Point::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Point::new(distance, 0.0), r2);
         let actual_overlap = c1.intersection_area(&c2);
 
         // Should match target within tolerance (relaxed for optimization convergence)
@@ -422,8 +422,8 @@ mod tests {
         let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
 
         // Verify the result
-        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
-        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let c1 = Circle::new(Point::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Point::new(distance, 0.0), r2);
         let actual_overlap = c1.intersection_area(&c2);
 
         assert!((actual_overlap - target_overlap).abs() < 1e-2);
@@ -439,8 +439,8 @@ mod tests {
         let distance =
             distance_for_overlap(r1, r2, target_overlap, Some(custom_tol), None).unwrap();
 
-        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
-        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let c1 = Circle::new(Point::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Point::new(distance, 0.0), r2);
         let actual_overlap = c1.intersection_area(&c2);
 
         // Should be very close to target with custom tolerance
@@ -457,8 +457,8 @@ mod tests {
         let distance = distance_for_overlap(r1, r2, target_overlap, None, Some(max_iter)).unwrap();
 
         // Should still converge within fewer iterations
-        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
-        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let c1 = Circle::new(Point::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Point::new(distance, 0.0), r2);
         let actual_overlap = c1.intersection_area(&c2);
 
         assert!((actual_overlap - target_overlap).abs() < 1e-2);
@@ -472,8 +472,8 @@ mod tests {
 
         let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
 
-        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
-        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let c1 = Circle::new(Point::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Point::new(distance, 0.0), r2);
         let actual_overlap = c1.intersection_area(&c2);
 
         assert!((actual_overlap - target_overlap).abs() < 1e-4);
@@ -487,8 +487,8 @@ mod tests {
 
         let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
 
-        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
-        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let c1 = Circle::new(Point::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Point::new(distance, 0.0), r2);
         let actual_overlap = c1.intersection_area(&c2);
 
         assert!((actual_overlap - target_overlap).abs() < 1.0); // Larger tolerance for large circles

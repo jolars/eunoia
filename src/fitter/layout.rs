@@ -156,14 +156,14 @@ mod tests {
 
     #[test]
     fn test_layout_creation() {
-        use crate::geometry::coord::Coord;
+        use crate::geometry::point::Point;
 
         let spec = DiagramSpecBuilder::new()
             .set("A", std::f64::consts::PI)
             .build()
             .unwrap();
 
-        let shapes = vec![Circle::new(Coord::new(0.0, 0.0), 1.0)];
+        let shapes = vec![Circle::new(Point::new(0.0, 0.0), 1.0)];
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 
@@ -175,11 +175,11 @@ mod tests {
 
     #[test]
     fn test_shape_for_set() {
-        use crate::geometry::coord::Coord;
+        use crate::geometry::point::Point;
 
         let spec = DiagramSpecBuilder::new().set("A", 10.0).build().unwrap();
 
-        let shapes = vec![Circle::new(Coord::new(1.0, 2.0), 3.0)];
+        let shapes = vec![Circle::new(Point::new(1.0, 2.0), 3.0)];
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 

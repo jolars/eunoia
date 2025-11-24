@@ -9,7 +9,7 @@ use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
 
 use crate::diagram::{Combination, PreprocessedSpec};
-use crate::geometry::coord::Coord;
+use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::Circle;
 use crate::geometry::shapes::Shape;
 use std::collections::{HashMap, HashSet};
@@ -111,7 +111,7 @@ impl<'a> RegionErrorCost<'a> {
                 let x = positions[i * 2];
                 let y = positions[i * 2 + 1];
                 let r = radii[i].max(0.01); // Ensure positive radius
-                Circle::new(Coord::new(x, y), r)
+                Circle::new(Point::new(x, y), r)
             })
             .collect()
     }

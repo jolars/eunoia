@@ -1,27 +1,27 @@
-//! 2D coordinate representation.
+//! 2D point representation.
 
 /// A point in 2D Cartesian space.
 ///
-/// `Coord` represents a location using x and y coordinates. It is used as the
+/// `Point` represents a location using x and y coordinates. It is used as the
 /// foundational type for positioning shapes in the diagram plane.
 ///
 /// # Examples
 ///
 /// ```
-/// use eunoia::geometry::coord::Coord;
+/// use eunoia::geometry::point::Point;
 ///
-/// let origin = Coord::new(0.0, 0.0);
-/// let point = Coord::new(3.0, 4.0);
+/// let origin = Point::new(0.0, 0.0);
+/// let point = Point::new(3.0, 4.0);
 /// let dist = origin.distance(&point);
 /// assert_eq!(dist, 5.0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Coord {
+pub struct Point {
     x: f64,
     y: f64,
 }
 
-impl Coord {
+impl Point {
     /// Creates a new coordinate at the specified position.
     ///
     /// # Arguments
@@ -32,12 +32,12 @@ impl Coord {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::coord::Coord;
+    /// use eunoia::geometry::point::Point;
     ///
-    /// let coord = Coord::new(1.5, 2.5);
+    /// let point = Point::new(1.5, 2.5);
     /// ```
     pub fn new(x: f64, y: f64) -> Self {
-        Coord { x, y }
+        Point { x, y }
     }
 
     /// Returns the x-coordinate.
@@ -61,57 +61,57 @@ mod tests {
 
     #[test]
     fn test_coord_new() {
-        let coord = Coord::new(3.0, 4.0);
+        let coord = Point::new(3.0, 4.0);
         assert_eq!(coord.x(), 3.0);
         assert_eq!(coord.y(), 4.0);
     }
 
     #[test]
     fn test_coord_getters() {
-        let coord = Coord::new(-2.5, 7.8);
+        let coord = Point::new(-2.5, 7.8);
         assert_eq!(coord.x(), -2.5);
         assert_eq!(coord.y(), 7.8);
     }
 
     #[test]
     fn test_distance_same_point() {
-        let coord1 = Coord::new(1.0, 1.0);
-        let coord2 = Coord::new(1.0, 1.0);
+        let coord1 = Point::new(1.0, 1.0);
+        let coord2 = Point::new(1.0, 1.0);
         assert_eq!(coord1.distance(&coord2), 0.0);
     }
 
     #[test]
     fn test_distance_horizontal() {
-        let coord1 = Coord::new(0.0, 0.0);
-        let coord2 = Coord::new(3.0, 0.0);
+        let coord1 = Point::new(0.0, 0.0);
+        let coord2 = Point::new(3.0, 0.0);
         assert_eq!(coord1.distance(&coord2), 3.0);
     }
 
     #[test]
     fn test_distance_vertical() {
-        let coord1 = Coord::new(0.0, 0.0);
-        let coord2 = Coord::new(0.0, 4.0);
+        let coord1 = Point::new(0.0, 0.0);
+        let coord2 = Point::new(0.0, 4.0);
         assert_eq!(coord1.distance(&coord2), 4.0);
     }
 
     #[test]
     fn test_distance_pythagorean() {
-        let coord1 = Coord::new(0.0, 0.0);
-        let coord2 = Coord::new(3.0, 4.0);
+        let coord1 = Point::new(0.0, 0.0);
+        let coord2 = Point::new(3.0, 4.0);
         assert_eq!(coord1.distance(&coord2), 5.0);
     }
 
     #[test]
     fn test_distance_negative_coords() {
-        let coord1 = Coord::new(-1.0, -1.0);
-        let coord2 = Coord::new(2.0, 3.0);
+        let coord1 = Point::new(-1.0, -1.0);
+        let coord2 = Point::new(2.0, 3.0);
         assert_eq!(coord1.distance(&coord2), 5.0);
     }
 
     #[test]
     fn test_distance_symmetric() {
-        let coord1 = Coord::new(1.5, 2.5);
-        let coord2 = Coord::new(4.5, 6.5);
+        let coord1 = Point::new(1.5, 2.5);
+        let coord2 = Point::new(4.5, 6.5);
         assert_eq!(coord1.distance(&coord2), coord2.distance(&coord1));
     }
 }
