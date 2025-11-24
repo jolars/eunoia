@@ -74,6 +74,11 @@ impl Shape for Circle {
         dist <= self.radius
     }
 
+    /// Compute the perimeter of the circle.
+    fn perimeter(&self) -> f64 {
+        2.0 * std::f64::consts::PI * self.radius
+    }
+
     /// Computes the area of intersection between two circles.
     ///
     /// Uses the standard geometric formula for circle-circle intersection:
@@ -191,6 +196,34 @@ impl Circle {
     /// Sets the center of the circle.
     pub fn set_center(&mut self, center: Point) {
         self.center = center;
+    }
+
+    /// Circular sector area given the radius and angle in radians.
+    pub fn sector_area(&self, angle_rad: f64) -> f64 {
+        0.5 * self.radius * self.radius * angle_rad
+    }
+
+    /// Circular segment area from radius and angle
+    pub fn segment_area_from_angle(&self, angle_rad: f64) -> f64 {
+        0.5 * self.radius * self.radius * (angle_rad - angle_rad.sin())
+    }
+
+    /// Circular segment area from radius and chord length
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `chord_length > 2 * radius` (impossible geometry).
+    /// In release builds, this validation is skipped for performance.
+    pub fn segment_area_from_chord(&self, chord_length: f64) -> f64 {
+        let r = self.radius;
+        debug_assert!(
+            chord_length <= 2.0 * r,
+            "Chord length {} cannot exceed diameter {}",
+            chord_length,
+            2.0 * r
+        );
+        let theta = 2.0 * (chord_length / (2.0 * r)).asin();
+        self.segment_area_from_angle(theta)
     }
 }
 
@@ -660,5 +693,148 @@ mod tests {
             assert!(approx_eq(dist_to_c1, c1.radius));
             assert!(approx_eq(dist_to_c2, c2.radius));
         }
+    }
+
+    #[test]
+    fn test_perimeter() {
+        let c = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let perimeter = c.perimeter();
+        assert!(approx_eq(perimeter, 2.0 * std::f64::consts::PI));
+    }
+
+    #[test]
+    fn test_perimeter_various_radii() {
+        let test_cases = vec![
+            (0.5, std::f64::consts::PI),
+            (2.0, 4.0 * std::f64::consts::PI),
+            (10.0, 20.0 * std::f64::consts::PI),
+        ];
+
+        for (radius, expected) in test_cases {
+            let c = Circle::new(Point::new(0.0, 0.0), radius);
+            assert!(approx_eq(c.perimeter(), expected));
+        }
+    }
+
+    #[test]
+    fn test_sector_area_full_circle() {
+        let c = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let full_circle_angle = 2.0 * std::f64::consts::PI;
+        let sector = c.sector_area(full_circle_angle);
+        assert!(approx_eq(sector, c.area()));
+    }
+
+    #[test]
+    fn test_sector_area_half_circle() {
+        let c = Circle::new(Point::new(0.0, 0.0), 3.0);
+        let half_circle_angle = std::f64::consts::PI;
+        let sector = c.sector_area(half_circle_angle);
+        assert!(approx_eq(sector, c.area() / 2.0));
+    }
+
+    #[test]
+    fn test_sector_area_quarter_circle() {
+        let c = Circle::new(Point::new(0.0, 0.0), 4.0);
+        let quarter_circle_angle = std::f64::consts::PI / 2.0;
+        let sector = c.sector_area(quarter_circle_angle);
+        assert!(approx_eq(sector, c.area() / 4.0));
+    }
+
+    #[test]
+    fn test_sector_area_zero() {
+        let c = Circle::new(Point::new(0.0, 0.0), 5.0);
+        let sector = c.sector_area(0.0);
+        assert!(approx_eq(sector, 0.0));
+    }
+
+    #[test]
+    fn test_segment_area_from_angle_semicircle() {
+        let c = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let angle = std::f64::consts::PI;
+        let segment = c.segment_area_from_angle(angle);
+        // For a semicircle, segment area equals sector area (half circle)
+        assert!(approx_eq(segment, c.area() / 2.0));
+    }
+
+    #[test]
+    fn test_segment_area_from_angle_zero() {
+        let c = Circle::new(Point::new(0.0, 0.0), 3.0);
+        let segment = c.segment_area_from_angle(0.0);
+        assert!(approx_eq(segment, 0.0));
+    }
+
+    #[test]
+    fn test_segment_area_from_angle_small() {
+        let c = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let angle = std::f64::consts::PI / 6.0; // 30 degrees
+        let segment = c.segment_area_from_angle(angle);
+
+        // Segment should be positive and less than sector area
+        let sector = c.sector_area(angle);
+        assert!(segment > 0.0);
+        assert!(segment < sector);
+    }
+
+    #[test]
+    fn test_segment_area_from_chord_diameter() {
+        let radius = 2.0;
+        let c = Circle::new(Point::new(0.0, 0.0), radius);
+        let chord_length = 2.0 * radius; // Diameter
+        let segment = c.segment_area_from_chord(chord_length);
+
+        // A chord equal to diameter creates a semicircle
+        assert!(approx_eq(segment, c.area() / 2.0));
+    }
+
+    #[test]
+    fn test_segment_area_from_chord_small() {
+        let c = Circle::new(Point::new(0.0, 0.0), 5.0);
+        let chord_length = 2.0;
+        let segment = c.segment_area_from_chord(chord_length);
+
+        // Small chord should create small segment
+        assert!(segment > 0.0);
+        assert!(segment < c.area() / 4.0);
+    }
+
+    #[test]
+    fn test_segment_area_from_chord_vs_angle_consistency() {
+        let c = Circle::new(Point::new(0.0, 0.0), 3.0);
+        let angle = std::f64::consts::PI / 3.0; // 60 degrees
+
+        // Calculate chord length from angle
+        let chord_length = 2.0 * c.radius() * (angle / 2.0).sin();
+
+        let segment_from_angle = c.segment_area_from_angle(angle);
+        let segment_from_chord = c.segment_area_from_chord(chord_length);
+
+        // Both methods should give same result
+        assert!(approx_eq(segment_from_angle, segment_from_chord));
+    }
+
+    #[test]
+    fn test_segment_area_relationships() {
+        let c = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let angle = std::f64::consts::PI / 4.0; // 45 degrees
+
+        let sector = c.sector_area(angle);
+        let segment = c.segment_area_from_angle(angle);
+
+        // Segment area should be less than sector area (triangle is subtracted)
+        assert!(segment < sector);
+
+        // For small angles, segment should be much smaller than sector
+        let small_angle = 0.1;
+        let small_sector = c.sector_area(small_angle);
+        let small_segment = c.segment_area_from_angle(small_angle);
+        assert!(small_segment < small_sector / 2.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Chord length")]
+    fn test_segment_area_from_chord_invalid() {
+        let c = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let chord_length = 5.0; // Impossible: longer than diameter
+        c.segment_area_from_chord(chord_length);
     }
 }
