@@ -88,7 +88,7 @@ impl<'a> Fitter<'a> {
         let optimal_distances = Self::compute_optimal_distances(&spec)?;
 
         let initial_params =
-            initial_layout::compute_initial_layout(&optimal_distances, &spec.relationships, 10)
+            initial_layout::compute_initial_layout(&optimal_distances, &spec.relationships)
                 .unwrap();
 
         let (x, y) = initial_params.split_at(n_sets);

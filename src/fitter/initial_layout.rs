@@ -6,32 +6,69 @@ use rand::Rng;
 
 use crate::diagram::PairwiseRelations;
 
+/// Configuration for the initial layout optimization.
+#[derive(Debug, Clone)]
+pub(crate) struct InitialLayoutConfig {
+    /// Maximum number of optimization attempts
+    pub max_attempts: usize,
+    /// Number of attempts without improvement before stopping
+    pub patience: usize,
+    /// Relative improvement threshold (e.g., 0.01 for 1% improvement)
+    pub improvement_threshold: f64,
+    /// Absolute loss threshold for perfect fit early stopping
+    pub perfect_fit_threshold: f64,
+}
+
+impl Default for InitialLayoutConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 100,
+            patience: 5,
+            improvement_threshold: 0.001, // 0.1% improvement
+            perfect_fit_threshold: 1e-8,  // Near-zero loss
+        }
+    }
+}
+
+/// Compute initial layout using patience-based optimization with default configuration.
 pub(crate) fn compute_initial_layout(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
-    n_restarts: usize,
+) -> Result<Vec<f64>, Error> {
+    compute_initial_layout_with_config(distances, relationships, InitialLayoutConfig::default())
+}
+
+/// Compute initial layout using patience-based optimization.
+///
+/// This function tries random initializations until no improvement is seen
+/// for `patience` consecutive attempts, or until `max_attempts` is reached.
+pub(crate) fn compute_initial_layout_with_config(
+    distances: &Vec<Vec<f64>>,
+    relationships: &PairwiseRelations,
+    config: InitialLayoutConfig,
 ) -> Result<Vec<f64>, Error> {
     let n_sets = distances.len();
 
     let mut best_params = Vec::new();
     let mut best_loss = f64::INFINITY;
+    let mut attempts_without_improvement = 0;
     let mut rng = rand::rng();
 
-    for _ in 0..n_restarts {
+    // Compute scale for random initialization
+    let max_distance = distances
+        .iter()
+        .flat_map(|row| row.iter())
+        .copied()
+        .fold(0.0_f64, f64::max);
+
+    let scale = if max_distance > 0.0 {
+        max_distance
+    } else {
+        10.0
+    };
+
+    for _attempt in 0..config.max_attempts {
         // Initialize with random positions in a reasonable range
-        // Use a range based on the typical distances
-        let max_distance = distances
-            .iter()
-            .flat_map(|row| row.iter())
-            .copied()
-            .fold(0.0_f64, f64::max);
-
-        let scale = if max_distance > 0.0 {
-            max_distance
-        } else {
-            10.0
-        };
-
         let mut initial_values = vec![0.0; n_sets * 2];
         for value in &mut initial_values {
             *value = rng.random_range(-scale..scale);
@@ -52,9 +89,34 @@ pub(crate) fn compute_initial_layout(
 
         let loss = result.state().get_cost();
 
+        // Early stopping if we've achieved perfect fit
+        if loss < config.perfect_fit_threshold {
+            return Ok(result.state().get_best_param().unwrap().as_slice().to_vec());
+        }
+
+        // Check if this is an improvement
         if loss < best_loss {
-            best_loss = loss;
-            best_params = result.state().get_best_param().unwrap().as_slice().to_vec();
+            let relative_improvement = if best_loss.is_finite() && best_loss > 0.0 {
+                (best_loss - loss) / best_loss
+            } else {
+                f64::INFINITY
+            };
+
+            // Accept first valid result or improvements above threshold
+            if !best_loss.is_finite() || relative_improvement > config.improvement_threshold {
+                best_loss = loss;
+                best_params = result.state().get_best_param().unwrap().as_slice().to_vec();
+                attempts_without_improvement = 0;
+            } else {
+                attempts_without_improvement += 1;
+            }
+        } else {
+            attempts_without_improvement += 1;
+        }
+
+        // Early stopping if no improvement for patience attempts
+        if attempts_without_improvement >= config.patience {
+            break;
         }
     }
 
@@ -169,7 +231,7 @@ mod tests {
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         // Should have 4 parameters (2 x, 2 y)
         assert_eq!(result.len(), 4);
@@ -196,7 +258,7 @@ mod tests {
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -220,7 +282,7 @@ mod tests {
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -246,7 +308,7 @@ mod tests {
         relationships.disjoint[0][1] = true;
         relationships.disjoint[1][0] = true;
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -272,7 +334,7 @@ mod tests {
 
         let relationships = create_test_relationships(3);
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         assert_eq!(result.len(), 6); // 3 x, 3 y
 
@@ -308,7 +370,7 @@ mod tests {
 
         let relationships = create_test_relationships(3);
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         assert_eq!(result.len(), 6);
 
@@ -338,7 +400,7 @@ mod tests {
 
         let relationships = create_test_relationships(4);
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         assert_eq!(result.len(), 8);
 
@@ -359,22 +421,22 @@ mod tests {
 
         let relationships = create_test_relationships(2);
 
-        let result1 = compute_initial_layout(&distances, &relationships, 1).unwrap();
-        let result5 = compute_initial_layout(&distances, &relationships, 5).unwrap();
+        let result1 = compute_initial_layout(&distances, &relationships).unwrap();
+        let result2 = compute_initial_layout(&distances, &relationships).unwrap();
 
         // Both should produce valid results
         assert_eq!(result1.len(), 4);
-        assert_eq!(result5.len(), 4);
+        assert_eq!(result2.len(), 4);
 
         // Both should satisfy the distance constraint approximately
         let (x1, y1) = result1.split_at(2);
         let d1 = ((x1[0] - x1[1]).powi(2) + (y1[0] - y1[1]).powi(2)).sqrt();
 
-        let (x5, y5) = result5.split_at(2);
-        let d5 = ((x5[0] - x5[1]).powi(2) + (y5[0] - y5[1]).powi(2)).sqrt();
+        let (x2, y2) = result2.split_at(2);
+        let d2 = ((x2[0] - x2[1]).powi(2) + (y2[0] - y2[1]).powi(2)).sqrt();
 
-        assert!(approx_eq(d1, 1.5, 0.2), "Distance with 1 restart: {}", d1);
-        assert!(approx_eq(d5, 1.5, 0.2), "Distance with 5 restarts: {}", d5);
+        assert!(approx_eq(d1, 1.5, 0.2), "Distance with first run: {}", d1);
+        assert!(approx_eq(d2, 1.5, 0.2), "Distance with second run: {}", d2);
     }
 
     #[test]
@@ -384,7 +446,7 @@ mod tests {
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result = compute_initial_layout(&distances, &relationships).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -413,10 +475,78 @@ mod tests {
 
         let relationships = create_test_relationships(3);
 
-        let result = compute_initial_layout(&distances, &relationships, 1);
+        let result = compute_initial_layout(&distances, &relationships);
 
         // Should succeed even with asymmetric distances
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 6);
+    }
+
+    #[test]
+    fn test_patience_based_optimization() {
+        // Test that patience-based optimization stops early when no improvement
+        let distances = vec![vec![0.0, 1.5], vec![1.5, 0.0]];
+        let relationships = create_test_relationships(2);
+
+        let config = InitialLayoutConfig {
+            max_attempts: 20,
+            patience: 3,
+            improvement_threshold: 0.01,
+            perfect_fit_threshold: 1e-8,
+        };
+
+        let result = compute_initial_layout_with_config(&distances, &relationships, config);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.len(), 4);
+
+        // Verify the result satisfies distance constraints
+        let (x, y) = params.split_at(2);
+        let d = ((x[0] - x[1]).powi(2) + (y[0] - y[1]).powi(2)).sqrt();
+        assert!(approx_eq(d, 1.5, 0.2), "Distance: {}", d);
+    }
+
+    #[test]
+    fn test_patience_with_zero_threshold() {
+        // Test with zero threshold - should only improve on any decrease
+        let distances = vec![vec![0.0, 2.0], vec![2.0, 0.0]];
+        let relationships = create_test_relationships(2);
+
+        let config = InitialLayoutConfig {
+            max_attempts: 10,
+            patience: 2,
+            improvement_threshold: 0.0,
+            perfect_fit_threshold: 1e-8,
+        };
+
+        let result = compute_initial_layout_with_config(&distances, &relationships, config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_early_stopping_on_perfect_fit() {
+        // Test that optimization stops immediately when loss reaches zero
+        // Two circles at exact distance (should achieve near-zero loss quickly)
+        let distances = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
+        let relationships = create_test_relationships(2);
+
+        let config = InitialLayoutConfig {
+            max_attempts: 100,
+            patience: 5,
+            improvement_threshold: 0.01,
+            perfect_fit_threshold: 1e-8,
+        };
+
+        let result = compute_initial_layout_with_config(&distances, &relationships, config);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.len(), 4);
+
+        // Verify the distance is correct
+        let (x, y) = params.split_at(2);
+        let d = ((x[0] - x[1]).powi(2) + (y[0] - y[1]).powi(2)).sqrt();
+        assert!(approx_eq(d, 1.0, 0.1), "Distance: {}", d);
     }
 }
