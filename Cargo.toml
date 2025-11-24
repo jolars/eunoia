@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 argmin = { version = "0.11.0", features = ["wasm-bindgen"] }
 argmin-math = { version = "0.5.1", features = ["nalgebra_latest"] }
 nalgebra = "0.34.1"
+rand = "0.8"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

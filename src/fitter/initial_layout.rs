@@ -2,6 +2,7 @@ use argmin::core::{CostFunction, Error, Executor, Gradient, State};
 use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::quasinewton::LBFGS;
 use nalgebra::DVector;
+use rand::Rng;
 
 use crate::diagram::PairwiseRelations;
 
@@ -14,9 +15,28 @@ pub(crate) fn compute_initial_layout(
 
     let mut best_params = Vec::new();
     let mut best_loss = f64::INFINITY;
+    let mut rng = rand::thread_rng();
 
     for _ in 0..n_restarts {
-        let initial_param = DVector::from_element(n_sets * 2, 0.0);
+        // Initialize with random positions in a reasonable range
+        // Use a range based on the typical distances
+        let max_distance = distances
+            .iter()
+            .flat_map(|row| row.iter())
+            .copied()
+            .fold(0.0_f64, f64::max);
+
+        let scale = if max_distance > 0.0 {
+            max_distance
+        } else {
+            10.0
+        };
+
+        let mut initial_values = vec![0.0; n_sets * 2];
+        for i in 0..n_sets * 2 {
+            initial_values[i] = rng.gen_range(-scale..scale);
+        }
+        let initial_param = DVector::from_vec(initial_values);
 
         let cost_function = MdsCost {
             distances,
@@ -122,5 +142,281 @@ impl<'a> Gradient for MdsCost<'a> {
         }
 
         Ok(grad)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
+        (a - b).abs() < tol
+    }
+
+    fn create_test_relationships(n_sets: usize) -> PairwiseRelations {
+        PairwiseRelations {
+            n_sets,
+            subset: vec![vec![false; n_sets]; n_sets],
+            disjoint: vec![vec![false; n_sets]; n_sets],
+            overlap_areas: vec![vec![0.0; n_sets]; n_sets],
+        }
+    }
+
+    #[test]
+    fn test_compute_initial_layout_two_sets_touching() {
+        // Two circles with radii r1=1, r2=1, touching (distance = 2)
+        let distances = vec![vec![0.0, 2.0], vec![2.0, 0.0]];
+
+        let relationships = create_test_relationships(2);
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        // Should have 4 parameters (2 x, 2 y)
+        assert_eq!(result.len(), 4);
+
+        let (x, y) = result.split_at(2);
+
+        // Calculate actual distance between the two points
+        let dx = x[0] - x[1];
+        let dy = y[0] - y[1];
+        let actual_distance = (dx * dx + dy * dy).sqrt();
+
+        // Should be close to 2.0
+        assert!(
+            approx_eq(actual_distance, 2.0, 0.1),
+            "Distance {} should be close to 2.0",
+            actual_distance
+        );
+    }
+
+    #[test]
+    fn test_compute_initial_layout_two_sets_overlapping() {
+        // Two circles with centers 1 unit apart (overlapping)
+        let distances = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
+
+        let relationships = create_test_relationships(2);
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        assert_eq!(result.len(), 4);
+
+        let (x, y) = result.split_at(2);
+
+        let dx = x[0] - x[1];
+        let dy = y[0] - y[1];
+        let actual_distance = (dx * dx + dy * dy).sqrt();
+
+        assert!(
+            approx_eq(actual_distance, 1.0, 0.1),
+            "Distance {} should be close to 1.0",
+            actual_distance
+        );
+    }
+
+    #[test]
+    fn test_compute_initial_layout_two_sets_separated() {
+        // Two circles far apart
+        let distances = vec![vec![0.0, 5.0], vec![5.0, 0.0]];
+
+        let relationships = create_test_relationships(2);
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        assert_eq!(result.len(), 4);
+
+        let (x, y) = result.split_at(2);
+
+        let dx = x[0] - x[1];
+        let dy = y[0] - y[1];
+        let actual_distance = (dx * dx + dy * dy).sqrt();
+
+        assert!(
+            approx_eq(actual_distance, 5.0, 0.1),
+            "Distance {} should be close to 5.0",
+            actual_distance
+        );
+    }
+
+    #[test]
+    fn test_compute_initial_layout_two_sets_disjoint() {
+        // Two disjoint sets (distance should be at least r1 + r2)
+        let distances = vec![vec![0.0, 3.0], vec![3.0, 0.0]];
+
+        let mut relationships = create_test_relationships(2);
+        relationships.disjoint[0][1] = true;
+        relationships.disjoint[1][0] = true;
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        assert_eq!(result.len(), 4);
+
+        let (x, y) = result.split_at(2);
+
+        let dx = x[0] - x[1];
+        let dy = y[0] - y[1];
+        let actual_distance = (dx * dx + dy * dy).sqrt();
+
+        // For disjoint sets, distance should be at least the specified distance
+        assert!(
+            actual_distance >= 3.0 - 0.1,
+            "Distance {} should be at least 3.0",
+            actual_distance
+        );
+    }
+
+    #[test]
+    fn test_compute_initial_layout_three_sets_triangle() {
+        // Three sets arranged in a triangle
+        let d = 2.0; // Equal distances
+        let distances = vec![vec![0.0, d, d], vec![d, 0.0, d], vec![d, d, 0.0]];
+
+        let relationships = create_test_relationships(3);
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        assert_eq!(result.len(), 6); // 3 x, 3 y
+
+        let (x, y) = result.split_at(3);
+
+        // Check all pairwise distances
+        for i in 0..3 {
+            for j in (i + 1)..3 {
+                let dx = x[i] - x[j];
+                let dy = y[i] - y[j];
+                let actual_distance = (dx * dx + dy * dy).sqrt();
+
+                assert!(
+                    approx_eq(actual_distance, d, 0.2),
+                    "Distance between {} and {} is {}, should be close to {}",
+                    i,
+                    j,
+                    actual_distance,
+                    d
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_initial_layout_three_sets_collinear() {
+        // Three sets in a line: A---B---C
+        let distances = vec![
+            vec![0.0, 1.0, 2.0],
+            vec![1.0, 0.0, 1.0],
+            vec![2.0, 1.0, 0.0],
+        ];
+
+        let relationships = create_test_relationships(3);
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        assert_eq!(result.len(), 6);
+
+        let (x, y) = result.split_at(3);
+
+        // Verify distances
+        let d01 = ((x[0] - x[1]).powi(2) + (y[0] - y[1]).powi(2)).sqrt();
+        let d12 = ((x[1] - x[2]).powi(2) + (y[1] - y[2]).powi(2)).sqrt();
+        let d02 = ((x[0] - x[2]).powi(2) + (y[0] - y[2]).powi(2)).sqrt();
+
+        assert!(approx_eq(d01, 1.0, 0.2), "Distance 0-1: {}", d01);
+        assert!(approx_eq(d12, 1.0, 0.2), "Distance 1-2: {}", d12);
+        assert!(approx_eq(d02, 2.0, 0.2), "Distance 0-2: {}", d02);
+    }
+
+    #[test]
+    fn test_compute_initial_layout_four_sets_square() {
+        // Four sets in a square pattern
+        let side = 1.0;
+        let diag = side * 2.0_f64.sqrt();
+        let distances = vec![
+            vec![0.0, side, diag, side],
+            vec![side, 0.0, side, diag],
+            vec![diag, side, 0.0, side],
+            vec![side, diag, side, 0.0],
+        ];
+
+        let relationships = create_test_relationships(4);
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        assert_eq!(result.len(), 8);
+
+        let (x, y) = result.split_at(4);
+
+        // Check that opposite corners are farther than adjacent sides
+        let d01 = ((x[0] - x[1]).powi(2) + (y[0] - y[1]).powi(2)).sqrt();
+        let d02 = ((x[0] - x[2]).powi(2) + (y[0] - y[2]).powi(2)).sqrt();
+
+        // Adjacent sides should be closer than diagonal
+        assert!(d01 < d02);
+    }
+
+    #[test]
+    fn test_compute_initial_layout_with_restarts() {
+        // Test that multiple restarts work
+        let distances = vec![vec![0.0, 1.5], vec![1.5, 0.0]];
+
+        let relationships = create_test_relationships(2);
+
+        let result1 = compute_initial_layout(&distances, &relationships, 1).unwrap();
+        let result5 = compute_initial_layout(&distances, &relationships, 5).unwrap();
+
+        // Both should produce valid results
+        assert_eq!(result1.len(), 4);
+        assert_eq!(result5.len(), 4);
+
+        // Both should satisfy the distance constraint approximately
+        let (x1, y1) = result1.split_at(2);
+        let d1 = ((x1[0] - x1[1]).powi(2) + (y1[0] - y1[1]).powi(2)).sqrt();
+
+        let (x5, y5) = result5.split_at(2);
+        let d5 = ((x5[0] - x5[1]).powi(2) + (y5[0] - y5[1]).powi(2)).sqrt();
+
+        assert!(approx_eq(d1, 1.5, 0.2), "Distance with 1 restart: {}", d1);
+        assert!(approx_eq(d5, 1.5, 0.2), "Distance with 5 restarts: {}", d5);
+    }
+
+    #[test]
+    fn test_compute_initial_layout_zero_distance() {
+        // Two sets at the same position (fully overlapping)
+        let distances = vec![vec![0.0, 0.0], vec![0.0, 0.0]];
+
+        let relationships = create_test_relationships(2);
+
+        let result = compute_initial_layout(&distances, &relationships, 1).unwrap();
+
+        assert_eq!(result.len(), 4);
+
+        let (x, y) = result.split_at(2);
+
+        let dx = x[0] - x[1];
+        let dy = y[0] - y[1];
+        let actual_distance = (dx * dx + dy * dy).sqrt();
+
+        // Should be very close to 0
+        assert!(
+            actual_distance < 0.1,
+            "Distance {} should be close to 0.0",
+            actual_distance
+        );
+    }
+
+    #[test]
+    fn test_compute_initial_layout_asymmetric_distances() {
+        // Test with slightly asymmetric input (should still work)
+        let distances = vec![
+            vec![0.0, 1.0, 2.0],
+            vec![1.0, 0.0, 1.5],
+            vec![2.0, 1.5, 0.0],
+        ];
+
+        let relationships = create_test_relationships(3);
+
+        let result = compute_initial_layout(&distances, &relationships, 1);
+
+        // Should succeed even with asymmetric distances
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 6);
     }
 }
