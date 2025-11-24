@@ -1,5 +1,6 @@
 //! Fitter for creating diagram layouts from specifications.
 
+mod initial_layout;
 mod layout;
 
 pub use layout::Layout;
@@ -88,31 +89,41 @@ impl<'a> Fitter<'a> {
         // To create an initial layout, we use circles and MDS to position them.
         let n_pairs = n_sets * (n_sets - 1) / 2;
 
-        let mut optimal_distances: Vec<f64> = Vec::with_capacity(n_pairs);
+        // let mut optimal_distances: Vec<f64> = Vec::with_capacity(n_pairs);
+
+        let mut optimal_distances = vec![vec![0.0; n_sets]; n_sets];
 
         for i in 0..n_sets {
             for j in (i + 1)..n_sets {
                 let overlap = spec.relationships.overlap_area(i, j);
                 let r1 = (spec.set_areas[i] / std::f64::consts::PI).sqrt();
                 let r2 = (spec.set_areas[j] / std::f64::consts::PI).sqrt();
+
                 let desired_distance = distance_for_overlap(r1, r2, overlap, None, None).unwrap();
-                optimal_distances.push(desired_distance);
+
+                optimal_distances[i][j] = desired_distance;
+                optimal_distances[j][i] = desired_distance;
             }
         }
+
+        let initial_params =
+            initial_layout::compute_initial_layout(&optimal_distances, &spec.relationships, 10)
+                .unwrap();
+
+        let (x, y) = initial_params.split_at(n_sets);
 
         let mut shapes = Vec::new();
         let mut set_to_shape = HashMap::new();
 
-        // Create initial circles (simple grid placement)
         for (i, set_name) in self.spec.set_names().iter().enumerate() {
             let combo = Combination::new(&[set_name]);
             if let Some(area) = self.spec.get_union(&combo) {
                 let radius = (area / std::f64::consts::PI).sqrt();
-                // Simple grid placement for now
-                let x = (i as f64) * 3.0 * radius;
-                let y = 0.0;
+                let x = x[i];
+                let y = y[i];
 
                 shapes.push(Circle::new(Coord::new(x, y), radius));
+
                 set_to_shape.insert(set_name.clone(), i);
             }
         }

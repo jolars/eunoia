@@ -41,6 +41,7 @@ checksum = "ba6958a87117ff5e1d0d7716856a4303752518012ec4a67a68446b6631a1a54d"
 dependencies = [
  "anyhow",
  "cfg-if",
+ "nalgebra",
  "num-complex",
  "num-integer",
  "num-traits",
@@ -77,6 +78,7 @@ name = "eunoia"
 version = "0.1.0"
 dependencies = [
  "argmin",
+ "argmin-math",
  "nalgebra",
 ]
 
