@@ -88,6 +88,27 @@ impl Point {
         }
     }
 
+    pub fn reflect_across_x(&self) -> Self {
+        Self {
+            x: self.x,
+            y: -self.y,
+        }
+    }
+
+    pub fn reflect_across_y(&self) -> Self {
+        Self {
+            x: -self.x,
+            y: self.y,
+        }
+    }
+
+    pub fn reflect_across_origin(&self) -> Self {
+        Self {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+
     pub const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
 }
 
