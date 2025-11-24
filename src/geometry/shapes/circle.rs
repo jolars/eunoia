@@ -225,6 +225,11 @@ impl Circle {
         let theta = 2.0 * (chord_length / (2.0 * r)).asin();
         self.segment_area_from_angle(theta)
     }
+
+    pub fn segment_area_from_points(&self, p1: &Point, p2: &Point) -> f64 {
+        let chord_length = p1.distance(p2);
+        self.segment_area_from_chord(chord_length)
+    }
 }
 
 /// Computes the distance required between two circles to achieve a specified overlap area.
