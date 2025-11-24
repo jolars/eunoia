@@ -69,6 +69,11 @@ impl Point {
         }
     }
 
+    // Convenience method for rotating around origin
+    pub fn rotate(&self, angle: f64) -> Self {
+        self.rotate_around(&Self::ORIGIN, angle)
+    }
+
     pub fn translate(&self, dx: f64, dy: f64) -> Self {
         Self {
             x: self.x + dx,
@@ -82,6 +87,8 @@ impl Point {
             y: self.y * factor,
         }
     }
+
+    pub const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
 }
 
 #[cfg(test)]
