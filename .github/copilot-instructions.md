@@ -7,6 +7,10 @@ geometric shapes. It's a modern rewrite of the eulerr R package (which uses C++
 as backend), designed to be more flexible and support multiple language
 bindings.
 
+**Reference Implementation**: The original eulerr R package is included in
+`./eulerr/` as a reference for algorithm details, implementation specifics, and
+testing strategies.
+
 ## Purpose
 
 Generate area-proportional Euler and Venn diagrams by:
@@ -342,7 +346,10 @@ npm config delete omit
 
 ### Mathematical References
 
-- Refer to eulerr paper/source for algorithm details
+- **eulerr R package** in `./eulerr/` - Reference implementation with C++ backend
+  - Consult for algorithm details, optimization strategies, and edge case handling
+  - Source code in `./eulerr/src/` and `./eulerr/R/`
+  - Tests in `./eulerr/tests/`
 - venneuler for stress loss function
 - Classic MDS algorithms for initialization
 - Poles of inaccessibility: Polylabel algorithm
