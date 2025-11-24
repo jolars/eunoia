@@ -359,4 +359,154 @@ mod tests {
         assert!(area > 0.0);
         assert!(area <= std::f64::consts::PI * 1.0 * 1.0);
     }
+
+    #[test]
+    fn test_distance_for_overlap_zero_overlap() {
+        let r1 = 2.0;
+        let r2 = 1.5;
+        let overlap = 0.0;
+
+        let distance = distance_for_overlap(r1, r2, overlap, None, None).unwrap();
+
+        // Should return the sum of radii (circles just touching)
+        assert!(approx_eq(distance, r1 + r2));
+    }
+
+    #[test]
+    fn test_distance_for_overlap_negative_overlap() {
+        let r1 = 2.0;
+        let r2 = 1.5;
+        let overlap = -1.0;
+
+        let distance = distance_for_overlap(r1, r2, overlap, None, None).unwrap();
+
+        // Should return the sum of radii (circles separated)
+        assert!(approx_eq(distance, r1 + r2));
+    }
+
+    #[test]
+    fn test_distance_for_overlap_full_overlap() {
+        let r1 = 3.0;
+        let r2 = 2.0;
+        let overlap = std::f64::consts::PI * r2 * r2; // Full area of smaller circle
+
+        let distance = distance_for_overlap(r1, r2, overlap, None, None).unwrap();
+
+        // Distance should be close to |r1 - r2| (one inside the other)
+        assert!(distance <= (r1 - r2).abs() + 0.1); // Allow small tolerance
+    }
+
+    #[test]
+    fn test_distance_for_overlap_partial_overlap_equal_radii() {
+        let r1 = 2.0;
+        let r2 = 2.0;
+        let target_overlap = 2.0; // Some specific overlap area
+
+        let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
+
+        // Verify the result by computing the actual overlap at this distance
+        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let actual_overlap = c1.intersection_area(&c2);
+
+        // Should match target within tolerance (relaxed for optimization convergence)
+        assert!((actual_overlap - target_overlap).abs() < 1e-2);
+    }
+
+    #[test]
+    fn test_distance_for_overlap_partial_overlap_different_radii() {
+        let r1 = 3.0;
+        let r2 = 1.5;
+        let target_overlap = 1.0;
+
+        let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
+
+        // Verify the result
+        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let actual_overlap = c1.intersection_area(&c2);
+
+        assert!((actual_overlap - target_overlap).abs() < 1e-2);
+    }
+
+    #[test]
+    fn test_distance_for_overlap_custom_tolerance() {
+        let r1 = 2.0;
+        let r2 = 1.0;
+        let target_overlap = 0.5;
+        let custom_tol = 1e-8;
+
+        let distance =
+            distance_for_overlap(r1, r2, target_overlap, Some(custom_tol), None).unwrap();
+
+        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let actual_overlap = c1.intersection_area(&c2);
+
+        // Should be very close to target with custom tolerance
+        assert!((actual_overlap - target_overlap).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_distance_for_overlap_custom_max_iter() {
+        let r1 = 2.0;
+        let r2 = 1.5;
+        let target_overlap = 1.0;
+        let max_iter = 50;
+
+        let distance = distance_for_overlap(r1, r2, target_overlap, None, Some(max_iter)).unwrap();
+
+        // Should still converge within fewer iterations
+        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let actual_overlap = c1.intersection_area(&c2);
+
+        assert!((actual_overlap - target_overlap).abs() < 1e-2);
+    }
+
+    #[test]
+    fn test_distance_for_overlap_small_circles() {
+        let r1 = 0.5;
+        let r2 = 0.3;
+        let target_overlap = 0.1;
+
+        let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
+
+        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let actual_overlap = c1.intersection_area(&c2);
+
+        assert!((actual_overlap - target_overlap).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_distance_for_overlap_large_circles() {
+        let r1 = 100.0;
+        let r2 = 75.0;
+        let target_overlap = 500.0;
+
+        let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
+
+        let c1 = Circle::new(Coord::new(0.0, 0.0), r1);
+        let c2 = Circle::new(Coord::new(distance, 0.0), r2);
+        let actual_overlap = c1.intersection_area(&c2);
+
+        assert!((actual_overlap - target_overlap).abs() < 1.0); // Larger tolerance for large circles
+    }
+
+    #[test]
+    fn test_distance_for_overlap_bounds() {
+        let r1 = 2.0;
+        let r2 = 1.5;
+        let target_overlap = 1.0;
+
+        let distance = distance_for_overlap(r1, r2, target_overlap, None, None).unwrap();
+
+        // Distance should be between min (one inside other) and max (circles touching)
+        let min_distance = (r1 - r2).abs();
+        let max_distance = r1 + r2;
+
+        assert!(distance >= min_distance);
+        assert!(distance <= max_distance);
+    }
 }
