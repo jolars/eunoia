@@ -12,17 +12,17 @@
     size: number;
   }
   
-  let circles: Circle[] = [];
-  let wasmModule: any = null;
-  let loading = true;
-  let error = '';
+  let circles = $state<Circle[]>([]);
+  let wasmModule = $state<any>(null);
+  let loading = $state(true);
+  let error = $state('');
   
   // Diagram specification
-  let diagramRows: DiagramRow[] = [
+  let diagramRows = $state<DiagramRow[]>([
     { input: 'A', size: 3 },
     { input: 'B', size: 5 },
     { input: 'A&B', size: 1 }
-  ];
+  ]);
   
   const colors = [
     'rgba(59, 130, 246, 0.3)',   // blue
@@ -82,22 +82,15 @@
   }
   
   // Auto-generate diagram when specification changes
-  // Serialize diagramRows to detect deep changes
-  $: diagramSpec = JSON.stringify(diagramRows);
-  $: if (wasmModule && diagramRows.length > 0 && diagramSpec) {
-    console.log('Generating diagram from spec:', diagramSpec);
-    generateFromSpec();
-  }
-  
-  function generateLayout(n: number) {
-    if (!wasmModule) return;
-    
-    const newCircles = wasmModule.compute_layout(n);
-    circles = Array.from(newCircles);
-  }
+  $effect(() => {
+    if (wasmModule && diagramRows.length > 0) {
+      console.log('Generating diagram from spec:', JSON.stringify(diagramRows));
+      generateFromSpec();
+    }
+  });
   
   // Calculate SVG viewBox to fit all circles with proper padding
-  $: viewBox = (() => {
+  let viewBox = $derived.by(() => {
     if (circles.length === 0) return '0 0 400 400';
     
     const xs = circles.map(c => c.x);
@@ -118,16 +111,16 @@
     const paddingY = height * paddingPercent;
     
     return `${minX - paddingX} ${minY - paddingY} ${width + 2 * paddingX} ${height + 2 * paddingY}`;
-  })();
+  });
   
   // Calculate appropriate stroke width and font size based on viewBox dimensions
-  $: avgRadius = circles.length > 0 
+  let avgRadius = $derived(circles.length > 0 
     ? circles.reduce((sum, c) => sum + c.radius, 0) / circles.length 
-    : 1;
-  $: strokeWidth = avgRadius * 0.02; // 2% of average radius
+    : 1);
+  let strokeWidth = $derived(avgRadius * 0.02); // 2% of average radius
   
   // Font size based on the viewBox dimensions, not individual circles
-  $: viewBoxDimension = (() => {
+  let viewBoxDimension = $derived.by(() => {
     if (circles.length === 0) return 400;
     const xs = circles.map(c => c.x);
     const ys = circles.map(c => c.y);
@@ -137,8 +130,8 @@
     const minY = Math.min(...ys.map((y, i) => y - rs[i]));
     const maxY = Math.max(...ys.map((y, i) => y + rs[i]));
     return Math.max(maxX - minX, maxY - minY);
-  })();
-  $: fontSize = viewBoxDimension * 0.05; // 5% of viewBox dimension
+  });
+  let fontSize = $derived(viewBoxDimension * 0.05); // 5% of viewBox dimension
 </script>
 
 <div class="min-h-screen bg-gray-50 p-8">
@@ -204,7 +197,7 @@
               {/each}
               
               <button
-                onclick={addRow}
+                onclick={() => addRow()}
                 class="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
               >
                 + Add Row
