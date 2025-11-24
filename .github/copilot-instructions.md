@@ -38,37 +38,50 @@ dedicated repositories as thin wrappers around this core library.
 
 ### Core Modules
 
-- **`lib.rs`**: Main library interface, defines `Diagram<S>` structure and core
-  traits:
-  - `Intersects<S>`: Compute intersection areas between shapes
-  - `Parameters`: For optimization (get/set parameters)
+- **`lib.rs`**: Main library interface
+- **`diagram/`**: Diagram specification and construction
+  - `combination.rs`: Set combination representation
+  - `input.rs`: Input type specification (disjoint vs union)
+  - `spec.rs`: DiagramSpecBuilder for fluent API
 - **`geometry/`**: Geometric primitives and operations
   - `coord.rs`: 2D coordinate representation
   - `operations.rs`: Geometric operation traits (Area, Centroid, Distance,
     Contains, Intersects, IntersectionArea, Perimeter)
   - `shapes/`: Shape implementations (currently `circle.rs`)
+- **`fitter/`**: Layout optimization
+  - `layout.rs`: Layout representation (result of fitting)
+  - `initial_layout.rs`: Initial layout computation
+- **`error.rs`**: Error types
+- **`wasm.rs`**: WASM bindings for web integration
 
-- **`math.rs`**: Mathematical utilities (currently empty, will contain MDS,
-  optimization algorithms, loss functions)
+### Web Application
+
+- **`web/`**: Interactive diagram viewer built with Svelte + TypeScript
+  - **`src/`**: Svelte components and TypeScript code
+    - `lib/DiagramViewer.svelte`: Main UI for diagram specification and visualization
+  - **`pkg/`**: Generated WASM bindings (built with wasm-pack)
+  - Uses Vite (rolldown-vite) for development and building
+  - Tailwind CSS for styling
+  - Real-time diagram updates as specification changes
 
 ### Optimization Strategy
 
-1. **Initial Layout** (MDS-based):
-   - Convert user input to optimal pairwise distances
-   - Use multi-dimensional scaling to place fixed-size shapes
-   - Optimize to match distance matrix
+1. **Initial Layout**:
+   - Compute pairwise relationships between sets
+   - Use simple circular arrangement as starting point
+   - TODO: Implement MDS-based initialization
 
-2. **Comprehensive Optimization**:
+2. **Iterative Optimization**:
    - Compute all shape intersections in each iteration
    - Compare to user-specified set relationships
-   - Minimize loss function: RegionError (preferred) or stress (venneuler-style)
-   - Optimize both positions and sizes
+   - Minimize loss function (currently region error)
+   - Optimize both positions and sizes using argmin
 
 3. **Layout Finalization**:
-   - Convert shapes to polygons
-   - Split into all intersection regions
-   - Compute poles of inaccessibility for label placement
-   - Calculate centroids and other metrics
+   - Return fitted shapes with computed areas
+   - TODO: Polygon conversion utilities
+   - TODO: Label placement (poles of inaccessibility)
+   - TODO: Calculate centroids and other metrics
 
 ## Code Standards
 
@@ -187,18 +200,23 @@ src/
 
 ### Optimization Code
 
-- Will live in `math.rs` module
-- Separate concerns: MDS initialization, loss functions, optimizers
-- Make loss functions pluggable (trait-based)
-- Support gradient-based and derivative-free optimization
+- Lives in `fitter/` module
+- Uses argmin for optimization
+- Region error loss function implemented
+- TODO: Make loss functions pluggable (trait-based)
+- TODO: Implement MDS initialization
+- TODO: Support stress loss function (venneuler-style)
 
-### Plotting (Development Only)
+### Web Development
 
-- Consider optional feature flag for plotting dependencies
-- Minimal plotting for development/debugging only
-- Keep plotting code separate from core library
-- Use `plotters` or similar Rust plotting crate
-- Do not include plotting in final library API
+- **Building WASM**: `wasm-pack build --target web --out-dir web/pkg`
+- **Dev server**: `cd web && npm run dev`
+- **Building web app**: `cd web && npm run build`
+- WASM module exports:
+  - `generate_from_spec(specs: Vec<DiagramSpec>)`: Main function for fitting diagrams
+  - `generate_test_layout()`: Simple test layout
+  - `compute_layout(n_sets: usize)`: Generate circular arrangement
+- Web app uses reactive Svelte components for real-time updates
 
 ## Current Status
 
@@ -206,15 +224,22 @@ src/
 - ✅ Coordinate system (`Coord`)
 - ✅ Circle implementation with geometric operations
 - ✅ Trait-based design for operations
-- ✅ DiagramBuilder with fluent API for input
-- ✅ Comprehensive unit tests (38 tests)
-- ✅ Full documentation with doc tests (13 doc tests)
+- ✅ DiagramSpecBuilder with fluent API for input
+- ✅ Fitter with argmin-based optimization
+- ✅ Region error loss function
+- ✅ Layout representation with fitted areas
+- ✅ WASM bindings (`wasm.rs`)
+- ✅ Web application (Svelte + TypeScript + Vite)
+- ✅ Interactive diagram viewer with real-time updates
+- ✅ Comprehensive unit tests
+- ✅ Full documentation with doc tests
 - ✅ Clippy-clean codebase (passes with `-D warnings`)
-- ❌ Math module (MDS, optimization) not implemented
+- ❌ MDS-based initial layout not implemented
+- ❌ Stress loss function (venneuler-style) not implemented
 - ❌ Other shapes (ellipse, rectangle, triangle) not implemented
 - ❌ Polygon conversion utilities not implemented
 - ❌ Label placement algorithms not implemented
-- ❌ WASM bindings not started (will be in this repo when implemented)
+- ❌ 3+ way intersection calculations (currently returns 0)
 - ❌ Language bindings not started (will be separate repositories)
 
 ## Dependencies
@@ -223,11 +248,25 @@ Core dependencies:
 
 - **`nalgebra`** (0.34.1) - Linear algebra for MDS and matrix operations
 - **`argmin`** (0.11.0) - Optimization algorithms (gradient-based and derivative-free)
+- **`argmin-math`** (0.5.1) - Math support for argmin with nalgebra
 - Standard library for basic operations
 
-Optional/future dependencies:
+WASM dependencies:
 
-- Development plotting: `plotters` (feature-gated, for debugging/visualization)
+- **`wasm-bindgen`** (0.2) - WASM bindings generation
+- **`serde`** (1.0) - Serialization framework
+- **`serde-wasm-bindgen`** (0.6) - Serde support for WASM
+- **`console_error_panic_hook`** (0.1) - Better error messages in browser console
+- **`getrandom`** (0.2) - Random number generation for WASM
+
+Web app dependencies:
+
+- **Svelte** (5.43.8) - UI framework
+- **TypeScript** (~5.9.3) - Type safety
+- **Vite** (rolldown-vite@7.2.5) - Build tool and dev server
+- **Tailwind CSS** (4.1.17) - Styling
+- **vite-plugin-wasm** (3.5.0) - WASM support for Vite
+- **vite-plugin-top-level-await** (1.6.0) - Top-level await support
 
 Keep the dependency footprint minimal. New dependencies should be carefully considered for:
 - Compile time impact
@@ -255,6 +294,31 @@ See `Taskfile.yml` for available tasks:
 - `task build-release` - Build optimized release binary
 
 You can run these instead of manual cargo commands for convenience.
+
+### WASM and Web App Development
+
+Building WASM:
+```bash
+wasm-pack build --target web --out-dir web/pkg
+```
+
+Running web dev server:
+```bash
+cd web
+npm install --include=dev  # First time only
+npm run dev
+```
+
+Building web app for production:
+```bash
+cd web
+npm run build
+```
+
+**Note**: If you encounter "omit=dev" issues with npm, run:
+```bash
+npm config delete omit
+```
 
 ### When Adding Code
 
@@ -285,14 +349,16 @@ You can run these instead of manual cargo commands for convenience.
 
 ## Future Considerations
 
-- **WASM compilation** targets (`wasm32-unknown-unknown`) - will be in this
-  repository
-- **WASM bindings** for JavaScript/TypeScript integration - will be in this
-  repository
-- Serialization support for diagram interchange (for cross-language
-  compatibility)
+- **MDS-based initialization** for better starting layouts
+- **Stress loss function** (venneuler-style) as alternative to region error
+- **Other shapes**: Ellipses, rectangles, triangles
+- **Polygon conversion** utilities for complex visualizations
+- **Label placement** algorithms (poles of inaccessibility, centroids)
+- **3+ way intersections** proper calculation
+- Serialization support for diagram interchange (for cross-language compatibility)
 - Parallel optimization for large diagrams
 - GPU acceleration for intersection calculations
+- Enhanced web UI features (export SVG, PNG, customization options)
 
 ## Notes
 
