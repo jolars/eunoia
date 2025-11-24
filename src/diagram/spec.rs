@@ -23,6 +23,7 @@ use std::collections::{HashMap, HashSet};
 pub struct DiagramSpecBuilder {
     combinations: HashMap<Combination, f64>,
     input_type: Option<InputType>,
+    set_order: Vec<String>,
 }
 
 impl DiagramSpecBuilder {
@@ -31,6 +32,7 @@ impl DiagramSpecBuilder {
         DiagramSpecBuilder {
             combinations: HashMap::new(),
             input_type: None,
+            set_order: Vec::new(),
         }
     }
 
@@ -50,7 +52,12 @@ impl DiagramSpecBuilder {
     ///     .set("A", 10.0);
     /// ```
     pub fn set(mut self, name: impl Into<String>, value: f64) -> Self {
-        let combination = Combination::new(&[&name.into()]);
+        let name_string = name.into();
+        let combination = Combination::new(&[&name_string]);
+        // Track order of first occurrence
+        if !self.set_order.contains(&name_string) {
+            self.set_order.push(name_string.clone());
+        }
         self.combinations.insert(combination, value);
         self
     }
@@ -124,7 +131,7 @@ impl DiagramSpecBuilder {
             return Err(DiagramError::EmptySets);
         }
 
-        // Collect all unique set names and find single-set combinations
+        // Collect all unique set names (use set_order for ordering) and find single-set combinations
         let mut set_names = HashSet::new();
         let mut single_sets = HashSet::new();
 
@@ -136,6 +143,14 @@ impl DiagramSpecBuilder {
                 single_sets.insert(combination.sets()[0].clone());
             }
         }
+
+        // Use set_order to create an ordered vector of set names
+        let ordered_set_names: Vec<String> = self
+            .set_order
+            .iter()
+            .filter(|name| set_names.contains(*name))
+            .cloned()
+            .collect();
 
         // Validate that all values are non-negative
         for (combination, &value) in &self.combinations {
@@ -177,7 +192,7 @@ impl DiagramSpecBuilder {
             disjoint_areas,
             union_areas,
             input_type,
-            set_names,
+            set_names: ordered_set_names,
         })
     }
 }
@@ -195,8 +210,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(spec.set_names().len(), 2);
-        assert!(spec.set_names().contains("A"));
-        assert!(spec.set_names().contains("B"));
+        assert!(spec.set_names().contains(&"A".to_string()));
+        assert!(spec.set_names().contains(&"B".to_string()));
 
         // Both representations should be available
         assert!(spec.get_union(&Combination::new(&["A"])).is_some());

@@ -12,7 +12,7 @@ pub use combination::Combination;
 pub use input::InputType;
 pub use spec::DiagramSpecBuilder;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Represents a complete Euler or Venn diagram specification.
 ///
@@ -32,8 +32,8 @@ pub struct DiagramSpec {
     /// How the input values were originally specified.
     pub(crate) input_type: InputType,
 
-    /// Set of all unique set names in the diagram.
-    pub(crate) set_names: HashSet<String>,
+    /// Set of all unique set names in the diagram (ordered).
+    pub(crate) set_names: Vec<String>,
 }
 
 impl DiagramSpec {
@@ -42,8 +42,8 @@ impl DiagramSpec {
         self.input_type
     }
 
-    /// Returns the set names in this diagram specification.
-    pub fn set_names(&self) -> &HashSet<String> {
+    /// Returns the set names in this diagram specification (in order).
+    pub fn set_names(&self) -> &[String] {
         &self.set_names
     }
 
