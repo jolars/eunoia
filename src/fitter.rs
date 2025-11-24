@@ -1,5 +1,6 @@
 //! Fitter for creating diagram layouts from specifications.
 
+mod final_layout;
 mod initial_layout;
 mod layout;
 
@@ -84,7 +85,7 @@ impl<'a> Fitter<'a> {
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
 
-        // Compute optimal distances for circle centers based on desired overlaps
+        // Step 1: Compute initial layout using MDS
         let optimal_distances = Self::compute_optimal_distances(&spec)?;
 
         let initial_params =
@@ -93,24 +94,45 @@ impl<'a> Fitter<'a> {
 
         let (x, y) = initial_params.split_at(n_sets);
 
+        // Step 2: Optimize layout to minimize region error
+        let initial_positions: Vec<f64> = x
+            .iter()
+            .zip(y.iter())
+            .flat_map(|(xi, yi)| vec![*xi, *yi])
+            .collect();
+
+        let initial_radii: Vec<f64> = spec
+            .set_areas
+            .iter()
+            .map(|area| (area / std::f64::consts::PI).sqrt())
+            .collect();
+
+        let config = final_layout::FinalLayoutConfig {
+            max_iterations: self.max_iterations,
+            ..Default::default()
+        };
+
+        let (final_positions, final_radii, _loss) =
+            final_layout::optimize_layout(&spec, &initial_positions, &initial_radii, config)
+                .map_err(|e| {
+                    DiagramError::InvalidCombination(format!("Optimization failed: {}", e))
+                })?;
+
+        // Step 3: Create final shapes
         let mut shapes = Vec::new();
         let mut set_to_shape = HashMap::new();
 
         for (i, set_name) in self.spec.set_names().iter().enumerate() {
-            let combo = Combination::new(&[set_name]);
-            if let Some(area) = self.spec.get_union(&combo) {
-                let radius = (area / std::f64::consts::PI).sqrt();
-                let x = x[i];
-                let y = y[i];
+            let x = final_positions[i * 2];
+            let y = final_positions[i * 2 + 1];
+            let radius = final_radii[i];
 
-                shapes.push(Circle::new(Coord::new(x, y), radius));
-
-                set_to_shape.insert(set_name.clone(), i);
-            }
+            shapes.push(Circle::new(Coord::new(x, y), radius));
+            set_to_shape.insert(set_name.clone(), i);
         }
 
         // Create and return the layout
-        let layout = Layout::new(shapes, set_to_shape, self.spec, 0);
+        let layout = Layout::new(shapes, set_to_shape, self.spec, self.max_iterations);
 
         Ok(layout)
     }
