@@ -364,9 +364,10 @@ npm config delete omit
 
 - This is a library crate, not a binary
 - **Uses Rust Edition 2021** for compatibility with rextendr (R bindings)
-- **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0
+- **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0 (alpha)
+- **Breaking changes are acceptable** in pre-1.0.0 versions
 - **Uses Conventional Commits** for clear change history
-- API stability is important for language bindings (maintained in separate
+- API stability will matter after 1.0.0 for language bindings (maintained in separate
   repositories)
 - **Only WASM bindings** will be part of this repository
 - **R, Python, and Julia bindings** will be separate repositories that depend on
