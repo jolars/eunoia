@@ -87,9 +87,6 @@ impl<'a> Fitter<'a> {
         let n_sets = spec.n_sets;
 
         // To create an initial layout, we use circles and MDS to position them.
-        let n_pairs = n_sets * (n_sets - 1) / 2;
-
-        // let mut optimal_distances: Vec<f64> = Vec::with_capacity(n_pairs);
 
         let mut optimal_distances = vec![vec![0.0; n_sets]; n_sets];
 

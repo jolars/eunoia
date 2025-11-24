@@ -15,7 +15,7 @@ pub(crate) fn compute_initial_layout(
 
     let mut best_params = Vec::new();
     let mut best_loss = f64::INFINITY;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for _ in 0..n_restarts {
         // Initialize with random positions in a reasonable range
@@ -33,8 +33,8 @@ pub(crate) fn compute_initial_layout(
         };
 
         let mut initial_values = vec![0.0; n_sets * 2];
-        for i in 0..n_sets * 2 {
-            initial_values[i] = rng.gen_range(-scale..scale);
+        for value in &mut initial_values {
+            *value = rng.random_range(-scale..scale);
         }
         let initial_param = DVector::from_vec(initial_values);
 
