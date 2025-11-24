@@ -5,6 +5,7 @@
     x: number;
     y: number;
     radius: number;
+    label: string;
   }
   
   interface DiagramRow {
@@ -234,7 +235,7 @@
                   font-size={fontSize}
                   class="font-semibold"
                 >
-                  {String.fromCharCode(65 + i)}
+                  {circle.label}
                 </text>
               {/each}
             </svg>
