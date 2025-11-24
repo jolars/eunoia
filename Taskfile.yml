@@ -50,6 +50,11 @@ tasks:
       - cargo test
       - cargo clippy --all-targets --all-features -- -D warnings
 
+  build-wasm:
+    desc: Build WASM bindings with wasm-pack
+    cmds:
+      - wasm-pack build --target web --out-dir web/pkg
+
   web-dev:
     desc: Start Svelte development server
     dir: web
