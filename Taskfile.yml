@@ -49,3 +49,9 @@ tasks:
       - cargo check
       - cargo test
       - cargo clippy --all-targets --all-features -- -D warnings
+
+  web-dev:
+    desc: Start Svelte development server
+    dir: web
+    cmds:
+      - npm run dev

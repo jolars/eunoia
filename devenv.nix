@@ -4,15 +4,26 @@
 }:
 
 {
-  packages = [
-    pkgs.go-task
-    pkgs.llvmPackages.bintools
-    pkgs.alsa-lib
-    pkgs.cargo-llvm-cov
+  packages = with pkgs; [
+    go-task
+    llvmPackages.bintools
+    cargo-llvm-cov
+    prettierd
+    nodejs
   ];
 
-  languages.rust = {
-    enable = true;
+  languages = {
+    rust = {
+      enable = true;
+    };
+
+    javascript = {
+      enable = true;
+    };
+
+    typescript = {
+      enable = true;
+    };
   };
 
   git-hooks = {
