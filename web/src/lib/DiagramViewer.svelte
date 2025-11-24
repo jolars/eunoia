@@ -187,61 +187,6 @@
               </button>
             </div>
           </div>
-          
-          <!-- Quick Test Controls -->
-          <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-xl font-semibold mb-4">Quick Tests</h2>
-            
-            <div class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">
-                  Number of sets
-                </label>
-                <div class="flex gap-2">
-                  <button
-                    onclick={() => generateLayout(2)}
-                    class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    2
-                  </button>
-                  <button
-                    onclick={() => generateLayout(3)}
-                    class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    3
-                  </button>
-                  <button
-                    onclick={() => generateLayout(4)}
-                    class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    4
-                  </button>
-                  <button
-                    onclick={() => generateLayout(5)}
-                    class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    5
-                  </button>
-                </div>
-              </div>
-              
-              <div class="pt-4 border-t">
-                <h3 class="text-sm font-medium text-gray-700 mb-2">Circle Data</h3>
-                <div class="space-y-2 text-sm">
-                  {#each circles as circle, i}
-                    <div class="p-2 bg-gray-50 rounded">
-                      <div class="font-medium">Circle {i + 1}</div>
-                      <div class="text-gray-600">
-                        x: {circle.x.toFixed(1)}, 
-                        y: {circle.y.toFixed(1)}, 
-                        r: {circle.radius.toFixed(1)}
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
         
         <!-- Visualization -->
