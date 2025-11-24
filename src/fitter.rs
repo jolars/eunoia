@@ -119,6 +119,7 @@ impl<'a> Fitter<'a> {
     ///
     /// For each pair of sets, this calculates the distance between circle centers
     /// that would produce the desired overlap area given their radii.
+    #[allow(clippy::needless_range_loop)]
     fn compute_optimal_distances(
         spec: &crate::diagram::PreprocessedSpec,
     ) -> Result<Vec<Vec<f64>>, DiagramError> {
