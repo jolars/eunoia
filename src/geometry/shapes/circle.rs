@@ -112,7 +112,7 @@ impl Shape for Circle {
 
         let part1 = r1 * r1 * (((d * d + r1 * r1 - r2 * r2) / (2.0 * d * r1)).acos());
         let part2 = r2 * r2 * (((d * d + r2 * r2 - r1 * r1) / (2.0 * d * r2)).acos());
-        let part3 = 0.5 * ((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2)).sqrt();
+        let part3 = 0.5 * ((r1 + r2 - d) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2)).sqrt();
 
         part1 + part2 - part3
     }
@@ -253,6 +253,8 @@ pub(crate) fn distance_for_overlap(
     let min_distance = (r1 - r2).abs();
     let max_distance = r1 + r2;
 
+    // If the desired overlap is zero, then the circles should
+    // at most be touching.
     if overlap <= 0.0 {
         return Ok(max_distance);
     }
@@ -268,7 +270,7 @@ pub(crate) fn distance_for_overlap(
     let result = Executor::new(cost_fun, solver)
         .configure(|state| {
             state
-                .max_iters(max_iter.unwrap_or(100))
+                .max_iters(max_iter.unwrap_or(1000))
                 .target_cost(tol.unwrap_or(1e-6))
         })
         .run()?;
