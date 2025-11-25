@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 ///     .set("A", 5.0)
 ///     .set("B", 2.0)
 ///     .intersection(&["A", "B"], 1.0)
-///     .input_type(InputType::Disjoint)
+///     .input_type(InputType::Exclusive)
 ///     .build()
 ///     .expect("Failed to build diagram specification");
 /// ```
@@ -89,7 +89,7 @@ impl DiagramSpecBuilder {
     ///
     /// # Arguments
     ///
-    /// * `input_type` - Whether values are disjoint or union-based
+    /// * `input_type` - Whether values are exclusive or inclusive
     ///
     /// # Examples
     ///
@@ -97,7 +97,7 @@ impl DiagramSpecBuilder {
     /// use eunoia::{DiagramSpecBuilder, InputType};
     ///
     /// let builder = DiagramSpecBuilder::new()
-    ///     .input_type(InputType::Disjoint);
+    ///     .input_type(InputType::Exclusive);
     /// ```
     pub fn input_type(mut self, input_type: InputType) -> Self {
         self.input_type = Some(input_type);
@@ -181,24 +181,24 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // Convert to both disjoint and union representations
+        // Convert to both exclusive and inclusive representations
         let input_type = self.input_type.unwrap_or_default();
-        let (disjoint_areas, union_areas) = match input_type {
-            InputType::Disjoint => {
-                let disjoint = combinations;
-                let union = DiagramSpec::disjoint_to_union_static(&disjoint)?;
-                (disjoint, union)
+        let (exclusive_areas, inclusive_areas) = match input_type {
+            InputType::Exclusive => {
+                let exclusive = combinations;
+                let inclusive = DiagramSpec::exclusive_to_inclusive_static(&exclusive)?;
+                (exclusive, inclusive)
             }
-            InputType::Union => {
-                let union = combinations;
-                let disjoint = DiagramSpec::union_to_disjoint_static(&union)?;
-                (disjoint, union)
+            InputType::Inclusive => {
+                let inclusive = combinations;
+                let exclusive = DiagramSpec::inclusive_to_exclusive_static(&inclusive)?;
+                (exclusive, inclusive)
             }
         };
 
         Ok(DiagramSpec {
-            disjoint_areas,
-            union_areas,
+            exclusive_areas,
+            inclusive_areas,
             input_type,
             set_names: ordered_set_names,
         })
@@ -222,8 +222,8 @@ mod tests {
         assert!(spec.set_names().contains(&"B".to_string()));
 
         // Both representations should be available
-        assert!(spec.get_union(&Combination::new(&["A"])).is_some());
-        assert!(spec.get_disjoint(&Combination::new(&["A"])).is_some());
+        assert!(spec.get_inclusive(&Combination::new(&["A"])).is_some());
+        assert!(spec.get_exclusive(&Combination::new(&["A"])).is_some());
     }
 
     #[test]
@@ -232,13 +232,13 @@ mod tests {
             .set("A", 5.0)
             .set("B", 2.0)
             .intersection(&["A", "B"], 1.0)
-            .input_type(InputType::Disjoint)
+            .input_type(InputType::Exclusive)
             .build()
             .unwrap();
 
-        assert_eq!(spec.input_type(), InputType::Disjoint);
-        assert_eq!(spec.disjoint_areas().len(), 3);
-        assert_eq!(spec.union_areas().len(), 3);
+        assert_eq!(spec.input_type(), InputType::Exclusive);
+        assert_eq!(spec.exclusive_areas().len(), 3);
+        assert_eq!(spec.inclusive_areas().len(), 3);
     }
 
     #[test]
@@ -248,39 +248,45 @@ mod tests {
         let spec = DiagramSpecBuilder::new()
             .set("B", 5.0)
             .intersection(&["A", "B"], 1.0)
-            .input_type(InputType::Disjoint)
+            .input_type(InputType::Exclusive)
             .build()
             .unwrap();
 
-        // Set A should be implicitly added with disjoint value 0.0
+        // Set A should be implicitly added with exclusive value 0.0
         let combo_a = Combination::new(&["A"]);
-        assert_eq!(spec.get_disjoint(&combo_a), Some(0.0));
+        assert_eq!(spec.get_exclusive(&combo_a), Some(0.0));
 
-        // In union representation, A should have total size = 1.0 (just the intersection)
-        assert_eq!(spec.get_union(&combo_a), Some(1.0));
+        // In inclusive representation, A should have total size = 1.0 (just the intersection)
+        assert_eq!(spec.get_inclusive(&combo_a), Some(1.0));
     }
 
     #[test]
-    fn test_contained_set_disjoint() {
-        // Test case: A=0, B=5, A&B=1 (disjoint)
+    fn test_contained_set_exclusive() {
+        // Test case: A=0, B=5, A&B=1 (exclusive)
         // This means A is entirely contained within B
         let spec = DiagramSpecBuilder::new()
             .set("A", 0.0)
             .set("B", 5.0)
             .intersection(&["A", "B"], 1.0)
-            .input_type(InputType::Disjoint)
+            .input_type(InputType::Exclusive)
             .build()
             .unwrap();
 
-        // Disjoint areas
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A"])), Some(0.0));
-        assert_eq!(spec.get_disjoint(&Combination::new(&["B"])), Some(5.0));
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A", "B"])), Some(1.0));
+        // Exclusive areas
+        assert_eq!(spec.get_exclusive(&Combination::new(&["A"])), Some(0.0));
+        assert_eq!(spec.get_exclusive(&Combination::new(&["B"])), Some(5.0));
+        assert_eq!(
+            spec.get_exclusive(&Combination::new(&["A", "B"])),
+            Some(1.0)
+        );
 
-        // Union areas (total sizes)
-        assert_eq!(spec.get_union(&Combination::new(&["A"])), Some(1.0)); // A total = 0 + 1
-        assert_eq!(spec.get_union(&Combination::new(&["B"])), Some(6.0)); // B total = 5 + 1
-        assert_eq!(spec.get_union(&Combination::new(&["A", "B"])), Some(1.0));
+        // Inclusive areas (total sizes)
+        assert_eq!(spec.get_inclusive(&Combination::new(&["A"])), Some(1.0)); // A total = 0 + 1
+        assert_eq!(spec.get_inclusive(&Combination::new(&["B"])), Some(6.0)); // B total = 5 + 1
+        assert_eq!(
+            spec.get_inclusive(&Combination::new(&["A", "B"])),
+            Some(1.0)
+        );
     }
 
     #[test]
@@ -292,7 +298,7 @@ mod tests {
             .set("B", 5.0)
             .intersection(&["A", "B"], 1.0)
             .intersection(&["A", "B", "C"], 0.1)
-            .input_type(InputType::Disjoint)
+            .input_type(InputType::Exclusive)
             .build()
             .unwrap();
 
@@ -303,10 +309,10 @@ mod tests {
         assert!(spec.set_names().contains(&"C".to_string()));
 
         // Check that C was implicitly added with value 0.0
-        assert_eq!(spec.get_disjoint(&Combination::new(&["C"])), Some(0.0));
+        assert_eq!(spec.get_exclusive(&Combination::new(&["C"])), Some(0.0));
 
-        // C's union area should be 0.1 (just the 3-way intersection)
-        assert_eq!(spec.get_union(&Combination::new(&["C"])), Some(0.1));
+        // C's inclusive area should be 0.1 (just the 3-way intersection)
+        assert_eq!(spec.get_inclusive(&Combination::new(&["C"])), Some(0.1));
     }
 
     #[test]
@@ -317,27 +323,30 @@ mod tests {
             .set("B", 5.0)
             .intersection(&["A", "B"], 2.0)
             .intersection(&["A", "B", "C"], 1.0)
-            .input_type(InputType::Disjoint)
+            .input_type(InputType::Exclusive)
             .build()
             .unwrap();
 
         // All three sets should exist
         assert_eq!(spec.set_names().len(), 3);
 
-        // Expected disjoint areas
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A"])), Some(0.0));
-        assert_eq!(spec.get_disjoint(&Combination::new(&["B"])), Some(5.0));
-        assert_eq!(spec.get_disjoint(&Combination::new(&["C"])), Some(0.0));
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A", "B"])), Some(2.0));
+        // Expected exclusive areas
+        assert_eq!(spec.get_exclusive(&Combination::new(&["A"])), Some(0.0));
+        assert_eq!(spec.get_exclusive(&Combination::new(&["B"])), Some(5.0));
+        assert_eq!(spec.get_exclusive(&Combination::new(&["C"])), Some(0.0));
         assert_eq!(
-            spec.get_disjoint(&Combination::new(&["A", "B", "C"])),
+            spec.get_exclusive(&Combination::new(&["A", "B"])),
+            Some(2.0)
+        );
+        assert_eq!(
+            spec.get_exclusive(&Combination::new(&["A", "B", "C"])),
             Some(1.0)
         );
 
-        // Expected union areas (total sizes)
-        assert_eq!(spec.get_union(&Combination::new(&["A"])), Some(3.0)); // 0 + 2 + 1
-        assert_eq!(spec.get_union(&Combination::new(&["B"])), Some(8.0)); // 5 + 2 + 1
-        assert_eq!(spec.get_union(&Combination::new(&["C"])), Some(1.0)); // 0 + 1
+        // Expected inclusive areas (total sizes)
+        assert_eq!(spec.get_inclusive(&Combination::new(&["A"])), Some(3.0)); // 0 + 2 + 1
+        assert_eq!(spec.get_inclusive(&Combination::new(&["B"])), Some(8.0)); // 5 + 2 + 1
+        assert_eq!(spec.get_inclusive(&Combination::new(&["C"])), Some(1.0)); // 0 + 1
     }
 
     #[test]
@@ -357,7 +366,7 @@ mod tests {
     fn test_input_type_default() {
         let spec = DiagramSpecBuilder::new().set("A", 5.0).build().unwrap();
 
-        assert_eq!(spec.input_type(), InputType::Union);
+        assert_eq!(spec.input_type(), InputType::Inclusive);
     }
 
     #[test]
@@ -374,8 +383,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(spec.set_names().len(), 3);
-        assert_eq!(spec.disjoint_areas().len(), 7);
-        assert_eq!(spec.union_areas().len(), 7);
+        assert_eq!(spec.exclusive_areas().len(), 7);
+        assert_eq!(spec.inclusive_areas().len(), 7);
     }
 
     #[test]
@@ -388,9 +397,9 @@ mod tests {
             .unwrap();
 
         let combo_ab = Combination::new(&["A", "B"]);
-        assert_eq!(spec.get_union(&combo_ab), Some(1.0));
+        assert_eq!(spec.get_inclusive(&combo_ab), Some(1.0));
 
         let combo_ac = Combination::new(&["A", "C"]);
-        assert_eq!(spec.get_union(&combo_ac), None);
+        assert_eq!(spec.get_inclusive(&combo_ac), None);
     }
 }

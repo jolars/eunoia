@@ -1,7 +1,7 @@
 //! Final layout optimization using region error minimization.
 //!
 //! This module implements the second optimization step that refines the initial
-//! layout by minimizing the difference between target disjoint areas and actual
+//! layout by minimizing the difference between target exclusive areas and actual
 //! fitted areas in the diagram.
 
 use argmin::core::{CostFunction, Error, Executor, State};
@@ -39,7 +39,7 @@ impl Default for FinalLayoutConfig {
 /// Optimize the final layout by minimizing region error.
 ///
 /// This takes the initial layout (positions and radii) and refines them to better
-/// match the target disjoint areas specified by the user.
+/// match the target exclusive areas specified by the user.
 pub(crate) fn optimize_layout(
     spec: &PreprocessedSpec,
     initial_positions: &[f64], // [x0, y0, x1, y1, ..., xn, yn]
@@ -95,7 +95,7 @@ pub(crate) fn optimize_layout(
 
 /// Cost function for region error optimization.
 ///
-/// Computes the discrepancy between target disjoint areas and actual fitted areas.
+/// Computes the discrepancy between target exclusive areas and actual fitted areas.
 struct RegionErrorCost<'a> {
     spec: &'a PreprocessedSpec,
 }
@@ -177,13 +177,13 @@ impl<'a> CostFunction for RegionErrorCost<'a> {
             overlapping_areas.insert(mask, area);
         }
 
-        // Step 4: Convert overlapping areas to disjoint areas
-        let disjoint_areas = to_disjoint_areas(&overlapping_areas);
+        // Step 4: Convert overlapping areas to exclusive areas
+        let exclusive_areas = to_exclusive_areas(&overlapping_areas);
 
         // Step 5: Compute error against target areas
         let error = compute_region_error(
-            &disjoint_areas,
-            &self.spec.disjoint_areas,
+            &exclusive_areas,
+            &self.spec.exclusive_areas,
             &self.spec.set_names,
         );
 
@@ -348,9 +348,9 @@ fn mask_to_indices(mask: RegionMask, n_sets: usize) -> Vec<usize> {
     (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect()
 }
 
-/// Convert overlapping areas to disjoint areas using inclusion-exclusion.
-fn to_disjoint_areas(overlapping_areas: &HashMap<RegionMask, f64>) -> HashMap<RegionMask, f64> {
-    let mut disjoint = overlapping_areas.clone();
+/// Convert overlapping areas to exclusive areas using inclusion-exclusion.
+fn to_exclusive_areas(overlapping_areas: &HashMap<RegionMask, f64>) -> HashMap<RegionMask, f64> {
+    let mut exclusive = overlapping_areas.clone();
 
     // Sort masks by bit count (process larger sets first)
     let mut masks: Vec<_> = overlapping_areas.keys().copied().collect();
@@ -366,17 +366,17 @@ fn to_disjoint_areas(overlapping_areas: &HashMap<RegionMask, f64>) -> HashMap<Re
                 && is_subset(mask_i, mask_j)
                 && mask_j.count_ones() > mask_i.count_ones()
             {
-                *disjoint.get_mut(&mask_i).unwrap() -= disjoint[&mask_j];
+                *exclusive.get_mut(&mask_i).unwrap() -= exclusive[&mask_j];
             }
         }
     }
 
     // Clamp to non-negative
-    for area in disjoint.values_mut() {
+    for area in exclusive.values_mut() {
         *area = area.max(0.0);
     }
 
-    disjoint
+    exclusive
 }
 
 /// Check if mask1 is a subset of mask2.
@@ -417,8 +417,8 @@ fn combination_to_mask(combo: &Combination, set_names: &[String]) -> RegionMask 
     mask
 }
 
-/// Compute all disjoint areas from a circle layout (public for WASM)
-pub fn compute_disjoint_areas_from_layout(
+/// Compute all exclusive areas from a circle layout (public for WASM)
+pub fn compute_exclusive_areas_from_layout(
     circles: &[Circle],
     set_names: &[String],
 ) -> HashMap<Combination, f64> {
@@ -437,8 +437,8 @@ pub fn compute_disjoint_areas_from_layout(
         overlapping_areas.insert(mask, area);
     }
 
-    // Convert to disjoint areas
-    let disjoint_masks = to_disjoint_areas(&overlapping_areas);
+    // Convert to exclusiv areas
+    let disjoint_masks = to_exclusive_areas(&overlapping_areas);
 
     // Convert masks to Combinations
     let mut disjoint_combos = HashMap::new();
@@ -475,8 +475,8 @@ mod tests {
         /// Returns: (spec, original_circles) for validation
         pub fn generate_random_diagram(n_sets: usize, seed: u64) -> (DiagramSpec, Vec<Circle>) {
             let (circles, set_names) = random_circle_layout(n_sets, seed);
-            let disjoint = compute_disjoint_areas_from_layout(&circles, &set_names);
-            let spec = create_spec_from_disjoint(disjoint);
+            let exclusive_areas = compute_exclusive_areas_from_layout(&circles, &set_names);
+            let spec = create_spec_from_exclusive(exclusive_areas);
             (spec, circles)
         }
 
@@ -504,12 +504,14 @@ mod tests {
             (circles, set_names)
         }
 
-        /// Create a DiagramSpec from disjoint areas
-        pub fn create_spec_from_disjoint(disjoint_areas: HashMap<Combination, f64>) -> DiagramSpec {
+        /// Create a DiagramSpec from exclusive areas
+        pub fn create_spec_from_exclusive(
+            exclusive_areas: HashMap<Combination, f64>,
+        ) -> DiagramSpec {
             let mut builder = DiagramSpecBuilder::new();
 
             // Add all single sets
-            for (combo, &area) in &disjoint_areas {
+            for (combo, &area) in &exclusive_areas {
                 if combo.sets().len() == 1 {
                     let set_name = &combo.sets()[0];
                     builder = builder.set(set_name, area);
@@ -517,7 +519,7 @@ mod tests {
             }
 
             // Add all intersections
-            for (combo, &area) in &disjoint_areas {
+            for (combo, &area) in &exclusive_areas {
                 if combo.sets().len() > 1 {
                     let sets: Vec<&str> = combo.sets().iter().map(|s| s.as_str()).collect();
                     builder = builder.intersection(&sets, area);
@@ -667,28 +669,28 @@ mod tests {
     }
 
     #[test]
-    fn test_to_disjoint_areas() {
+    fn test_to_exclusive_areas() {
         // Create overlapping areas manually
         let mut overlapping = HashMap::new();
         overlapping.insert(0b01, 10.0); // A only
         overlapping.insert(0b10, 15.0); // B only
         overlapping.insert(0b11, 3.0); // A ∩ B
 
-        let disjoint = to_disjoint_areas(&overlapping);
+        let exclusive = to_exclusive_areas(&overlapping);
 
-        // A only (disjoint) = A - (A ∩ B) = 10 - 3 = 7
-        // B only (disjoint) = B - (A ∩ B) = 15 - 3 = 12
-        // A ∩ B (disjoint) = 3 (unchanged, no supersets)
+        // A only (exclusive) = A - (A ∩ B) = 10 - 3 = 7
+        // B only (exclusive) = B - (A ∩ B) = 15 - 3 = 12
+        // A ∩ B (exclusive) = 3 (unchanged, no supersets)
 
         assert!(
-            (disjoint[&0b01] - 7.0).abs() < 0.001,
-            "A disjoint should be 7"
+            (exclusive[&0b01] - 7.0).abs() < 0.001,
+            "A exclusive should be 7"
         );
         assert!(
-            (disjoint[&0b10] - 12.0).abs() < 0.001,
-            "B disjoint should be 12"
+            (exclusive[&0b10] - 12.0).abs() < 0.001,
+            "B exclusive should be 12"
         );
-        assert!((disjoint[&0b11] - 3.0).abs() < 0.001, "A∩B should be 3");
+        assert!((exclusive[&0b11] - 3.0).abs() < 0.001, "A∩B should be 3");
     }
 
     #[test]
@@ -738,16 +740,16 @@ mod tests {
         let circles = vec![c1, c2];
         let set_names = vec!["A".to_string(), "B".to_string()];
 
-        // Compute disjoint areas from this layout
-        let disjoint = compute_disjoint_areas_from_layout(&circles, &set_names);
+        // Compute exclusive areas from this layout
+        let exclusive = compute_exclusive_areas_from_layout(&circles, &set_names);
 
-        println!("Disjoint areas from layout:");
-        for (combo, area) in &disjoint {
+        println!("Exclusive areas from layout:");
+        for (combo, area) in &exclusive {
             println!("  {:?}: {:.4}", combo.sets(), area);
         }
 
         // Create spec from these areas
-        let spec = create_spec_from_disjoint(disjoint);
+        let spec = create_spec_from_exclusive(exclusive);
         let preprocessed = spec.preprocess().unwrap();
 
         // Try to fit with initial guess close to original
@@ -791,16 +793,16 @@ mod tests {
             );
         }
 
-        // Compute disjoint areas
-        let disjoint = compute_disjoint_areas_from_layout(&circles, &set_names);
+        // Compute exclusive areas
+        let exclusive_areas = compute_exclusive_areas_from_layout(&circles, &set_names);
 
-        println!("\nDisjoint areas:");
-        for (combo, area) in &disjoint {
+        println!("\nExclusive areas:");
+        for (combo, area) in &exclusive_areas {
             println!("  {:?}: {:.4}", combo.sets(), area);
         }
 
         // Create spec
-        let spec = create_spec_from_disjoint(disjoint);
+        let spec = create_spec_from_exclusive(exclusive_areas);
         let preprocessed = spec.preprocess().unwrap();
 
         // Extract initial positions and radii

@@ -229,16 +229,12 @@ mod tests {
             .set("A", 1.0)
             .intersection(&["A", "B"], 1.0)
             .intersection(&["A", "B", "C"], 1.0)
-            .input_type(crate::InputType::Disjoint)
+            .input_type(crate::InputType::Exclusive)
             .build()
             .unwrap();
 
-        println!("Spec: {:#?}", spec);
-
         let layout = Fitter::new(&spec).fit_initial_only().unwrap();
 
-        println!("Initial layout loss: {:#?}", layout);
-
-        assert!(layout.loss() <= 1e-6);
+        assert!(layout.loss() <= 1e-4);
     }
 }

@@ -18,7 +18,7 @@
 //!     .set("A", 5.0)
 //!     .set("B", 2.0)
 //!     .intersection(&["A", "B"], 1.0)
-//!     .input_type(InputType::Disjoint)
+//!     .input_type(InputType::Exclusive)
 //!     .build()
 //!     .expect("Failed to build diagram specification");
 //! ```

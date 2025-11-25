@@ -77,7 +77,7 @@ pub fn compute_overlaps_circles(circles: &[Circle]) -> f64 {
 /// 5. Estimate area as: (intersection_count / total_points) × bounding_box_area
 ///
 /// This is much more efficient than sampling the entire shape region because
-/// the intersection is typically much smaller than the union.
+/// the intersection is typically much smaller than the inclusive area.
 ///
 /// # Arguments
 ///

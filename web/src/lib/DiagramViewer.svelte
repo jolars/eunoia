@@ -27,8 +27,8 @@
     { input: 'B', size: 5 },
     { input: 'A&B', size: 1 }
   ]);
-  
-  let inputType = $state<'disjoint' | 'union'>('disjoint');
+
+  let inputType = $state<'exclusive' | 'inclusive'>('exclusive');
   let useInitialOnly = $state(false);
   
   const colors = [

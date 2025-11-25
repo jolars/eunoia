@@ -36,7 +36,7 @@ impl Layout {
         spec: &DiagramSpec,
         iterations: usize,
     ) -> Self {
-        let requested = spec.disjoint_areas().clone();
+        let requested = spec.exclusive_areas().clone();
         let fitted = Self::compute_fitted_areas(&shapes, spec);
         let loss = Self::compute_loss(&requested, &fitted);
 
@@ -94,7 +94,7 @@ impl Layout {
     fn compute_fitted_areas(shapes: &[Circle], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();
 
-        crate::fitter::final_layout::compute_disjoint_areas_from_layout(shapes, set_names)
+        crate::fitter::final_layout::compute_exclusive_areas_from_layout(shapes, set_names)
     }
 
     /// Compute region error loss.

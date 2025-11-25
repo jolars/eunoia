@@ -133,11 +133,11 @@ pub fn generate_from_spec(
 
     // Parse input type
     let input_type = match input_type.as_str() {
-        "disjoint" => InputType::Disjoint,
-        "union" => InputType::Union,
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
         _ => {
             return Err(JsValue::from_str(
-                "Invalid input type. Must be 'disjoint' or 'union'",
+                "Invalid input type. Must be 'exclusive' or 'inclusive'",
             ))
         }
     };
@@ -209,11 +209,11 @@ pub fn generate_from_spec_with_debug(
 
     // Parse input type
     let input_type = match input_type.as_str() {
-        "disjoint" => InputType::Disjoint,
-        "union" => InputType::Union,
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
         _ => {
             return Err(JsValue::from_str(
-                "Invalid input type. Must be 'disjoint' or 'union'",
+                "Invalid input type. Must be 'exclusive' or 'inclusive'",
             ))
         }
     };
@@ -269,23 +269,23 @@ pub fn generate_from_spec_with_debug(
         })
         .collect();
 
-    // Collect target disjoint areas
+    // Collect target exclusive areas
     let mut target_areas_map: HashMap<String, f64> = HashMap::new();
-    for (combo, &area) in diagram_spec.disjoint_areas() {
+    for (combo, &area) in diagram_spec.exclusive_areas() {
         target_areas_map.insert(combo.to_string(), area);
     }
 
-    // Compute fitted disjoint areas using the same function as the optimizer
-    use crate::fitter::final_layout::compute_disjoint_areas_from_layout;
+    // Compute fitted exclusive areas using the same function as the optimizer
+    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| layout.shape_for_set(name).cloned())
         .collect();
-    let fitted_disjoint = compute_disjoint_areas_from_layout(&circles, diagram_spec.set_names());
+    let fitted_exclusive = compute_exclusive_areas_from_layout(&circles, diagram_spec.set_names());
 
     let mut fitted_areas_map: HashMap<String, f64> = HashMap::new();
-    for (combo, area) in fitted_disjoint {
+    for (combo, area) in fitted_exclusive {
         fitted_areas_map.insert(combo.to_string(), area);
     }
 
@@ -313,8 +313,8 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
     web_sys::console::log_1(&"[Rust] get_debug_info called".into());
 
     let input_type_enum = match input_type.as_str() {
-        "disjoint" => InputType::Disjoint,
-        "union" => InputType::Union,
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
         _ => return Err(JsValue::from_str("Invalid input type")),
     };
 
@@ -348,20 +348,20 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
 
     web_sys::console::log_1(&"[Rust] Computing target areas...".into());
     let mut target: HashMap<String, f64> = HashMap::new();
-    for (combo, &area) in diagram_spec.disjoint_areas() {
+    for (combo, &area) in diagram_spec.exclusive_areas() {
         target.insert(combo.to_string(), area);
     }
 
     web_sys::console::log_1(&"[Rust] Computing fitted areas...".into());
-    use crate::fitter::final_layout::compute_disjoint_areas_from_layout;
+    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| layout.shape_for_set(name).cloned())
         .collect();
-    let fitted_disjoint = compute_disjoint_areas_from_layout(&circles, diagram_spec.set_names());
+    let fitted_exclusive = compute_exclusive_areas_from_layout(&circles, diagram_spec.set_names());
     let mut fitted: HashMap<String, f64> = HashMap::new();
-    for (combo, area) in fitted_disjoint {
+    for (combo, area) in fitted_exclusive {
         fitted.insert(combo.to_string(), area);
     }
 
@@ -387,8 +387,8 @@ pub fn get_debug_info_simple(
     use std::collections::HashMap;
 
     let input_type_enum = match input_type.as_str() {
-        "disjoint" => InputType::Disjoint,
-        "union" => InputType::Union,
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
         _ => return Err(JsValue::from_str("Invalid input type")),
     };
 
@@ -415,19 +415,19 @@ pub fn get_debug_info_simple(
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
     let mut target: HashMap<String, f64> = HashMap::new();
-    for (combo, &area) in diagram_spec.disjoint_areas() {
+    for (combo, &area) in diagram_spec.exclusive_areas() {
         target.insert(combo.to_string(), area);
     }
 
-    use crate::fitter::final_layout::compute_disjoint_areas_from_layout;
+    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| layout.shape_for_set(name).cloned())
         .collect();
-    let fitted_disjoint = compute_disjoint_areas_from_layout(&circles, diagram_spec.set_names());
+    let fitted_exclusive = compute_exclusive_areas_from_layout(&circles, diagram_spec.set_names());
     let mut fitted: HashMap<String, f64> = HashMap::new();
-    for (combo, area) in fitted_disjoint {
+    for (combo, area) in fitted_exclusive {
         fitted.insert(combo.to_string(), area);
     }
 
@@ -451,11 +451,11 @@ pub fn generate_from_spec_initial(
 
     // Parse input type
     let input_type = match input_type.as_str() {
-        "disjoint" => InputType::Disjoint,
-        "union" => InputType::Union,
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
         _ => {
             return Err(JsValue::from_str(
-                "Invalid input type. Must be 'disjoint' or 'union'",
+                "Invalid input type. Must be 'exclusive' or 'inclusive'",
             ))
         }
     };
@@ -522,8 +522,8 @@ pub fn get_debug_info_initial(
     use std::collections::HashMap;
 
     let input_type_enum = match input_type.as_str() {
-        "disjoint" => InputType::Disjoint,
-        "union" => InputType::Union,
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
         _ => return Err(JsValue::from_str("Invalid input type")),
     };
 
@@ -550,19 +550,19 @@ pub fn get_debug_info_initial(
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
     let mut target: HashMap<String, f64> = HashMap::new();
-    for (combo, &area) in diagram_spec.disjoint_areas() {
+    for (combo, &area) in diagram_spec.exclusive_areas() {
         target.insert(combo.to_string(), area);
     }
 
-    use crate::fitter::final_layout::compute_disjoint_areas_from_layout;
+    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| layout.shape_for_set(name).cloned())
         .collect();
-    let fitted_disjoint = compute_disjoint_areas_from_layout(&circles, diagram_spec.set_names());
+    let fitted_exclusive = compute_exclusive_areas_from_layout(&circles, diagram_spec.set_names());
     let mut fitted: HashMap<String, f64> = HashMap::new();
-    for (combo, area) in fitted_disjoint {
+    for (combo, area) in fitted_exclusive {
         fitted.insert(combo.to_string(), area);
     }
 

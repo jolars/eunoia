@@ -20,14 +20,14 @@ use std::collections::HashMap;
 /// what the diagram should represent. The actual geometric shapes will be
 /// computed during the fitting process.
 ///
-/// Both disjoint and union representations are stored for efficient access.
+/// Both exclusive and inclusive representations are stored for efficient access.
 #[derive(Debug, Clone)]
 pub struct DiagramSpec {
-    /// Disjoint areas (unique parts of each combination)
-    pub(crate) disjoint_areas: HashMap<Combination, f64>,
+    /// Exclusive areas (unique parts of each combination)
+    pub(crate) exclusive_areas: HashMap<Combination, f64>,
 
-    /// Union areas (inclusive of all subsets)
-    pub(crate) union_areas: HashMap<Combination, f64>,
+    /// Inclusive areas (inclusive of all subsets)
+    pub(crate) inclusive_areas: HashMap<Combination, f64>,
 
     /// How the input values were originally specified.
     pub(crate) input_type: InputType,
@@ -47,24 +47,24 @@ impl DiagramSpec {
         &self.set_names
     }
 
-    /// Returns the disjoint areas.
-    pub fn disjoint_areas(&self) -> &HashMap<Combination, f64> {
-        &self.disjoint_areas
+    /// Returns the exclusive areas.
+    pub fn exclusive_areas(&self) -> &HashMap<Combination, f64> {
+        &self.exclusive_areas
     }
 
-    /// Returns the union areas.
-    pub fn union_areas(&self) -> &HashMap<Combination, f64> {
-        &self.union_areas
+    /// Returns the inclusive areas.
+    pub fn inclusive_areas(&self) -> &HashMap<Combination, f64> {
+        &self.inclusive_areas
     }
 
-    /// Gets the disjoint area for a specific combination.
-    pub fn get_disjoint(&self, combination: &Combination) -> Option<f64> {
-        self.disjoint_areas.get(combination).copied()
+    /// Gets the exclusive area for a specific combination.
+    pub fn get_exclusive(&self, combination: &Combination) -> Option<f64> {
+        self.exclusive_areas.get(combination).copied()
     }
 
-    /// Gets the union area for a specific combination.
-    pub fn get_union(&self, combination: &Combination) -> Option<f64> {
-        self.union_areas.get(combination).copied()
+    /// Gets the inclusive area for a specific combination.
+    pub fn get_inclusive(&self, combination: &Combination) -> Option<f64> {
+        self.inclusive_areas.get(combination).copied()
     }
 
     /// Preprocess the specification for fitting (internal use).
@@ -77,13 +77,13 @@ impl DiagramSpec {
     pub(crate) fn preprocess(&self) -> Result<PreprocessedSpec, DiagramError> {
         const EPSILON: f64 = 1e-10; // sqrt of machine epsilon
 
-        // 1. Find empty sets (use union areas to determine empty sets)
+        // 1. Find empty sets (use inclusive areas to determine empty sets)
         let mut non_empty_sets = Vec::new();
         let mut set_to_idx = HashMap::new();
 
         for set_name in self.set_names.iter() {
             let combo = Combination::new(&[set_name]);
-            if let Some(&area) = self.union_areas.get(&combo) {
+            if let Some(&area) = self.inclusive_areas.get(&combo) {
                 if area >= EPSILON {
                     let idx = non_empty_sets.len();
                     non_empty_sets.push(set_name.clone());
@@ -101,31 +101,31 @@ impl DiagramSpec {
         }
 
         // 2. Filter combinations to only include non-empty sets
-        let mut filtered_disjoint = HashMap::new();
-        let mut filtered_union = HashMap::new();
+        let mut filtered_exclusive = HashMap::new();
+        let mut filtered_inclusive = HashMap::new();
 
-        // First, add all combinations from disjoint_areas
-        for (combo, &area) in self.disjoint_areas.iter() {
+        // First, add all combinations from exclusive
+        for (combo, &area) in self.exclusive_areas.iter() {
             // Check if all sets in this combination are non-empty
             let all_non_empty = combo.sets().iter().all(|s| set_to_idx.contains_key(s));
 
             if all_non_empty {
-                filtered_disjoint.insert(combo.clone(), area);
-                if let Some(&union_area) = self.union_areas.get(combo) {
-                    filtered_union.insert(combo.clone(), union_area);
+                filtered_exclusive.insert(combo.clone(), area);
+                if let Some(&inclusive_area) = self.inclusive_areas.get(combo) {
+                    filtered_inclusive.insert(combo.clone(), inclusive_area);
                 }
             }
         }
 
-        // Also add combinations from union_areas that might have zero disjoint area
-        for (combo, &union_area) in self.union_areas.iter() {
+        // Also add combinations from inclusive that might have zero exclusive area
+        for (combo, &inclusive_area) in self.inclusive_areas.iter() {
             let all_non_empty = combo.sets().iter().all(|s| set_to_idx.contains_key(s));
 
-            if all_non_empty && union_area > 1e-10 && !filtered_union.contains_key(combo) {
-                filtered_union.insert(combo.clone(), union_area);
-                // Add to disjoint with 0 if not already there
-                if !filtered_disjoint.contains_key(combo) {
-                    filtered_disjoint.insert(combo.clone(), 0.0);
+            if all_non_empty && inclusive_area > 1e-10 && !filtered_inclusive.contains_key(combo) {
+                filtered_inclusive.insert(combo.clone(), inclusive_area);
+                // Add to exclusive with 0 if not already there
+                if !filtered_exclusive.contains_key(combo) {
+                    filtered_exclusive.insert(combo.clone(), 0.0);
                 }
             }
         }
@@ -134,20 +134,23 @@ impl DiagramSpec {
         let mut set_areas = vec![0.0; n_sets];
         for (i, set_name) in non_empty_sets.iter().enumerate() {
             let combo = Combination::new(&[set_name]);
-            if let Some(&area) = filtered_union.get(&combo) {
+            if let Some(&area) = filtered_inclusive.get(&combo) {
                 set_areas[i] = area;
             }
         }
 
         // 4. Compute pairwise relationships
-        let relationships =
-            Self::compute_pairwise_relations(&non_empty_sets, &filtered_union, &filtered_disjoint)?;
+        let relationships = Self::compute_pairwise_relations(
+            &non_empty_sets,
+            &filtered_inclusive,
+            &filtered_exclusive,
+        )?;
 
         Ok(PreprocessedSpec {
             set_names: non_empty_sets,
             set_to_idx,
-            disjoint_areas: filtered_disjoint,
-            union_areas: filtered_union,
+            exclusive_areas: filtered_exclusive,
+            inclusive_areas: filtered_inclusive,
             n_sets,
             set_areas,
             relationships,
@@ -157,8 +160,8 @@ impl DiagramSpec {
     #[allow(dead_code)]
     fn compute_pairwise_relations(
         set_names: &[String],
-        union_areas: &HashMap<Combination, f64>,
-        disjoint_areas: &HashMap<Combination, f64>,
+        inclusive_areas: &HashMap<Combination, f64>,
+        exclusive_areas: &HashMap<Combination, f64>,
     ) -> Result<PairwiseRelations, DiagramError> {
         let n = set_names.len();
 
@@ -177,28 +180,27 @@ impl DiagramSpec {
                 let combo_j = Combination::new(&[set_j]);
                 let combo_ij = Combination::new(&[set_i, set_j]);
 
-                let area_i = union_areas.get(&combo_i).copied().unwrap_or(0.0);
-                let area_j = union_areas.get(&combo_j).copied().unwrap_or(0.0);
-                let area_ij_union = union_areas.get(&combo_ij).copied().unwrap_or(0.0);
-                let area_ij_disjoint = disjoint_areas.get(&combo_ij).copied().unwrap_or(0.0);
+                let area_i = inclusive_areas.get(&combo_i).copied().unwrap_or(0.0);
+                let area_j = inclusive_areas.get(&combo_j).copied().unwrap_or(0.0);
+                let area_ij_inclusive = inclusive_areas.get(&combo_ij).copied().unwrap_or(0.0);
 
-                // Store overlap area - use UNION (inclusive) intersection
+                // Store overlap area - use inclusive intersection
                 // This represents the total geometric intersection including higher-order overlaps
-                overlap_areas[i][j] = area_ij_union;
-                overlap_areas[j][i] = area_ij_union;
+                overlap_areas[i][j] = area_ij_inclusive;
+                overlap_areas[j][i] = area_ij_inclusive;
 
                 // Check if disjoint (intersection is zero)
-                if area_ij_union < 1e-10 {
+                if area_ij_inclusive < 1e-10 {
                     disjoint[i][j] = true;
                     disjoint[j][i] = true;
                 }
 
                 // Check if one is subset of another
                 // j ⊆ i if inclusive area(i ∩ j) == area(j)
-                if (area_ij_union - area_j).abs() < 1e-10 {
+                if (area_ij_inclusive - area_j).abs() < 1e-10 {
                     subset[i][j] = true; // j is subset of i
                 }
-                if (area_ij_union - area_i).abs() < 1e-10 {
+                if (area_ij_inclusive - area_i).abs() < 1e-10 {
                     subset[j][i] = true; // i is subset of j
                 }
             }
@@ -212,15 +214,15 @@ impl DiagramSpec {
         })
     }
 
-    /// Convert disjoint areas to union areas (static version for builder).
-    fn disjoint_to_union_static(
-        disjoint: &HashMap<Combination, f64>,
+    /// Convert exclusive areas to inclusive areas (static version for builder).
+    fn exclusive_to_inclusive_static(
+        exclusive: &HashMap<Combination, f64>,
     ) -> Result<HashMap<Combination, f64>, DiagramError> {
-        let mut union: HashMap<Combination, f64> = HashMap::new();
+        let mut inclusive: HashMap<Combination, f64> = HashMap::new();
 
         // First, collect all unique set names
         let mut all_sets = std::collections::HashSet::new();
-        for combo in disjoint.keys() {
+        for combo in exclusive.keys() {
             for set_name in combo.sets() {
                 all_sets.insert(set_name.clone());
             }
@@ -238,56 +240,56 @@ impl DiagramSpec {
             }
             let combo = Combination::new(&combo_sets);
 
-            // Compute union area = sum of disjoint areas of this combo and all its supersets
-            let mut union_area = 0.0;
-            for (other_combo, &other_disj) in disjoint.iter() {
+            // Compute inclusive area = sum of exclusive areas of this combo and all its supersets
+            let mut inclusive_area = 0.0;
+            for (other_combo, &other_excl) in exclusive.iter() {
                 // Include if other_combo contains all sets in combo
                 if other_combo.contains_all(&combo) {
-                    union_area += other_disj;
+                    inclusive_area += other_excl;
                 }
             }
 
             // Only include if non-zero
-            if union_area > 1e-10 {
-                union.insert(combo, union_area);
+            if inclusive_area > 1e-10 {
+                inclusive.insert(combo, inclusive_area);
             }
         }
 
-        Ok(union)
+        Ok(inclusive)
     }
 
-    /// Convert union areas to disjoint areas (static version for builder).
-    fn union_to_disjoint_static(
-        union: &HashMap<Combination, f64>,
+    /// Convert inclusive areas to exclusive areas (static version for builder).
+    fn inclusive_to_exclusive_static(
+        inclusive: &HashMap<Combination, f64>,
     ) -> Result<HashMap<Combination, f64>, DiagramError> {
-        let mut disjoint: HashMap<Combination, f64> = HashMap::new();
+        let mut exclusive: HashMap<Combination, f64> = HashMap::new();
 
         // Sort combinations by size (process from largest to smallest)
-        let mut sorted_combos: Vec<_> = union.keys().collect();
+        let mut sorted_combos: Vec<_> = inclusive.keys().collect();
         sorted_combos.sort_by_key(|c| std::cmp::Reverse(c.len()));
 
         for combo in sorted_combos {
-            let union_area = union[combo];
-            let mut disjoint_area = union_area;
+            let inclusive_area = inclusive[combo];
+            let mut exclusive_area = inclusive_area;
 
-            // Subtract disjoint areas of all proper supersets (combinations that contain this one)
-            for (other_combo, &other_disj) in disjoint.iter() {
+            // Subtract exclusive areas of all proper supersets (combinations that contain this one)
+            for (other_combo, &other_excl) in exclusive.iter() {
                 if other_combo != combo && other_combo.contains_all(combo) {
-                    disjoint_area -= other_disj;
+                    exclusive_area -= other_excl;
                 }
             }
 
-            if disjoint_area < -1e-10 {
+            if exclusive_area < -1e-10 {
                 return Err(DiagramError::InvalidValue {
                     combination: combo.to_string(),
-                    value: disjoint_area,
+                    value: exclusive_area,
                 });
             }
 
-            disjoint.insert(combo.clone(), disjoint_area.max(0.0));
+            exclusive.insert(combo.clone(), exclusive_area.max(0.0));
         }
 
-        Ok(disjoint)
+        Ok(exclusive)
     }
 }
 
@@ -303,16 +305,16 @@ pub(crate) struct PreprocessedSpec {
     /// Mapping from set name to index in set_names
     pub(crate) set_to_idx: HashMap<String, usize>,
 
-    /// All non-empty combinations with their disjoint areas
-    pub(crate) disjoint_areas: HashMap<Combination, f64>,
+    /// All non-empty combinations with their exclusive areas
+    pub(crate) exclusive_areas: HashMap<Combination, f64>,
 
-    /// All non-empty combinations with their union areas  
-    pub(crate) union_areas: HashMap<Combination, f64>,
+    /// All non-empty combinations with their inclusive areas  
+    pub(crate) inclusive_areas: HashMap<Combination, f64>,
 
     /// Number of non-empty sets
     pub(crate) n_sets: usize,
 
-    /// Union areas for each set (for shape sizing)
+    /// Areas for each set (for shape sizing)
     pub(crate) set_areas: Vec<f64>,
 
     /// Pairwise relationships
@@ -365,39 +367,51 @@ mod tests {
             .set("A", 10.0)
             .set("B", 8.0)
             .intersection(&["A", "B"], 2.0)
-            .input_type(InputType::Union)
+            .input_type(InputType::Inclusive)
             .build()
             .unwrap();
 
-        // Check union areas (what we input)
-        assert_eq!(spec.get_union(&Combination::new(&["A"])), Some(10.0));
-        assert_eq!(spec.get_union(&Combination::new(&["B"])), Some(8.0));
-        assert_eq!(spec.get_union(&Combination::new(&["A", "B"])), Some(2.0));
+        // Check inclusive areas (what we input)
+        assert_eq!(spec.get_inclusive(&Combination::new(&["A"])), Some(10.0));
+        assert_eq!(spec.get_inclusive(&Combination::new(&["B"])), Some(8.0));
+        assert_eq!(
+            spec.get_inclusive(&Combination::new(&["A", "B"])),
+            Some(2.0)
+        );
 
-        // Check disjoint areas (computed)
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A"])), Some(8.0)); // 10 - 2
-        assert_eq!(spec.get_disjoint(&Combination::new(&["B"])), Some(6.0)); // 8 - 2
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A", "B"])), Some(2.0));
+        // Check exclusive areas (computed)
+        assert_eq!(spec.get_exclusive(&Combination::new(&["A"])), Some(8.0)); // 10 - 2
+        assert_eq!(spec.get_exclusive(&Combination::new(&["B"])), Some(6.0)); // 8 - 2
+        assert_eq!(
+            spec.get_exclusive(&Combination::new(&["A", "B"])),
+            Some(2.0)
+        );
     }
 
     #[test]
-    fn test_disjoint_input() {
+    fn test_exclusive_input() {
         let spec = DiagramSpecBuilder::new()
-            .set("A", 5.0) // disjoint A-only
-            .set("B", 2.0) // disjoint B-only
-            .intersection(&["A", "B"], 1.0) // disjoint overlap
-            .input_type(InputType::Disjoint)
+            .set("A", 5.0) // exclusive A-only
+            .set("B", 2.0) // exclusive B-only
+            .intersection(&["A", "B"], 1.0) // exclusive overlap
+            .input_type(InputType::Exclusive)
             .build()
             .unwrap();
 
-        // Check disjoint areas (what we input)
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A"])), Some(5.0));
-        assert_eq!(spec.get_disjoint(&Combination::new(&["B"])), Some(2.0));
-        assert_eq!(spec.get_disjoint(&Combination::new(&["A", "B"])), Some(1.0));
+        // Check exclusive areas (what we input)
+        assert_eq!(spec.get_exclusive(&Combination::new(&["A"])), Some(5.0));
+        assert_eq!(spec.get_exclusive(&Combination::new(&["B"])), Some(2.0));
+        assert_eq!(
+            spec.get_exclusive(&Combination::new(&["A", "B"])),
+            Some(1.0)
+        );
 
-        // Check union areas (computed)
-        assert_eq!(spec.get_union(&Combination::new(&["A"])), Some(6.0)); // 5 + 1
-        assert_eq!(spec.get_union(&Combination::new(&["B"])), Some(3.0)); // 2 + 1
-        assert_eq!(spec.get_union(&Combination::new(&["A", "B"])), Some(1.0));
+        // Check inclusive areas (computed)
+        assert_eq!(spec.get_inclusive(&Combination::new(&["A"])), Some(6.0)); // 5 + 1
+        assert_eq!(spec.get_inclusive(&Combination::new(&["B"])), Some(3.0)); // 2 + 1
+        assert_eq!(
+            spec.get_inclusive(&Combination::new(&["A", "B"])),
+            Some(1.0)
+        );
     }
 }
