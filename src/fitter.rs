@@ -6,7 +6,7 @@ mod layout;
 
 pub use layout::Layout;
 
-use crate::diagram::{Combination, DiagramSpec};
+use crate::diagram::DiagramSpec;
 use crate::error::DiagramError;
 use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::distance_for_overlap;

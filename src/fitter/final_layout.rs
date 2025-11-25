@@ -17,15 +17,13 @@ use crate::geometry::shapes::Shape;
 /// Type alias for region bit masks
 type RegionMask = usize;
 
-/// Threshold for considering an intersection area as "viable" (non-zero).
-const VIABLE_THRESHOLD: f64 = 1e-8;
-
 /// Configuration for final layout optimization.
 #[derive(Debug, Clone)]
 pub(crate) struct FinalLayoutConfig {
     /// Maximum number of optimization iterations
     pub max_iterations: usize,
-    /// Tolerance for convergence
+    /// Tolerance for convergence (currently unused, reserved for future use)
+    #[allow(dead_code)]
     pub tolerance: f64,
 }
 
@@ -238,10 +236,10 @@ fn discover_regions(
                 .iter()
                 .any(|info| info.parents() == (i, j) || info.parents() == (j, i));
 
-            if !has_edge_intersection {
-                if circles[i].contains(&circles[j]) || circles[j].contains(&circles[i]) {
-                    regions.insert((1 << i) | (1 << j));
-                }
+            if !has_edge_intersection
+                && (circles[i].contains(&circles[j]) || circles[j].contains(&circles[i]))
+            {
+                regions.insert((1 << i) | (1 << j));
             }
         }
     }
@@ -364,7 +362,116 @@ fn combination_to_mask(combo: &Combination, set_names: &[String]) -> RegionMask 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagram::DiagramSpecBuilder;
+    use crate::diagram::{DiagramSpec, DiagramSpecBuilder};
+
+    /// Test helper utilities for final layout testing
+    mod helpers {
+        use super::*;
+
+        /// Generate a random diagram specification with the given number of sets.
+        ///
+        /// This creates random circles, computes their overlaps, and returns
+        /// a DiagramSpec that can be used for testing the fitter.
+        ///
+        /// Returns: (spec, original_circles) for validation
+        pub fn generate_random_diagram(n_sets: usize, seed: u64) -> (DiagramSpec, Vec<Circle>) {
+            let (circles, set_names) = random_circle_layout(n_sets, seed);
+            let disjoint = compute_disjoint_areas_from_layout(&circles, &set_names);
+            let spec = create_spec_from_disjoint(disjoint);
+            (spec, circles)
+        }
+
+        /// Generate a random circle layout for testing
+        pub fn random_circle_layout(n_sets: usize, seed: u64) -> (Vec<Circle>, Vec<String>) {
+            use rand::Rng;
+            use rand::SeedableRng;
+
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+
+            let set_names: Vec<String> = (0..n_sets).map(|i| format!("Set{}", i)).collect();
+
+            let mut circles = Vec::new();
+
+            for _ in 0..n_sets {
+                // Random position in [-5, 5] x [-5, 5]
+                let x = rng.random_range(-5.0..5.0);
+                let y = rng.random_range(-5.0..5.0);
+                // Random radius in [0.5, 2.0]
+                let r = rng.random_range(0.5..2.0);
+
+                circles.push(Circle::new(Point::new(x, y), r));
+            }
+
+            (circles, set_names)
+        }
+
+        /// Compute all disjoint areas from a circle layout
+        pub fn compute_disjoint_areas_from_layout(
+            circles: &[Circle],
+            set_names: &[String],
+        ) -> HashMap<Combination, f64> {
+            let n_sets = circles.len();
+
+            // Collect intersection points
+            let intersections = collect_intersections(circles, n_sets);
+
+            // Discover regions
+            let regions = discover_regions(circles, &intersections, n_sets);
+
+            // Compute overlapping areas
+            let mut overlapping_areas = HashMap::new();
+            for &mask in &regions {
+                let area = compute_region_area(mask, circles, &intersections, n_sets);
+                overlapping_areas.insert(mask, area);
+            }
+
+            // Convert to disjoint areas
+            let disjoint_masks = to_disjoint_areas(&overlapping_areas);
+
+            // Convert masks to Combinations
+            let mut disjoint_combos = HashMap::new();
+            for (mask, area) in disjoint_masks {
+                if area > 1e-6 {
+                    // Only include non-zero areas
+                    let indices = mask_to_indices(mask, n_sets);
+                    let combo_sets: Vec<&str> =
+                        indices.iter().map(|&i| set_names[i].as_str()).collect();
+
+                    if !combo_sets.is_empty() {
+                        let combo = Combination::new(&combo_sets);
+                        disjoint_combos.insert(combo, area);
+                    }
+                }
+            }
+
+            disjoint_combos
+        }
+
+        /// Create a DiagramSpec from disjoint areas
+        pub fn create_spec_from_disjoint(disjoint_areas: HashMap<Combination, f64>) -> DiagramSpec {
+            let mut builder = DiagramSpecBuilder::new();
+
+            // Add all single sets
+            for (combo, &area) in &disjoint_areas {
+                if combo.sets().len() == 1 {
+                    let set_name = &combo.sets()[0];
+                    builder = builder.set(set_name, area);
+                }
+            }
+
+            // Add all intersections
+            for (combo, &area) in &disjoint_areas {
+                if combo.sets().len() > 1 {
+                    let sets: Vec<&str> = combo.sets().iter().map(|s| s.as_str()).collect();
+                    builder = builder.intersection(&sets, area);
+                }
+            }
+
+            builder.build().unwrap()
+        }
+    }
+
+    // ========== Basic Functionality Tests ==========
 
     #[test]
     fn test_optimize_layout_simple() {
@@ -560,5 +667,199 @@ mod tests {
         assert!(error >= 0.0, "Error should be non-negative");
 
         println!("Initial error: {}", error);
+    }
+
+    // ========== Layout Reproduction Tests ==========
+
+    #[test]
+    fn test_reproduce_simple_two_circle_layout() {
+        use helpers::*;
+
+        // Create a simple known layout
+        let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let c2 = Circle::new(Point::new(1.5, 0.0), 1.0);
+        let circles = vec![c1, c2];
+        let set_names = vec!["A".to_string(), "B".to_string()];
+
+        // Compute disjoint areas from this layout
+        let disjoint = compute_disjoint_areas_from_layout(&circles, &set_names);
+
+        println!("Disjoint areas from layout:");
+        for (combo, area) in &disjoint {
+            println!("  {:?}: {:.4}", combo.sets(), area);
+        }
+
+        // Create spec from these areas
+        let spec = create_spec_from_disjoint(disjoint);
+        let preprocessed = spec.preprocess().unwrap();
+
+        // Try to fit with initial guess close to original
+        let positions = vec![0.0, 0.0, 1.5, 0.0];
+        let radii = vec![1.0, 1.0];
+
+        let config = FinalLayoutConfig {
+            max_iterations: 100,
+            tolerance: 1e-6,
+        };
+
+        let result = optimize_layout(&preprocessed, &positions, &radii, config);
+        assert!(result.is_ok());
+
+        let (_, _, loss) = result.unwrap();
+        println!("Reproduction loss: {}", loss);
+
+        // Should be able to reproduce the layout with very low error
+        assert!(
+            loss < 1e-2,
+            "Should reproduce layout with low error, got: {}",
+            loss
+        );
+    }
+
+    #[test]
+    fn test_reproduce_random_three_circle_layout() {
+        use helpers::*;
+
+        // Generate random layout
+        let (circles, set_names) = random_circle_layout(3, 42);
+
+        println!("Random circles:");
+        for (i, c) in circles.iter().enumerate() {
+            println!(
+                "  {}: center=({:.2}, {:.2}), radius={:.2}",
+                set_names[i],
+                c.center().x(),
+                c.center().y(),
+                c.radius()
+            );
+        }
+
+        // Compute disjoint areas
+        let disjoint = compute_disjoint_areas_from_layout(&circles, &set_names);
+
+        println!("\nDisjoint areas:");
+        for (combo, area) in &disjoint {
+            println!("  {:?}: {:.4}", combo.sets(), area);
+        }
+
+        // Create spec
+        let spec = create_spec_from_disjoint(disjoint);
+        let preprocessed = spec.preprocess().unwrap();
+
+        // Extract initial positions and radii
+        let mut positions = Vec::new();
+        let mut radii = Vec::new();
+        for c in &circles {
+            positions.push(c.center().x());
+            positions.push(c.center().y());
+            radii.push(c.radius());
+        }
+
+        let config = FinalLayoutConfig {
+            max_iterations: 200,
+            tolerance: 1e-6,
+        };
+
+        let result = optimize_layout(&preprocessed, &positions, &radii, config);
+        assert!(result.is_ok());
+
+        let (final_pos, final_radii, loss) = result.unwrap();
+        println!("\nReproduction loss: {}", loss);
+        println!("Final positions: {:?}", final_pos);
+        println!("Final radii: {:?}", final_radii);
+        println!("Original radii: {:?}", radii);
+
+        // Should be able to reproduce with reasonable error
+        // Note: 3-way intersections are harder, allow more tolerance
+        assert!(
+            loss < 1.0,
+            "Should reproduce random layout reasonably, got: {}",
+            loss
+        );
+    }
+
+    #[test]
+    fn test_reproduce_multiple_random_diagrams() {
+        use helpers::*;
+
+        // Test multiple random configurations
+        let test_configs = [
+            (2, 100), // 2 circles, seed 100
+            (2, 200), // 2 circles, seed 200
+            (3, 300), // 3 circles, seed 300
+            (3, 400), // 3 circles, seed 400
+            (4, 500), // 4 circles, seed 500
+        ];
+
+        let mut results = Vec::new();
+
+        for (i, &(n_sets, seed)) in test_configs.iter().enumerate() {
+            println!(
+                "\n=== Test {} ({} circles, seed {}) ===",
+                i + 1,
+                n_sets,
+                seed
+            );
+
+            // Generate random diagram
+            let (spec, original_circles) = generate_random_diagram(n_sets, seed);
+            let preprocessed = spec.preprocess().unwrap();
+
+            // Extract initial positions and radii from original circles
+            let mut positions = Vec::new();
+            let mut radii = Vec::new();
+            for c in &original_circles {
+                positions.push(c.center().x());
+                positions.push(c.center().y());
+                radii.push(c.radius());
+            }
+
+            let config = FinalLayoutConfig {
+                max_iterations: 200,
+                tolerance: 1e-6,
+            };
+
+            let result = optimize_layout(&preprocessed, &positions, &radii, config);
+            assert!(result.is_ok(), "Optimization failed for config {}", i);
+
+            let (_, _, loss) = result.unwrap();
+            println!("Loss: {:.6}", loss);
+
+            results.push((n_sets, seed, loss));
+        }
+
+        println!("\n=== Summary ===");
+        for (i, &(n_sets, seed, loss)) in results.iter().enumerate() {
+            let status = match n_sets {
+                2 if loss < 1.0 => "✅",
+                3 if loss < 2.0 => "✅",
+                4 if loss < 5.0 => "✅",
+                _ => "⚠️",
+            };
+            println!(
+                "{} Test {}: {} circles, seed {}, loss={:.6}",
+                status,
+                i + 1,
+                n_sets,
+                seed,
+                loss
+            );
+        }
+
+        // Relaxed tolerances - the algorithm should do reasonably well
+        // but we're starting from the exact solution, so it should converge
+        let all_reasonable = results.iter().all(|(n_sets, _, loss)| {
+            match n_sets {
+                2 => *loss < 2.0,  // 2-way: should be very good
+                3 => *loss < 5.0,  // 3-way: harder but doable
+                4 => *loss < 10.0, // 4-way: quite difficult
+                _ => *loss < 20.0, // Higher order: very challenging
+            }
+        });
+
+        assert!(
+            all_reasonable,
+            "Some configurations had unexpectedly high loss. This may indicate optimizer issues."
+        );
     }
 }

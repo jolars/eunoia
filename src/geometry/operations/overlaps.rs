@@ -11,8 +11,6 @@ pub enum OverlapMethod {
 }
 
 pub fn compute_overlaps<S: Shape>(shapes: &[S], method: OverlapMethod) -> f64 {
-    let n_sets = shapes.len();
-
     match method {
         OverlapMethod::MonteCarlo => monte_carlo_overlap(shapes, 100_000),
         OverlapMethod::Exact => {
@@ -425,10 +423,7 @@ mod tests {
             );
         } else if exact < 0.1 && monte_carlo < 0.1 {
             // Both agree there's minimal/no intersection
-            assert!(
-                true,
-                "Both methods agree there's little to no 4-way intersection"
-            );
+            // This is expected behavior
         } else {
             // One says yes, one says no - that's a problem
             panic!(
