@@ -23,7 +23,7 @@ impl Default for InitialLayoutConfig {
     fn default() -> Self {
         Self {
             max_attempts: 100,
-            patience: 5,
+            patience: 10,
             improvement_threshold: 0.001, // 0.1% improvement
             perfect_fit_threshold: 1e-8,  // Near-zero loss
         }
