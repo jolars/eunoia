@@ -116,6 +116,15 @@ impl Point {
     pub const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
 }
 
+/// Centroid of a set of points.
+pub fn centroid(points: &[Point]) -> Point {
+    let (sum_x, sum_y) = points.iter().fold((0.0, 0.0), |(acc_x, acc_y), p| {
+        (acc_x + p.x(), acc_y + p.y())
+    });
+    let n = points.len() as f64;
+    Point::new(sum_x / n, sum_y / n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
