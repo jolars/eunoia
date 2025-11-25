@@ -128,6 +128,15 @@ pub struct IntersectionPoint {
 }
 
 impl IntersectionPoint {
+    /// Creates a new IntersectionPoint.
+    pub fn new(point: Point, parents: (usize, usize), adopters: Vec<usize>) -> Self {
+        IntersectionPoint {
+            point,
+            parents,
+            adopters,
+        }
+    }
+
     /// Returns the coordinates of the intersection point.
     pub fn point(&self) -> &Point {
         &self.point

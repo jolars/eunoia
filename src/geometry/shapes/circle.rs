@@ -145,12 +145,10 @@ impl Shape for Circle {
     }
 
     fn bounding_box(&self) -> Rectangle {
-        let x_min = self.center.x() - self.radius;
-        let y_min = self.center.y() - self.radius;
         let width = 2.0 * self.radius;
         let height = 2.0 * self.radius;
 
-        crate::geometry::shapes::rectangle::Rectangle::new(Point::new(x_min, y_min), width, height)
+        Rectangle::new(self.center, width, height)
     }
 }
 
@@ -241,6 +239,72 @@ impl Circle {
     pub fn segment_area_from_points(&self, p1: &Point, p2: &Point) -> f64 {
         let chord_length = p1.distance(p2);
         self.segment_area_from_chord(chord_length)
+    }
+
+    pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) -> f64 {
+        let n_points = points.len();
+
+        // Sort the points by their angles around the centroid
+        let centroid =
+            point::centroid(&points.iter().map(|ip| *ip.point()).collect::<Vec<Point>>());
+
+        let mut indices: Vec<usize> = (0..points.len()).collect();
+        indices.sort_by(|&i, &j| {
+            points[i]
+                .point()
+                .angle_to(&centroid)
+                .partial_cmp(&points[j].point().angle_to(&centroid))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut area = 0.0;
+
+        let mut l = n_points - 1;
+
+        for k in 0..n_points {
+            let i = indices[k];
+            let j = indices[l];
+
+            let p1 = &points[i].point();
+            let p2 = &points[j].point();
+
+            // Now we need to discover which of the circles the two points are
+            // coming from so that we can compute the segment area.
+            // This should be the set intersection of the parents of both points.
+            // In some cases, the intersection may be of length 2, in which
+            // case we need to compute both segment areas and pick the
+            // smaller one.
+            let parents1 = &points[i].parents();
+            let parents2 = &points[j].parents();
+
+            let common_parents: Vec<usize> = vec![parents1.0, parents1.1]
+                .into_iter()
+                .filter(|p| *p == parents2.0 || *p == parents2.1)
+                .collect();
+
+            let mut segment_areas = Vec::with_capacity(common_parents.len());
+
+            if common_parents.is_empty() {
+                // This should not happen in a well-formed set of intersection points
+                panic!("No common parent circles found for intersection points");
+            }
+
+            for &circle_index in &common_parents {
+                let circle = &circles[circle_index];
+                segment_areas.push(circle.segment_area_from_points(p1, p2));
+            }
+
+            let triangle_area = 0.5 * (p1.x() * p2.y() - p2.x() * p1.y()).abs();
+
+            area += triangle_area;
+            area += segment_areas
+                .into_iter()
+                .fold(f64::INFINITY, |a, b| a.min(b));
+
+            l = k;
+        }
+
+        area
     }
 }
 
