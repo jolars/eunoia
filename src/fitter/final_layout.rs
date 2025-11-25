@@ -8,11 +8,10 @@ use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
 
-use crate::diagram::{Combination, PreprocessedSpec};
+use crate::diagram::PreprocessedSpec;
 use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::Circle;
 use crate::geometry::shapes::Shape;
-use std::collections::{HashMap, HashSet};
 
 /// Threshold for considering an intersection area as "viable" (non-zero).
 const VIABLE_THRESHOLD: f64 = 1e-8;
@@ -115,59 +114,33 @@ impl<'a> RegionErrorCost<'a> {
             })
             .collect()
     }
+}
 
-    /// Compute all actual disjoint areas from fitted circles.
-    ///
-    /// This computes the area of each region in the Venn diagram by inclusion-exclusion.
-    fn compute_fitted_disjoint_areas(&self, circles: &[Circle]) -> HashMap<Combination, f64> {
-        let mut fitted = HashMap::new();
+/// Information about a single intersection point between shapes.
+#[derive(Debug, Clone)]
+pub struct IntersectionPoint {
+    /// The intersection point
+    point: Point,
+    /// Indices of the two shapes that create this intersection
+    parents: (usize, usize),
+    /// Indices of all shapes that contain this point
+    adopters: Vec<usize>,
+}
 
-        // For each combination in the spec, compute its disjoint area
-        for combo in self.spec.disjoint_areas.keys() {
-            let area = self.compute_disjoint_region_area(circles, combo);
-            fitted.insert(combo.clone(), area);
-        }
-
-        fitted
+impl IntersectionPoint {
+    /// Returns the coordinates of the intersection point.
+    pub fn point(&self) -> &Point {
+        &self.point
     }
 
-    /// Compute the disjoint area for a specific combination.
-    ///
-    /// This is the area that belongs to ALL sets in the combination but NO other sets.
-    fn compute_disjoint_region_area(&self, circles: &[Circle], combo: &Combination) -> f64 {
-        // For now, implement for up to 2-way intersections
-        // TODO: Implement general n-way intersection computation
+    /// Returns the indices of the two parent shapes.
+    pub fn parents(&self) -> (usize, usize) {
+        self.parents
+    }
 
-        if combo.len() == 1 {
-            // Single set: its total area minus all intersections with other sets
-            let set_name = &combo.sets()[0];
-            let idx = self.spec.set_to_idx[set_name];
-            let circle = &circles[idx];
-
-            let mut disjoint_area = std::f64::consts::PI * circle.radius().powi(2);
-
-            // Subtract all 2-way intersections
-            for (other_combo, _) in self.spec.disjoint_areas.iter() {
-                if other_combo.len() == 2 && other_combo.sets().contains(set_name) {
-                    // This is a 2-way intersection involving our set
-                    let other_set = other_combo.sets().iter().find(|s| *s != set_name).unwrap();
-                    let other_idx = self.spec.set_to_idx[other_set];
-                    disjoint_area -= circle.intersection_area(&circles[other_idx]);
-                }
-            }
-
-            disjoint_area.max(0.0)
-        } else if combo.len() == 2 {
-            // 2-way intersection: just the intersection area
-            let sets = combo.sets();
-            let idx1 = self.spec.set_to_idx[&sets[0]];
-            let idx2 = self.spec.set_to_idx[&sets[1]];
-
-            circles[idx1].intersection_area(&circles[idx2])
-        } else {
-            // TODO: Implement 3+ way intersections
-            0.0
-        }
+    /// Returns the indices of all shapes that contain this point.
+    pub fn adopters(&self) -> &Vec<usize> {
+        &self.adopters
     }
 }
 
@@ -176,17 +149,43 @@ impl<'a> CostFunction for RegionErrorCost<'a> {
     type Output = f64;
 
     fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
-        let circles = self.params_to_circles(param);
-        let fitted = self.compute_fitted_disjoint_areas(&circles);
+        let shapes = self.params_to_circles(param);
+
+        let n_sets = self.spec.n_sets;
+
+        let mut intersections: Vec<IntersectionPoint> = Vec::new();
+
+        // We collect all intersection points between pairs of shapes.
+        // We need this because if we want the area of an intersection region,
+        // it is defined by the intersection points that are adopted (contained
+        // within the shapes of the intersection).
+        for i in 0..n_sets {
+            for j in (i + 1)..n_sets {
+                let pts = shapes[i].intersection_points(&shapes[j]);
+                for point in pts {
+                    let adopters = (0..n_sets)
+                        .filter(|&k| shapes[k].contains_point(&point))
+                        .collect();
+
+                    intersections.push(IntersectionPoint {
+                        point,
+                        parents: (i, j),
+                        adopters,
+                    });
+                }
+            }
+        }
+
+        // Next, we need to compute the area of each region defined by the
+        // intersections between the shapes (circles). We need to figure
+        // out which intersections actually exist in the diagram.
+        // In eulerr, this was done naively by checking all combinations,
+        // but this is very inefficient when there are many sets.
+        // For eunoia, we want to do this more intelligently.
+        // How?
 
         // Compute region error: sum of squared differences
-        let mut error = 0.0;
-
-        for (combo, &target_area) in self.spec.disjoint_areas.iter() {
-            let fitted_area = fitted.get(combo).copied().unwrap_or(0.0);
-            let diff = target_area - fitted_area;
-            error += diff.powi(2);
-        }
+        let error = 0.0;
 
         Ok(error)
     }

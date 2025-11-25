@@ -1,6 +1,6 @@
 //! Fitter for creating diagram layouts from specifications.
 
-mod final_layout;
+pub mod final_layout;
 mod initial_layout;
 mod layout;
 
