@@ -29,6 +29,7 @@
   ]);
   
   let inputType = $state<'disjoint' | 'union'>('disjoint');
+  let useInitialOnly = $state(false);
   
   const colors = [
     'rgba(59, 130, 246, 0.3)',   // blue
@@ -81,7 +82,10 @@
       }
       
       // Generate diagram from specification
-      const result = wasmModule.generate_from_spec(specs, inputType);
+      const generateFn = useInitialOnly 
+        ? wasmModule.generate_from_spec_initial 
+        : wasmModule.generate_from_spec;
+      const result = generateFn(specs, inputType);
       circles = Array.from(result);
       error = '';
       
@@ -94,7 +98,10 @@
           .filter(row => row.input.trim() !== '' && row.size >= 0)
           .map(row => row.size);
         
-        const debugJson = wasmModule.get_debug_info_simple(inputs, sizes, inputType);
+        const debugFn = useInitialOnly 
+          ? wasmModule.get_debug_info_initial 
+          : wasmModule.get_debug_info_simple;
+        const debugJson = debugFn(inputs, sizes, inputType);
         const debugData = JSON.parse(debugJson);
         loss = debugData.loss;
         targetAreas = debugData.target_areas;
@@ -116,12 +123,12 @@
   }
   
   // Auto-generate diagram when specification changes
-  // Only trigger when size values or input type change, not when input text is being edited
+  // Only trigger when size values, input type, or initial-only flag change
   $effect(() => {
     if (wasmModule && diagramRows.length > 0) {
-      // Track only the size values and input type to avoid premature updates while typing
+      // Track size values, input type, and useInitialOnly flag
       const sizeSignature = diagramRows.map(row => row.size).join(',');
-      console.log('Generating diagram from spec (sizes/type changed):', sizeSignature, inputType);
+      console.log('Generating diagram from spec (sizes/type changed):', sizeSignature, inputType, 'initial-only:', useInitialOnly);
       generateFromSpec();
     }
   });
@@ -224,6 +231,21 @@
                 {inputType === 'disjoint' 
                   ? 'Values are disjoint regions (A=5, B=2, A&B=1 → total A=6, B=3)' 
                   : 'Values are total set sizes (A=6, B=3, A&B=1)'}
+              </p>
+            </div>
+
+            <!-- Initial Layout Only Option -->
+            <div class="mb-4">
+              <label class="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  bind:checked={useInitialOnly}
+                  class="mr-2"
+                />
+                <span class="text-sm font-medium text-gray-700">Use initial layout only (skip optimization)</span>
+              </label>
+              <p class="mt-1 text-xs text-gray-500">
+                Shows MDS-based initial positions without final optimization
               </p>
             </div>
             

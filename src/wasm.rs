@@ -439,3 +439,138 @@ pub fn get_debug_info_simple(
 
     serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{}", e)))
 }
+
+/// Generate layout from diagram specification (initial layout only, no optimization)
+#[wasm_bindgen]
+pub fn generate_from_spec_initial(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+) -> Result<Vec<WasmCircle>, JsValue> {
+    use crate::diagram::{DiagramSpecBuilder, InputType};
+    use crate::fitter::Fitter;
+
+    // Parse input type
+    let input_type = match input_type.as_str() {
+        "disjoint" => InputType::Disjoint,
+        "union" => InputType::Union,
+        _ => {
+            return Err(JsValue::from_str(
+                "Invalid input type. Must be 'disjoint' or 'union'",
+            ))
+        }
+    };
+
+    // Build diagram spec
+    let mut builder = DiagramSpecBuilder::new();
+
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+
+        if sets.len() == 1 {
+            builder = builder.set(sets[0], size);
+        } else if sets.len() > 1 {
+            builder = builder.intersection(&sets, size);
+        }
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
+
+    // Fit using initial layout only
+    let fitter = Fitter::new(&diagram_spec);
+    let layout = fitter
+        .fit_initial_only()
+        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
+
+    // Convert to WasmCircles
+    let wasm_circles: Vec<WasmCircle> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|shape| {
+                WasmCircle::new(
+                    shape.center().x(),
+                    shape.center().y(),
+                    shape.radius(),
+                    name.clone(),
+                )
+            })
+        })
+        .collect();
+
+    Ok(wasm_circles)
+}
+
+/// Get debug info for initial layout only
+#[wasm_bindgen]
+pub fn get_debug_info_initial(
+    inputs: Vec<String>,
+    sizes: Vec<f64>,
+    input_type: String,
+) -> Result<String, JsValue> {
+    use crate::diagram::{DiagramSpecBuilder, InputType};
+    use crate::fitter::Fitter;
+    use std::collections::HashMap;
+
+    let input_type_enum = match input_type.as_str() {
+        "disjoint" => InputType::Disjoint,
+        "union" => InputType::Union,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for (input, size) in inputs.iter().zip(sizes.iter()) {
+        if input.trim().is_empty() || *size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        if sets.len() == 1 {
+            builder = builder.set(sets[0], *size);
+        } else if sets.len() > 1 {
+            builder = builder.intersection(&sets, *size);
+        }
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type_enum)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let fitter = Fitter::new(&diagram_spec);
+    let layout = fitter
+        .fit_initial_only()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let mut target: HashMap<String, f64> = HashMap::new();
+    for (combo, &area) in diagram_spec.disjoint_areas() {
+        target.insert(combo.to_string(), area);
+    }
+
+    use crate::fitter::final_layout::compute_disjoint_areas_from_layout;
+    let circles: Vec<Circle> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| layout.shape_for_set(name).cloned())
+        .collect();
+    let fitted_disjoint = compute_disjoint_areas_from_layout(&circles, diagram_spec.set_names());
+    let mut fitted: HashMap<String, f64> = HashMap::new();
+    for (combo, area) in fitted_disjoint {
+        fitted.insert(combo.to_string(), area);
+    }
+
+    let response = serde_json::json!({
+        "loss": layout.loss(),
+        "target_areas": target,
+        "fitted_areas": fitted
+    });
+
+    serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{}", e)))
+}
