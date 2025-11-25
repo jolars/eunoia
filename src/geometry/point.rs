@@ -58,6 +58,10 @@ impl Point {
         (self.x - other.x).hypot(self.y - other.y)
     }
 
+    pub fn angle_to(&self, other: &Self) -> f64 {
+        (other.y - self.y).atan2(other.x - self.x)
+    }
+
     pub fn rotate_around(&self, other: &Self, angle: f64) -> Self {
         let (sin_theta, cos_theta) = angle.sin_cos();
         let dx = self.x - other.x;
