@@ -78,14 +78,18 @@
       error = '';
     } catch (e) {
       error = `Failed to generate diagram: ${e}`;
+      circles = []; // Clear circles on error
       console.error(e);
     }
   }
   
   // Auto-generate diagram when specification changes
+  // Only trigger when size values change, not when input text is being edited
   $effect(() => {
     if (wasmModule && diagramRows.length > 0) {
-      console.log('Generating diagram from spec:', JSON.stringify(diagramRows));
+      // Track only the size values to avoid premature updates while typing
+      const sizeSignature = diagramRows.map(row => row.size).join(',');
+      console.log('Generating diagram from spec (sizes changed):', sizeSignature);
       generateFromSpec();
     }
   });
@@ -146,10 +150,6 @@
       <div class="bg-white rounded-lg shadow p-8 text-center">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
         <p class="mt-4 text-gray-600">Loading WASM module...</p>
-      </div>
-    {:else if error}
-      <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-        <p class="text-red-800">{error}</p>
       </div>
     {:else}
       {#if error}
