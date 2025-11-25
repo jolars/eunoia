@@ -116,7 +116,7 @@ pub fn generate_from_spec(
         let input = spec.input.trim();
         let size = spec.size;
 
-        if input.is_empty() || size <= 0.0 {
+        if input.is_empty() || size < 0.0 {
             continue;
         }
 

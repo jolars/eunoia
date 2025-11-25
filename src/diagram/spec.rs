@@ -131,16 +131,27 @@ impl DiagramSpecBuilder {
             return Err(DiagramError::EmptySets);
         }
 
-        // Collect all unique set names (use set_order for ordering) and find single-set combinations
-        let mut set_names = HashSet::new();
+        // Collect all unique set names from all combinations
+        let mut all_set_names = HashSet::new();
         let mut single_sets = HashSet::new();
 
         for combination in self.combinations.keys() {
             for set_name in combination.sets() {
-                set_names.insert(set_name.clone());
+                all_set_names.insert(set_name.clone());
             }
             if combination.len() == 1 {
                 single_sets.insert(combination.sets()[0].clone());
+            }
+        }
+
+        // For sets that appear in intersections but not as single sets,
+        // implicitly add them with value 0.0 (they exist entirely within intersections)
+        let mut combinations = self.combinations;
+        for set_name in &all_set_names {
+            if !single_sets.contains(set_name) {
+                let combination = Combination::new(&[set_name.as_str()]);
+                combinations.insert(combination, 0.0);
+                single_sets.insert(set_name.clone());
             }
         }
 
@@ -148,12 +159,12 @@ impl DiagramSpecBuilder {
         let ordered_set_names: Vec<String> = self
             .set_order
             .iter()
-            .filter(|name| set_names.contains(*name))
+            .filter(|name| all_set_names.contains(*name))
             .cloned()
             .collect();
 
         // Validate that all values are non-negative
-        for (combination, &value) in &self.combinations {
+        for (combination, &value) in &combinations {
             if value < 0.0 {
                 return Err(DiagramError::InvalidValue {
                     combination: combination.to_string(),
@@ -162,27 +173,16 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // Validate that all sets in intersections are defined as single sets
-        for combination in self.combinations.keys() {
-            if combination.len() > 1 {
-                for set_name in combination.sets() {
-                    if !single_sets.contains(set_name) {
-                        return Err(DiagramError::UndefinedSet(set_name.clone()));
-                    }
-                }
-            }
-        }
-
         // Convert to both disjoint and union representations
         let input_type = self.input_type.unwrap_or_default();
         let (disjoint_areas, union_areas) = match input_type {
             InputType::Disjoint => {
-                let disjoint = self.combinations;
+                let disjoint = combinations;
                 let union = DiagramSpec::disjoint_to_union_static(&disjoint)?;
                 (disjoint, union)
             }
             InputType::Union => {
-                let union = self.combinations;
+                let union = combinations;
                 let disjoint = DiagramSpec::union_to_disjoint_static(&union)?;
                 (disjoint, union)
             }
@@ -234,13 +234,45 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_undefined_set_error() {
-        let result = DiagramSpecBuilder::new()
-            .set("A", 5.0)
+    fn test_builder_implicit_zero_set() {
+        // When a set is referenced in an intersection but not defined as a single set,
+        // it should be implicitly added with value 0.0
+        let spec = DiagramSpecBuilder::new()
+            .set("B", 5.0)
             .intersection(&["A", "B"], 1.0)
-            .build();
+            .input_type(InputType::Disjoint)
+            .build()
+            .unwrap();
 
-        assert!(matches!(result, Err(DiagramError::UndefinedSet(_))));
+        // Set A should be implicitly added with disjoint value 0.0
+        let combo_a = Combination::new(&["A"]);
+        assert_eq!(spec.get_disjoint(&combo_a), Some(0.0));
+
+        // In union representation, A should have total size = 1.0 (just the intersection)
+        assert_eq!(spec.get_union(&combo_a), Some(1.0));
+    }
+
+    #[test]
+    fn test_contained_set_disjoint() {
+        // Test case: A=0, B=5, A&B=1 (disjoint)
+        // This means A is entirely contained within B
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 0.0)
+            .set("B", 5.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Disjoint)
+            .build()
+            .unwrap();
+
+        // Disjoint areas
+        assert_eq!(spec.get_disjoint(&Combination::new(&["A"])), Some(0.0));
+        assert_eq!(spec.get_disjoint(&Combination::new(&["B"])), Some(5.0));
+        assert_eq!(spec.get_disjoint(&Combination::new(&["A", "B"])), Some(1.0));
+
+        // Union areas (total sizes)
+        assert_eq!(spec.get_union(&Combination::new(&["A"])), Some(1.0)); // A total = 0 + 1
+        assert_eq!(spec.get_union(&Combination::new(&["B"])), Some(6.0)); // B total = 5 + 1
+        assert_eq!(spec.get_union(&Combination::new(&["A", "B"])), Some(1.0));
     }
 
     #[test]

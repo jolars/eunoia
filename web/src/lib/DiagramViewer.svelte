@@ -65,7 +65,7 @@
     try {
       // Convert diagramRows to DiagramSpec objects
       const specs = diagramRows
-        .filter(row => row.input.trim() !== '' && row.size > 0)
+        .filter(row => row.input.trim() !== '' && row.size >= 0)
         .map(row => new wasmModule.DiagramSpec(row.input, row.size));
       
       if (specs.length === 0) {
