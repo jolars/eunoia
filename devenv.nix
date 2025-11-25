@@ -10,6 +10,7 @@
     cargo-llvm-cov
     prettierd
     nodejs
+    wasm-pack
   ];
 
   languages = {
