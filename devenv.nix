@@ -2,7 +2,6 @@
   pkgs,
   ...
 }:
-
 {
   packages = with pkgs; [
     go-task
@@ -24,6 +23,27 @@
 
     typescript = {
       enable = true;
+    };
+
+    r = {
+      enable = true;
+      package = (
+        pkgs.rWrapper.override {
+          packages = with pkgs.rPackages; [
+            GenSA
+            polyclip
+            polylabelr
+            Rcpp
+            RcppArmadillo
+            devtools
+            languageserver
+            SLOPE
+            tidyverse
+            usethis
+            testthat
+          ];
+        }
+      );
     };
   };
 
