@@ -37,9 +37,8 @@ impl Layout {
         spec: &DiagramSpec,
         iterations: usize,
     ) -> Self {
-        // Use union areas for requested (what the shapes should produce)
-        let requested = spec.union_areas().clone();
-        let fitted = Self::compute_fitted_areas(&shapes, &set_to_shape, spec);
+        let requested = spec.disjoint_areas().clone();
+        let fitted = Self::compute_fitted_areas(&shapes, spec);
         let loss = Self::compute_loss(&requested, &fitted);
 
         Layout {
@@ -93,44 +92,10 @@ impl Layout {
     }
 
     /// Compute all combination areas from current shapes.
-    fn compute_fitted_areas(
-        shapes: &[Circle],
-        set_to_shape: &HashMap<String, usize>,
-        spec: &DiagramSpec,
-    ) -> HashMap<Combination, f64> {
-        let mut fitted = HashMap::new();
+    fn compute_fitted_areas(shapes: &[Circle], spec: &DiagramSpec) -> HashMap<Combination, f64> {
+        let set_names = spec.set_names();
 
-        // For each combination in the spec, compute its actual area
-        for combo in spec.union_areas().keys() {
-            let area = if combo.len() == 1 {
-                // Single set - just the circle area
-                let set_name = &combo.sets()[0];
-                if let Some(&idx) = set_to_shape.get(set_name) {
-                    shapes[idx].area()
-                } else {
-                    0.0
-                }
-            } else if combo.len() == 2 {
-                // Two-way intersection
-                let set_names = combo.sets();
-                if let (Some(&idx1), Some(&idx2)) = (
-                    set_to_shape.get(&set_names[0]),
-                    set_to_shape.get(&set_names[1]),
-                ) {
-                    shapes[idx1].intersection_area(&shapes[idx2])
-                } else {
-                    0.0
-                }
-            } else {
-                // TODO: Handle 3+ way intersections
-                // For now, just use 0.0
-                0.0
-            };
-
-            fitted.insert(combo.clone(), area);
-        }
-
-        fitted
+        crate::fitter::final_layout::compute_disjoint_areas_from_layout(shapes, set_names)
     }
 
     /// Compute region error loss.

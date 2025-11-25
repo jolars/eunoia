@@ -200,19 +200,39 @@ impl DiagramSpec {
     ) -> Result<HashMap<Combination, f64>, DiagramError> {
         let mut union: HashMap<Combination, f64> = HashMap::new();
 
-        // For each combination, its union area = its disj area + disj areas of all supersets
-        for (combo, &disj_area) in disjoint.iter() {
-            let mut union_area = disj_area;
+        // First, collect all unique set names
+        let mut all_sets = std::collections::HashSet::new();
+        for combo in disjoint.keys() {
+            for set_name in combo.sets() {
+                all_sets.insert(set_name.clone());
+            }
+        }
+        let all_sets: Vec<String> = all_sets.into_iter().collect();
+        let n_sets = all_sets.len();
 
-            // Add disjoint areas of all proper supersets (combinations that contain this one)
+        // Generate all possible combinations (power set excluding empty)
+        for mask in 1..(1 << n_sets) {
+            let mut combo_sets = Vec::new();
+            for (i, set_name) in all_sets.iter().enumerate() {
+                if (mask & (1 << i)) != 0 {
+                    combo_sets.push(set_name.as_str());
+                }
+            }
+            let combo = Combination::new(&combo_sets);
+
+            // Compute union area = sum of disjoint areas of this combo and all its supersets
+            let mut union_area = 0.0;
             for (other_combo, &other_disj) in disjoint.iter() {
-                // other_combo is a proper superset of combo (contains all sets in combo, plus more)
-                if other_combo != combo && other_combo.contains_all(combo) {
+                // Include if other_combo contains all sets in combo
+                if other_combo.contains_all(&combo) {
                     union_area += other_disj;
                 }
             }
 
-            union.insert(combo.clone(), union_area);
+            // Only include if non-zero
+            if union_area > 1e-10 {
+                union.insert(combo, union_area);
+            }
         }
 
         Ok(union)

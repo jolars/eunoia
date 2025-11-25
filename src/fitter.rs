@@ -82,6 +82,18 @@ impl<'a> Fitter<'a> {
     /// println!("Loss: {}", layout.loss());
     /// ```
     pub fn fit(self) -> Result<Layout, DiagramError> {
+        self.fit_with_optimization(true)
+    }
+
+    /// Fit the diagram, optionally skipping final optimization.
+    ///
+    /// When `optimize` is false, returns only the initial MDS-based layout.
+    /// This is useful for debugging or comparing initial vs optimized layouts.
+    pub fn fit_initial_only(self) -> Result<Layout, DiagramError> {
+        self.fit_with_optimization(false)
+    }
+
+    fn fit_with_optimization(self, optimize: bool) -> Result<Layout, DiagramError> {
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
 
@@ -107,16 +119,20 @@ impl<'a> Fitter<'a> {
             .map(|area| (area / std::f64::consts::PI).sqrt())
             .collect();
 
-        let config = final_layout::FinalLayoutConfig {
-            max_iterations: self.max_iterations,
-            ..Default::default()
-        };
+        let (final_positions, final_radii, _loss) = if optimize {
+            let config = final_layout::FinalLayoutConfig {
+                max_iterations: self.max_iterations,
+                ..Default::default()
+            };
 
-        let (final_positions, final_radii, _loss) =
             final_layout::optimize_layout(&spec, &initial_positions, &initial_radii, config)
                 .map_err(|e| {
                     DiagramError::InvalidCombination(format!("Optimization failed: {}", e))
-                })?;
+                })?
+        } else {
+            // Skip optimization, just use initial layout
+            (initial_positions, initial_radii, 0.0)
+        };
 
         // Step 3: Create final shapes
         let mut shapes = Vec::new();
@@ -203,5 +219,24 @@ mod tests {
 
         assert_eq!(layout.shapes().len(), 2);
         assert_eq!(layout.requested().len(), 3); // A, B, A&B
+    }
+
+    #[test]
+    fn test_russian_doll_initial_fit() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 1.0)
+            .intersection(&["A", "B"], 1.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .input_type(crate::InputType::Disjoint)
+            .build()
+            .unwrap();
+
+        println!("Spec: {:#?}", spec);
+
+        let layout = Fitter::new(&spec).fit_initial_only().unwrap();
+
+        println!("Initial layout loss: {:#?}", layout);
+
+        assert!(layout.loss() <= 1e-6);
     }
 }

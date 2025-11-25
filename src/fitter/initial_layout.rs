@@ -81,7 +81,7 @@ pub(crate) fn compute_initial_layout_with_config(
         };
 
         let line_search = MoreThuenteLineSearch::new();
-        let solver = LBFGS::new(line_search, 7);
+        let solver = LBFGS::new(line_search, 10);
 
         let result = Executor::new(cost_function, solver)
             .configure(|state| state.param(initial_param).max_iters(200))
@@ -199,7 +199,7 @@ impl<'a> Gradient for MdsCost<'a> {
                 }
 
                 grad[i] += 4.0 * d * xd;
-                grad[n_sets + i] += 4.0 * d * yd;
+                grad[i + n_sets] += 4.0 * d * yd;
             }
         }
 
@@ -489,8 +489,8 @@ mod tests {
         let relationships = create_test_relationships(2);
 
         let config = InitialLayoutConfig {
-            max_attempts: 20,
-            patience: 3,
+            max_attempts: 100,
+            patience: 10,
             improvement_threshold: 0.01,
             perfect_fit_threshold: 1e-8,
         };
