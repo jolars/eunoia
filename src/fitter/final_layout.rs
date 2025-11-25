@@ -7,11 +7,15 @@
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
+use std::collections::HashMap;
 
-use crate::diagram::PreprocessedSpec;
+use crate::diagram::{Combination, PreprocessedSpec};
 use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::Circle;
 use crate::geometry::shapes::Shape;
+
+/// Type alias for region bit masks
+type RegionMask = usize;
 
 /// Threshold for considering an intersection area as "viable" (non-zero).
 const VIABLE_THRESHOLD: f64 = 1e-8;
@@ -158,46 +162,203 @@ impl<'a> CostFunction for RegionErrorCost<'a> {
     type Output = f64;
 
     fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
-        let shapes = self.params_to_circles(param);
-
+        let circles = self.params_to_circles(param);
         let n_sets = self.spec.n_sets;
 
-        let mut intersections: Vec<IntersectionPoint> = Vec::new();
+        // Step 1: Collect all intersection points
+        let intersections = collect_intersections(&circles, n_sets);
 
-        // We collect all intersection points between pairs of shapes.
-        // We need this because if we want the area of an intersection region,
-        // it is defined by the intersection points that are adopted (contained
-        // within the shapes of the intersection).
-        for i in 0..n_sets {
-            for j in (i + 1)..n_sets {
-                let pts = shapes[i].intersection_points(&shapes[j]);
-                for point in pts {
-                    let adopters = (0..n_sets)
-                        .filter(|&k| shapes[k].contains_point(&point))
-                        .collect();
+        // Step 2: Discover which regions exist
+        let regions = discover_regions(&circles, &intersections, n_sets);
 
-                    intersections.push(IntersectionPoint {
-                        point,
-                        parents: (i, j),
-                        adopters,
-                    });
-                }
-            }
+        // Step 3: Compute overlapping area for each region
+        let mut overlapping_areas = HashMap::new();
+        for &mask in &regions {
+            let area = compute_region_area(mask, &circles, &intersections, n_sets);
+            overlapping_areas.insert(mask, area);
         }
 
-        // Next, we need to compute the area of each region defined by the
-        // intersections between the shapes (circles). We need to figure
-        // out which intersections actually exist in the diagram.
-        // In eulerr, this was done naively by checking all combinations,
-        // but this is very inefficient when there are many sets.
-        // For eunoia, we want to do this more intelligently.
-        // How?
+        // Step 4: Convert overlapping areas to disjoint areas
+        let disjoint_areas = to_disjoint_areas(&overlapping_areas);
 
-        // Compute region error: sum of squared differences
-        let error = 0.0;
+        // Step 5: Compute error against target areas
+        let error = compute_region_error(
+            &disjoint_areas,
+            &self.spec.disjoint_areas,
+            &self.spec.set_names,
+        );
 
         Ok(error)
     }
+}
+
+/// Collect all intersection points between pairs of circles.
+fn collect_intersections(circles: &[Circle], n_sets: usize) -> Vec<IntersectionPoint> {
+    let mut intersections = Vec::new();
+
+    for i in 0..n_sets {
+        for j in (i + 1)..n_sets {
+            let pts = circles[i].intersection_points(&circles[j]);
+            for point in pts {
+                let adopters = (0..n_sets)
+                    .filter(|&k| circles[k].contains_point(&point))
+                    .collect();
+
+                intersections.push(IntersectionPoint::new(point, (i, j), adopters));
+            }
+        }
+    }
+
+    intersections
+}
+
+/// Discover which regions actually exist in the diagram using sparse detection.
+fn discover_regions(
+    circles: &[Circle],
+    intersections: &[IntersectionPoint],
+    n_sets: usize,
+) -> Vec<RegionMask> {
+    let mut regions = std::collections::HashSet::new();
+
+    // 1. Singles always exist
+    for i in 0..n_sets {
+        regions.insert(1 << i);
+    }
+
+    // 2. From intersection points - convert adopters to masks
+    for info in intersections {
+        let mask = adopters_to_mask(info.adopters());
+        regions.insert(mask);
+    }
+
+    // 3. From containment (pairs with no edge intersection)
+    for i in 0..n_sets {
+        for j in (i + 1)..n_sets {
+            let has_edge_intersection = intersections
+                .iter()
+                .any(|info| info.parents() == (i, j) || info.parents() == (j, i));
+
+            if !has_edge_intersection {
+                if circles[i].contains(&circles[j]) || circles[j].contains(&circles[i]) {
+                    regions.insert((1 << i) | (1 << j));
+                }
+            }
+        }
+    }
+
+    regions.into_iter().collect()
+}
+
+/// Convert adopters vector to a region bit mask.
+fn adopters_to_mask(adopters: &[usize]) -> RegionMask {
+    adopters.iter().fold(0, |mask, &i| mask | (1 << i))
+}
+
+/// Compute the area of a region based on its bit mask.
+fn compute_region_area(
+    mask: RegionMask,
+    circles: &[Circle],
+    intersections: &[IntersectionPoint],
+    n_sets: usize,
+) -> f64 {
+    let circle_count = mask.count_ones();
+
+    match circle_count {
+        0 => 0.0,
+        1 => {
+            // Single circle - just return its area
+            let idx = mask.trailing_zeros() as usize;
+            circles[idx].area()
+        }
+        2 => {
+            // Two circles - use intersection_area
+            let indices = mask_to_indices(mask, n_sets);
+            circles[indices[0]].intersection_area(&circles[indices[1]])
+        }
+        _ => {
+            // 3+ circles - use the multiple_overlap_areas function
+            // Filter intersection points that belong to this region
+            let region_points: Vec<IntersectionPoint> = intersections
+                .iter()
+                .filter(|info| adopters_to_mask(info.adopters()) == mask)
+                .cloned()
+                .collect();
+
+            if region_points.is_empty() {
+                0.0 // No geometry
+            } else {
+                crate::geometry::shapes::circle::multiple_overlap_areas(circles, &region_points)
+            }
+        }
+    }
+}
+
+/// Convert a region mask to a list of circle indices.
+fn mask_to_indices(mask: RegionMask, n_sets: usize) -> Vec<usize> {
+    (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect()
+}
+
+/// Convert overlapping areas to disjoint areas using inclusion-exclusion.
+fn to_disjoint_areas(overlapping_areas: &HashMap<RegionMask, f64>) -> HashMap<RegionMask, f64> {
+    let mut disjoint = overlapping_areas.clone();
+
+    // Sort masks by bit count (process larger sets first)
+    let mut masks: Vec<_> = overlapping_areas.keys().copied().collect();
+    masks.sort_by_key(|m| std::cmp::Reverse(m.count_ones()));
+
+    // For each region, subtract all its supersets
+    for &mask_i in &masks {
+        for &mask_j in &masks {
+            if mask_i != mask_j && is_subset(mask_i, mask_j) {
+                *disjoint.get_mut(&mask_i).unwrap() -= disjoint[&mask_j];
+            }
+        }
+    }
+
+    // Clamp to non-negative
+    for area in disjoint.values_mut() {
+        *area = area.max(0.0);
+    }
+
+    disjoint
+}
+
+/// Check if mask1 is a subset of mask2.
+fn is_subset(mask1: RegionMask, mask2: RegionMask) -> bool {
+    (mask1 & mask2) == mask1
+}
+
+/// Compute region error: sum of squared differences between fitted and target areas.
+fn compute_region_error(
+    fitted_areas: &HashMap<RegionMask, f64>,
+    target_areas: &HashMap<Combination, f64>,
+    set_names: &[String],
+) -> f64 {
+    let mut error = 0.0;
+
+    for (combo, &target) in target_areas {
+        // Convert combination to mask
+        let mask = combination_to_mask(combo, set_names);
+        let fitted = fitted_areas.get(&mask).copied().unwrap_or(0.0);
+        let diff = fitted - target;
+        error += diff * diff;
+    }
+
+    error
+}
+
+/// Convert a Combination to a bit mask.
+fn combination_to_mask(combo: &Combination, set_names: &[String]) -> RegionMask {
+    let combo_sets = combo.sets();
+    let mut mask = 0;
+
+    for (i, set_name) in set_names.iter().enumerate() {
+        if combo_sets.contains(set_name) {
+            mask |= 1 << i;
+        }
+    }
+
+    mask
 }
 
 #[cfg(test)]
@@ -235,5 +396,169 @@ mod tests {
         assert_eq!(final_positions.len(), 4);
         assert_eq!(final_radii.len(), 2);
         assert!(loss >= 0.0);
+
+        // Loss should be reasonably small (circles should move closer)
+        println!("Initial loss: compute initial loss");
+        println!("Final loss: {}", loss);
+    }
+
+    #[test]
+    fn test_region_discovery() {
+        // Test that we correctly discover regions from circles
+        let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let c2 = Circle::new(Point::new(1.5, 0.0), 2.0);
+        let c3 = Circle::new(Point::new(0.75, 1.3), 2.0);
+        let circles = vec![c1, c2, c3];
+
+        let intersections = collect_intersections(&circles, 3);
+        let regions = discover_regions(&circles, &intersections, 3);
+
+        // Should have at least: 3 singles + some overlaps
+        assert!(
+            regions.len() >= 3,
+            "Should discover at least 3 single regions"
+        );
+
+        // Check that singles exist
+        assert!(
+            regions.contains(&(1 << 0)),
+            "Region for circle 0 should exist"
+        );
+        assert!(
+            regions.contains(&(1 << 1)),
+            "Region for circle 1 should exist"
+        );
+        assert!(
+            regions.contains(&(1 << 2)),
+            "Region for circle 2 should exist"
+        );
+
+        println!("Discovered {} regions", regions.len());
+        for &mask in &regions {
+            let count = mask.count_ones();
+            println!("  Region mask {:#b} ({} circles)", mask, count);
+        }
+    }
+
+    #[test]
+    fn test_compute_region_area_single() {
+        let c = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let circles = vec![c];
+        let intersections = vec![];
+
+        let mask = 1; // First circle only
+        let area = compute_region_area(mask, &circles, &intersections, 1);
+
+        let expected = c.area();
+        let error = (area - expected).abs() / expected;
+        assert!(
+            error < 0.001,
+            "Single circle area should match: {} vs {}",
+            area,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_compute_region_area_two_circles() {
+        let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let c2 = Circle::new(Point::new(1.0, 0.0), 1.0);
+        let circles = vec![c1, c2];
+
+        let intersections = collect_intersections(&circles, 2);
+
+        let mask = 0b11; // Both circles
+        let area = compute_region_area(mask, &circles, &intersections, 2);
+
+        let expected = c1.intersection_area(&c2);
+        let error = (area - expected).abs() / expected;
+        assert!(
+            error < 0.001,
+            "Two circle intersection area should match: {} vs {}",
+            area,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_compute_region_area_three_circles() {
+        let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
+        let c2 = Circle::new(Point::new(1.5, 0.0), 2.0);
+        let c3 = Circle::new(Point::new(0.75, 1.3), 2.0);
+        let circles = vec![c1, c2, c3];
+
+        let intersections = collect_intersections(&circles, 3);
+
+        let mask = 0b111; // All three circles
+        let area = compute_region_area(mask, &circles, &intersections, 3);
+
+        // Should be positive and reasonable
+        assert!(area > 0.0, "Three circle intersection should exist");
+        assert!(
+            area < 10.0,
+            "Three circle intersection should be smaller than individual circles"
+        );
+
+        println!("Three-way intersection area: {}", area);
+    }
+
+    #[test]
+    fn test_to_disjoint_areas() {
+        // Create overlapping areas manually
+        let mut overlapping = HashMap::new();
+        overlapping.insert(0b01, 10.0); // A only
+        overlapping.insert(0b10, 15.0); // B only
+        overlapping.insert(0b11, 3.0); // A ∩ B
+
+        let disjoint = to_disjoint_areas(&overlapping);
+
+        // A only (disjoint) = A - (A ∩ B) = 10 - 3 = 7
+        // B only (disjoint) = B - (A ∩ B) = 15 - 3 = 12
+        // A ∩ B (disjoint) = 3 (unchanged, no supersets)
+
+        assert!(
+            (disjoint[&0b01] - 7.0).abs() < 0.001,
+            "A disjoint should be 7"
+        );
+        assert!(
+            (disjoint[&0b10] - 12.0).abs() < 0.001,
+            "B disjoint should be 12"
+        );
+        assert!((disjoint[&0b11] - 3.0).abs() < 0.001, "A∩B should be 3");
+    }
+
+    #[test]
+    fn test_cost_function_computes() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 5.0)
+            .intersection(&["A", "B"], 2.0)
+            .build()
+            .unwrap();
+
+        let preprocessed = spec.preprocess().unwrap();
+
+        let cost_fn = RegionErrorCost {
+            spec: &preprocessed,
+        };
+
+        // Create parameter vector
+        let positions = vec![0.0, 0.0, 2.0, 0.0];
+        let radii = vec![
+            (5.0 / std::f64::consts::PI).sqrt(),
+            (5.0 / std::f64::consts::PI).sqrt(),
+        ];
+
+        let mut params = positions.clone();
+        params.extend_from_slice(&radii);
+        let param_vec = DVector::from_vec(params);
+
+        let result = cost_fn.cost(&param_vec);
+        assert!(result.is_ok(), "Cost function should compute successfully");
+
+        let error = result.unwrap();
+        assert!(error >= 0.0, "Error should be non-negative");
+
+        println!("Initial error: {}", error);
     }
 }
