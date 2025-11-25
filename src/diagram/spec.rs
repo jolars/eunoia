@@ -155,13 +155,21 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // Use set_order to create an ordered vector of set names
-        let ordered_set_names: Vec<String> = self
+        // Use set_order to create an ordered vector of set names, then add any
+        // implicitly defined sets that weren't in the original order
+        let mut ordered_set_names: Vec<String> = self
             .set_order
             .iter()
             .filter(|name| all_set_names.contains(*name))
             .cloned()
             .collect();
+
+        // Add any sets that were implicitly discovered but not in set_order
+        for set_name in &all_set_names {
+            if !ordered_set_names.contains(set_name) {
+                ordered_set_names.push(set_name.clone());
+            }
+        }
 
         // Validate that all values are non-negative
         for (combination, &value) in &combinations {
@@ -273,6 +281,63 @@ mod tests {
         assert_eq!(spec.get_union(&Combination::new(&["A"])), Some(1.0)); // A total = 0 + 1
         assert_eq!(spec.get_union(&Combination::new(&["B"])), Some(6.0)); // B total = 5 + 1
         assert_eq!(spec.get_union(&Combination::new(&["A", "B"])), Some(1.0));
+    }
+
+    #[test]
+    fn test_implicit_set_from_three_way() {
+        // Test case: A=0, B=5, A&B=1, A&B&C=0.1 (disjoint)
+        // Set C is only referenced in the 3-way intersection
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 0.0)
+            .set("B", 5.0)
+            .intersection(&["A", "B"], 1.0)
+            .intersection(&["A", "B", "C"], 0.1)
+            .input_type(InputType::Disjoint)
+            .build()
+            .unwrap();
+
+        // All three sets should exist
+        assert_eq!(spec.set_names().len(), 3);
+        assert!(spec.set_names().contains(&"A".to_string()));
+        assert!(spec.set_names().contains(&"B".to_string()));
+        assert!(spec.set_names().contains(&"C".to_string()));
+
+        // Check that C was implicitly added with value 0.0
+        assert_eq!(spec.get_disjoint(&Combination::new(&["C"])), Some(0.0));
+
+        // C's union area should be 0.1 (just the 3-way intersection)
+        assert_eq!(spec.get_union(&Combination::new(&["C"])), Some(0.1));
+    }
+
+    #[test]
+    fn test_nested_containment() {
+        // Test case: B=5, A&B=2, A&B&C=1 (disjoint)
+        // A is contained in B, and C is contained in A&B
+        let spec = DiagramSpecBuilder::new()
+            .set("B", 5.0)
+            .intersection(&["A", "B"], 2.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .input_type(InputType::Disjoint)
+            .build()
+            .unwrap();
+
+        // All three sets should exist
+        assert_eq!(spec.set_names().len(), 3);
+
+        // Expected disjoint areas
+        assert_eq!(spec.get_disjoint(&Combination::new(&["A"])), Some(0.0));
+        assert_eq!(spec.get_disjoint(&Combination::new(&["B"])), Some(5.0));
+        assert_eq!(spec.get_disjoint(&Combination::new(&["C"])), Some(0.0));
+        assert_eq!(spec.get_disjoint(&Combination::new(&["A", "B"])), Some(2.0));
+        assert_eq!(
+            spec.get_disjoint(&Combination::new(&["A", "B", "C"])),
+            Some(1.0)
+        );
+
+        // Expected union areas (total sizes)
+        assert_eq!(spec.get_union(&Combination::new(&["A"])), Some(3.0)); // 0 + 2 + 1
+        assert_eq!(spec.get_union(&Combination::new(&["B"])), Some(8.0)); // 5 + 2 + 1
+        assert_eq!(spec.get_union(&Combination::new(&["C"])), Some(1.0)); // 0 + 1
     }
 
     #[test]

@@ -17,6 +17,9 @@
   let wasmModule = $state<any>(null);
   let loading = $state(true);
   let error = $state('');
+  let loss = $state<number>(0);
+  let targetAreas = $state<Record<string, number>>({});
+  let fittedAreas = $state<Record<string, number>>({});
   
   // Diagram specification
   let diagramRows = $state<DiagramRow[]>([
@@ -71,16 +74,43 @@
       if (specs.length === 0) {
         circles = [];
         error = '';
+        loss = 0;
+        targetAreas = {};
+        fittedAreas = {};
         return;
       }
       
-      // Generate diagram from specification (returns Result)
+      // Generate diagram from specification
       const result = wasmModule.generate_from_spec(specs, inputType);
       circles = Array.from(result);
       error = '';
+      
+      // Get debug info separately using simple arrays
+      try {
+        const inputs = diagramRows
+          .filter(row => row.input.trim() !== '' && row.size >= 0)
+          .map(row => row.input);
+        const sizes = diagramRows
+          .filter(row => row.input.trim() !== '' && row.size >= 0)
+          .map(row => row.size);
+        
+        const debugJson = wasmModule.get_debug_info_simple(inputs, sizes, inputType);
+        const debugData = JSON.parse(debugJson);
+        loss = debugData.loss;
+        targetAreas = debugData.target_areas;
+        fittedAreas = debugData.fitted_areas;
+      } catch (debugError) {
+        console.error('Debug info error:', debugError);
+        loss = 0;
+        targetAreas = {};
+        fittedAreas = {};
+      }
     } catch (e) {
       error = `Failed to generate diagram: ${e}`;
       circles = []; // Clear circles on error
+      loss = 0;
+      targetAreas = {};
+      fittedAreas = {};
       console.error(e);
     }
   }
@@ -237,6 +267,57 @@
               </button>
             </div>
           </div>
+          
+          <!-- Debug Information -->
+          {#if circles.length > 0}
+            <div class="bg-white rounded-lg shadow p-6 mt-6">
+              <h2 class="text-xl font-semibold mb-4">Debug Information</h2>
+              
+              <div class="mb-4">
+                <div class="text-sm font-medium text-gray-700 mb-1">Loss: <span class="font-mono">{loss.toFixed(4)}</span></div>
+                <div class="text-xs text-gray-500 mt-2">
+                  Target keys: {Object.keys(targetAreas).length} | 
+                  Fitted keys: {Object.keys(fittedAreas).length}
+                </div>
+              </div>
+              
+              <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <h3 class="font-semibold text-gray-700 mb-2">Target (Disjoint)</h3>
+                  <div class="space-y-1 font-mono text-xs">
+                    {#if Object.keys(targetAreas).length === 0}
+                      <div class="text-gray-400">No data</div>
+                    {:else}
+                      {#each Object.entries(targetAreas).sort() as [combo, area]}
+                        <div class="flex justify-between">
+                          <span>{combo}:</span>
+                          <span>{area.toFixed(3)}</span>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 class="font-semibold text-gray-700 mb-2">Fitted (Disjoint)</h3>
+                  <div class="space-y-1 font-mono text-xs">
+                    {#if Object.keys(fittedAreas).length === 0}
+                      <div class="text-gray-400">No data</div>
+                    {:else}
+                      {#each Object.entries(fittedAreas).sort() as [combo, area]}
+                        <div class="flex justify-between">
+                          <span>{combo}:</span>
+                          <span class:text-red-600={Math.abs(area - (targetAreas[combo] || 0)) > 0.1}>
+                            {area.toFixed(3)}
+                          </span>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            </div>
+          {/if}
         </div>
         
         <!-- Visualization -->

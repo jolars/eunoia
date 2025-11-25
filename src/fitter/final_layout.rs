@@ -30,7 +30,7 @@ pub(crate) struct FinalLayoutConfig {
 impl Default for FinalLayoutConfig {
     fn default() -> Self {
         Self {
-            max_iterations: 100,
+            max_iterations: 500,
             tolerance: 1e-6,
         }
     }
@@ -360,6 +360,47 @@ fn combination_to_mask(combo: &Combination, set_names: &[String]) -> RegionMask 
     mask
 }
 
+/// Compute all disjoint areas from a circle layout (public for WASM)
+pub fn compute_disjoint_areas_from_layout(
+    circles: &[Circle],
+    set_names: &[String],
+) -> HashMap<Combination, f64> {
+    let n_sets = circles.len();
+
+    // Collect intersection points
+    let intersections = collect_intersections(circles, n_sets);
+
+    // Discover regions
+    let regions = discover_regions(circles, &intersections, n_sets);
+
+    // Compute overlapping areas
+    let mut overlapping_areas = HashMap::new();
+    for &mask in &regions {
+        let area = compute_region_area(mask, circles, &intersections, n_sets);
+        overlapping_areas.insert(mask, area);
+    }
+
+    // Convert to disjoint areas
+    let disjoint_masks = to_disjoint_areas(&overlapping_areas);
+
+    // Convert masks to Combinations
+    let mut disjoint_combos = HashMap::new();
+    for (mask, area) in disjoint_masks {
+        if area > 1e-6 {
+            // Only include non-zero areas
+            let indices = mask_to_indices(mask, n_sets);
+            let combo_sets: Vec<&str> = indices.iter().map(|&i| set_names[i].as_str()).collect();
+
+            if !combo_sets.is_empty() {
+                let combo = Combination::new(&combo_sets);
+                disjoint_combos.insert(combo, area);
+            }
+        }
+    }
+
+    disjoint_combos
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,48 +445,6 @@ mod tests {
             }
 
             (circles, set_names)
-        }
-
-        /// Compute all disjoint areas from a circle layout
-        pub fn compute_disjoint_areas_from_layout(
-            circles: &[Circle],
-            set_names: &[String],
-        ) -> HashMap<Combination, f64> {
-            let n_sets = circles.len();
-
-            // Collect intersection points
-            let intersections = collect_intersections(circles, n_sets);
-
-            // Discover regions
-            let regions = discover_regions(circles, &intersections, n_sets);
-
-            // Compute overlapping areas
-            let mut overlapping_areas = HashMap::new();
-            for &mask in &regions {
-                let area = compute_region_area(mask, circles, &intersections, n_sets);
-                overlapping_areas.insert(mask, area);
-            }
-
-            // Convert to disjoint areas
-            let disjoint_masks = to_disjoint_areas(&overlapping_areas);
-
-            // Convert masks to Combinations
-            let mut disjoint_combos = HashMap::new();
-            for (mask, area) in disjoint_masks {
-                if area > 1e-6 {
-                    // Only include non-zero areas
-                    let indices = mask_to_indices(mask, n_sets);
-                    let combo_sets: Vec<&str> =
-                        indices.iter().map(|&i| set_names[i].as_str()).collect();
-
-                    if !combo_sets.is_empty() {
-                        let combo = Combination::new(&combo_sets);
-                        disjoint_combos.insert(combo, area);
-                    }
-                }
-            }
-
-            disjoint_combos
         }
 
         /// Create a DiagramSpec from disjoint areas
