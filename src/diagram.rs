@@ -104,6 +104,7 @@ impl DiagramSpec {
         let mut filtered_disjoint = HashMap::new();
         let mut filtered_union = HashMap::new();
 
+        // First, add all combinations from disjoint_areas
         for (combo, &area) in self.disjoint_areas.iter() {
             // Check if all sets in this combination are non-empty
             let all_non_empty = combo.sets().iter().all(|s| set_to_idx.contains_key(s));
@@ -112,6 +113,19 @@ impl DiagramSpec {
                 filtered_disjoint.insert(combo.clone(), area);
                 if let Some(&union_area) = self.union_areas.get(combo) {
                     filtered_union.insert(combo.clone(), union_area);
+                }
+            }
+        }
+
+        // Also add combinations from union_areas that might have zero disjoint area
+        for (combo, &union_area) in self.union_areas.iter() {
+            let all_non_empty = combo.sets().iter().all(|s| set_to_idx.contains_key(s));
+
+            if all_non_empty && union_area > 1e-10 && !filtered_union.contains_key(combo) {
+                filtered_union.insert(combo.clone(), union_area);
+                // Add to disjoint with 0 if not already there
+                if !filtered_disjoint.contains_key(combo) {
+                    filtered_disjoint.insert(combo.clone(), 0.0);
                 }
             }
         }
@@ -126,7 +140,8 @@ impl DiagramSpec {
         }
 
         // 4. Compute pairwise relationships
-        let relationships = Self::compute_pairwise_relations(&non_empty_sets, &filtered_union)?;
+        let relationships =
+            Self::compute_pairwise_relations(&non_empty_sets, &filtered_union, &filtered_disjoint)?;
 
         Ok(PreprocessedSpec {
             set_names: non_empty_sets,
@@ -143,6 +158,7 @@ impl DiagramSpec {
     fn compute_pairwise_relations(
         set_names: &[String],
         union_areas: &HashMap<Combination, f64>,
+        disjoint_areas: &HashMap<Combination, f64>,
     ) -> Result<PairwiseRelations, DiagramError> {
         let n = set_names.len();
 
@@ -163,24 +179,26 @@ impl DiagramSpec {
 
                 let area_i = union_areas.get(&combo_i).copied().unwrap_or(0.0);
                 let area_j = union_areas.get(&combo_j).copied().unwrap_or(0.0);
-                let area_ij = union_areas.get(&combo_ij).copied().unwrap_or(0.0);
+                let area_ij_union = union_areas.get(&combo_ij).copied().unwrap_or(0.0);
+                let area_ij_disjoint = disjoint_areas.get(&combo_ij).copied().unwrap_or(0.0);
 
-                // Store overlap area
-                overlap_areas[i][j] = area_ij;
-                overlap_areas[j][i] = area_ij;
+                // Store overlap area - use UNION (inclusive) intersection
+                // This represents the total geometric intersection including higher-order overlaps
+                overlap_areas[i][j] = area_ij_union;
+                overlap_areas[j][i] = area_ij_union;
 
                 // Check if disjoint (intersection is zero)
-                if area_ij < 1e-10 {
+                if area_ij_union < 1e-10 {
                     disjoint[i][j] = true;
                     disjoint[j][i] = true;
                 }
 
                 // Check if one is subset of another
-                // j ⊆ i if area(i ∩ j) == area(j)
-                if (area_ij - area_j).abs() < 1e-10 {
+                // j ⊆ i if inclusive area(i ∩ j) == area(j)
+                if (area_ij_union - area_j).abs() < 1e-10 {
                     subset[i][j] = true; // j is subset of i
                 }
-                if (area_ij - area_i).abs() < 1e-10 {
+                if (area_ij_union - area_i).abs() < 1e-10 {
                     subset[j][i] = true; // i is subset of j
                 }
             }
