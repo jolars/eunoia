@@ -245,6 +245,30 @@ fn discover_regions(
         }
     }
 
+    // 4. Higher-order intersections from containment
+    // For any circle, check which other circles contain it (or it contains)
+    // If circle i is contained in multiple circles, their intersection exists
+    for i in 0..n_sets {
+        let mut containing_circles = vec![i]; // Start with itself
+
+        for j in 0..n_sets {
+            if i != j && circles[j].contains(&circles[i]) {
+                containing_circles.push(j);
+            }
+        }
+
+        // If this circle is contained in others, their intersection exists
+        if containing_circles.len() > 1 {
+            let mask = containing_circles
+                .iter()
+                .fold(0, |acc, &idx| acc | (1 << idx));
+            if mask != 0 {
+                // Don't add empty set
+                regions.insert(mask);
+            }
+        }
+    }
+
     regions.into_iter().collect()
 }
 
@@ -275,8 +299,35 @@ fn compute_region_area(
             circles[indices[0]].intersection_area(&circles[indices[1]])
         }
         _ => {
-            // 3+ circles - use the multiple_overlap_areas function
-            // Filter intersection points that belong to this region
+            // 3+ circles - need to check if they have intersection points or are nested
+            let indices = mask_to_indices(mask, n_sets);
+
+            // Check if all circles are nested (one contains all others)
+            let mut all_nested = true;
+            let mut smallest_idx = indices[0];
+            let mut smallest_radius = circles[indices[0]].radius();
+
+            for &idx in &indices {
+                if circles[idx].radius() < smallest_radius {
+                    smallest_radius = circles[idx].radius();
+                    smallest_idx = idx;
+                }
+            }
+
+            // Check if all other circles contain the smallest
+            for &idx in &indices {
+                if idx != smallest_idx && !circles[idx].contains(&circles[smallest_idx]) {
+                    all_nested = false;
+                    break;
+                }
+            }
+
+            if all_nested {
+                // All circles contain the smallest one, so the intersection is the smallest circle
+                return circles[smallest_idx].area();
+            }
+
+            // Otherwise, use the polygon-based calculation from intersection points
             let region_points: Vec<IntersectionPoint> = intersections
                 .iter()
                 .filter(|info| adopters_to_mask(info.adopters()) == mask)
@@ -305,10 +356,16 @@ fn to_disjoint_areas(overlapping_areas: &HashMap<RegionMask, f64>) -> HashMap<Re
     let mut masks: Vec<_> = overlapping_areas.keys().copied().collect();
     masks.sort_by_key(|m| std::cmp::Reverse(m.count_ones()));
 
-    // For each region, subtract all its supersets
+    // For each region, subtract all its proper supersets
     for &mask_i in &masks {
         for &mask_j in &masks {
-            if mask_i != mask_j && is_subset(mask_i, mask_j) {
+            // mask_j is a proper superset of mask_i if:
+            // 1. mask_i's bits are all in mask_j (mask_i is subset of mask_j)
+            // 2. mask_j has more bits than mask_i
+            if mask_i != mask_j
+                && is_subset(mask_i, mask_j)
+                && mask_j.count_ones() > mask_i.count_ones()
+            {
                 *disjoint.get_mut(&mask_i).unwrap() -= disjoint[&mask_j];
             }
         }

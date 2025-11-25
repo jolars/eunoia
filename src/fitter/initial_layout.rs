@@ -89,6 +89,8 @@ pub(crate) fn compute_initial_layout_with_config(
 
         let loss = result.state().get_cost();
 
+        println!("Attempt loss: {}", loss);
+
         // Early stopping if we've achieved perfect fit
         if loss < config.perfect_fit_threshold {
             return Ok(result.state().get_best_param().unwrap().as_slice().to_vec());

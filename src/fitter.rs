@@ -100,6 +100,8 @@ impl<'a> Fitter<'a> {
         // Step 1: Compute initial layout using MDS
         let optimal_distances = Self::compute_optimal_distances(&spec)?;
 
+        println!("Optimal distances: {:#?}", optimal_distances);
+
         let initial_params =
             initial_layout::compute_initial_layout(&optimal_distances, &spec.relationships)
                 .unwrap();

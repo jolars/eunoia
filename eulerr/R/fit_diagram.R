@@ -157,6 +157,8 @@ fit_diagram <- function(
       disjoint <- make_symmetric(disjoint)
       distances <- make_symmetric(distances)
 
+      print(distances)
+
       # Starting layout
       obj <- Inf
       initial_layouts <- vector("list", n_restarts)
@@ -184,6 +186,8 @@ fit_diagram <- function(
         "minimum"
       ))
       initial_layout <- initial_layouts[[best_init]]
+
+      print(initial_layout)
 
       # Final layout
       circle <- match.arg(shape) == "circle"

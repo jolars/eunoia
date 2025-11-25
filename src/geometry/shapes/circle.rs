@@ -271,7 +271,7 @@ pub(crate) fn distance_for_overlap(
         .configure(|state| {
             state
                 .max_iters(max_iter.unwrap_or(1000))
-                .target_cost(tol.unwrap_or(1e-6))
+                .target_cost(tol.unwrap_or(f64::EPSILON.sqrt())) // Match eulerr: sqrt(machine epsilon)
         })
         .run()?;
 
