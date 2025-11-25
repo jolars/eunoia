@@ -1,3 +1,4 @@
+use crate::geometry::shapes::circle::Circle;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -61,6 +62,38 @@ impl DiagramSpec {
     #[wasm_bindgen(getter)]
     pub fn size(&self) -> f64 {
         self.size
+    }
+}
+
+/// Result of diagram generation including debug information
+#[wasm_bindgen]
+pub struct DiagramResult {
+    circles: Vec<WasmCircle>,
+    loss: f64,
+    target_areas_json: String,
+    fitted_areas_json: String,
+}
+
+#[wasm_bindgen]
+impl DiagramResult {
+    #[wasm_bindgen(getter)]
+    pub fn circles(&self) -> Vec<WasmCircle> {
+        self.circles.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn loss(&self) -> f64 {
+        self.loss
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target_areas_json(&self) -> String {
+        self.target_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fitted_areas_json(&self) -> String {
+        self.fitted_areas_json.clone()
     }
 }
 
@@ -162,4 +195,110 @@ pub fn generate_from_spec(
         .collect();
 
     Ok(wasm_circles)
+}
+
+/// Generate layout from diagram specification with debug information
+#[wasm_bindgen]
+pub fn generate_from_spec_with_debug(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+) -> Result<DiagramResult, JsValue> {
+    use crate::diagram::{DiagramSpecBuilder, InputType};
+    use crate::fitter::Fitter;
+    use std::collections::HashMap;
+
+    // Parse input type
+    let input_type = match input_type.as_str() {
+        "disjoint" => InputType::Disjoint,
+        "union" => InputType::Union,
+        _ => {
+            return Err(JsValue::from_str(
+                "Invalid input type. Must be 'disjoint' or 'union'",
+            ))
+        }
+    };
+
+    // Build diagram spec using DiagramSpecBuilder
+    let mut builder = DiagramSpecBuilder::new();
+
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+
+        // Parse the input - it can be "A", "B", or "A&B"
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+
+        if sets.len() == 1 {
+            // Single set
+            builder = builder.set(sets[0], size);
+        } else if sets.len() > 1 {
+            // Intersection
+            builder = builder.intersection(&sets, size);
+        }
+    }
+
+    // Build the specification
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
+
+    // Fit the diagram using circles
+    let fitter = Fitter::new(&diagram_spec);
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
+
+    // Convert circles to WasmCircle with labels
+    let wasm_circles: Vec<WasmCircle> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|shape| {
+                WasmCircle::new(
+                    shape.center().x(),
+                    shape.center().y(),
+                    shape.radius(),
+                    name.clone(),
+                )
+            })
+        })
+        .collect();
+
+    // Collect target disjoint areas
+    let mut target_areas_map: HashMap<String, f64> = HashMap::new();
+    for (combo, &area) in diagram_spec.disjoint_areas() {
+        target_areas_map.insert(combo.to_string(), area);
+    }
+
+    // Compute fitted disjoint areas using the same function as the optimizer
+    use crate::fitter::final_layout::compute_disjoint_areas_from_layout;
+    let circles: Vec<Circle> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| layout.shape_for_set(name).cloned())
+        .collect();
+    let fitted_disjoint = compute_disjoint_areas_from_layout(&circles, diagram_spec.set_names());
+
+    let mut fitted_areas_map: HashMap<String, f64> = HashMap::new();
+    for (combo, area) in fitted_disjoint {
+        fitted_areas_map.insert(combo.to_string(), area);
+    }
+
+    // Convert to JSON strings
+    let target_areas_json = serde_json::to_string(&target_areas_map)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize target areas: {}", e)))?;
+    let fitted_areas_json = serde_json::to_string(&fitted_areas_map)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize fitted areas: {}", e)))?;
+
+    Ok(DiagramResult {
+        circles: wasm_circles,
+        loss: layout.loss(),
+        target_areas_json,
+        fitted_areas_json,
+    })
 }
