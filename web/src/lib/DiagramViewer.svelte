@@ -25,6 +25,8 @@
     { input: 'A&B', size: 1 }
   ]);
   
+  let inputType = $state<'disjoint' | 'union'>('disjoint');
+  
   const colors = [
     'rgba(59, 130, 246, 0.3)',   // blue
     'rgba(239, 68, 68, 0.3)',    // red
@@ -73,7 +75,7 @@
       }
       
       // Generate diagram from specification (returns Result)
-      const result = wasmModule.generate_from_spec(specs);
+      const result = wasmModule.generate_from_spec(specs, inputType);
       circles = Array.from(result);
       error = '';
     } catch (e) {
@@ -84,12 +86,12 @@
   }
   
   // Auto-generate diagram when specification changes
-  // Only trigger when size values change, not when input text is being edited
+  // Only trigger when size values or input type change, not when input text is being edited
   $effect(() => {
     if (wasmModule && diagramRows.length > 0) {
-      // Track only the size values to avoid premature updates while typing
+      // Track only the size values and input type to avoid premature updates while typing
       const sizeSignature = diagramRows.map(row => row.size).join(',');
-      console.log('Generating diagram from spec (sizes changed):', sizeSignature);
+      console.log('Generating diagram from spec (sizes/type changed):', sizeSignature, inputType);
       generateFromSpec();
     }
   });
@@ -164,6 +166,36 @@
           <!-- Diagram Specification -->
           <div class="bg-white rounded-lg shadow p-6">
             <h2 class="text-xl font-semibold mb-4">Diagram Specification</h2>
+            
+            <!-- Input Type Selection -->
+            <div class="mb-4">
+              <div class="block text-sm font-medium text-gray-700 mb-2">Input Type</div>
+              <div class="flex gap-4">
+                <label class="flex items-center cursor-pointer">
+                  <input
+                    type="radio"
+                    bind:group={inputType}
+                    value="disjoint"
+                    class="mr-2"
+                  />
+                  <span class="text-sm">Disjoint</span>
+                </label>
+                <label class="flex items-center cursor-pointer">
+                  <input
+                    type="radio"
+                    bind:group={inputType}
+                    value="union"
+                    class="mr-2"
+                  />
+                  <span class="text-sm">Union</span>
+                </label>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">
+                {inputType === 'disjoint' 
+                  ? 'Values are disjoint regions (A=5, B=2, A&B=1 → total A=6, B=3)' 
+                  : 'Values are total set sizes (A=6, B=3, A&B=1)'}
+              </p>
+            </div>
             
             <div class="space-y-3">
               <div class="grid grid-cols-12 gap-2 text-sm font-medium text-gray-700">

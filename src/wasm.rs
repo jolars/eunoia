@@ -91,9 +91,23 @@ pub fn compute_layout(n_sets: usize) -> Vec<WasmCircle> {
 
 /// Generate layout from diagram specification
 #[wasm_bindgen]
-pub fn generate_from_spec(specs: Vec<DiagramSpec>) -> Result<Vec<WasmCircle>, JsValue> {
+pub fn generate_from_spec(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+) -> Result<Vec<WasmCircle>, JsValue> {
     use crate::diagram::{DiagramSpecBuilder, InputType};
     use crate::fitter::Fitter;
+
+    // Parse input type
+    let input_type = match input_type.as_str() {
+        "disjoint" => InputType::Disjoint,
+        "union" => InputType::Union,
+        _ => {
+            return Err(JsValue::from_str(
+                "Invalid input type. Must be 'disjoint' or 'union'",
+            ))
+        }
+    };
 
     // Build diagram spec using DiagramSpecBuilder
     let mut builder = DiagramSpecBuilder::new();
@@ -120,12 +134,12 @@ pub fn generate_from_spec(specs: Vec<DiagramSpec>) -> Result<Vec<WasmCircle>, Js
 
     // Build the specification
     let diagram_spec = builder
-        .input_type(InputType::Disjoint)
+        .input_type(input_type)
         .build()
         .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
 
     // Fit the diagram using circles
-    let mut fitter = Fitter::new(&diagram_spec);
+    let fitter = Fitter::new(&diagram_spec);
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
@@ -135,7 +149,7 @@ pub fn generate_from_spec(specs: Vec<DiagramSpec>) -> Result<Vec<WasmCircle>, Js
         .set_names()
         .iter()
         .enumerate()
-        .filter_map(|(i, name)| {
+        .filter_map(|(_i, name)| {
             layout.shape_for_set(name).map(|shape| {
                 WasmCircle::new(
                     shape.center().x(),
