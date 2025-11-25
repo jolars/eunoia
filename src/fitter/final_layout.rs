@@ -438,11 +438,11 @@ pub fn compute_exclusive_areas_from_layout(
     }
 
     // Convert to exclusiv areas
-    let disjoint_masks = to_exclusive_areas(&overlapping_areas);
+    let exclusive_masks = to_exclusive_areas(&overlapping_areas);
 
     // Convert masks to Combinations
-    let mut disjoint_combos = HashMap::new();
-    for (mask, area) in disjoint_masks {
+    let mut exclusive_combos = HashMap::new();
+    for (mask, area) in exclusive_masks {
         if area > 1e-6 {
             // Only include non-zero areas
             let indices = mask_to_indices(mask, n_sets);
@@ -450,12 +450,12 @@ pub fn compute_exclusive_areas_from_layout(
 
             if !combo_sets.is_empty() {
                 let combo = Combination::new(&combo_sets);
-                disjoint_combos.insert(combo, area);
+                exclusive_combos.insert(combo, area);
             }
         }
     }
 
-    disjoint_combos
+    exclusive_combos
 }
 
 #[cfg(test)]

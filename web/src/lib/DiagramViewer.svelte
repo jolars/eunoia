@@ -212,25 +212,25 @@
                   <input
                     type="radio"
                     bind:group={inputType}
-                    value="disjoint"
+                    value="exclusive"
                     class="mr-2"
                   />
-                  <span class="text-sm">Disjoint</span>
+                  <span class="text-sm">Exclusive</span>
                 </label>
                 <label class="flex items-center cursor-pointer">
                   <input
                     type="radio"
                     bind:group={inputType}
-                    value="union"
+                    value="inclusive"
                     class="mr-2"
                   />
-                  <span class="text-sm">Union</span>
+                  <span class="text-sm">Inclusive</span>
                 </label>
               </div>
               <p class="mt-1 text-xs text-gray-500">
-                {inputType === 'disjoint' 
-                  ? 'Values are disjoint regions (A=5, B=2, A&B=1 → total A=6, B=3)' 
-                  : 'Values are total set sizes (A=6, B=3, A&B=1)'}
+                {inputType === 'exclusive' 
+                  ? 'Values are exclusive regions (A=5, B=2, A&B=1 → total A=6, B=3)' 
+                  : 'Values are inclusive regions (A=6, B=3, A&B=1)'}
               </p>
             </div>
 
