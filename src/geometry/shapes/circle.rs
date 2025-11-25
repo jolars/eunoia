@@ -3,6 +3,7 @@
 use crate::fitter::final_layout::IntersectionPoint;
 use crate::geometry::point;
 use crate::geometry::point::Point;
+use crate::geometry::shapes::rectangle::Rectangle;
 use crate::geometry::shapes::Shape;
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::brent::BrentOpt;
@@ -141,6 +142,15 @@ impl Shape for Circle {
         } else {
             vec![intersection1, intersection2]
         }
+    }
+
+    fn bounding_box(&self) -> Rectangle {
+        let x_min = self.center.x() - self.radius;
+        let y_min = self.center.y() - self.radius;
+        let width = 2.0 * self.radius;
+        let height = 2.0 * self.radius;
+
+        crate::geometry::shapes::rectangle::Rectangle::new(Point::new(x_min, y_min), width, height)
     }
 }
 
