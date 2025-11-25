@@ -2,7 +2,6 @@
 
 use crate::diagram::{Combination, DiagramSpec};
 use crate::geometry::shapes::circle::Circle;
-use crate::geometry::shapes::Shape;
 use std::collections::HashMap;
 
 /// Result of fitting a diagram specification to shapes.
