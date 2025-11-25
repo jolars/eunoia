@@ -240,72 +240,6 @@ impl Circle {
         let chord_length = p1.distance(p2);
         self.segment_area_from_chord(chord_length)
     }
-
-    pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) -> f64 {
-        let n_points = points.len();
-
-        // Sort the points by their angles around the centroid
-        let centroid =
-            point::centroid(&points.iter().map(|ip| *ip.point()).collect::<Vec<Point>>());
-
-        let mut indices: Vec<usize> = (0..points.len()).collect();
-        indices.sort_by(|&i, &j| {
-            points[i]
-                .point()
-                .angle_to(&centroid)
-                .partial_cmp(&points[j].point().angle_to(&centroid))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let mut area = 0.0;
-
-        let mut l = n_points - 1;
-
-        for k in 0..n_points {
-            let i = indices[k];
-            let j = indices[l];
-
-            let p1 = &points[i].point();
-            let p2 = &points[j].point();
-
-            // Now we need to discover which of the circles the two points are
-            // coming from so that we can compute the segment area.
-            // This should be the set intersection of the parents of both points.
-            // In some cases, the intersection may be of length 2, in which
-            // case we need to compute both segment areas and pick the
-            // smaller one.
-            let parents1 = &points[i].parents();
-            let parents2 = &points[j].parents();
-
-            let common_parents: Vec<usize> = vec![parents1.0, parents1.1]
-                .into_iter()
-                .filter(|p| *p == parents2.0 || *p == parents2.1)
-                .collect();
-
-            let mut segment_areas = Vec::with_capacity(common_parents.len());
-
-            if common_parents.is_empty() {
-                // This should not happen in a well-formed set of intersection points
-                panic!("No common parent circles found for intersection points");
-            }
-
-            for &circle_index in &common_parents {
-                let circle = &circles[circle_index];
-                segment_areas.push(circle.segment_area_from_points(p1, p2));
-            }
-
-            let triangle_area = 0.5 * (p1.x() * p2.y() - p2.x() * p1.y()).abs();
-
-            area += triangle_area;
-            area += segment_areas
-                .into_iter()
-                .fold(f64::INFINITY, |a, b| a.min(b));
-
-            l = k;
-        }
-
-        area
-    }
 }
 
 /// Computes the distance required between two circles to achieve a specified overlap area.
@@ -343,18 +277,35 @@ pub(crate) fn distance_for_overlap(
 }
 
 pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) -> f64 {
-    let n_points = points.len();
+    let n_circles = circles.len();
+
+    // Filter to only points that are in ALL circles (full intersection)
+    let full_intersection_points: Vec<&IntersectionPoint> = points
+        .iter()
+        .filter(|ip| ip.adopters().len() == n_circles)
+        .collect();
+
+    if full_intersection_points.is_empty() {
+        return 0.0;
+    }
+
+    let n_points = full_intersection_points.len();
 
     // Sort the points by their angles around the centroid
-    let centroid = point::centroid(&points.iter().map(|ip| *ip.point()).collect::<Vec<Point>>());
+    let centroid = point::centroid(
+        &full_intersection_points
+            .iter()
+            .map(|ip| *ip.point())
+            .collect::<Vec<Point>>(),
+    );
 
-    let mut indices: Vec<usize> = (0..points.len()).collect();
+    let mut indices: Vec<usize> = (0..n_points).collect();
     indices.sort_by(|&i, &j| {
-        points[i]
+        full_intersection_points[i]
             .point()
             .angle_to(&centroid)
-            .partial_cmp(&points[j].point().angle_to(&centroid))
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .partial_cmp(&full_intersection_points[j].point().angle_to(&centroid))
+            .unwrap_or(std::cmp::Ordering::Less)
     });
 
     let mut area = 0.0;
@@ -365,8 +316,8 @@ pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) 
         let i = indices[k];
         let j = indices[l];
 
-        let p1 = &points[i].point();
-        let p2 = &points[j].point();
+        let p1 = &full_intersection_points[i].point();
+        let p2 = &full_intersection_points[j].point();
 
         // Now we need to discover which of the circles the two points are
         // coming from so that we can compute the segment area.
@@ -374,8 +325,8 @@ pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) 
         // In some cases, the intersection may be of length 2, in which
         // case we need to compute both segment areas and pick the
         // smaller one.
-        let parents1 = &points[i].parents();
-        let parents2 = &points[j].parents();
+        let parents1 = &full_intersection_points[i].parents();
+        let parents2 = &full_intersection_points[j].parents();
 
         let common_parents: Vec<usize> = vec![parents1.0, parents1.1]
             .into_iter()
@@ -391,20 +342,28 @@ pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) 
 
         for &circle_index in &common_parents {
             let circle = &circles[circle_index];
-            segment_areas.push(circle.segment_area_from_points(p1, p2));
+            let seg_area = circle.segment_area_from_points(p1, p2);
+
+            debug_assert!(seg_area >= 0.0, "Segment area should be non-negative");
+
+            segment_areas.push(seg_area);
         }
 
-        let triangle_area = 0.5 * (p1.x() * p2.y() - p2.x() * p1.y()).abs();
+        let triangle_area = 0.5 * ((p1.x() + p2.x()) * (p1.y() - p2.y()));
+        // Note: triangle_area can be negative (signed area from shoelace algorithm)
+        // We take abs() at the end to get the final area
 
-        area += triangle_area;
-        area += segment_areas
+        let min_segment = segment_areas
             .into_iter()
             .fold(f64::INFINITY, |a, b| a.min(b));
+
+        area += triangle_area;
+        area += min_segment;
 
         l = k;
     }
 
-    area
+    area.abs()
 }
 
 #[cfg(test)]
