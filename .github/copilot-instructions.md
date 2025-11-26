@@ -43,10 +43,10 @@ dedicated repositories as thin wrappers around this core library.
 ### Core Modules
 
 - **`lib.rs`**: Main library interface
-- **`diagram/`**: Diagram specification and construction
+- **`spec/`**: Diagram specification and construction
   - `combination.rs`: Set combination representation
   - `input.rs`: Input type specification (disjoint vs union)
-  - `spec.rs`: DiagramSpecBuilder for fluent API
+  - `spec_builder.rs`: DiagramSpecBuilder for fluent API
 - **`geometry/`**: Geometric primitives and operations
   - `point.rs`: 2D point representation
   - `line.rs`: Line representation
@@ -135,22 +135,22 @@ Use the Rust 2018+ module system:
 ```
 src/
 ├── lib.rs
-├── diagram.rs           # Module definition
-├── diagram/             # Submodules of diagram
-│   ├── builder.rs
+├── spec.rs              # Module definition
+├── spec/                # Submodules of diagram
+│   ├── spec_builder.rs
 │   ├── combination.rs
 │   └── input.rs
-├── solver.rs            # Module definition
-└── solver/              # Submodules of solver
-    ├── layout.rs
-    └── optimize.rs
+├── fitter.rs            # Module definition
+└── fitter/              # Submodules of fitter
+    ├── initial_layout.rs
+    └── final_layout.rs
 ```
 
 **Do NOT use** the old `mod.rs` style:
 
 ```
 src/
-├── diagram/
+├── spec/
 │   └── mod.rs          # ❌ Avoid this pattern
 ```
 
