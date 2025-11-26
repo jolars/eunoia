@@ -166,7 +166,8 @@ task dev
 
 ## Project Structure
 
-We use a **Cargo workspace** with separate crates for core functionality and WASM bindings:
+We use a **Cargo workspace** with separate crates for core functionality and
+WASM bindings:
 
 ```
 eunoia/
@@ -202,7 +203,8 @@ eunoia/
 └── README.md
 ```
 
-We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of `module/mod.rs`).
+We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of
+`module/mod.rs`).
 
 ### Working with the Workspace
 
@@ -210,8 +212,8 @@ We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of `mod
 - **Build WASM**: `cargo build -p eunoia-wasm` or `task build-wasm`
 - **Test core library**: `cargo test` or `cargo test -p eunoia`
 - **Format all crates**: `cargo fmt` (runs on workspace)
-- **Lint all crates**: `cargo clippy --all-targets --all-features -- -D warnings`
-
+- **Lint all crates**:
+  `cargo clippy --all-targets --all-features -- -D warnings`
 
 ## Areas for Contribution
 

@@ -1,9 +1,6 @@
 [workspace]
 resolver = "2"
-members = [
-    "crates/eunoia",
-    "crates/eunoia-wasm",
-]
+members = ["crates/eunoia", "crates/eunoia-wasm"]
 default-members = ["crates/eunoia"]
 
 [workspace.package]
@@ -12,4 +9,3 @@ edition = "2021"
 authors = ["Johan Larsson"]
 license = "MIT"
 repository = "https://github.com/jolars/eunoia"
-
