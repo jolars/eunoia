@@ -186,7 +186,7 @@
   let fontSize = $derived(viewBoxDimension * 0.05); // 5% of viewBox dimension
 </script>
 
-<div class="min-h-screen bg-gray-50 p-8">
+<div class="bg-gray-50 p-8">
   <div class="max-w-6xl mx-auto">
     <header class="mb-8">
       <h1 class="text-4xl font-bold text-gray-900 mb-2">Eunoia Debug Viewer</h1>
@@ -239,11 +239,6 @@
                   <span class="text-sm">Inclusive</span>
                 </label>
               </div>
-              <p class="mt-1 text-xs text-gray-500">
-                {inputType === "exclusive"
-                  ? "Values are exclusive regions (A=5, B=2, A&B=1 → total A=6, B=3)"
-                  : "Values are inclusive regions (A=6, B=3, A&B=1)"}
-              </p>
             </div>
 
             <!-- Initial Layout Only Option -->
