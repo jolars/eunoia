@@ -67,9 +67,17 @@
     if (!wasmModule || diagramRows.length === 0) return;
 
     try {
-      // Convert diagramRows to DiagramSpec objects
+      // Convert diagramRows to DiagramSpec objects, filtering out invalid/incomplete entries
       const specs = diagramRows
-        .filter((row) => row.input.trim() !== "" && row.size >= 0)
+        .filter((row) => {
+          const input = row.input.trim();
+          const size = row.size;
+          // Skip empty inputs, zero/negative sizes, or incomplete combinations (e.g., "A&")
+          if (input === "" || size <= 0) return false;
+          // Skip incomplete combinations that end with & or |
+          if (input.endsWith("&") || input.endsWith("|")) return false;
+          return true;
+        })
         .map((row) => new wasmModule.DiagramSpec(row.input, row.size));
 
       if (specs.length === 0) {
@@ -92,10 +100,22 @@
       // Get debug info separately using simple arrays
       try {
         const inputs = diagramRows
-          .filter((row) => row.input.trim() !== "" && row.size >= 0)
+          .filter((row) => {
+            const input = row.input.trim();
+            const size = row.size;
+            if (input === "" || size <= 0) return false;
+            if (input.endsWith("&") || input.endsWith("|")) return false;
+            return true;
+          })
           .map((row) => row.input);
         const sizes = diagramRows
-          .filter((row) => row.input.trim() !== "" && row.size >= 0)
+          .filter((row) => {
+            const input = row.input.trim();
+            const size = row.size;
+            if (input === "" || size <= 0) return false;
+            if (input.endsWith("&") || input.endsWith("|")) return false;
+            return true;
+          })
           .map((row) => row.size);
 
         const debugFn = useInitialOnly
