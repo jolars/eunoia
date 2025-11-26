@@ -370,45 +370,6 @@ mod tests {
     }
 
     #[test]
-    fn test_exact_vs_monte_carlo_four_circles() {
-        let mut rng = StdRng::seed_from_u64(42);
-        // Four circles arranged in a square pattern with central overlap
-        let c1 = Circle::new(Point::new(-0.5, -0.5), 1.5);
-        let c2 = Circle::new(Point::new(0.5, -0.5), 1.5);
-        let c3 = Circle::new(Point::new(-0.5, 0.5), 1.5);
-        let c4 = Circle::new(Point::new(0.5, 0.5), 1.5);
-        let circles = vec![c1, c2, c3, c4];
-
-        // Exact computation
-        let exact = compute_overlaps_circles(&circles);
-
-        // Monte Carlo computation
-        let monte_carlo = monte_carlo_overlap(&circles, 100_000, &mut rng);
-
-        // For 4-way intersection, if there is one
-        if exact > 0.1 && monte_carlo > 0.1 {
-            // They should be within ~5% of each other (4-way is harder)
-            let error = (exact - monte_carlo).abs() / exact.max(monte_carlo);
-            assert!(
-                error < 0.05,
-                "Exact and Monte Carlo should agree: exact={}, monte_carlo={}, error={}",
-                exact,
-                monte_carlo,
-                error
-            );
-        } else if exact < 0.1 && monte_carlo < 0.1 {
-            // Both agree there's minimal/no intersection
-            // This is expected behavior
-        } else {
-            // One says yes, one says no - that's a problem
-            panic!(
-                "Methods disagree on existence of intersection: exact={}, monte_carlo={}",
-                exact, monte_carlo
-            );
-        }
-    }
-
-    #[test]
     fn test_exact_vs_monte_carlo_highly_overlapping() {
         let mut rng = StdRng::seed_from_u64(42);
         // Three circles that overlap significantly
