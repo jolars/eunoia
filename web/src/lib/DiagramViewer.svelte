@@ -42,7 +42,7 @@
   onMount(async () => {
     try {
       // Import and initialize the WASM module
-      const wasm = await import("../../pkg/eunoia.js");
+      const wasm = await import("../../pkg/eunoia_wasm.js");
       await wasm.default(); // Initialize WASM
       wasmModule = wasm;
 
