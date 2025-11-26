@@ -71,11 +71,11 @@ pub fn collect_intersections(circles: &[Circle], n_sets: usize) -> Vec<Intersect
                 let mut adopters = vec![i, j];
 
                 // Add any other circles that contain this point
-                for k in 0..n_sets {
+                (0..n_sets).for_each(|k| {
                     if k != i && k != j && circles[k].contains_point(&point) {
                         adopters.push(k);
                     }
-                }
+                });
 
                 adopters.sort_unstable();
 
@@ -140,9 +140,9 @@ pub fn discover_regions(
 
     // Build compatibility matrix from pairwise regions
     let mut compatible = vec![vec![false; n_sets]; n_sets];
-    for i in 0..n_sets {
+    (0..n_sets).for_each(|i| {
         compatible[i][i] = true;
-    }
+    });
     for &mask in &pairwise_regions {
         let indices = mask_to_indices(mask, n_sets);
         if indices.len() == 2 {
@@ -159,6 +159,7 @@ pub fn discover_regions(
         for &base_mask in &current_level {
             let base_indices = mask_to_indices(base_mask, n_sets);
 
+            #[allow(clippy::needless_range_loop)]
             for new_idx in 0..n_sets {
                 if (base_mask & (1 << new_idx)) != 0 {
                     continue;
@@ -328,6 +329,7 @@ pub fn to_exclusive_areas(
 
         // Look at masks that were processed BEFORE this one in the reverse iteration
         // Those are indices AFTER i in the sorted array (larger bit counts)
+        #[allow(clippy::needless_range_loop)]
         for j in (i + 1)..masks.len() {
             let mask_j = masks[j];
             // If mask_i is a subset of mask_j, subtract mask_j's already-computed exclusive area
@@ -663,9 +665,9 @@ mod tests {
         );
 
         let expected_areas = vec![
-            (Combination::new(&["A"]), 3.1415926536),
-            (Combination::new(&["B"]), 3.1415926536),
-            (Combination::new(&["C"]), 3.1415926536),
+            (Combination::new(&["A"]), std::f64::consts::PI),
+            (Combination::new(&["B"]), std::f64::consts::PI),
+            (Combination::new(&["C"]), std::f64::consts::PI),
             (Combination::new(&["A", "B"]), 0.0000000000),
             (Combination::new(&["A", "C"]), 0.0000000000),
             (Combination::new(&["B", "C"]), 0.0000000000),
@@ -747,7 +749,10 @@ mod tests {
             (Combination::new(&["A", "B"]), 15.7150170992),
             (Combination::new(&["A", "C"]), 0.0000000000),
             (Combination::new(&["B", "C"]), 0.0000000000),
-            (Combination::new(&["A", "B", "C"]), 0.7853981634),
+            (
+                Combination::new(&["A", "B", "C"]),
+                std::f64::consts::FRAC_PI_4,
+            ),
         ];
 
         for (combo, expected) in expected_areas {
@@ -1661,14 +1666,14 @@ mod trace_six_ie_detail {
         masks.sort_by_key(|m| (m.count_ones(), *m));
 
         println!("\n=== Sorted masks (first 10) ===");
-        for i in 0..10.min(masks.len()) {
+        (0..10.min(masks.len())).for_each(|i| {
             println!("{}: {:#08b} ({} bits)", i, masks[i], masks[i].count_ones());
-        }
+        });
 
         println!("\n=== Sorted masks (last 10) ===");
-        for i in (masks.len() - 10).max(0)..masks.len() {
+        ((masks.len() - 10).max(0)..masks.len()).for_each(|i| {
             println!("{}: {:#08b} ({} bits)", i, masks[i], masks[i].count_ones());
-        }
+        });
 
         // Find A and ABCDEF
         let a_idx = masks.iter().position(|&m| m == 0b000001).unwrap();
@@ -1710,7 +1715,7 @@ mod trace_a_subtractions {
         }
 
         // Manually do IE for A
-        let mut exclusive = overlapping.clone();
+        let exclusive = overlapping.clone();
         let mut masks: Vec<_> = overlapping.keys().copied().collect();
         masks.sort_by_key(|m| (m.count_ones(), *m));
 
@@ -1748,7 +1753,6 @@ mod trace_a_subtractions {
 #[cfg(test)]
 mod mc_vs_exact {
     use super::*;
-    use rand::Rng;
 
     #[test]
     fn compare_abcdef_exact_vs_monte_carlo() {
@@ -1764,11 +1768,6 @@ mod mc_vs_exact {
         let intersections = collect_intersections(&circles, 6);
         let exact = compute_region_area(0b111111, &circles, &intersections, 6);
 
-        // Monte Carlo with MANY samples for accuracy
-        use rand::rngs::StdRng;
-        use rand::SeedableRng;
-        let mut rng = StdRng::seed_from_u64(42);
-
         // Sample the region directly - count points in all 6 circles
         let bbox_min_x = -1.5 - 1.8;
         let bbox_max_x = 1.5 + 1.8;
@@ -1780,8 +1779,8 @@ mod mc_vs_exact {
         let mut in_all = 0;
 
         for _ in 0..n_samples {
-            let x = bbox_min_x + (bbox_max_x - bbox_min_x) * rng.gen::<f64>();
-            let y = bbox_min_y + (bbox_max_y - bbox_min_y) * rng.gen::<f64>();
+            let x = bbox_min_x + (bbox_max_x - bbox_min_x) * rand::random::<f64>();
+            let y = bbox_min_y + (bbox_max_y - bbox_min_y) * rand::random::<f64>();
             let p = Point::new(x, y);
 
             if circles.iter().all(|c| c.contains_point(&p)) {
