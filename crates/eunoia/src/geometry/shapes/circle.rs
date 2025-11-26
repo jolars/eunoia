@@ -3,7 +3,7 @@
 use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::point;
 use crate::geometry::point::Point;
-use crate::geometry::shapes::rectangle::Rectangle;
+use crate::geometry::rectangle::Rectangle;
 use crate::geometry::shapes::Shape;
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::brent::BrentOpt;

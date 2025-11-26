@@ -168,7 +168,6 @@ fn monte_carlo_overlap<S: Shape>(
 mod tests {
     use super::*;
     use crate::geometry::shapes::circle::Circle;
-    use crate::geometry::shapes::rectangle::Rectangle;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
@@ -227,48 +226,6 @@ mod tests {
 
         // Expected area: intersection area only
         let expected = c1.intersection_area(&c2);
-
-        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
-
-        let error = (estimated - expected).abs() / expected;
-        assert!(
-            error < 0.02,
-            "Error too large: {} (estimated: {}, expected: {})",
-            error,
-            estimated,
-            expected
-        );
-    }
-
-    #[test]
-    fn test_monte_carlo_rectangle() {
-        let mut rng = StdRng::seed_from_u64(42);
-        let rect = Rectangle::new(Point::new(0.0, 0.0), 4.0, 2.0);
-        let shapes = vec![rect];
-
-        // Expected area: 8.0 (single shape = full area)
-        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
-        let expected = 8.0;
-
-        let error = (estimated - expected).abs() / expected;
-        assert!(
-            error < 0.01,
-            "Error too large: {} (estimated: {}, expected: {})",
-            error,
-            estimated,
-            expected
-        );
-    }
-
-    #[test]
-    fn test_monte_carlo_two_overlapping_rectangles() {
-        let mut rng = StdRng::seed_from_u64(42);
-        let r1 = Rectangle::new(Point::new(0.0, 0.0), 4.0, 4.0);
-        let r2 = Rectangle::new(Point::new(2.0, 0.0), 4.0, 4.0);
-        let shapes = vec![r1, r2];
-
-        // Expected area: intersection only (2x4 = 8)
-        let expected = r1.intersection_area(&r2);
 
         let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
 

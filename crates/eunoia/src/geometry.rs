@@ -8,4 +8,5 @@ pub mod line;
 pub mod line_segment;
 pub mod operations;
 pub mod point;
+pub mod rectangle;
 pub mod shapes;

@@ -1,7 +1,6 @@
 //! Axis-aligned rectangle shape implementation.
 
 use crate::geometry::point::Point;
-use crate::geometry::shapes::Shape;
 
 /// An axis-aligned rectangle defined by a center point, width, and height.
 ///
@@ -11,8 +10,7 @@ use crate::geometry::shapes::Shape;
 /// # Examples
 ///
 /// ```
-/// use eunoia::geometry::shapes::rectangle::Rectangle;
-/// use eunoia::geometry::shapes::Shape;
+/// use eunoia::geometry::rectangle::Rectangle;
 /// use eunoia::geometry::point::Point;
 ///
 /// let r1 = Rectangle::new(Point::new(0.0, 0.0), 4.0, 2.0);
@@ -28,112 +26,7 @@ pub struct Rectangle {
     height: f64,
 }
 
-impl Shape for Rectangle {
-    /// Computes the area of the rectangle using the formula A = width × height.
-    fn area(&self) -> f64 {
-        self.width * self.height
-    }
-
-    fn centroid(&self) -> (f64, f64) {
-        (self.center.x(), self.center.y())
-    }
-
-    /// Computes the minimum distance between the boundaries of two rectangles.
-    ///
-    /// Returns 0.0 if the rectangles overlap or touch.
-    fn distance(&self, other: &Self) -> f64 {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
-
-        let dx = if x1_max < x2_min {
-            x2_min - x1_max
-        } else if x2_max < x1_min {
-            x1_min - x2_max
-        } else {
-            0.0
-        };
-
-        let dy = if y1_max < y2_min {
-            y2_min - y1_max
-        } else if y2_max < y1_min {
-            y1_min - y2_max
-        } else {
-            0.0
-        };
-
-        (dx * dx + dy * dy).sqrt()
-    }
-
-    fn contains(&self, other: &Self) -> bool {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
-
-        x2_min >= x1_min && x2_max <= x1_max && y2_min >= y1_min && y2_max <= y1_max
-    }
-
-    fn intersects(&self, other: &Self) -> bool {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
-
-        !(x1_max < x2_min || x2_max < x1_min || y1_max < y2_min || y2_max < y1_min)
-    }
-
-    fn contains_point(&self, point: &Point) -> bool {
-        let (x_min, x_max, y_min, y_max) = self.bounds();
-        point.x() >= x_min && point.x() <= x_max && point.y() >= y_min && point.y() <= y_max
-    }
-
-    fn perimeter(&self) -> f64 {
-        2.0 * (self.width + self.height)
-    }
-
-    fn bounding_box(&self) -> Rectangle {
-        *self
-    }
-
-    /// Computes the area of intersection between two axis-aligned rectangles.
-    ///
-    /// Returns 0 if rectangles don't overlap.
-    fn intersection_area(&self, other: &Self) -> f64 {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
-
-        let x_overlap = (x1_max.min(x2_max) - x1_min.max(x2_min)).max(0.0);
-        let y_overlap = (y1_max.min(y2_max) - y1_min.max(y2_min)).max(0.0);
-
-        x_overlap * y_overlap
-    }
-
-    /// Computes the intersection points between two rectangles.
-    ///
-    /// For axis-aligned rectangles, intersection points are at the corners
-    /// of the overlapping region.
-    fn intersection_points(&self, other: &Self) -> Vec<Point> {
-        if !self.intersects(other) {
-            return vec![];
-        }
-
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
-
-        let x_min = x1_min.max(x2_min);
-        let x_max = x1_max.min(x2_max);
-        let y_min = y1_min.max(y2_min);
-        let y_max = y1_max.min(y2_max);
-
-        if x_min >= x_max || y_min >= y_max {
-            return vec![];
-        }
-
-        vec![
-            Point::new(x_min, y_min),
-            Point::new(x_max, y_min),
-            Point::new(x_max, y_max),
-            Point::new(x_min, y_max),
-        ]
-    }
-}
-
+#[allow(dead_code)]
 impl Rectangle {
     /// Creates a new axis-aligned rectangle with the specified center, width, and height.
     ///
@@ -146,7 +39,7 @@ impl Rectangle {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::shapes::rectangle::Rectangle;
+    /// use eunoia::geometry::rectangle::Rectangle;
     /// use eunoia::geometry::point::Point;
     ///
     /// let rect = Rectangle::new(Point::new(1.0, 2.0), 4.0, 3.0);
@@ -212,6 +105,110 @@ impl Rectangle {
     pub fn corners(&self) -> [Point; 4] {
         let (x_min, x_max, y_min, y_max) = self.bounds();
         [
+            Point::new(x_min, y_min),
+            Point::new(x_max, y_min),
+            Point::new(x_max, y_max),
+            Point::new(x_min, y_max),
+        ]
+    }
+
+    /// Computes the area of the rectangle using the formula A = width × height.
+    pub fn area(&self) -> f64 {
+        self.width * self.height
+    }
+
+    pub fn centroid(&self) -> (f64, f64) {
+        (self.center.x(), self.center.y())
+    }
+
+    /// Computes the minimum distance between the boundaries of two rectangles.
+    ///
+    /// Returns 0.0 if the rectangles overlap or touch.
+    pub fn distance(&self, other: &Self) -> f64 {
+        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
+        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+
+        let dx = if x1_max < x2_min {
+            x2_min - x1_max
+        } else if x2_max < x1_min {
+            x1_min - x2_max
+        } else {
+            0.0
+        };
+
+        let dy = if y1_max < y2_min {
+            y2_min - y1_max
+        } else if y2_max < y1_min {
+            y1_min - y2_max
+        } else {
+            0.0
+        };
+
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    pub fn contains(&self, other: &Self) -> bool {
+        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
+        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+
+        x2_min >= x1_min && x2_max <= x1_max && y2_min >= y1_min && y2_max <= y1_max
+    }
+
+    pub fn intersects(&self, other: &Self) -> bool {
+        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
+        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+
+        !(x1_max < x2_min || x2_max < x1_min || y1_max < y2_min || y2_max < y1_min)
+    }
+
+    pub fn contains_point(&self, point: &Point) -> bool {
+        let (x_min, x_max, y_min, y_max) = self.bounds();
+        point.x() >= x_min && point.x() <= x_max && point.y() >= y_min && point.y() <= y_max
+    }
+
+    pub fn perimeter(&self) -> f64 {
+        2.0 * (self.width + self.height)
+    }
+
+    pub fn bounding_box(&self) -> Rectangle {
+        *self
+    }
+
+    /// Computes the area of intersection between two axis-aligned rectangles.
+    ///
+    /// Returns 0 if rectangles don't overlap.
+    pub fn intersection_area(&self, other: &Self) -> f64 {
+        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
+        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+
+        let x_overlap = (x1_max.min(x2_max) - x1_min.max(x2_min)).max(0.0);
+        let y_overlap = (y1_max.min(y2_max) - y1_min.max(y2_min)).max(0.0);
+
+        x_overlap * y_overlap
+    }
+
+    /// Computes the intersection points between two rectangles.
+    ///
+    /// For axis-aligned rectangles, intersection points are at the corners
+    /// of the overlapping region.
+    pub fn intersection_points(&self, other: &Self) -> Vec<Point> {
+        if !self.intersects(other) {
+            return vec![];
+        }
+
+        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
+        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+
+        let x_min = x1_min.max(x2_min);
+        let x_max = x1_max.min(x2_max);
+        let y_min = y1_min.max(y2_min);
+        let y_max = y1_max.min(y2_max);
+
+        if x_min >= x_max || y_min >= y_max {
+            return vec![];
+        }
+
+        vec![
             Point::new(x_min, y_min),
             Point::new(x_max, y_min),
             Point::new(x_max, y_max),

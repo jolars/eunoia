@@ -4,9 +4,9 @@
 //! to represent sets in diagrams.
 
 pub mod circle;
-pub mod rectangle;
 
 use crate::geometry::point::Point;
+use crate::geometry::rectangle::Rectangle;
 
 pub trait Shape {
     /// Returns the area of the shape.
@@ -38,11 +38,11 @@ pub trait Shape {
     fn contains_point(&self, point: &Point) -> bool;
 
     /// Compute the bounding box of the shape as a Rectangle.
-    fn bounding_box(&self) -> rectangle::Rectangle;
+    fn bounding_box(&self) -> Rectangle;
 }
 
 /// Compute the bounding box for a collection of shapes.
-pub fn bounding_box<S: Shape>(shapes: &[S]) -> rectangle::Rectangle {
+pub fn bounding_box<S: Shape>(shapes: &[S]) -> Rectangle {
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
 
@@ -57,5 +57,5 @@ pub fn bounding_box<S: Shape>(shapes: &[S]) -> rectangle::Rectangle {
         max_y = max_y.max(points.1.y());
     }
 
-    rectangle::Rectangle::from_corners(Point::new(min_x, min_y), Point::new(max_x, max_y))
+    Rectangle::from_corners(Point::new(min_x, min_y), Point::new(max_x, max_y))
 }
