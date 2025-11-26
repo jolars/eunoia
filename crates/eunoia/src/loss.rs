@@ -2,11 +2,12 @@ use crate::geometry::diagram::RegionMask;
 use std::collections::HashMap;
 
 /// How to aggregate errors across regions
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Aggregation {
     /// Sum of squared errors (default)
     SumSquared,
     /// Sum of absolute errors
+    #[default]
     SumAbsolute,
     /// Maximum absolute error
     MaxAbsolute,
@@ -16,29 +17,18 @@ pub enum Aggregation {
     RootMeanSquared,
 }
 
-impl Default for Aggregation {
-    fn default() -> Self {
-        Self::SumSquared
-    }
-}
-
 /// What to measure for each region
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ErrorMetric {
     /// Absolute difference: |fitted - target|
     Absolute,
     /// Squared difference: (fitted - target)²
+    #[default]
     Squared,
     /// Relative difference: |fitted - target| / target
     Relative,
     /// Relative squared: ((fitted - target) / target)²
     RelativeSquared,
-}
-
-impl Default for ErrorMetric {
-    fn default() -> Self {
-        Self::Squared
-    }
 }
 
 /// Public API for loss function configuration

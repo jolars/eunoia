@@ -559,6 +559,7 @@ pub fn discover_regions_generic<S: Shape>(
             let base_indices = mask_to_indices(base_mask, n_sets);
 
             // Try adding each set not in base_mask
+            #[allow(clippy::needless_range_loop)]
             for new_idx in 0..n_sets {
                 if (base_mask & (1 << new_idx)) == 0 {
                     // Check if new_idx is compatible with all sets in base_mask
