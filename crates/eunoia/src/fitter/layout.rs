@@ -1,5 +1,6 @@
 //! Layout representation - the result of fitting a diagram specification.
 
+use crate::geometry::diagram;
 use crate::geometry::shapes::circle::Circle;
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
@@ -94,7 +95,7 @@ impl Layout {
     fn compute_fitted_areas(shapes: &[Circle], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();
 
-        crate::fitter::final_layout::compute_exclusive_areas_from_layout(shapes, set_names)
+        diagram::compute_exclusive_areas_from_layout(shapes, set_names)
     }
 
     /// Compute region error loss.

@@ -1,4 +1,4 @@
-use crate::fitter::final_layout::IntersectionPoint;
+use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::Circle;
 use crate::geometry::shapes::Shape;

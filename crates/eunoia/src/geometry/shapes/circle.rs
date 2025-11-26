@@ -1,6 +1,6 @@
 //! Circle shape implementation.
 
-use crate::fitter::final_layout::IntersectionPoint;
+use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::point;
 use crate::geometry::point::Point;
 use crate::geometry::shapes::rectangle::Rectangle;
