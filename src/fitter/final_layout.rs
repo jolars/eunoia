@@ -443,7 +443,7 @@ pub fn compute_exclusive_areas_from_layout(
     // Convert masks to Combinations
     let mut exclusive_combos = HashMap::new();
     for (mask, area) in exclusive_masks {
-        if area > 1e-6 {
+        if area > 0.0 {
             // Only include non-zero areas
             let indices = mask_to_indices(mask, n_sets);
             let combo_sets: Vec<&str> = indices.iter().map(|&i| set_names[i].as_str()).collect();
