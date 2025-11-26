@@ -8,7 +8,6 @@ use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
 
-use crate::geometry::shapes::circle::Circle;
 use crate::geometry::shapes::Shape;
 use crate::spec::PreprocessedSpec;
 
@@ -149,6 +148,7 @@ mod tests {
     use super::*;
     use crate::geometry::diagram;
     use crate::geometry::point::Point;
+    use crate::geometry::shapes::circle::Circle;
     use crate::spec::{DiagramSpec, DiagramSpecBuilder};
 
     /// Test helper utilities for final layout testing
