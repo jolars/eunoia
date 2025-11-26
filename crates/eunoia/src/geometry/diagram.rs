@@ -242,14 +242,19 @@ pub fn compute_region_area(
             }
 
             // Otherwise, use the polygon-based calculation from intersection points
-            // We need points where ALL circles in the mask contain the point
-            // (i.e., mask is a subset of adopters), not just exact matches
+            // Following eulerr's approach, we need points where:
+            // 1. Both parent circles are in the mask
+            // 2. ALL circles in the mask contain the point (mask is subset of adopters)
             let region_points: Vec<IntersectionPoint> = intersections
                 .iter()
                 .filter(|info| {
+                    let (p1, p2) = info.parents();
+                    let parents_in_mask = (mask & (1 << p1)) != 0 && (mask & (1 << p2)) != 0;
+
                     let adopter_mask = adopters_to_mask(info.adopters());
-                    // Check if mask is a subset of adopter_mask
-                    (mask & adopter_mask) == mask
+                    let mask_subset_of_adopters = (mask & adopter_mask) == mask;
+
+                    parents_in_mask && mask_subset_of_adopters
                 })
                 .cloned()
                 .collect();
@@ -1246,7 +1251,7 @@ fn test_eulerr_comparison_six_circles_all_overlap() {
         (Combination::new(&["F"]), 1.9828808649),
         (
             Combination::new(&["A", "B", "C", "D", "E", "F"]),
-            0.0343237063,
+            0.3062166, // 6-way intersection exclusive area from eulerr
         ),
     ];
 
@@ -1598,46 +1603,6 @@ mod trace_ie_order {
 }
 
 #[cfg(test)]
-mod monte_carlo_check {
-    use super::*;
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
-
-    #[test]
-    fn compare_abcdef_with_monte_carlo() {
-        let c1 = Circle::new(Point::new(1.5, 0.0), 1.8);
-        let c2 = Circle::new(Point::new(0.75, 1.2990381057), 1.8);
-        let c3 = Circle::new(Point::new(-0.75, 1.2990381057), 1.8);
-        let c4 = Circle::new(Point::new(-1.5, 0.0), 1.8);
-        let c5 = Circle::new(Point::new(-0.75, -1.2990381057), 1.8);
-        let c6 = Circle::new(Point::new(0.75, -1.2990381057), 1.8);
-
-        // Monte Carlo estimate
-        let all_circles = vec![
-            c1.clone(),
-            c2.clone(),
-            c3.clone(),
-            c4.clone(),
-            c5.clone(),
-            c6.clone(),
-        ];
-        let mut rng = StdRng::seed_from_u64(42);
-
-        // Use the public function from overlaps module
-        let mc_area = crate::geometry::operations::overlaps::compute_overlaps_circles(&all_circles);
-
-        // Wait, that's exact too. Let me manually do MC...
-        let circles = vec![c1, c2, c3, c4, c5, c6];
-        let intersections = collect_intersections(&circles, 6);
-        let exact_area = compute_region_area(0b111111, &circles, &intersections, 6);
-
-        eprintln!("Alternative exact ABCDEF overlapping: {:.10}", mc_area);
-        eprintln!("Our exact ABCDEF overlapping: {:.10}", exact_area);
-        eprintln!("eulerr expects ABCDEF exclusive: 0.0343237063");
-    }
-}
-
-#[cfg(test)]
 mod check_our_ie {
     use super::*;
 
@@ -1777,5 +1742,66 @@ mod trace_a_subtractions {
             overlapping[&a_mask] - to_subtract
         );
         println!("Expected: ~1.983");
+    }
+}
+
+#[cfg(test)]
+mod mc_vs_exact {
+    use super::*;
+    use rand::Rng;
+
+    #[test]
+    fn compare_abcdef_exact_vs_monte_carlo() {
+        let c1 = Circle::new(Point::new(1.5, 0.0), 1.8);
+        let c2 = Circle::new(Point::new(0.75, 1.2990381057), 1.8);
+        let c3 = Circle::new(Point::new(-0.75, 1.2990381057), 1.8);
+        let c4 = Circle::new(Point::new(-1.5, 0.0), 1.8);
+        let c5 = Circle::new(Point::new(-0.75, -1.2990381057), 1.8);
+        let c6 = Circle::new(Point::new(0.75, -1.2990381057), 1.8);
+
+        // Exact calculation
+        let circles = vec![c1, c2, c3, c4, c5, c6];
+        let intersections = collect_intersections(&circles, 6);
+        let exact = compute_region_area(0b111111, &circles, &intersections, 6);
+
+        // Monte Carlo with MANY samples for accuracy
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // Sample the region directly - count points in all 6 circles
+        let bbox_min_x = -1.5 - 1.8;
+        let bbox_max_x = 1.5 + 1.8;
+        let bbox_min_y = -1.2990381057 - 1.8;
+        let bbox_max_y = 1.2990381057 + 1.8;
+        let bbox_area = (bbox_max_x - bbox_min_x) * (bbox_max_y - bbox_min_y);
+
+        let n_samples = 10_000_000; // 10M samples for high accuracy
+        let mut in_all = 0;
+
+        for _ in 0..n_samples {
+            let x = bbox_min_x + (bbox_max_x - bbox_min_x) * rng.gen::<f64>();
+            let y = bbox_min_y + (bbox_max_y - bbox_min_y) * rng.gen::<f64>();
+            let p = Point::new(x, y);
+
+            if circles.iter().all(|c| c.contains_point(&p)) {
+                in_all += 1;
+            }
+        }
+
+        let mc = (in_all as f64 / n_samples as f64) * bbox_area;
+
+        eprintln!("ABCDEF exact: {:.10}", exact);
+        eprintln!(
+            "ABCDEF Monte Carlo ({}M samples): {:.10}",
+            n_samples / 1_000_000,
+            mc
+        );
+        eprintln!("eulerr expects exclusive: 0.3062166");
+        eprintln!("Difference: {:.10}", (exact - mc).abs());
+        eprintln!(
+            "Relative error: {:.2}%",
+            ((exact - mc).abs() / mc.max(exact)) * 100.0
+        );
     }
 }
