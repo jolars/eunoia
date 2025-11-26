@@ -4,7 +4,7 @@ use argmin::solver::quasinewton::LBFGS;
 use nalgebra::DVector;
 use rand::Rng;
 
-use crate::diagram::PairwiseRelations;
+use crate::spec::PairwiseRelations;
 
 /// Configuration for the initial layout optimization.
 #[derive(Debug, Clone)]

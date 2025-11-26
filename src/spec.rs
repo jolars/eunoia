@@ -5,12 +5,12 @@
 
 mod combination;
 mod input;
-mod spec;
+mod spec_builder;
 
 pub use crate::error::DiagramError;
 pub use combination::Combination;
 pub use input::InputType;
-pub use spec::DiagramSpecBuilder;
+pub use spec_builder::DiagramSpecBuilder;
 
 use std::collections::HashMap;
 

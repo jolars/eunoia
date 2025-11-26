@@ -6,11 +6,11 @@ mod layout;
 
 pub use layout::Layout;
 
-use crate::diagram::DiagramSpec;
 use crate::error::DiagramError;
 use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::distance_for_overlap;
 use crate::geometry::shapes::circle::Circle;
+use crate::spec::DiagramSpec;
 use std::collections::HashMap;
 
 /// Fitter for creating diagram layouts from specifications.
@@ -161,7 +161,7 @@ impl<'a> Fitter<'a> {
     /// that would produce the desired overlap area given their radii.
     #[allow(clippy::needless_range_loop)]
     fn compute_optimal_distances(
-        spec: &crate::diagram::PreprocessedSpec,
+        spec: &crate::spec::PreprocessedSpec,
     ) -> Result<Vec<Vec<f64>>, DiagramError> {
         let n_sets = spec.n_sets;
         let mut optimal_distances = vec![vec![0.0; n_sets]; n_sets];
@@ -192,7 +192,7 @@ impl<'a> Fitter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagram::DiagramSpecBuilder;
+    use crate::spec::DiagramSpecBuilder;
 
     #[test]
     fn test_fitter_basic() {

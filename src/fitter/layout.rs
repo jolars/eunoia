@@ -1,7 +1,7 @@
 //! Layout representation - the result of fitting a diagram specification.
 
-use crate::diagram::{Combination, DiagramSpec};
 use crate::geometry::shapes::circle::Circle;
+use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
 
 /// Result of fitting a diagram specification to shapes.
@@ -116,7 +116,7 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagram::DiagramSpecBuilder;
+    use crate::spec::DiagramSpecBuilder;
 
     #[test]
     fn test_layout_creation() {

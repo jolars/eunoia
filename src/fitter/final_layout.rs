@@ -9,10 +9,10 @@ use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
 use std::collections::HashMap;
 
-use crate::diagram::{Combination, PreprocessedSpec};
 use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::Circle;
 use crate::geometry::shapes::Shape;
+use crate::spec::{Combination, PreprocessedSpec};
 
 /// Type alias for region bit masks
 type RegionMask = usize;
@@ -461,7 +461,7 @@ pub fn compute_exclusive_areas_from_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagram::{DiagramSpec, DiagramSpecBuilder};
+    use crate::spec::{DiagramSpec, DiagramSpecBuilder};
 
     /// Test helper utilities for final layout testing
     mod helpers {
