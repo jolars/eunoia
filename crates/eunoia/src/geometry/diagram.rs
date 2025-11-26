@@ -67,9 +67,17 @@ pub fn collect_intersections(circles: &[Circle], n_sets: usize) -> Vec<Intersect
         for j in (i + 1)..n_sets {
             let pts = circles[i].intersection_points(&circles[j]);
             for point in pts {
-                let adopters = (0..n_sets)
-                    .filter(|&k| circles[k].contains_point(&point))
-                    .collect();
+                // Start with parent circles - they must contain the intersection point
+                let mut adopters = vec![i, j];
+
+                // Add any other circles that contain this point
+                for k in 0..n_sets {
+                    if k != i && k != j && circles[k].contains_point(&point) {
+                        adopters.push(k);
+                    }
+                }
+
+                adopters.sort_unstable();
 
                 intersections.push(IntersectionPoint::new(point, (i, j), adopters));
             }
@@ -326,75 +334,7 @@ pub fn compute_exclusive_areas_from_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::{DiagramSpec, DiagramSpecBuilder};
     use std::collections::HashMap;
-
-    /// Test helper utilities for final layout testing
-    mod helpers {
-        use super::*;
-
-        /// Generate a random diagram specification with the given number of sets.
-        ///
-        /// This creates random circles, computes their overlaps, and returns
-        /// a DiagramSpec that can be used for testing the fitter.
-        ///
-        /// Returns: (spec, original_circles) for validation
-        pub fn generate_random_diagram(n_sets: usize, seed: u64) -> (DiagramSpec, Vec<Circle>) {
-            let (circles, set_names) = random_circle_layout(n_sets, seed);
-            let exclusive_areas = compute_exclusive_areas_from_layout(&circles, &set_names);
-            let spec = create_spec_from_exclusive(exclusive_areas);
-            (spec, circles)
-        }
-
-        /// Generate a random circle layout for testing
-        pub fn random_circle_layout(n_sets: usize, seed: u64) -> (Vec<Circle>, Vec<String>) {
-            use rand::Rng;
-            use rand::SeedableRng;
-
-            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-
-            let set_names: Vec<String> = (0..n_sets).map(|i| format!("Set{}", i)).collect();
-
-            let mut circles = Vec::new();
-
-            for _ in 0..n_sets {
-                // Random position in [-5, 5] x [-5, 5]
-                let x = rng.random_range(-5.0..5.0);
-                let y = rng.random_range(-5.0..5.0);
-                // Random radius in [0.5, 2.0]
-                let r = rng.random_range(0.5..2.0);
-
-                circles.push(Circle::new(Point::new(x, y), r));
-            }
-
-            (circles, set_names)
-        }
-
-        /// Create a DiagramSpec from exclusive areas
-        pub fn create_spec_from_exclusive(
-            exclusive_areas: HashMap<Combination, f64>,
-        ) -> DiagramSpec {
-            let mut builder = DiagramSpecBuilder::new();
-
-            // Add all single sets
-            for (combo, &area) in &exclusive_areas {
-                if combo.sets().len() == 1 {
-                    let set_name = &combo.sets()[0];
-                    builder = builder.set(set_name, area);
-                }
-            }
-
-            // Add all intersections
-            for (combo, &area) in &exclusive_areas {
-                if combo.sets().len() > 1 {
-                    let sets: Vec<&str> = combo.sets().iter().map(|s| s.as_str()).collect();
-                    builder = builder.intersection(&sets, area);
-                }
-            }
-
-            builder.build().unwrap()
-        }
-    }
 
     #[test]
     fn test_region_discovery() {
@@ -519,5 +459,53 @@ mod tests {
             "B exclusive should be 12"
         );
         assert!((exclusive[&0b11] - 3.0).abs() < 0.001, "A∩B should be 3");
+    }
+
+    #[test]
+    fn test_known_area() {
+        // From R, eulerr package, in ellipse form. a and b are the semi-axes.
+        // phi is the rotation, which we ignore here for circles.
+        //              A          B           C
+        // h   -0.6093604  0.6006954 -0.08497298
+        // k   -0.7656790 -0.7656790  0.61778865
+        // a    0.6458488  0.8939289  1.04190949
+        // b    0.6458488  0.8939289  1.04190949
+        // phi  4.6774535  4.6774535  4.67745352
+        let c1 = Circle::new(Point::new(-0.6093604, -0.7656790), 0.6458488);
+        let c2 = Circle::new(Point::new(0.6006954, -0.7656790), 0.8939289);
+        let c3 = Circle::new(Point::new(-0.08497298, 0.61778865), 1.04190949);
+        let circles = vec![c1, c2, c3];
+
+        let areas = compute_exclusive_areas_from_layout(
+            &circles,
+            &["A".to_string(), "B".to_string(), "C".to_string()],
+        );
+
+        // Here are the expected areas from R eulerr
+        //
+        // > exact
+        // [1] 1.00000870 2.00000280 2.99999966 0.19993832 0.09990269 0.29995982 0.01057351
+
+        let expected_areas = vec![
+            (Combination::new(&["A"]), 1.00000870),
+            (Combination::new(&["B"]), 2.00000280),
+            (Combination::new(&["C"]), 2.99999966),
+            (Combination::new(&["A", "B"]), 0.19993832),
+            (Combination::new(&["A", "C"]), 0.09990269),
+            (Combination::new(&["B", "C"]), 0.29995982),
+            (Combination::new(&["A", "B", "C"]), 0.01057351),
+        ];
+
+        for (combo, expected) in expected_areas {
+            let computed = areas.get(&combo).copied().unwrap_or(0.0);
+            let error = (computed - expected).abs() / expected;
+            assert!(
+                error < 0.01,
+                "Area for {:?} should match: {} vs {}",
+                combo.sets(),
+                computed,
+                expected
+            );
+        }
     }
 }
