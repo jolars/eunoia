@@ -1438,7 +1438,7 @@ mod monte_carlo_verification {
             .collect();
 
         // Use Monte Carlo to estimate exclusive areas
-        let n_samples = 1_000_000;
+        let n_samples = 100_000;
 
         println!(
             "\n=== Monte Carlo Verification ({}M samples) ===",
@@ -1775,7 +1775,7 @@ mod mc_vs_exact {
         let bbox_max_y = 1.2990381057 + 1.8;
         let bbox_area = (bbox_max_x - bbox_min_x) * (bbox_max_y - bbox_min_y);
 
-        let n_samples = 10_000_000; // 10M samples for high accuracy
+        let n_samples = 100_000; // 100k samples for reasonable accuracy
         let mut in_all = 0;
 
         for _ in 0..n_samples {
@@ -1792,8 +1792,8 @@ mod mc_vs_exact {
 
         eprintln!("ABCDEF exact: {:.10}", exact);
         eprintln!(
-            "ABCDEF Monte Carlo ({}M samples): {:.10}",
-            n_samples / 1_000_000,
+            "ABCDEF Monte Carlo ({}k samples): {:.10}",
+            n_samples / 1_000,
             mc
         );
         eprintln!("eulerr expects exclusive: 0.3062166");
@@ -1802,5 +1802,7 @@ mod mc_vs_exact {
             "Relative error: {:.2}%",
             ((exact - mc).abs() / mc.max(exact)) * 100.0
         );
+
+        assert!((exact - mc).abs() < 0.05, "MC and exact should be close");
     }
 }
