@@ -48,21 +48,28 @@ dedicated repositories as thin wrappers around this core library.
   - `input.rs`: Input type specification (disjoint vs union)
   - `spec.rs`: DiagramSpecBuilder for fluent API
 - **`geometry/`**: Geometric primitives and operations
-  - `coord.rs`: 2D coordinate representation
-  - `operations.rs`: Geometric operation traits (Area, Centroid, Distance,
-    Contains, Intersects, IntersectionArea, Perimeter)
-  - `shapes/`: Shape implementations (currently `circle.rs`)
+  - `point.rs`: 2D point representation
+  - `line.rs`: Line representation
+  - `line_segment.rs`: Line segment representation
+  - `shapes.rs`: Shape trait definition with common operations (Area, Centroid,
+    Distance, Contains, Intersects, IntersectionArea, Perimeter, etc.)
+  - `shapes/`: Shape implementations (currently `circle.rs` and `rectangle.rs`)
+  - `operations/`: Specialized geometric operations (currently `overlaps.rs`)
 - **`fitter/`**: Layout optimization
   - `layout.rs`: Layout representation (result of fitting)
   - `initial_layout.rs`: Initial layout computation
+  - `final_layout.rs`: Final layout computation with region discovery and area
+    computation
 - **`error.rs`**: Error types
+- **`math.rs`**: Mathematical utilities
 - **`wasm.rs`**: WASM bindings for web integration
 
 ### Web Application
 
 - **`web/`**: Interactive diagram viewer built with Svelte + TypeScript
   - **`src/`**: Svelte components and TypeScript code
-    - `lib/DiagramViewer.svelte`: Main UI for diagram specification and visualization
+    - `lib/DiagramViewer.svelte`: Main UI for diagram specification and
+      visualization
   - **`pkg/`**: Generated WASM bindings (built with wasm-pack)
   - Uses Vite (rolldown-vite) for development and building
   - Tailwind CSS for styling
@@ -115,7 +122,8 @@ dedicated repositories as thin wrappers around this core library.
 - Keep functions focused and single-purpose
 - Use traits for polymorphism over shapes
 - **Use Rust Edition 2021** (for compatibility with rextendr R bindings)
-- **Use modern module organization** (Rust 2018+): `module.rs` + `module/` instead of `module/mod.rs`
+- **Use modern module organization** (Rust 2018+): `module.rs` + `module/`
+  instead of `module/mod.rs`
 - **Format code with `cargo fmt`** before committing
 - **All code must pass
   `cargo clippy --all-targets --all-features -- -D warnings`**
@@ -139,6 +147,7 @@ src/
 ```
 
 **Do NOT use** the old `mod.rs` style:
+
 ```
 src/
 ├── diagram/
@@ -186,27 +195,36 @@ src/
 
 1. Create module in `src/geometry/shapes/`
 2. Define shape struct with center and size parameters
-3. Implement required traits from `operations.rs`:
-   - `Area`
-   - `Distance`
-   - `Contains`
-   - `Intersects`
-   - `IntersectionArea`
+3. Implement the `Shape` trait from `shapes.rs`:
+   - `area()`
+   - `distance()`
+   - `contains()`
+   - `intersects()`
+   - `intersection_area()`
+   - `intersection_points()`
+   - `centroid()`
+   - `perimeter()`
+   - `contains_point()`
+   - `bounding_box()`
 4. Add unit tests covering all trait implementations
 5. Update `shapes.rs` to export new module
 
 ### Geometric Operations
 
-- All shapes share a common coordinate system (`Coord`)
+- All shapes share a common coordinate system (`Point`)
+- All shapes implement the `Shape` trait defined in `shapes.rs`
 - Distance calculations should handle edge cases (overlapping, containment)
 - Intersection area formulas should be numerically stable
 - Consider numerical precision issues (use appropriate tolerances)
+- Specialized operations live in `geometry/operations/` module
 
 ### Optimization Code
 
 - Lives in `fitter/` module
 - Uses argmin for optimization
-- Region error loss function implemented
+- Region error loss function implemented in `final_layout.rs`
+- Region discovery uses sparse bit-mask approach for efficiency
+- Final layout computes disjoint areas using inclusion-exclusion principle
 - TODO: Make loss functions pluggable (trait-based)
 - TODO: Implement MDS initialization
 - TODO: Support stress loss function (venneuler-style)
@@ -217,7 +235,8 @@ src/
 - **Dev server**: `cd web && npm run dev`
 - **Building web app**: `cd web && npm run build`
 - WASM module exports:
-  - `generate_from_spec(specs: Vec<DiagramSpec>)`: Main function for fitting diagrams
+  - `generate_from_spec(specs: Vec<DiagramSpec>)`: Main function for fitting
+    diagrams
   - `generate_test_layout()`: Simple test layout
   - `compute_layout(n_sets: usize)`: Generate circular arrangement
 - Web app uses reactive Svelte components for real-time updates
@@ -225,25 +244,26 @@ src/
 ## Current Status
 
 - ✅ Basic project structure
-- ✅ Coordinate system (`Coord`)
-- ✅ Circle implementation with geometric operations
-- ✅ Trait-based design for operations
+- ✅ Point-based coordinate system (`Point`)
+- ✅ Circle implementation with full geometric operations
+- ✅ Rectangle implementation for bounding boxes
+- ✅ Line and LineSegment primitives
+- ✅ Trait-based design with `Shape` trait
 - ✅ DiagramSpecBuilder with fluent API for input
 - ✅ Fitter with argmin-based optimization
-- ✅ Region error loss function
+- ✅ Region error loss function with sparse region discovery
+- ✅ Final layout with disjoint area computation using inclusion-exclusion
 - ✅ Layout representation with fitted areas
 - ✅ WASM bindings (`wasm.rs`)
-- ✅ Web application (Svelte + TypeScript + Vite)
+- ✅ Web application (Svelte 5 + TypeScript + Vite + Tailwind v4)
 - ✅ Interactive diagram viewer with real-time updates
-- ✅ Comprehensive unit tests
+- ✅ Comprehensive unit tests (178 tests passing)
 - ✅ Full documentation with doc tests
-- ✅ Clippy-clean codebase (passes with `-D warnings`)
-- ❌ MDS-based initial layout not implemented
+- ✅ 3-way intersection area computation implemented
 - ❌ Stress loss function (venneuler-style) not implemented
-- ❌ Other shapes (ellipse, rectangle, triangle) not implemented
+- ❌ Ellipse and triangle shapes not implemented
 - ❌ Polygon conversion utilities not implemented
-- ❌ Label placement algorithms not implemented
-- ❌ 3+ way intersection calculations (currently returns 0)
+- ❌ Label placement algorithms not implemented (poles of inaccessibility)
 - ❌ Language bindings not started (will be separate repositories)
 
 ## Dependencies
@@ -251,7 +271,8 @@ src/
 Core dependencies:
 
 - **`nalgebra`** (0.34.1) - Linear algebra for MDS and matrix operations
-- **`argmin`** (0.11.0) - Optimization algorithms (gradient-based and derivative-free)
+- **`argmin`** (0.11.0) - Optimization algorithms (gradient-based and
+  derivative-free)
 - **`argmin-math`** (0.5.1) - Math support for argmin with nalgebra
 - Standard library for basic operations
 
@@ -260,7 +281,8 @@ WASM dependencies:
 - **`wasm-bindgen`** (0.2) - WASM bindings generation
 - **`serde`** (1.0) - Serialization framework
 - **`serde-wasm-bindgen`** (0.6) - Serde support for WASM
-- **`console_error_panic_hook`** (0.1) - Better error messages in browser console
+- **`console_error_panic_hook`** (0.1) - Better error messages in browser
+  console
 - **`getrandom`** (0.2) - Random number generation for WASM
 
 Web app dependencies:
@@ -272,13 +294,17 @@ Web app dependencies:
 - **vite-plugin-wasm** (3.5.0) - WASM support for Vite
 - **vite-plugin-top-level-await** (1.6.0) - Top-level await support
 
-Keep the dependency footprint minimal. New dependencies should be carefully considered for:
+Keep the dependency footprint minimal. New dependencies should be carefully
+considered for:
+
 - Compile time impact
 - Binary size (important for WASM)
 - Maintenance burden
 - License compatibility
 
-**Note**: The project uses **Rust Edition 2021** for compatibility with rextendr (R bindings framework). This is specified in `Cargo.toml` and should not be changed without consideration for downstream binding compatibility.
+**Note**: The project uses **Rust Edition 2021** for compatibility with rextendr
+(R bindings framework). This is specified in `Cargo.toml` and should not be
+changed without consideration for downstream binding compatibility.
 
 ## Working with This Codebase
 
@@ -302,11 +328,13 @@ You can run these instead of manual cargo commands for convenience.
 ### WASM and Web App Development
 
 Building WASM:
+
 ```bash
 wasm-pack build --target web --out-dir web/pkg
 ```
 
 Running web dev server:
+
 ```bash
 cd web
 npm install --include=dev  # First time only
@@ -314,12 +342,14 @@ npm run dev
 ```
 
 Building web app for production:
+
 ```bash
 cd web
 npm run build
 ```
 
 **Note**: If you encounter "omit=dev" issues with npm, run:
+
 ```bash
 npm config delete omit
 ```
@@ -346,8 +376,10 @@ npm config delete omit
 
 ### Mathematical References
 
-- **eulerr R package** in `./eulerr/` - Reference implementation with C++ backend
-  - Consult for algorithm details, optimization strategies, and edge case handling
+- **eulerr R package** in `./eulerr/` - Reference implementation with C++
+  backend
+  - Consult for algorithm details, optimization strategies, and edge case
+    handling
   - Source code in `./eulerr/src/` and `./eulerr/R/`
   - Tests in `./eulerr/tests/`
 - venneuler for stress loss function
@@ -356,15 +388,12 @@ npm config delete omit
 
 ## Future Considerations
 
-- **MDS-based initialization** for better starting layouts
 - **Stress loss function** (venneuler-style) as alternative to region error
 - **Other shapes**: Ellipses, rectangles, triangles
 - **Polygon conversion** utilities for complex visualizations
 - **Label placement** algorithms (poles of inaccessibility, centroids)
-- **3+ way intersections** proper calculation
-- Serialization support for diagram interchange (for cross-language compatibility)
 - Parallel optimization for large diagrams
-- GPU acceleration for intersection calculations
+- GPU acceleration for polygon operations
 - Enhanced web UI features (export SVG, PNG, customization options)
 
 ## Notes
@@ -374,8 +403,8 @@ npm config delete omit
 - **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0 (alpha)
 - **Breaking changes are acceptable** in pre-1.0.0 versions
 - **Uses Conventional Commits** for clear change history
-- API stability will matter after 1.0.0 for language bindings (maintained in separate
-  repositories)
+- API stability will matter after 1.0.0 for language bindings (maintained in
+  separate repositories)
 - **Only WASM bindings** will be part of this repository
 - **R, Python, and Julia bindings** will be separate repositories that depend on
   this core library
