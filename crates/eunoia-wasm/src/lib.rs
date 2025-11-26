@@ -3,6 +3,7 @@
 //! This crate provides WebAssembly bindings for the eunoia library,
 //! enabling Euler and Venn diagram generation in web browsers.
 
+use eunoia::geometry::diagram;
 use eunoia::geometry::shapes::circle::Circle;
 use wasm_bindgen::prelude::*;
 
@@ -280,7 +281,7 @@ pub fn generate_from_spec_with_debug(
     }
 
     // Compute fitted exclusive areas using the same function as the optimizer
-    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use eunoia::geometry::diagram::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
@@ -357,7 +358,7 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
     }
 
     web_sys::console::log_1(&"[Rust] Computing fitted areas...".into());
-    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use eunoia::geometry::diagram::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
@@ -423,7 +424,7 @@ pub fn get_debug_info_simple(
         target.insert(combo.to_string(), area);
     }
 
-    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use eunoia::geometry::diagram::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
@@ -558,7 +559,7 @@ pub fn get_debug_info_initial(
         target.insert(combo.to_string(), area);
     }
 
-    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use diagram::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()

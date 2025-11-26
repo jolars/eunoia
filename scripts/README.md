@@ -55,16 +55,20 @@ The script generates test functions that can be added to `crates/eunoia/src/geom
 - `test_eulerr_comparison_nested_configuration()`
 - `test_eulerr_comparison_original_failing()`
 
-**4 and 5-circle tests (currently marked as `#[ignore]` due to accuracy issues):**
+**4-circle tests (passing with <2% error):**
 - `test_eulerr_comparison_four_circles_square()`
 - `test_eulerr_comparison_four_circles_center()`
+
+**5-circle tests (passing with <2% error):**
 - `test_eulerr_comparison_five_circles_circular()`
 - `test_eulerr_comparison_five_circles_cross()`
 
-**Note**: The 4 and 5 circle tests currently show accuracy issues (>10% error for some regions),
-suggesting potential problems with the polygon-based area calculation or region discovery
-for higher-order intersections. These tests are kept as ignored tests to track progress
-on improving 4+ circle support.
+**6-circle tests (passing with <1% error):**
+- `test_eulerr_comparison_six_circles_hexagon()`
+- `test_eulerr_comparison_six_circles_grid()`
+
+All tests are now passing! The disjoint_or_subset logic and proper pairwise region
+discovery fixed the accuracy issues for 4+ circles.
 
 ### Adding new test cases
 

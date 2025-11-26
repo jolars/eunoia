@@ -119,32 +119,68 @@ pub fn discover_regions(
             } else if circles[i].contains(&circles[j]) || circles[j].contains(&circles[i]) {
                 // No edge intersection but one contains the other
                 regions.insert((1 << i) | (1 << j));
+            } else {
+                // Check if they have non-zero intersection area
+                // (covers case where intersection points exist but are all shared with other circles)
+                let int_area = circles[i].intersection_area(&circles[j]);
+                if int_area > 1e-10 {
+                    regions.insert((1 << i) | (1 << j));
+                }
             }
         }
     }
 
-    // 4. Higher-order intersections from containment
-    // For any circle, check which other circles contain it (or it contains)
-    // If circle i is contained in multiple circles, their intersection exists
+    // 4. Build higher-order combinations from pairwise compatibility
+    // Key insight: A∩B∩C can only exist if A∩B, A∩C, and B∩C all exist
+    let pairwise_regions: Vec<RegionMask> = regions
+        .iter()
+        .filter(|&&m| (m as RegionMask).count_ones() == 2)
+        .copied()
+        .collect();
+
+    // Build compatibility matrix from pairwise regions
+    let mut compatible = vec![vec![false; n_sets]; n_sets];
     for i in 0..n_sets {
-        let mut containing_circles = vec![i]; // Start with itself
+        compatible[i][i] = true;
+    }
+    for &mask in &pairwise_regions {
+        let indices = mask_to_indices(mask, n_sets);
+        if indices.len() == 2 {
+            compatible[indices[0]][indices[1]] = true;
+            compatible[indices[1]][indices[0]] = true;
+        }
+    }
 
-        for j in 0..n_sets {
-            if i != j && circles[j].contains(&circles[i]) {
-                containing_circles.push(j);
+    // Extend to 3-way, 4-way, etc. combinations
+    let mut current_level = pairwise_regions;
+    for _level in 3..=n_sets {
+        let mut next_level = Vec::new();
+
+        for &base_mask in &current_level {
+            let base_indices = mask_to_indices(base_mask, n_sets);
+
+            for new_idx in 0..n_sets {
+                if (base_mask & (1 << new_idx)) != 0 {
+                    continue;
+                }
+
+                // Check if new_idx is compatible with ALL in base_mask
+                if base_indices
+                    .iter()
+                    .all(|&existing| compatible[new_idx][existing])
+                {
+                    let new_mask = base_mask | (1 << new_idx);
+                    if regions.insert(new_mask) {
+                        next_level.push(new_mask);
+                    }
+                }
             }
         }
 
-        // If this circle is contained in others, their intersection exists
-        if containing_circles.len() > 1 {
-            let mask = containing_circles
-                .iter()
-                .fold(0, |acc, &idx| acc | (1 << idx));
-            if mask != 0 {
-                // Don't add empty set
-                regions.insert(mask);
-            }
+        if next_level.is_empty() {
+            break;
         }
+        current_level = next_level;
     }
 
     regions.into_iter().collect()
@@ -1002,5 +1038,127 @@ mod tests {
                 error
             );
         }
+    }
+}
+#[cfg(test)]
+mod analyze_sparse {
+    use super::*;
+
+    #[test]
+    fn analyze_why_sparse_fails() {
+        // Six circles all overlapping at center
+        let angles: Vec<f64> = (0..6)
+            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
+            .collect();
+        let circles: Vec<Circle> = angles
+            .iter()
+            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
+            .collect();
+
+        let intersections = collect_intersections(&circles, 6);
+
+        println!("\n=== Intersection Analysis ===");
+        println!("Total intersection points: {}", intersections.len());
+
+        // Check what masks we get from intersection points
+        let mut masks_from_points = std::collections::HashSet::new();
+        for info in &intersections {
+            let mask = adopters_to_mask(info.adopters());
+            masks_from_points.insert(mask);
+        }
+
+        println!(
+            "Unique masks from intersection points: {}",
+            masks_from_points.len()
+        );
+
+        // Check some specific combinations
+        println!("\n=== Checking specific combinations ===");
+
+        // Check if A-B (0b000011) has intersection points
+        let ab_mask = 0b000011;
+        let ab_points: Vec<_> = intersections
+            .iter()
+            .filter(|info| adopters_to_mask(info.adopters()) == ab_mask)
+            .collect();
+        println!("A-B only points: {}", ab_points.len());
+
+        // Check if A-B have ANY shared points
+        let ab_shared: Vec<_> = intersections
+            .iter()
+            .filter(|info| {
+                let adopters = info.adopters();
+                adopters.contains(&0) && adopters.contains(&1)
+            })
+            .collect();
+        println!("A-B shared points (any mask): {}", ab_shared.len());
+
+        // Key question: do A and B actually intersect?
+        let ab_int_area = circles[0].intersection_area(&circles[1]);
+        println!("A-B intersection area: {:.6}", ab_int_area);
+
+        // The problem: when ALL six circles meet at a central region,
+        // the A-B intersection points are ALSO in C, D, E, F
+        // So there are NO points with mask exactly 0b000011
+        // But A-B DO have a pairwise intersection area!
+
+        println!("\n=== The Problem ===");
+        println!(
+            "A-B have intersection area {:.3}, but no points with mask exactly A-B",
+            ab_int_area
+        );
+        println!("All A-B boundary points are also in other circles (higher-order intersections)");
+        println!("Sparse discovery looks for unique points per region, but in dense overlap,");
+        println!("many regions don't have unique points - their boundaries are all shared!");
+    }
+}
+
+#[cfg(test)]
+mod test_improved_discovery {
+    use super::*;
+
+    #[test]
+    fn test_discover_six_overlap() {
+        let angles: Vec<f64> = (0..6)
+            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
+            .collect();
+        let circles: Vec<Circle> = angles
+            .iter()
+            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
+            .collect();
+
+        let intersections = collect_intersections(&circles, 6);
+        let regions = discover_regions(&circles, &intersections, 6);
+
+        println!("\n=== Improved Discovery ===");
+        println!("Discovered: {} / 63 regions", regions.len());
+        println!(
+            "Saved: {} region computations vs full enumeration",
+            63 - regions.len()
+        );
+    }
+}
+
+#[cfg(test)]
+mod test_hexagon_pruning {
+    use super::*;
+
+    #[test]
+    fn test_hexagon_pruning() {
+        // Hexagon - not all circles overlap
+        let angles: Vec<f64> = (0..6)
+            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
+            .collect();
+        let circles: Vec<Circle> = angles
+            .iter()
+            .map(|&angle| Circle::new(Point::new(2.0 * angle.cos(), 2.0 * angle.sin()), 1.5))
+            .collect();
+
+        let intersections = collect_intersections(&circles, 6);
+        let regions = discover_regions(&circles, &intersections, 6);
+
+        println!("\n=== Hexagon (sparse overlap) ===");
+        println!("Discovered: {} / 63 regions", regions.len());
+        println!("Pruned: {} unnecessary computations!", 63 - regions.len());
     }
 }

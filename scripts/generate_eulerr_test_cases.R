@@ -70,6 +70,13 @@ format_areas <- function(areas, set_names) {
   if (n >= 5 && idx <= length(areas)) {
     result <- c(result, sprintf('(Combination::new(&["%s", "%s", "%s", "%s", "%s"]), %.10f),', 
                                 set_names[1], set_names[2], set_names[3], set_names[4], set_names[5], areas[idx]))
+    idx <- idx + 1
+  }
+  
+  # Six-way intersection
+  if (n >= 6 && idx <= length(areas)) {
+    result <- c(result, sprintf('(Combination::new(&["%s", "%s", "%s", "%s", "%s", "%s"]), %.10f),', 
+                                set_names[1], set_names[2], set_names[3], set_names[4], set_names[5], set_names[6], areas[idx]))
   }
   
   result
@@ -208,6 +215,64 @@ cat("Circles:\n")
 print(circles9)
 cat("\nAreas:", areas9, "\n\n")
 
+# Test Case 10: Six circles - hexagonal arrangement
+cat("=== Test Case 10: Six circles - hexagonal arrangement ===\n")
+# Create 6 circles in a hexagonal pattern
+angles <- seq(0, 2*pi, length.out = 7)[1:6]
+radius_from_center <- 2
+circle_radius <- 1.5
+circles10 <- data.frame(
+  A = c(radius_from_center * cos(angles[1]), radius_from_center * sin(angles[1]), circle_radius, circle_radius, 0),
+  B = c(radius_from_center * cos(angles[2]), radius_from_center * sin(angles[2]), circle_radius, circle_radius, 0),
+  C = c(radius_from_center * cos(angles[3]), radius_from_center * sin(angles[3]), circle_radius, circle_radius, 0),
+  D = c(radius_from_center * cos(angles[4]), radius_from_center * sin(angles[4]), circle_radius, circle_radius, 0),
+  E = c(radius_from_center * cos(angles[5]), radius_from_center * sin(angles[5]), circle_radius, circle_radius, 0),
+  F = c(radius_from_center * cos(angles[6]), radius_from_center * sin(angles[6]), circle_radius, circle_radius, 0),
+  row.names = c("h", "k", "a", "b", "phi")
+)
+areas10 <- eulerr:::intersect_ellipses(as.matrix(circles10), FALSE, FALSE)
+cat("Circles:\n")
+print(circles10)
+cat("\nAreas:", areas10, "\n\n")
+
+# Test Case 11: Six circles - all overlapping in center
+cat("=== Test Case 11: Six circles - all overlapping in center ===\n")
+# Create 6 circles that all overlap at the center
+# Arrange them in a circular pattern with smaller radius from center so they all meet
+angles11 <- seq(0, 2*pi, length.out = 7)[1:6]
+radius_from_center11 <- 1.5  # Smaller distance so circles overlap more
+circle_radius11 <- 1.8       # Larger radius so they all reach center
+circles11 <- data.frame(
+  A = c(radius_from_center11 * cos(angles11[1]), radius_from_center11 * sin(angles11[1]), circle_radius11, circle_radius11, 0),
+  B = c(radius_from_center11 * cos(angles11[2]), radius_from_center11 * sin(angles11[2]), circle_radius11, circle_radius11, 0),
+  C = c(radius_from_center11 * cos(angles11[3]), radius_from_center11 * sin(angles11[3]), circle_radius11, circle_radius11, 0),
+  D = c(radius_from_center11 * cos(angles11[4]), radius_from_center11 * sin(angles11[4]), circle_radius11, circle_radius11, 0),
+  E = c(radius_from_center11 * cos(angles11[5]), radius_from_center11 * sin(angles11[5]), circle_radius11, circle_radius11, 0),
+  F = c(radius_from_center11 * cos(angles11[6]), radius_from_center11 * sin(angles11[6]), circle_radius11, circle_radius11, 0),
+  row.names = c("h", "k", "a", "b", "phi")
+)
+areas11 <- eulerr:::intersect_ellipses(as.matrix(circles11), FALSE, FALSE)
+cat("Circles:\n")
+print(circles11)
+cat("\nAreas:", areas11, "\n\n")
+
+# Test Case 12: Six circles - tight cluster
+cat("=== Test Case 12: Six circles - tight cluster ===\n")
+# Very tightly packed circles with lots of higher-order overlaps
+circles12 <- data.frame(
+  A = c(0, 0, 1.5, 1.5, 0),
+  B = c(1.2, 0, 1.5, 1.5, 0),
+  C = c(0.6, 1.0, 1.5, 1.5, 0),
+  D = c(-0.6, 1.0, 1.5, 1.5, 0),
+  E = c(-1.2, 0, 1.5, 1.5, 0),
+  F = c(-0.3, -0.8, 1.5, 1.5, 0),
+  row.names = c("h", "k", "a", "b", "phi")
+)
+areas12 <- eulerr:::intersect_ellipses(as.matrix(circles12), FALSE, FALSE)
+cat("Circles:\n")
+print(circles12)
+cat("\nAreas:", areas12, "\n\n")
+
 # Generate Rust test code
 cat("\n=== RUST TEST CODE ===\n\n")
 
@@ -220,7 +285,10 @@ test_cases <- list(
   list(name = "four_circles_square", circles = circles6, areas = areas6),
   list(name = "four_circles_center", circles = circles7, areas = areas7),
   list(name = "five_circles_circular", circles = circles8, areas = areas8),
-  list(name = "five_circles_cross", circles = circles9, areas = areas9)
+  list(name = "five_circles_cross", circles = circles9, areas = areas9),
+  list(name = "six_circles_hexagon", circles = circles10, areas = areas10),
+  list(name = "six_circles_all_overlap", circles = circles11, areas = areas11),
+  list(name = "six_circles_tight_cluster", circles = circles12, areas = areas12)
 )
 
 for (tc in test_cases) {
