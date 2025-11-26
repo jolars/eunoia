@@ -34,8 +34,14 @@ impl Default for InitialLayoutConfig {
 pub(crate) fn compute_initial_layout(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
+    rng: &mut dyn rand::RngCore,
 ) -> Result<Vec<f64>, Error> {
-    compute_initial_layout_with_config(distances, relationships, InitialLayoutConfig::default())
+    compute_initial_layout_with_config(
+        distances,
+        relationships,
+        InitialLayoutConfig::default(),
+        rng,
+    )
 }
 
 /// Compute initial layout using patience-based optimization.
@@ -46,13 +52,13 @@ pub(crate) fn compute_initial_layout_with_config(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     config: InitialLayoutConfig,
+    rng: &mut dyn rand::RngCore,
 ) -> Result<Vec<f64>, Error> {
     let n_sets = distances.len();
 
     let mut best_params = Vec::new();
     let mut best_loss = f64::INFINITY;
     let mut attempts_without_improvement = 0;
-    let mut rng = rand::rng();
 
     // Compute scale for random initialization
     let max_distance = distances
@@ -212,6 +218,8 @@ impl<'a> Gradient for MdsCost<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() < tol
@@ -228,12 +236,13 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_two_sets_touching() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Two circles with radii r1=1, r2=1, touching (distance = 2)
         let distances = vec![vec![0.0, 2.0], vec![2.0, 0.0]];
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         // Should have 4 parameters (2 x, 2 y)
         assert_eq!(result.len(), 4);
@@ -255,12 +264,13 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_two_sets_overlapping() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Two circles with centers 1 unit apart (overlapping)
         let distances = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -279,12 +289,13 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_two_sets_separated() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Two circles far apart
         let distances = vec![vec![0.0, 5.0], vec![5.0, 0.0]];
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -303,6 +314,7 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_two_sets_disjoint() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Two disjoint sets (distance should be at least r1 + r2)
         let distances = vec![vec![0.0, 3.0], vec![3.0, 0.0]];
 
@@ -310,7 +322,7 @@ mod tests {
         relationships.disjoint[0][1] = true;
         relationships.disjoint[1][0] = true;
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -330,13 +342,14 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_three_sets_triangle() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Three sets arranged in a triangle
         let d = 2.0; // Equal distances
         let distances = vec![vec![0.0, d, d], vec![d, 0.0, d], vec![d, d, 0.0]];
 
         let relationships = create_test_relationships(3);
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         assert_eq!(result.len(), 6); // 3 x, 3 y
 
@@ -363,6 +376,7 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_three_sets_collinear() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Three sets in a line: A---B---C
         let distances = vec![
             vec![0.0, 1.0, 2.0],
@@ -372,7 +386,7 @@ mod tests {
 
         let relationships = create_test_relationships(3);
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         assert_eq!(result.len(), 6);
 
@@ -390,6 +404,7 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_four_sets_square() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Four sets in a square pattern
         let side = 1.0;
         let diag = side * 2.0_f64.sqrt();
@@ -402,7 +417,7 @@ mod tests {
 
         let relationships = create_test_relationships(4);
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         assert_eq!(result.len(), 8);
 
@@ -418,13 +433,14 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_with_restarts() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Test that multiple restarts work
         let distances = vec![vec![0.0, 1.5], vec![1.5, 0.0]];
 
         let relationships = create_test_relationships(2);
 
-        let result1 = compute_initial_layout(&distances, &relationships).unwrap();
-        let result2 = compute_initial_layout(&distances, &relationships).unwrap();
+        let result1 = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
+        let result2 = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         // Both should produce valid results
         assert_eq!(result1.len(), 4);
@@ -443,12 +459,13 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_zero_distance() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Two sets at the same position (fully overlapping)
         let distances = vec![vec![0.0, 0.0], vec![0.0, 0.0]];
 
         let relationships = create_test_relationships(2);
 
-        let result = compute_initial_layout(&distances, &relationships).unwrap();
+        let result = compute_initial_layout(&distances, &relationships, &mut rng).unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -468,6 +485,7 @@ mod tests {
 
     #[test]
     fn test_compute_initial_layout_asymmetric_distances() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Test with slightly asymmetric input (should still work)
         let distances = vec![
             vec![0.0, 1.0, 2.0],
@@ -477,7 +495,7 @@ mod tests {
 
         let relationships = create_test_relationships(3);
 
-        let result = compute_initial_layout(&distances, &relationships);
+        let result = compute_initial_layout(&distances, &relationships, &mut rng);
 
         // Should succeed even with asymmetric distances
         assert!(result.is_ok());
@@ -486,6 +504,7 @@ mod tests {
 
     #[test]
     fn test_patience_based_optimization() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Test that patience-based optimization stops early when no improvement
         let distances = vec![vec![0.0, 1.5], vec![1.5, 0.0]];
         let relationships = create_test_relationships(2);
@@ -497,7 +516,8 @@ mod tests {
             perfect_fit_threshold: 1e-8,
         };
 
-        let result = compute_initial_layout_with_config(&distances, &relationships, config);
+        let result =
+            compute_initial_layout_with_config(&distances, &relationships, config, &mut rng);
         assert!(result.is_ok());
 
         let params = result.unwrap();
@@ -511,6 +531,7 @@ mod tests {
 
     #[test]
     fn test_patience_with_zero_threshold() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Test with zero threshold - should only improve on any decrease
         let distances = vec![vec![0.0, 2.0], vec![2.0, 0.0]];
         let relationships = create_test_relationships(2);
@@ -522,12 +543,14 @@ mod tests {
             perfect_fit_threshold: 1e-8,
         };
 
-        let result = compute_initial_layout_with_config(&distances, &relationships, config);
+        let result =
+            compute_initial_layout_with_config(&distances, &relationships, config, &mut rng);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_early_stopping_on_perfect_fit() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Test that optimization stops immediately when loss reaches zero
         // Two circles at exact distance (should achieve near-zero loss quickly)
         let distances = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
@@ -540,7 +563,8 @@ mod tests {
             perfect_fit_threshold: 1e-8,
         };
 
-        let result = compute_initial_layout_with_config(&distances, &relationships, config);
+        let result =
+            compute_initial_layout_with_config(&distances, &relationships, config, &mut rng);
         assert!(result.is_ok());
 
         let params = result.unwrap();

@@ -10,14 +10,18 @@ pub enum OverlapMethod {
     Exact,
 }
 
-pub fn compute_overlaps<S: Shape>(shapes: &[S], method: OverlapMethod) -> f64 {
+pub fn compute_overlaps<S: Shape>(
+    shapes: &[S],
+    method: OverlapMethod,
+    rng: &mut dyn rand::RngCore,
+) -> f64 {
     match method {
-        OverlapMethod::MonteCarlo => monte_carlo_overlap(shapes, 100_000),
+        OverlapMethod::MonteCarlo => monte_carlo_overlap(shapes, 100_000, rng),
         OverlapMethod::Exact => {
             // Exact computation requires shape-specific implementations
             // For generic shapes, we fall back to Monte Carlo
             // Use compute_overlaps_circles() for exact circle computation
-            monte_carlo_overlap(shapes, 100_000)
+            monte_carlo_overlap(shapes, 100_000, rng)
         }
     }
 }
@@ -87,7 +91,11 @@ pub fn compute_overlaps_circles(circles: &[Circle]) -> f64 {
 /// # Returns
 ///
 /// Intersection area estimate (area where ALL shapes overlap)
-fn monte_carlo_overlap<S: Shape>(shapes: &[S], n_samples: usize) -> f64 {
+fn monte_carlo_overlap<S: Shape>(
+    shapes: &[S],
+    n_samples: usize,
+    rng: &mut dyn rand::RngCore,
+) -> f64 {
     let n_sets = shapes.len();
     let all_shapes_mask = (1 << n_sets) - 1; // All bits set
 
@@ -131,8 +139,6 @@ fn monte_carlo_overlap<S: Shape>(shapes: &[S], n_samples: usize) -> f64 {
     // Track region counts: region_mask -> count
     let mut region_counts: HashMap<usize, usize> = HashMap::new();
 
-    let mut rng = rand::rng();
-
     // Generate random points and test containment
     for _ in 0..n_samples {
         let x = rng.random_range(x_min..x_max);
@@ -163,14 +169,17 @@ mod tests {
     use super::*;
     use crate::geometry::shapes::circle::Circle;
     use crate::geometry::shapes::rectangle::Rectangle;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     #[test]
     fn test_monte_carlo_single_circle() {
+        let mut rng = StdRng::seed_from_u64(42);
         let circle = Circle::new(Point::new(0.0, 0.0), 1.0);
         let shapes = vec![circle];
 
         // Expected area: π ≈ 3.14159 (single shape = full area)
-        let estimated = monte_carlo_overlap(&shapes, 100_000);
+        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
         let expected = std::f64::consts::PI;
 
         // Monte Carlo should be within ~1% for 100k samples
@@ -186,12 +195,13 @@ mod tests {
 
     #[test]
     fn test_monte_carlo_two_separate_circles() {
+        let mut rng = StdRng::seed_from_u64(42);
         let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
         let c2 = Circle::new(Point::new(10.0, 0.0), 1.0);
         let shapes = vec![c1, c2];
 
         // Expected area: 0 (no overlap/intersection)
-        let estimated = monte_carlo_overlap(&shapes, 100_000);
+        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
 
         assert!(
             estimated.abs() < 0.001,
@@ -202,6 +212,7 @@ mod tests {
 
     #[test]
     fn test_monte_carlo_two_overlapping_circles() {
+        let mut rng = StdRng::seed_from_u64(42);
         let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
         let c2 = Circle::new(Point::new(1.0, 0.0), 1.0);
         let shapes = vec![c1, c2];
@@ -217,7 +228,7 @@ mod tests {
         // Expected area: intersection area only
         let expected = c1.intersection_area(&c2);
 
-        let estimated = monte_carlo_overlap(&shapes, 100_000);
+        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
 
         let error = (estimated - expected).abs() / expected;
         assert!(
@@ -231,11 +242,12 @@ mod tests {
 
     #[test]
     fn test_monte_carlo_rectangle() {
+        let mut rng = StdRng::seed_from_u64(42);
         let rect = Rectangle::new(Point::new(0.0, 0.0), 4.0, 2.0);
         let shapes = vec![rect];
 
         // Expected area: 8.0 (single shape = full area)
-        let estimated = monte_carlo_overlap(&shapes, 100_000);
+        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
         let expected = 8.0;
 
         let error = (estimated - expected).abs() / expected;
@@ -250,6 +262,7 @@ mod tests {
 
     #[test]
     fn test_monte_carlo_two_overlapping_rectangles() {
+        let mut rng = StdRng::seed_from_u64(42);
         let r1 = Rectangle::new(Point::new(0.0, 0.0), 4.0, 4.0);
         let r2 = Rectangle::new(Point::new(2.0, 0.0), 4.0, 4.0);
         let shapes = vec![r1, r2];
@@ -257,7 +270,7 @@ mod tests {
         // Expected area: intersection only (2x4 = 8)
         let expected = r1.intersection_area(&r2);
 
-        let estimated = monte_carlo_overlap(&shapes, 100_000);
+        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
 
         let error = (estimated - expected).abs() / expected;
         assert!(
@@ -271,6 +284,7 @@ mod tests {
 
     #[test]
     fn test_monte_carlo_three_overlapping_circles() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Three circles with a common intersection region
         let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
         let c2 = Circle::new(Point::new(1.5, 0.0), 2.0);
@@ -278,7 +292,7 @@ mod tests {
         let shapes = vec![c1, c2, c3];
 
         // Should have some 3-way intersection
-        let estimated = monte_carlo_overlap(&shapes, 100_000);
+        let estimated = monte_carlo_overlap(&shapes, 100_000, &mut rng);
 
         // Just verify it's positive and reasonable
         assert!(
@@ -329,6 +343,7 @@ mod tests {
 
     #[test]
     fn test_exact_vs_monte_carlo_two_circles() {
+        let mut rng = StdRng::seed_from_u64(42);
         let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
         let c2 = Circle::new(Point::new(1.0, 0.0), 1.0);
         let circles = vec![c1, c2];
@@ -337,7 +352,7 @@ mod tests {
         let exact = compute_overlaps_circles(&circles);
 
         // Monte Carlo computation
-        let monte_carlo = monte_carlo_overlap(&circles, 100_000);
+        let monte_carlo = monte_carlo_overlap(&circles, 100_000, &mut rng);
 
         // They should be within ~2% of each other
         let error = (exact - monte_carlo).abs() / exact;
@@ -352,6 +367,7 @@ mod tests {
 
     #[test]
     fn test_exact_vs_monte_carlo_three_circles() {
+        let mut rng = StdRng::seed_from_u64(42);
         let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
         let c2 = Circle::new(Point::new(1.5, 0.0), 2.0);
         let c3 = Circle::new(Point::new(0.75, 1.3), 2.0);
@@ -361,7 +377,7 @@ mod tests {
         let exact = compute_overlaps_circles(&circles);
 
         // Monte Carlo computation
-        let monte_carlo = monte_carlo_overlap(&circles, 100_000);
+        let monte_carlo = monte_carlo_overlap(&circles, 100_000, &mut rng);
 
         // They should be within ~3% of each other (3-way is harder)
         let error = (exact - monte_carlo).abs() / exact;
@@ -376,6 +392,7 @@ mod tests {
 
     #[test]
     fn test_exact_vs_monte_carlo_no_overlap() {
+        let mut rng = StdRng::seed_from_u64(42);
         let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
         let c2 = Circle::new(Point::new(10.0, 0.0), 1.0);
         let circles = vec![c1, c2];
@@ -384,7 +401,7 @@ mod tests {
         let exact = compute_overlaps_circles(&circles);
 
         // Monte Carlo computation
-        let monte_carlo = monte_carlo_overlap(&circles, 100_000);
+        let monte_carlo = monte_carlo_overlap(&circles, 100_000, &mut rng);
 
         // Both should be essentially zero
         assert!(
@@ -397,6 +414,7 @@ mod tests {
 
     #[test]
     fn test_exact_vs_monte_carlo_four_circles() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Four circles arranged in a square pattern with central overlap
         let c1 = Circle::new(Point::new(-0.5, -0.5), 1.5);
         let c2 = Circle::new(Point::new(0.5, -0.5), 1.5);
@@ -408,7 +426,7 @@ mod tests {
         let exact = compute_overlaps_circles(&circles);
 
         // Monte Carlo computation
-        let monte_carlo = monte_carlo_overlap(&circles, 100_000);
+        let monte_carlo = monte_carlo_overlap(&circles, 100_000, &mut rng);
 
         // For 4-way intersection, if there is one
         if exact > 0.1 && monte_carlo > 0.1 {
@@ -435,6 +453,7 @@ mod tests {
 
     #[test]
     fn test_exact_vs_monte_carlo_highly_overlapping() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Three circles that overlap significantly
         let c1 = Circle::new(Point::new(0.0, 0.0), 2.5);
         let c2 = Circle::new(Point::new(1.0, 0.0), 2.5);
@@ -445,7 +464,7 @@ mod tests {
         let exact = compute_overlaps_circles(&circles);
 
         // Monte Carlo computation
-        let monte_carlo = monte_carlo_overlap(&circles, 100_000);
+        let monte_carlo = monte_carlo_overlap(&circles, 100_000, &mut rng);
 
         // They should be within ~3% of each other
         let error = (exact - monte_carlo).abs() / exact;
@@ -467,6 +486,7 @@ mod tests {
 
     #[test]
     fn test_exact_vs_monte_carlo_barely_overlapping() {
+        let mut rng = StdRng::seed_from_u64(42);
         // Three circles that barely overlap
         let c1 = Circle::new(Point::new(0.0, 0.0), 1.5);
         let c2 = Circle::new(Point::new(2.5, 0.0), 1.5);
@@ -477,7 +497,7 @@ mod tests {
         let exact = compute_overlaps_circles(&circles);
 
         // Monte Carlo computation
-        let monte_carlo = monte_carlo_overlap(&circles, 100_000);
+        let monte_carlo = monte_carlo_overlap(&circles, 100_000, &mut rng);
 
         // For small intersections, allow slightly larger error
         if exact > 0.1 && monte_carlo > 0.1 {
