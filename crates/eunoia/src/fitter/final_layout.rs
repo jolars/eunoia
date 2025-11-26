@@ -124,11 +124,7 @@ impl<'a> CostFunction for RegionErrorCost<'a> {
 
         let exclusive_areas = diagram::compute_exclusive_regions(&circles);
 
-        let error = diagram::compute_region_error(
-            &exclusive_areas,
-            &self.spec.exclusive_areas,
-            &self.spec.set_names,
-        );
+        let error = diagram::compute_region_error(&exclusive_areas, &self.spec.exclusive_areas);
 
         Ok(error)
     }

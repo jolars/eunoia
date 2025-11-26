@@ -73,7 +73,6 @@ impl DiagramSpec {
     /// 1. Removes empty sets (area < ε)
     /// 2. Removes combinations containing empty sets
     /// 3. Computes pairwise relationships (subset, disjoint)
-    #[allow(dead_code)]
     pub(crate) fn preprocess(&self) -> Result<PreprocessedSpec, DiagramError> {
         const EPSILON: f64 = 1e-10; // sqrt of machine epsilon
 
@@ -142,18 +141,35 @@ impl DiagramSpec {
         // 4. Compute pairwise relationships
         let relationships = Self::compute_pairwise_relations(&non_empty_sets, &filtered_inclusive)?;
 
+        // 5. Convert Combination maps to RegionMask maps for efficient internal use
+        use crate::geometry::diagram;
+        let exclusive_areas_mask = filtered_exclusive
+            .iter()
+            .map(|(combo, &area)| {
+                let mask = diagram::combination_to_mask(combo, &non_empty_sets);
+                (mask, area)
+            })
+            .collect();
+
+        let inclusive_areas_mask = filtered_inclusive
+            .iter()
+            .map(|(combo, &area)| {
+                let mask = diagram::combination_to_mask(combo, &non_empty_sets);
+                (mask, area)
+            })
+            .collect();
+
         Ok(PreprocessedSpec {
             set_names: non_empty_sets,
             set_to_idx,
-            exclusive_areas: filtered_exclusive,
-            inclusive_areas: filtered_inclusive,
+            exclusive_areas: exclusive_areas_mask,
+            inclusive_areas: inclusive_areas_mask,
             n_sets,
             set_areas,
             relationships,
         })
     }
 
-    #[allow(dead_code)]
     fn compute_pairwise_relations(
         set_names: &[String],
         inclusive_areas: &HashMap<Combination, f64>,
@@ -292,7 +308,6 @@ impl DiagramSpec {
 ///
 /// This is created by filtering out empty sets from a DiagramSpec and
 /// computing additional metadata needed for optimization.
-#[allow(dead_code)]
 pub(crate) struct PreprocessedSpec {
     /// Non-empty set names in canonical order
     pub(crate) set_names: Vec<String>,
@@ -300,11 +315,11 @@ pub(crate) struct PreprocessedSpec {
     /// Mapping from set name to index in set_names
     pub(crate) set_to_idx: HashMap<String, usize>,
 
-    /// All non-empty combinations with their exclusive areas
-    pub(crate) exclusive_areas: HashMap<Combination, f64>,
+    /// All non-empty combinations with their exclusive areas (internal RegionMask format)
+    pub(crate) exclusive_areas: HashMap<crate::geometry::diagram::RegionMask, f64>,
 
-    /// All non-empty combinations with their inclusive areas  
-    pub(crate) inclusive_areas: HashMap<Combination, f64>,
+    /// All non-empty combinations with their inclusive areas (internal RegionMask format)
+    pub(crate) inclusive_areas: HashMap<crate::geometry::diagram::RegionMask, f64>,
 
     /// Number of non-empty sets
     pub(crate) n_sets: usize,

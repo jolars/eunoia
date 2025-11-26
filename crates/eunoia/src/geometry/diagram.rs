@@ -4,7 +4,9 @@ use crate::geometry::shapes::Shape;
 use crate::spec::Combination;
 use std::collections::HashMap;
 
-type RegionMask = usize;
+/// Internal representation of a region as a bit mask.
+/// Each bit represents whether a set is part of the region.
+pub(crate) type RegionMask = usize;
 
 /// Information about a single intersection point between shapes.
 #[derive(Debug, Clone)]
@@ -367,16 +369,13 @@ fn is_subset(mask1: RegionMask, mask2: RegionMask) -> bool {
 }
 
 /// Compute region error: sum of squared differences between fitted and target areas.
-pub fn compute_region_error(
+pub(crate) fn compute_region_error(
     fitted_areas: &HashMap<RegionMask, f64>,
-    target_areas: &HashMap<Combination, f64>,
-    set_names: &[String],
+    target_areas: &HashMap<RegionMask, f64>,
 ) -> f64 {
     let mut error = 0.0;
 
-    for (combo, &target) in target_areas {
-        // Convert combination to mask
-        let mask = combination_to_mask(combo, set_names);
+    for (&mask, &target) in target_areas {
         let fitted = fitted_areas.get(&mask).copied().unwrap_or(0.0);
         let diff = fitted - target;
         error += diff * diff;
@@ -386,7 +385,7 @@ pub fn compute_region_error(
 }
 
 /// Convert a Combination to a bit mask.
-fn combination_to_mask(combo: &Combination, set_names: &[String]) -> RegionMask {
+pub(crate) fn combination_to_mask(combo: &Combination, set_names: &[String]) -> RegionMask {
     let combo_sets = combo.sets();
     let mut mask = 0;
 
