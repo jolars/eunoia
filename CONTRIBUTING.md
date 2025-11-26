@@ -220,18 +220,14 @@ We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of
 We welcome contributions in these areas:
 
 - **New shapes**: Ellipse, rectangle, triangle implementations
-- **Optimization algorithms**: MDS initialization, loss functions
 - **Polygon utilities**: Shape conversion, intersection splitting
 - **Label placement**: Poles of inaccessibility, centroid calculations
 - **Documentation**: Examples, tutorials, API docs
 - **Tests**: Edge cases, property-based tests
 - **Performance**: Optimization, profiling
-- **WASM bindings**: Improvements to WebAssembly API in `crates/eunoia-wasm`
 
 ## Getting Help
 
-- Check the [documentation](.github/copilot-instructions.md) for detailed
-  guidelines
 - Open an issue for questions or discussions
 - Review existing issues and PRs for context
 
