@@ -8,9 +8,8 @@ use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
 
-use crate::geometry::diagram;
-use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::Circle;
+use crate::geometry::shapes::Shape;
 use crate::spec::PreprocessedSpec;
 
 /// Configuration for final layout optimization.
@@ -37,28 +36,38 @@ impl Default for FinalLayoutConfig {
 
 /// Optimize the final layout by minimizing region error.
 ///
-/// This takes the initial layout (positions and radii) and refines them to better
-/// match the target exclusive areas specified by the user.
-pub(crate) fn optimize_layout(
-    spec: &PreprocessedSpec,
+/// This takes the initial layout (positions and radii from circles) and converts them
+/// to shape-specific parameters, then optimizes those parameters.
+///
+/// Returns the optimized parameters as a flat vector along with the loss.
+pub(crate) fn optimize_layout<S: Shape + Copy + 'static>(
+    spec: &PreprocessedSpec<S>,
     initial_positions: &[f64], // [x0, y0, x1, y1, ..., xn, yn]
     initial_radii: &[f64],     // [r0, r1, ..., rn]
     config: FinalLayoutConfig,
-) -> Result<(Vec<f64>, Vec<f64>, f64), Error> {
+) -> Result<(Vec<f64>, f64), Error> {
     let n_sets = spec.n_sets;
+    let params_per_shape = S::n_params();
 
-    // Combine positions and radii into single parameter vector
-    // Layout: [x0, y0, ..., xn, yn, r0, r1, ..., rn]
-    let mut initial_params = Vec::with_capacity(n_sets * 2 + n_sets);
-    initial_params.extend_from_slice(initial_positions);
-    initial_params.extend_from_slice(initial_radii);
+    // Convert initial circle parameters to shape-specific parameters
+    let mut initial_params = Vec::with_capacity(n_sets * params_per_shape);
+    for i in 0..n_sets {
+        let x = initial_positions[i * 2];
+        let y = initial_positions[i * 2 + 1];
+        let r = initial_radii[i];
+        initial_params.extend(S::params_from_circle(x, y, r));
+    }
 
     let initial_param = DVector::from_vec(initial_params);
 
     // Create loss function from config
     let loss_fn = config.loss_type.create();
 
-    let cost_function = DiagramCost { spec, loss_fn };
+    let cost_function = DiagramCost {
+        spec,
+        loss_fn,
+        params_per_shape,
+    };
 
     // NelderMead Takes a vector of parameter vectors. The number of parameter vectors must be n +
     // 1 where n is the number of optimization parameters.
@@ -89,47 +98,42 @@ pub(crate) fn optimize_layout(
     let final_params = result.state().get_best_param().unwrap();
     let loss = result.state().get_cost();
 
-    // Split back into positions and radii
-    let (positions, radii) = final_params.as_slice().split_at(n_sets * 2);
-
-    Ok((positions.to_vec(), radii.to_vec(), loss))
+    Ok((final_params.as_slice().to_vec(), loss))
 }
 
 /// Cost function for region error optimization.
 ///
 /// Computes the discrepancy between target exclusive areas and actual fitted areas.
-struct DiagramCost<'a> {
-    spec: &'a PreprocessedSpec,
+struct DiagramCost<'a, S: Shape + Copy + 'static> {
+    spec: &'a PreprocessedSpec<S>,
     loss_fn: Box<dyn crate::loss::LossFunction>,
+    params_per_shape: usize,
 }
 
-impl<'a> DiagramCost<'a> {
-    /// Extract circles from parameter vector.
-    fn params_to_circles(&self, params: &DVector<f64>) -> Vec<Circle> {
+impl<'a, S: Shape + Copy + 'static> DiagramCost<'a, S> {
+    /// Extract shapes from parameter vector.
+    fn params_to_shapes(&self, params: &DVector<f64>) -> Vec<S> {
         let n_sets = self.spec.n_sets;
-        let positions = params.rows(0, n_sets * 2);
-        let radii = params.rows(n_sets * 2, n_sets);
 
         (0..n_sets)
             .map(|i| {
-                let x = positions[i * 2];
-                let y = positions[i * 2 + 1];
-                // Clamp radius to positive values with a minimum
-                let r = radii[i].abs().max(0.01);
-                Circle::new(Point::new(x, y), r)
+                let start = i * self.params_per_shape;
+                let end = start + self.params_per_shape;
+                S::from_params(&params.as_slice()[start..end])
             })
             .collect()
     }
 }
 
-impl<'a> CostFunction for DiagramCost<'a> {
+impl<'a, S: Shape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
     type Param = DVector<f64>;
     type Output = f64;
 
     fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
-        let circles = self.params_to_circles(param);
+        let shapes = self.params_to_shapes(param);
 
-        let exclusive_areas = diagram::compute_exclusive_regions(&circles);
+        // Compute exclusive regions using shape-specific exact computation
+        let exclusive_areas = S::compute_exclusive_regions(&shapes);
 
         // Use the configured loss function
         let error = self
@@ -143,6 +147,8 @@ impl<'a> CostFunction for DiagramCost<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::diagram;
+    use crate::geometry::point::Point;
     use crate::spec::{DiagramSpec, DiagramSpecBuilder};
 
     /// Test helper utilities for final layout testing
@@ -193,7 +199,7 @@ mod tests {
         pub fn create_spec_from_exclusive(
             exclusive_areas: HashMap<Combination, f64>,
         ) -> DiagramSpec {
-            let mut builder = DiagramSpecBuilder::new();
+            let mut builder = DiagramSpecBuilder::<Circle>::new();
 
             // Add all single sets
             for (combo, &area) in &exclusive_areas {
@@ -219,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_optimize_layout_simple() {
-        let spec = DiagramSpecBuilder::new()
+        let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", 3.0)
             .set("B", 4.0)
             .intersection(&["A", "B"], 1.0)
@@ -244,9 +250,9 @@ mod tests {
         let result = optimize_layout(&preprocessed, &positions, &radii, config);
         assert!(result.is_ok());
 
-        let (final_positions, final_radii, loss) = result.unwrap();
-        assert_eq!(final_positions.len(), 4);
-        assert_eq!(final_radii.len(), 2);
+        let (final_params, loss) = result.unwrap();
+        // For circles, params are [x0, y0, r0, x1, y1, r1, ...]
+        assert_eq!(final_params.len(), 2 * Circle::n_params()); // 2 circles * 3 params each
         assert!(loss >= 0.0);
 
         // Loss should be reasonably small (circles should move closer)
@@ -256,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_cost_function_computes() {
-        let spec = DiagramSpecBuilder::new()
+        let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", 5.0)
             .set("B", 5.0)
             .intersection(&["A", "B"], 2.0)
@@ -269,6 +275,7 @@ mod tests {
         let cost_fn = DiagramCost {
             spec: &preprocessed,
             loss_fn,
+            params_per_shape: Circle::n_params(),
         };
 
         // Create parameter vector
@@ -328,7 +335,7 @@ mod tests {
         let result = optimize_layout(&preprocessed, &positions, &radii, config);
         assert!(result.is_ok());
 
-        let (_, _, loss) = result.unwrap();
+        let (_, loss) = result.unwrap();
         println!("Reproduction loss: {}", loss);
 
         // Should be able to reproduce the layout with very low error
@@ -387,10 +394,9 @@ mod tests {
         let result = optimize_layout(&preprocessed, &positions, &radii, config);
         assert!(result.is_ok());
 
-        let (final_pos, final_radii, loss) = result.unwrap();
+        let (final_pos, loss) = result.unwrap();
         println!("\nReproduction loss: {}", loss);
-        println!("Final positions: {:?}", final_pos);
-        println!("Final radii: {:?}", final_radii);
+        println!("Final params: {:?}", final_pos);
         println!("Original radii: {:?}", radii);
 
         // Should be able to reproduce with reasonable error
@@ -448,7 +454,7 @@ mod tests {
             let result = optimize_layout(&preprocessed, &positions, &radii, config);
             assert!(result.is_ok(), "Optimization failed for config {}", i);
 
-            let (_, _, loss) = result.unwrap();
+            let (_, loss) = result.unwrap();
             println!("Loss: {:.6}", loss);
 
             results.push((n_sets, seed, loss));

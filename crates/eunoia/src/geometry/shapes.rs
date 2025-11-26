@@ -39,6 +39,45 @@ pub trait Shape {
 
     /// Compute the bounding box of the shape as a Rectangle.
     fn bounding_box(&self) -> Rectangle;
+
+    /// Compute all exclusive regions and their areas from a collection of shapes.
+    ///
+    /// This method should use exact geometric computation for the shape type.
+    /// Returns a map from RegionMask (bit representation) to exclusive area.
+    ///
+    /// This is used during optimization to compute loss functions.
+    fn compute_exclusive_regions(
+        shapes: &[Self],
+    ) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64>
+    where
+        Self: Sized;
+
+    /// Convert initial circle parameters to shape-specific parameters.
+    ///
+    /// Takes circle parameters (x, y, radius) and converts them to whatever
+    /// parameters this shape type needs for optimization.
+    ///
+    /// For Circle: returns [x, y, r]
+    /// For Ellipse: might return [x, y, a, b, angle] where a=b=r initially
+    fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64>
+    where
+        Self: Sized;
+
+    /// Get the number of parameters needed for this shape type.
+    ///
+    /// For Circle: 3 (x, y, r)
+    /// For Ellipse: 5 (x, y, a, b, angle)
+    fn n_params() -> usize
+    where
+        Self: Sized;
+
+    /// Construct a shape from optimized parameters.
+    ///
+    /// Takes a slice of parameters specific to this shape and constructs the shape.
+    /// The parameters should match what params_from_circle produces.
+    fn from_params(params: &[f64]) -> Self
+    where
+        Self: Sized;
 }
 
 /// Compute the bounding box for a collection of shapes.

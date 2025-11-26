@@ -13,8 +13,9 @@
 //!
 //! ```rust
 //! use eunoia::{DiagramSpecBuilder, InputType};
+//! use eunoia::geometry::shapes::circle::Circle;
 //!
-//! let spec = DiagramSpecBuilder::new()
+//! let spec = DiagramSpecBuilder::<Circle>::new()
 //!     .set("A", 5.0)
 //!     .set("B", 2.0)
 //!     .intersection(&["A", "B"], 1.0)

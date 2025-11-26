@@ -7,9 +7,9 @@ mod layout;
 pub use layout::Layout;
 
 use crate::error::DiagramError;
-use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::distance_for_overlap;
 use crate::geometry::shapes::circle::Circle;
+use crate::geometry::shapes::Shape;
 use crate::loss::LossType;
 use crate::spec::DiagramSpec;
 use rand::rngs::StdRng;
@@ -17,22 +17,26 @@ use rand::SeedableRng;
 use std::collections::HashMap;
 
 /// Fitter for creating diagram layouts from specifications.
-pub struct Fitter<'a> {
-    spec: &'a DiagramSpec,
+///
+/// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
+/// Defaults to `Circle` for backward compatibility.
+pub struct Fitter<'a, S: Shape = Circle> {
+    spec: &'a DiagramSpec<S>,
     max_iterations: usize,
     seed: Option<u64>,
     loss_type: LossType,
 }
 
-impl<'a> Fitter<'a> {
+impl<'a, S: Shape + Copy + 'static> Fitter<'a, S> {
     /// Create a new fitter for the given specification.
     ///
     /// # Examples
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::new()
+    /// let spec = DiagramSpecBuilder::<Circle>::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .build()
@@ -40,7 +44,7 @@ impl<'a> Fitter<'a> {
     ///
     /// let fitter = Fitter::new(&spec);
     /// ```
-    pub fn new(spec: &'a DiagramSpec) -> Self {
+    pub fn new(spec: &'a DiagramSpec<S>) -> Self {
         Fitter {
             spec,
             max_iterations: 100,
@@ -55,8 +59,9 @@ impl<'a> Fitter<'a> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::new()
+    /// let spec = DiagramSpecBuilder::<Circle>::new()
     ///     .set("A", 10.0)
     ///     .build()
     ///     .unwrap();
@@ -74,8 +79,9 @@ impl<'a> Fitter<'a> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::new()
+    /// let spec = DiagramSpecBuilder::<Circle>::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .build()
@@ -103,8 +109,9 @@ impl<'a> Fitter<'a> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::new()
+    /// let spec = DiagramSpecBuilder::<Circle>::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .intersection(&["A", "B"], 2.0)
@@ -114,7 +121,7 @@ impl<'a> Fitter<'a> {
     /// let layout = Fitter::new(&spec).fit().unwrap();
     /// println!("Loss: {}", layout.loss());
     /// ```
-    pub fn fit(self) -> Result<Layout, DiagramError> {
+    pub fn fit(self) -> Result<Layout<S>, DiagramError> {
         self.fit_with_optimization(true)
     }
 
@@ -122,11 +129,11 @@ impl<'a> Fitter<'a> {
     ///
     /// When `optimize` is false, returns only the initial MDS-based layout.
     /// This is useful for debugging or comparing initial vs optimized layouts.
-    pub fn fit_initial_only(self) -> Result<Layout, DiagramError> {
+    pub fn fit_initial_only(self) -> Result<Layout<S>, DiagramError> {
         self.fit_with_optimization(false)
     }
 
-    fn fit_with_optimization(self, optimize: bool) -> Result<Layout, DiagramError> {
+    fn fit_with_optimization(self, optimize: bool) -> Result<Layout<S>, DiagramError> {
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
 
@@ -136,7 +143,7 @@ impl<'a> Fitter<'a> {
             None => Box::new(rand::rng()),
         };
 
-        // Step 1: Compute initial layout using MDS
+        // Step 1: Compute initial layout using MDS (always use circles for initial layout)
         let optimal_distances = Self::compute_optimal_distances(&spec)?;
 
         let initial_params = initial_layout::compute_initial_layout(
@@ -161,7 +168,7 @@ impl<'a> Fitter<'a> {
             .map(|area| (area / std::f64::consts::PI).sqrt())
             .collect();
 
-        let (final_positions, final_radii, _loss) = if optimize {
+        let (final_params, _loss) = if optimize {
             let config = final_layout::FinalLayoutConfig {
                 max_iterations: self.max_iterations,
                 loss_type: self.loss_type,
@@ -173,20 +180,27 @@ impl<'a> Fitter<'a> {
                     DiagramError::InvalidCombination(format!("Optimization failed: {}", e))
                 })?
         } else {
-            // Skip optimization, just use initial layout
-            (initial_positions, initial_radii, 0.0)
+            // Skip optimization, use initial circle parameters converted to shape params
+            let mut params = Vec::new();
+            for i in 0..n_sets {
+                let x = initial_positions[i * 2];
+                let y = initial_positions[i * 2 + 1];
+                let r = initial_radii[i];
+                params.extend(S::params_from_circle(x, y, r));
+            }
+            (params, 0.0)
         };
 
-        // Step 3: Create final shapes
-        let mut shapes = Vec::new();
+        // Step 3: Create final shapes from optimized parameters
+        let params_per_shape = S::n_params();
+        let mut shapes: Vec<S> = Vec::new();
         let mut set_to_shape = HashMap::new();
 
         for (i, set_name) in self.spec.set_names().iter().enumerate() {
-            let x = final_positions[i * 2];
-            let y = final_positions[i * 2 + 1];
-            let radius = final_radii[i];
-
-            shapes.push(Circle::new(Point::new(x, y), radius));
+            let start = i * params_per_shape;
+            let end = start + params_per_shape;
+            let shape = S::from_params(&final_params[start..end]);
+            shapes.push(shape);
             set_to_shape.insert(set_name.clone(), i);
         }
 
@@ -200,9 +214,11 @@ impl<'a> Fitter<'a> {
     ///
     /// For each pair of sets, this calculates the distance between circle centers
     /// that would produce the desired overlap area given their radii.
+    ///
+    /// This always uses circles for initial layout, regardless of final shape type.
     #[allow(clippy::needless_range_loop)]
     fn compute_optimal_distances(
-        spec: &crate::spec::PreprocessedSpec,
+        spec: &crate::spec::PreprocessedSpec<S>,
     ) -> Result<Vec<Vec<f64>>, DiagramError> {
         let n_sets = spec.n_sets;
         let mut optimal_distances = vec![vec![0.0; n_sets]; n_sets];
@@ -237,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_fitter_basic() {
-        let spec = DiagramSpecBuilder::new()
+        let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .build()
@@ -251,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_fitter_with_intersection() {
-        let spec = DiagramSpecBuilder::new()
+        let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .intersection(&["A", "B"], 2.0)
@@ -266,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_russian_doll_initial_fit() {
-        let spec = DiagramSpecBuilder::new()
+        let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", 1.0)
             .intersection(&["A", "B"], 1.0)
             .intersection(&["A", "B", "C"], 1.0)
@@ -284,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_seed_reproducibility() {
-        let spec = DiagramSpecBuilder::new()
+        let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .intersection(&["A", "B"], 2.0)

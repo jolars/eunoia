@@ -149,7 +149,7 @@ pub fn generate_from_spec(
     };
 
     // Build diagram spec using DiagramSpecBuilder
-    let mut builder = DiagramSpecBuilder::new();
+    let mut builder = DiagramSpecBuilder::<Circle>::new();
 
     for spec in &specs {
         let input = spec.input.trim();
@@ -224,7 +224,7 @@ pub fn generate_from_spec_with_debug(
     };
 
     // Build diagram spec using DiagramSpecBuilder
-    let mut builder = DiagramSpecBuilder::new();
+    let mut builder = DiagramSpecBuilder::<Circle>::new();
 
     for spec in &specs {
         let input = spec.input.trim();
@@ -324,7 +324,7 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
     };
 
     web_sys::console::log_1(&"[Rust] Building spec...".into());
-    let mut builder = DiagramSpecBuilder::new();
+    let mut builder = DiagramSpecBuilder::<Circle>::new();
     for spec in &specs {
         let input = spec.input.trim();
         let size = spec.size;
@@ -397,7 +397,7 @@ pub fn get_debug_info_simple(
         _ => return Err(JsValue::from_str("Invalid input type")),
     };
 
-    let mut builder = DiagramSpecBuilder::new();
+    let mut builder = DiagramSpecBuilder::<Circle>::new();
     for (input, size) in inputs.iter().zip(sizes.iter()) {
         if input.trim().is_empty() || *size < 0.0 {
             continue;
@@ -466,7 +466,7 @@ pub fn generate_from_spec_initial(
     };
 
     // Build diagram spec
-    let mut builder = DiagramSpecBuilder::new();
+    let mut builder = DiagramSpecBuilder::<Circle>::new();
 
     for spec in &specs {
         let input = spec.input.trim();
@@ -532,7 +532,7 @@ pub fn get_debug_info_initial(
         _ => return Err(JsValue::from_str("Invalid input type")),
     };
 
-    let mut builder = DiagramSpecBuilder::new();
+    let mut builder = DiagramSpecBuilder::<Circle>::new();
     for (input, size) in inputs.iter().zip(sizes.iter()) {
         if input.trim().is_empty() || *size < 0.0 {
             continue;

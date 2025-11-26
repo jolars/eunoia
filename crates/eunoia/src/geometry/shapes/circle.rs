@@ -150,6 +150,29 @@ impl Shape for Circle {
 
         Rectangle::new(self.center, width, height)
     }
+
+    fn compute_exclusive_regions(
+        shapes: &[Self],
+    ) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64> {
+        crate::geometry::diagram::compute_exclusive_regions(shapes)
+    }
+
+    fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
+        vec![x, y, radius]
+    }
+
+    fn n_params() -> usize {
+        3 // x, y, radius
+    }
+
+    fn from_params(params: &[f64]) -> Self {
+        assert_eq!(
+            params.len(),
+            3,
+            "Circle requires 3 parameters: x, y, radius"
+        );
+        Circle::new(Point::new(params[0], params[1]), params[2])
+    }
 }
 
 struct SeparationCost {

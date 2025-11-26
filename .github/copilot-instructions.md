@@ -92,18 +92,24 @@ Interactive diagram viewer built with Svelte + TypeScript.
 
 ### Optimization Strategy
 
-1. **Initial Layout**:
+1. **Initial Layout (MDS with circles)**:
    - Compute pairwise relationships between sets
-   - Use simple circular arrangement as starting point
-   - TODO: Implement MDS-based initialization
+   - Use circles for MDS-based initialization (position + radius for each set)
+   - This produces initial `(x, y, r)` parameters for each set
+   - **Note**: Initial layout always uses circles, regardless of final shape type (this is what eulerr does)
 
-2. **Iterative Optimization**:
-   - Compute all shape intersections in each iteration
-   - Compare to user-specified set relationships
-   - Minimize loss function (currently region error)
-   - Optimize both positions and sizes using argmin
+2. **Convert to Shape-Specific Parameters**:
+   - Initial circle parameters are converted to target shape parameters via `Shape::params_from_circle()`
+   - Circle: `[x, y, r]` → `[x, y, r]` (identity)
+   - Ellipse (future): `[x, y, r]` → `[x, y, r, r, 0.0]` (semi-major=semi-minor=r, angle=0)
 
-3. **Layout Finalization**:
+3. **Final Optimization (shape-specific)**:
+   - Optimizes actual shape parameters (not circles!)
+   - Uses `Shape::compute_exclusive_regions()` for exact area computation
+   - Minimizes loss function (currently region error) using argmin + Nelder-Mead
+   - Constructs final shapes via `Shape::from_params()`
+
+4. **Layout Finalization**:
    - Return fitted shapes with computed areas
    - TODO: Polygon conversion utilities
    - TODO: Label placement (poles of inaccessibility)
@@ -208,21 +214,74 @@ src/
 
 ### Adding New Shapes
 
-1. Create module in `src/geometry/shapes/`
-2. Define shape struct with center and size parameters
-3. Implement the `Shape` trait from `shapes.rs`:
-   - `area()`
-   - `distance()`
-   - `contains()`
-   - `intersects()`
-   - `intersection_area()`
-   - `intersection_points()`
-   - `centroid()`
-   - `perimeter()`
-   - `contains_point()`
-   - `bounding_box()`
-4. Add unit tests covering all trait implementations
-5. Update `shapes.rs` to export new module
+To add a new shape type (e.g., Ellipse):
+
+1. **Create module in `src/geometry/shapes/`**:
+   ```rust
+   // src/geometry/shapes/ellipse.rs
+   pub struct Ellipse {
+       center: Point,
+       semi_major: f64,
+       semi_minor: f64,
+       angle: f64,  // rotation angle in radians
+   }
+   ```
+
+2. **Implement the `Shape` trait**:
+   ```rust
+   impl Shape for Ellipse {
+       fn area(&self) -> f64 { ... }
+       fn distance(&self, other: &Self) -> f64 { ... }
+       fn contains(&self, other: &Self) -> bool { ... }
+       fn intersects(&self, other: &Self) -> bool { ... }
+       fn intersection_area(&self, other: &Self) -> f64 { ... }
+       fn intersection_points(&self, other: &Self) -> Vec<Point> { ... }
+       fn centroid(&self) -> (f64, f64) { ... }
+       fn perimeter(&self) -> f64 { ... }
+       fn contains_point(&self, point: &Point) -> bool { ... }
+       fn bounding_box(&self) -> Rectangle { ... }
+       
+       // Exact area computation for multiple ellipses
+       fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
+           // Implement exact ellipse intersection geometry
+           // For 3+ ellipses, you may fall back to Monte Carlo
+       }
+       
+       // Parameter conversion
+       fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
+           vec![x, y, radius, radius, 0.0]  // a=b=r, angle=0 (circle is special ellipse)
+       }
+       
+       fn n_params() -> usize {
+           5  // x, y, semi_major, semi_minor, angle
+       }
+       
+       fn from_params(params: &[f64]) -> Self {
+           Ellipse::new(
+               Point::new(params[0], params[1]),
+               params[2],  // semi_major
+               params[3],  // semi_minor
+               params[4],  // angle
+           )
+       }
+   }
+   ```
+
+3. **Add unit tests** covering all trait implementations
+
+4. **Export new module** in `shapes.rs`:
+   ```rust
+   pub mod ellipse;
+   ```
+
+5. **Done!** The fitter will automatically:
+   - Use circles for initial MDS layout
+   - Convert circle parameters to ellipse parameters via `params_from_circle()`
+   - Optimize ellipse-specific parameters (x, y, a, b, angle)
+   - Use exact ellipse geometry via `compute_exclusive_regions()`
+   - Construct final ellipses via `from_params()`
+
+The entire optimization pipeline is **shape-generic** - no changes needed to fitter code!
 
 ### Geometric Operations
 
@@ -261,27 +320,34 @@ src/
 - ✅ Cargo workspace with separate crates for core and WASM
 - ✅ Basic project structure
 - ✅ Point-based coordinate system (`Point`)
-- ✅ Circle implementation with full geometric operations
+- ✅ **Shape trait with generic parameter system**
+- ✅ Circle implementation with full geometric operations and exact area computation
 - ✅ Rectangle implementation for bounding boxes
 - ✅ Line and LineSegment primitives
-- ✅ Trait-based design with `Shape` trait
-- ✅ DiagramSpecBuilder with fluent API for input
-- ✅ Fitter with argmin-based optimization
+- ✅ **Trait-based design with generic `Shape` trait**
+  - `compute_exclusive_regions()` - Shape-specific exact area computation
+  - `params_from_circle()` - Convert initial circle params to shape params
+  - `n_params()` - Number of parameters per shape
+  - `from_params()` - Construct shape from parameters
+- ✅ DiagramSpecBuilder with fluent API for input (generic over shape type)
+- ✅ **Shape-generic fitter with two-phase optimization**
+  - Initial layout: MDS with circles (always uses circles)
+  - Final optimization: Shape-specific parameter optimization
 - ✅ Region error loss function with sparse region discovery
 - ✅ Final layout with disjoint area computation using inclusion-exclusion
-- ✅ Layout representation with fitted areas
+- ✅ Layout representation with fitted areas (generic over shape type)
 - ✅ WASM bindings in separate crate (`crates/eunoia-wasm/`)
 - ✅ Web application (Svelte 5 + TypeScript + Vite + Tailwind v4)
 - ✅ Interactive diagram viewer with real-time updates
-- ✅ Comprehensive unit tests (179 tests passing)
-- ✅ Full documentation with doc tests
+- ✅ Comprehensive unit tests (190 tests passing)
+- ✅ Full documentation with doc tests (24 doc tests passing)
 - ✅ 3-way intersection area computation implemented
 - ✅ Random seed support for reproducible layouts
+- ✅ Generic area computation (Monte Carlo for 3+ way intersections on non-Circle shapes)
 - ❌ Stress loss function (venneuler-style) not implemented
 - ❌ Ellipse and triangle shapes not implemented
 - ❌ Polygon conversion utilities not implemented
 - ❌ Label placement algorithms not implemented (poles of inaccessibility)
-- ❌ Language bindings not started (will be separate repositories)
 
 ## Dependencies
 

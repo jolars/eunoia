@@ -418,6 +418,206 @@ pub fn compute_exclusive_areas_from_layout(
     exclusive_combos
 }
 
+/// Compute all exclusive areas from a generic shape layout
+pub fn compute_exclusive_areas_from_layout_generic<S: Shape + Copy>(
+    shapes: &[S],
+    set_names: &[String],
+) -> HashMap<Combination, f64> {
+    let n_sets = shapes.len();
+
+    let intersections = collect_intersections_generic(shapes, n_sets);
+    let regions = discover_regions_generic(shapes, &intersections, n_sets);
+
+    let mut overlapping_areas = HashMap::new();
+    let mut rng = rand::rng();
+    for &mask in &regions {
+        let area = compute_region_area_generic(mask, shapes, n_sets, &mut rng);
+        overlapping_areas.insert(mask, area);
+    }
+
+    let exclusive_areas = to_exclusive_areas(&overlapping_areas);
+
+    // Convert masks to Combinations
+    let mut exclusive_combos = HashMap::new();
+    for (mask, area) in exclusive_areas {
+        if area > 0.0 {
+            // Only include non-zero areas
+            let indices = mask_to_indices(mask, n_sets);
+            let combo_sets: Vec<&str> = indices.iter().map(|&i| set_names[i].as_str()).collect();
+
+            if !combo_sets.is_empty() {
+                let combo = Combination::new(&combo_sets);
+                exclusive_combos.insert(combo, area);
+            }
+        }
+    }
+
+    exclusive_combos
+}
+
+/// Collect all intersection points between pairs of generic shapes.
+pub fn collect_intersections_generic<S: Shape>(
+    shapes: &[S],
+    n_sets: usize,
+) -> Vec<IntersectionPoint> {
+    let mut intersections = Vec::new();
+
+    for i in 0..n_sets {
+        for j in (i + 1)..n_sets {
+            let pts = shapes[i].intersection_points(&shapes[j]);
+            for point in pts {
+                // Start with parent shapes - they must contain the intersection point
+                let mut adopters = vec![i, j];
+
+                // Add any other shapes that contain this point
+                (0..n_sets).for_each(|k| {
+                    if k != i && k != j && shapes[k].contains_point(&point) {
+                        adopters.push(k);
+                    }
+                });
+
+                adopters.sort_unstable();
+
+                intersections.push(IntersectionPoint::new(point, (i, j), adopters));
+            }
+        }
+    }
+
+    intersections
+}
+
+/// Discover which regions actually exist for generic shapes.
+pub fn discover_regions_generic<S: Shape>(
+    shapes: &[S],
+    intersections: &[IntersectionPoint],
+    n_sets: usize,
+) -> Vec<RegionMask> {
+    let mut regions = std::collections::HashSet::new();
+
+    // 1. Singles always exist
+    for i in 0..n_sets {
+        regions.insert(1 << i);
+    }
+
+    // 2. From intersection points - convert adopters to masks
+    for info in intersections {
+        let mask = adopters_to_mask(info.adopters());
+        regions.insert(mask);
+    }
+
+    // 3. From pairwise relationships
+    for i in 0..n_sets {
+        for j in (i + 1)..n_sets {
+            let has_edge_intersection = intersections
+                .iter()
+                .any(|info| info.parents() == (i, j) || info.parents() == (j, i));
+
+            if has_edge_intersection {
+                // Shapes i and j intersect - their pairwise region exists
+                regions.insert((1 << i) | (1 << j));
+            } else if shapes[i].contains(&shapes[j]) || shapes[j].contains(&shapes[i]) {
+                // No edge intersection but one contains the other
+                regions.insert((1 << i) | (1 << j));
+            } else {
+                // Check if they have non-zero intersection area
+                let int_area = shapes[i].intersection_area(&shapes[j]);
+                if int_area > 1e-10 {
+                    regions.insert((1 << i) | (1 << j));
+                }
+            }
+        }
+    }
+
+    // 4. Build higher-order combinations from pairwise compatibility
+    let pairwise_regions: Vec<RegionMask> = regions
+        .iter()
+        .filter(|&&m| (m as RegionMask).count_ones() == 2)
+        .copied()
+        .collect();
+
+    // Build compatibility matrix from pairwise regions
+    let mut compatible = vec![vec![false; n_sets]; n_sets];
+    (0..n_sets).for_each(|i| {
+        compatible[i][i] = true;
+    });
+    for &mask in &pairwise_regions {
+        let indices = mask_to_indices(mask, n_sets);
+        if indices.len() == 2 {
+            let i = indices[0];
+            let j = indices[1];
+            compatible[i][j] = true;
+            compatible[j][i] = true;
+        }
+    }
+
+    // Generate higher-order combinations using BFS
+    let mut current_level = pairwise_regions.clone();
+    while !current_level.is_empty() {
+        let mut next_level = Vec::new();
+
+        for &base_mask in &current_level {
+            let base_indices = mask_to_indices(base_mask, n_sets);
+
+            // Try adding each set not in base_mask
+            for new_idx in 0..n_sets {
+                if (base_mask & (1 << new_idx)) == 0 {
+                    // Check if new_idx is compatible with all sets in base_mask
+                    let all_compatible = base_indices.iter().all(|&i| compatible[i][new_idx]);
+
+                    if all_compatible {
+                        let new_mask = base_mask | (1 << new_idx);
+                        if regions.insert(new_mask) {
+                            next_level.push(new_mask);
+                        }
+                    }
+                }
+            }
+        }
+
+        if next_level.is_empty() {
+            break;
+        }
+        current_level = next_level;
+    }
+
+    regions.into_iter().collect()
+}
+
+/// Compute region area for generic shapes using Monte Carlo.
+pub fn compute_region_area_generic<S: Shape + Copy>(
+    mask: RegionMask,
+    shapes: &[S],
+    n_sets: usize,
+    rng: &mut dyn rand::RngCore,
+) -> f64 {
+    let shape_count = mask.count_ones();
+
+    match shape_count {
+        0 => 0.0,
+        1 => {
+            // Single shape - just return its area
+            let idx = mask.trailing_zeros() as usize;
+            shapes[idx].area()
+        }
+        2 => {
+            // Two shapes - use intersection_area
+            let indices = mask_to_indices(mask, n_sets);
+            shapes[indices[0]].intersection_area(&shapes[indices[1]])
+        }
+        _ => {
+            // 3+ shapes - use Monte Carlo
+            let indices = mask_to_indices(mask, n_sets);
+            let selected_shapes: Vec<S> = indices.iter().map(|&i| shapes[i]).collect();
+
+            crate::geometry::operations::overlaps::compute_overlaps(
+                &selected_shapes,
+                crate::geometry::operations::overlaps::OverlapMethod::MonteCarlo,
+                rng,
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
