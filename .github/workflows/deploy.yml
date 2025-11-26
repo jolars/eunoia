@@ -37,7 +37,7 @@ jobs:
 
       - name: Build WASM
         run: |
-          wasm-pack build crates/eunoia-wasm --target web --out-dir ../../web/pkg
+          wasm-pack build crates/eunoia-wasm --target web --out-dir ${{ github.workspace }}/web/pkg
           ls -la web/pkg/
 
       - name: Setup Node.js
