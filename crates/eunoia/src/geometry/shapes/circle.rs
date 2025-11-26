@@ -368,6 +368,123 @@ pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) 
     area.abs()
 }
 
+/// Compute the area of the intersection region for a subset of circles.
+///
+/// This is similar to `multiple_overlap_areas` but allows specifying which circles
+/// to consider for the "full intersection". This is needed for computing 3-way
+/// intersections in a 4+ circle diagram where some intersection points may be
+/// in more than just the 3 circles of interest.
+///
+/// # Arguments
+/// * `circles` - All circles in the diagram
+/// * `points` - Intersection points (with adopters referencing indices in `circles`)
+/// * `circle_indices` - Indices of the circles that define this region
+pub fn multiple_overlap_areas_with_mask(
+    circles: &[Circle],
+    points: &[IntersectionPoint],
+    circle_indices: &[usize],
+) -> f64 {
+    // Filter to only points that are in ALL of the specified circles
+    // A point is in the region if all circle_indices are present in its adopters
+    let region_points: Vec<&IntersectionPoint> = points
+        .iter()
+        .filter(|ip| {
+            circle_indices
+                .iter()
+                .all(|&idx| ip.adopters().contains(&idx))
+        })
+        .collect();
+
+    if region_points.is_empty() {
+        return 0.0;
+    }
+
+    let n_points = region_points.len();
+
+    // Sort the points by their angles around the centroid
+    let centroid = point::centroid(
+        &region_points
+            .iter()
+            .map(|ip| *ip.point())
+            .collect::<Vec<Point>>(),
+    );
+
+    let mut indices: Vec<usize> = (0..n_points).collect();
+    indices.sort_by(|&i, &j| {
+        region_points[i]
+            .point()
+            .angle_to(&centroid)
+            .partial_cmp(&region_points[j].point().angle_to(&centroid))
+            .unwrap_or(std::cmp::Ordering::Less)
+    });
+
+    let mut area = 0.0;
+
+    let mut l = n_points - 1;
+
+    for k in 0..n_points {
+        let i = indices[k];
+        let j = indices[l];
+
+        let p1 = &region_points[i].point();
+        let p2 = &region_points[j].point();
+
+        // Find which of the region circles these points come from
+        let parents1 = &region_points[i].parents();
+        let parents2 = &region_points[j].parents();
+
+        let common_parents: Vec<usize> = vec![parents1.0, parents1.1]
+            .into_iter()
+            .filter(|p| *p == parents2.0 || *p == parents2.1)
+            .filter(|p| circle_indices.contains(p)) // Only consider circles in our region
+            .collect();
+
+        let mut segment_areas = Vec::with_capacity(common_parents.len());
+
+        if common_parents.is_empty() {
+            // Try to find any circle in the region that contains both points
+            // This can happen when points come from different pairs but are connected
+            // through the region
+            for &circle_idx in circle_indices {
+                let circle = &circles[circle_idx];
+                if circle.contains_point(p1) && circle.contains_point(p2) {
+                    let seg_area = circle.segment_area_from_points(p1, p2);
+                    segment_areas.push(seg_area);
+                }
+            }
+
+            if segment_areas.is_empty() {
+                // No circle in the region connects these points - use straight line
+                // This shouldn't normally happen in a well-formed region
+                l = k;
+                continue;
+            }
+        } else {
+            for &circle_index in &common_parents {
+                let circle = &circles[circle_index];
+                let seg_area = circle.segment_area_from_points(p1, p2);
+
+                debug_assert!(seg_area >= 0.0, "Segment area should be non-negative");
+
+                segment_areas.push(seg_area);
+            }
+        }
+
+        let triangle_area = 0.5 * ((p1.x() + p2.x()) * (p1.y() - p2.y()));
+
+        let min_segment = segment_areas
+            .into_iter()
+            .fold(f64::INFINITY, |a, b| a.min(b));
+
+        area += triangle_area;
+        area += min_segment;
+
+        l = k;
+    }
+
+    area.abs()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
