@@ -10,12 +10,12 @@ pub enum InputType {
     ///
     /// For example: `A=5, B=2, A&B=1` means set A has total size 6 (5+1)
     /// and set B has total size 3 (2+1).
+    #[default]
     Exclusive,
 
     /// Values represent complete set sizes including overlaps.
     ///
     /// For example: `A=6, B=3, A&B=1` means set A has total size 6
     /// and set B has total size 3.
-    #[default]
     Inclusive,
 }

@@ -363,13 +363,6 @@ mod tests {
     }
 
     #[test]
-    fn test_input_type_default() {
-        let spec = DiagramSpecBuilder::new().set("A", 5.0).build().unwrap();
-
-        assert_eq!(spec.input_type(), InputType::Inclusive);
-    }
-
-    #[test]
     fn test_three_way_intersection() {
         let spec = DiagramSpecBuilder::new()
             .set("A", 10.0)
