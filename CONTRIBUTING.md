@@ -173,9 +173,9 @@ We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of
 eunoia/
 ├── src/
 │   ├── lib.rs              # Main API surface, re-exports
-│   ├── diagram.rs          # Diagram module definition
-│   ├── diagram/            # Diagram submodules
-│   │   ├── builder.rs      # DiagramSpecBuilder
+│   ├── spec.rs             # Spec module definition
+│   ├── diagram/            # Spec submodules
+│   │   ├── spec_builder.rs # DiagramSpecBuilder
 │   │   ├── combination.rs  # Combination struct
 │   │   └── input.rs        # InputType enum
 │   ├── error.rs            # Error types
