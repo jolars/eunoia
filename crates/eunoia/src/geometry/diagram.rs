@@ -106,16 +106,18 @@ pub fn discover_regions(
         regions.insert(mask);
     }
 
-    // 3. From containment (pairs with no edge intersection)
+    // 3. From pairwise relationships
     for i in 0..n_sets {
         for j in (i + 1)..n_sets {
             let has_edge_intersection = intersections
                 .iter()
                 .any(|info| info.parents() == (i, j) || info.parents() == (j, i));
 
-            if !has_edge_intersection
-                && (circles[i].contains(&circles[j]) || circles[j].contains(&circles[i]))
-            {
+            if has_edge_intersection {
+                // Circles i and j intersect - their pairwise region exists
+                regions.insert((1 << i) | (1 << j));
+            } else if circles[i].contains(&circles[j]) || circles[j].contains(&circles[i]) {
+                // No edge intersection but one contains the other
                 regions.insert((1 << i) | (1 << j));
             }
         }
@@ -217,7 +219,32 @@ pub fn compute_region_area(
                 .collect();
 
             if region_points.is_empty() {
-                0.0 // No geometry
+                // No intersection points: either disjoint or one circle is contained in all others
+                // Following eulerr's approach: check if the smallest circle's center is inside all others
+                let mut smallest_idx = indices[0];
+                let mut smallest_area = circles[indices[0]].area();
+
+                for &idx in &indices {
+                    let area = circles[idx].area();
+                    if area < smallest_area {
+                        smallest_area = area;
+                        smallest_idx = idx;
+                    }
+                }
+
+                // Check if the smallest circle's center is inside all other circles
+                let smallest_center = circles[smallest_idx].center();
+                let all_contain_center = indices.iter().all(|&idx| {
+                    idx == smallest_idx || circles[idx].contains_point(smallest_center)
+                });
+
+                if all_contain_center {
+                    // The smallest circle is contained in all others - return its area
+                    smallest_area
+                } else {
+                    // Circles are disjoint
+                    0.0
+                }
             } else {
                 // Pass the mask so multiple_overlap_areas knows which circles to consider
                 crate::geometry::shapes::circle::multiple_overlap_areas_with_mask(
@@ -778,7 +805,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Nested configuration with small circle at center has accuracy issues
     fn test_eulerr_comparison_four_circles_center() {
         let c1 = Circle::new(Point::new(-2.0000000000, 0.0000000000), 1.5000000000); // A
         let c2 = Circle::new(Point::new(2.0000000000, 0.0000000000), 1.5000000000); // B
@@ -821,11 +847,8 @@ mod tests {
             } else {
                 (computed - expected).abs()
             };
-            // Note: This test has a higher error tolerance due to the complex nested
-            // configuration with a small circle at the center overlapping 3 larger circles.
-            // The polygon-based area calculation has accuracy issues in this case.
             assert!(
-                error < 0.30,
+                error < 0.02,
                 "Area for {:?} should match: {} vs {} (error: {})",
                 combo.sets(),
                 computed,
