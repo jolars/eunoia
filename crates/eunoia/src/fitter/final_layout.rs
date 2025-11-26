@@ -424,25 +424,20 @@ pub fn compute_exclusive_areas_from_layout(
 ) -> HashMap<Combination, f64> {
     let n_sets = circles.len();
 
-    // Collect intersection points
     let intersections = collect_intersections(circles, n_sets);
-
-    // Discover regions
     let regions = discover_regions(circles, &intersections, n_sets);
 
-    // Compute overlapping areas
     let mut overlapping_areas = HashMap::new();
     for &mask in &regions {
         let area = compute_region_area(mask, circles, &intersections, n_sets);
         overlapping_areas.insert(mask, area);
     }
 
-    // Convert to exclusiv areas
-    let exclusive_masks = to_exclusive_areas(&overlapping_areas);
+    let exclusive_areas = to_exclusive_areas(&overlapping_areas);
 
     // Convert masks to Combinations
     let mut exclusive_combos = HashMap::new();
-    for (mask, area) in exclusive_masks {
+    for (mask, area) in exclusive_areas {
         if area > 0.0 {
             // Only include non-zero areas
             let indices = mask_to_indices(mask, n_sets);
