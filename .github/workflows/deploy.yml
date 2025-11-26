@@ -36,10 +36,9 @@ jobs:
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        working-directory: crates/eunoia-wasm
         run: |
-          wasm-pack build --target web --out-dir ../../web/pkg
-          ls -la ../../web/pkg/
+          wasm-pack build crates/eunoia-wasm --target web --out-dir ../../web/pkg
+          ls -la web/pkg/
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
