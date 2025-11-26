@@ -1,0 +1,19 @@
+[package]
+name = "eunoia"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A library for creating area-proportional Euler and Venn diagrams"
+keywords = ["euler", "venn", "diagram", "visualization"]
+categories = ["graphics", "visualization", "mathematics"]
+
+[dependencies]
+argmin = "0.11.0"
+argmin-math = { version = "0.5.1", features = ["nalgebra_latest"] }
+nalgebra = "0.34.1"
+rand = "0.9"
+
+[features]
+wasm = ["argmin/wasm-bindgen"]

@@ -166,34 +166,52 @@ task dev
 
 ## Project Structure
 
-We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of
-`module/mod.rs`):
+We use a **Cargo workspace** with separate crates for core functionality and WASM bindings:
 
 ```
 eunoia/
-├── src/
-│   ├── lib.rs              # Main API surface, re-exports
-│   ├── spec.rs             # Spec module definition
-│   ├── diagram/            # Spec submodules
-│   │   ├── spec_builder.rs # DiagramSpecBuilder
-│   │   ├── combination.rs  # Combination struct
-│   │   └── input.rs        # InputType enum
-│   ├── error.rs            # Error types
-│   ├── geometry.rs         # Geometry module definition
-│   ├── geometry/           # Geometric primitives
-│   │   ├── point.rs        # 2D points
-│   │   ├── shapes.rs       # Shapes module definition
-│   │   └── shapes/         # Shape implementations
-│   │       └── circle.rs   # Circle shape
-│   └── solver.rs           # (future) Solver module definition
-│       └── solver/         # (future) Optimization algorithms
-│           ├── layout.rs   # MDS initialization
-│           └── optimize.rs # Main optimization loop
-└── tests/                  # Integration tests
+├── Cargo.toml              # Workspace definition
+├── crates/
+│   ├── eunoia/             # Core library (pure Rust)
+│   │   ├── Cargo.toml
+│   │   ├── src/
+│   │   │   ├── lib.rs      # Main API surface, re-exports
+│   │   │   ├── spec.rs     # Spec module definition
+│   │   │   ├── spec/       # Spec submodules
+│   │   │   │   ├── spec_builder.rs
+│   │   │   │   ├── combination.rs
+│   │   │   │   └── input.rs
+│   │   │   ├── error.rs    # Error types
+│   │   │   ├── geometry.rs # Geometry module definition
+│   │   │   ├── geometry/   # Geometric primitives
+│   │   │   │   ├── point.rs
+│   │   │   │   ├── shapes.rs
+│   │   │   │   └── shapes/
+│   │   │   │       └── circle.rs
+│   │   │   ├── fitter.rs   # Fitter module definition
+│   │   │   └── fitter/     # Optimization algorithms
+│   │   │       ├── layout.rs
+│   │   │       ├── initial_layout.rs
+│   │   │       └── final_layout.rs
+│   │   └── tests/          # Integration tests
+│   └── eunoia-wasm/        # WASM bindings
+│       ├── Cargo.toml
+│       └── src/
+│           └── lib.rs      # WASM exports
+├── web/                    # Svelte web application
+└── README.md
 ```
 
-**Note**: We avoid the old `mod.rs` pattern in favor of the cleaner Rust 2018+
-style.
+We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of `module/mod.rs`).
+
+### Working with the Workspace
+
+- **Build core library**: `cargo build` (default) or `cargo build -p eunoia`
+- **Build WASM**: `cargo build -p eunoia-wasm` or `task build-wasm`
+- **Test core library**: `cargo test` or `cargo test -p eunoia`
+- **Format all crates**: `cargo fmt` (runs on workspace)
+- **Lint all crates**: `cargo clippy --all-targets --all-features -- -D warnings`
+
 
 ## Areas for Contribution
 
@@ -206,7 +224,7 @@ We welcome contributions in these areas:
 - **Documentation**: Examples, tutorials, API docs
 - **Tests**: Edge cases, property-based tests
 - **Performance**: Optimization, profiling
-- **WASM bindings**: WebAssembly support (future)
+- **WASM bindings**: Improvements to WebAssembly API in `crates/eunoia-wasm`
 
 ## Getting Help
 

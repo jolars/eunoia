@@ -90,9 +90,16 @@ version = "0.1.0"
 dependencies = [
  "argmin",
  "argmin-math",
- "console_error_panic_hook",
  "nalgebra",
  "rand",
+]
+
+[[package]]
+name = "eunoia-wasm"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "eunoia",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

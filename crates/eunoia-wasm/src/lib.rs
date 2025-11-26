@@ -1,4 +1,9 @@
-use crate::geometry::shapes::circle::Circle;
+//! WASM bindings for Eunoia diagram generation
+//!
+//! This crate provides WebAssembly bindings for the eunoia library,
+//! enabling Euler and Venn diagram generation in web browsers.
+
+use eunoia::geometry::shapes::circle::Circle;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -128,8 +133,8 @@ pub fn generate_from_spec(
     specs: Vec<DiagramSpec>,
     input_type: String,
 ) -> Result<Vec<WasmCircle>, JsValue> {
-    use crate::diagram::{DiagramSpecBuilder, InputType};
-    use crate::fitter::Fitter;
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
     // Parse input type
     let input_type = match input_type.as_str() {
@@ -203,8 +208,8 @@ pub fn generate_from_spec_with_debug(
     specs: Vec<DiagramSpec>,
     input_type: String,
 ) -> Result<DiagramResult, JsValue> {
-    use crate::diagram::{DiagramSpecBuilder, InputType};
-    use crate::fitter::Fitter;
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
     use std::collections::HashMap;
 
     // Parse input type
@@ -276,7 +281,7 @@ pub fn generate_from_spec_with_debug(
     }
 
     // Compute fitted exclusive areas using the same function as the optimizer
-    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
@@ -306,8 +311,8 @@ pub fn generate_from_spec_with_debug(
 /// Get debug information as JSON string
 #[wasm_bindgen]
 pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<String, JsValue> {
-    use crate::diagram::{DiagramSpecBuilder, InputType};
-    use crate::fitter::Fitter;
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
     use std::collections::HashMap;
 
     web_sys::console::log_1(&"[Rust] get_debug_info called".into());
@@ -353,7 +358,7 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
     }
 
     web_sys::console::log_1(&"[Rust] Computing fitted areas...".into());
-    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
@@ -382,8 +387,8 @@ pub fn get_debug_info_simple(
     sizes: Vec<f64>,
     input_type: String,
 ) -> Result<String, JsValue> {
-    use crate::diagram::{DiagramSpecBuilder, InputType};
-    use crate::fitter::Fitter;
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
     use std::collections::HashMap;
 
     let input_type_enum = match input_type.as_str() {
@@ -419,7 +424,7 @@ pub fn get_debug_info_simple(
         target.insert(combo.to_string(), area);
     }
 
-    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()
@@ -446,8 +451,8 @@ pub fn generate_from_spec_initial(
     specs: Vec<DiagramSpec>,
     input_type: String,
 ) -> Result<Vec<WasmCircle>, JsValue> {
-    use crate::diagram::{DiagramSpecBuilder, InputType};
-    use crate::fitter::Fitter;
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
     // Parse input type
     let input_type = match input_type.as_str() {
@@ -517,8 +522,8 @@ pub fn get_debug_info_initial(
     sizes: Vec<f64>,
     input_type: String,
 ) -> Result<String, JsValue> {
-    use crate::diagram::{DiagramSpecBuilder, InputType};
-    use crate::fitter::Fitter;
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
     use std::collections::HashMap;
 
     let input_type_enum = match input_type.as_str() {
@@ -554,7 +559,7 @@ pub fn get_debug_info_initial(
         target.insert(combo.to_string(), area);
     }
 
-    use crate::fitter::final_layout::compute_exclusive_areas_from_layout;
+    use eunoia::fitter::final_layout::compute_exclusive_areas_from_layout;
     let circles: Vec<Circle> = diagram_spec
         .set_names()
         .iter()

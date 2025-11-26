@@ -40,7 +40,13 @@ dedicated repositories as thin wrappers around this core library.
 
 ## Architecture
 
-### Core Modules
+The project uses a **Cargo workspace** with separate crates:
+
+### Core Library (`crates/eunoia/`)
+
+Pure Rust library with no platform-specific dependencies.
+
+#### Core Modules
 
 - **`lib.rs`**: Main library interface
 - **`spec/`**: Diagram specification and construction
@@ -62,18 +68,27 @@ dedicated repositories as thin wrappers around this core library.
     computation
 - **`error.rs`**: Error types
 - **`math.rs`**: Mathematical utilities
-- **`wasm.rs`**: WASM bindings for web integration
 
-### Web Application
+### WASM Bindings (`crates/eunoia-wasm/`)
 
-- **`web/`**: Interactive diagram viewer built with Svelte + TypeScript
-  - **`src/`**: Svelte components and TypeScript code
-    - `lib/DiagramViewer.svelte`: Main UI for diagram specification and
-      visualization
-  - **`pkg/`**: Generated WASM bindings (built with wasm-pack)
-  - Uses Vite (rolldown-vite) for development and building
-  - Tailwind CSS for styling
-  - Real-time diagram updates as specification changes
+WebAssembly bindings that depend on the core library.
+
+- Thin wrapper around `eunoia` crate
+- Exports JavaScript-compatible API
+- Handles serialization/deserialization for web use
+- Built with `wasm-pack` to generate TypeScript bindings
+
+### Web Application (`web/`)
+
+Interactive diagram viewer built with Svelte + TypeScript.
+
+- **`src/`**: Svelte components and TypeScript code
+  - `lib/DiagramViewer.svelte`: Main UI for diagram specification and
+    visualization
+- **`pkg/`**: Generated WASM bindings (built with wasm-pack)
+- Uses Vite (rolldown-vite) for development and building
+- Tailwind CSS for styling
+- Real-time diagram updates as specification changes
 
 ### Optimization Strategy
 
@@ -243,6 +258,7 @@ src/
 
 ## Current Status
 
+- ✅ Cargo workspace with separate crates for core and WASM
 - ✅ Basic project structure
 - ✅ Point-based coordinate system (`Point`)
 - ✅ Circle implementation with full geometric operations
@@ -254,12 +270,13 @@ src/
 - ✅ Region error loss function with sparse region discovery
 - ✅ Final layout with disjoint area computation using inclusion-exclusion
 - ✅ Layout representation with fitted areas
-- ✅ WASM bindings (`wasm.rs`)
+- ✅ WASM bindings in separate crate (`crates/eunoia-wasm/`)
 - ✅ Web application (Svelte 5 + TypeScript + Vite + Tailwind v4)
 - ✅ Interactive diagram viewer with real-time updates
-- ✅ Comprehensive unit tests (178 tests passing)
+- ✅ Comprehensive unit tests (179 tests passing)
 - ✅ Full documentation with doc tests
 - ✅ 3-way intersection area computation implemented
+- ✅ Random seed support for reproducible layouts
 - ❌ Stress loss function (venneuler-style) not implemented
 - ❌ Ellipse and triangle shapes not implemented
 - ❌ Polygon conversion utilities not implemented
@@ -268,22 +285,31 @@ src/
 
 ## Dependencies
 
-Core dependencies:
+### Core Library (`crates/eunoia/`)
+
+Core dependencies (platform-independent):
 
 - **`nalgebra`** (0.34.1) - Linear algebra for MDS and matrix operations
 - **`argmin`** (0.11.0) - Optimization algorithms (gradient-based and
   derivative-free)
 - **`argmin-math`** (0.5.1) - Math support for argmin with nalgebra
+- **`rand`** (0.9) - Random number generation
 - Standard library for basic operations
 
-WASM dependencies:
+### WASM Bindings (`crates/eunoia-wasm/`)
 
+WASM-specific dependencies:
+
+- **`eunoia`** (path dependency) - Core library
 - **`wasm-bindgen`** (0.2) - WASM bindings generation
 - **`serde`** (1.0) - Serialization framework
 - **`serde-wasm-bindgen`** (0.6) - Serde support for WASM
+- **`serde_json`** (1.0) - JSON serialization
 - **`console_error_panic_hook`** (0.1) - Better error messages in browser
   console
-- **`getrandom`** (0.2) - Random number generation for WASM
+- **`web-sys`** (0.3) - Web APIs
+
+### Web Application (`web/`)
 
 Web app dependencies:
 
@@ -330,7 +356,11 @@ You can run these instead of manual cargo commands for convenience.
 Building WASM:
 
 ```bash
-wasm-pack build --target web --out-dir web/pkg
+# Using Task
+task build-wasm
+
+# Or directly with wasm-pack
+wasm-pack build crates/eunoia-wasm --target web --out-dir ../../web/pkg
 ```
 
 Running web dev server:
@@ -354,16 +384,35 @@ npm run build
 npm config delete omit
 ```
 
+### Working with the Workspace
+
+The project uses a Cargo workspace with multiple crates:
+
+- **Build all crates**: `cargo build --workspace`
+- **Build core library only**: `cargo build -p eunoia` (default)
+- **Build WASM bindings**: `cargo build -p eunoia-wasm`
+- **Test core library**: `cargo test -p eunoia`
+- **Format all crates**: `cargo fmt` (workspace-level)
+- **Lint all crates**: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+
 ### When Adding Code
 
 - Write tests first or alongside implementation (TDD encouraged)
 - Document public APIs immediately
 - **Run `cargo fmt` (or `task fmt`) to format code**
-- Run `cargo test` to ensure tests pass
+- Run `cargo test` to ensure tests pass (or `cargo test -p eunoia` for core only)
 - Run `cargo doc --open` to verify documentation
-- **Run `cargo clippy --all-targets --all-features -- -D warnings` (or
+- **Run `cargo clippy --workspace --all-targets --all-features -- -D warnings` (or
   `task lint`) for linting (must pass with no warnings)**
 - Or simply run `task dev` to run the full development workflow
+
+### When Working with WASM
+
+- WASM bindings live in `crates/eunoia-wasm/`
+- Depend on core library via `eunoia = { path = "../eunoia" }`
+- Keep WASM layer thin - just exports and type conversions
+- Core logic stays in `crates/eunoia/`
+- Test WASM builds with: `wasm-pack build crates/eunoia-wasm --target web`
 
 ### When Reviewing Code
 
@@ -398,7 +447,9 @@ npm config delete omit
 
 ## Notes
 
-- This is a library crate, not a binary
+- **Uses Cargo workspace** with `crates/eunoia/` (core) and `crates/eunoia-wasm/` (bindings)
+- Core library is platform-independent Rust with no WASM dependencies
+- WASM bindings are a thin wrapper in a separate crate
 - **Uses Rust Edition 2021** for compatibility with rextendr (R bindings)
 - **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0 (alpha)
 - **Breaking changes are acceptable** in pre-1.0.0 versions
@@ -407,6 +458,6 @@ npm config delete omit
   separate repositories)
 - **Only WASM bindings** will be part of this repository
 - **R, Python, and Julia bindings** will be separate repositories that depend on
-  this core library
+  the core `eunoia` library
 - Geometric correctness over performance initially
 - Optimize after correctness is established and tested

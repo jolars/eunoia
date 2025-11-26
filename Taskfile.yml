@@ -53,7 +53,7 @@ tasks:
   build-wasm:
     desc: Build WASM bindings with wasm-pack
     cmds:
-      - wasm-pack build --target web --out-dir web/pkg
+      - wasm-pack build crates/eunoia-wasm --target web --out-dir ../../web/pkg
 
   web-dev:
     desc: Start Svelte development server

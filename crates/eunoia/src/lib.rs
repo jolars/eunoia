@@ -28,9 +28,6 @@ pub mod fitter;
 pub mod geometry;
 pub mod spec;
 
-#[cfg(target_arch = "wasm32")]
-pub mod wasm;
-
 // Re-export main API types
 pub use error::DiagramError;
 pub use fitter::{Fitter, Layout};
