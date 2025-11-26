@@ -10,6 +10,7 @@ use crate::error::DiagramError;
 use crate::geometry::point::Point;
 use crate::geometry::shapes::circle::distance_for_overlap;
 use crate::geometry::shapes::circle::Circle;
+use crate::loss::LossType;
 use crate::spec::DiagramSpec;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -20,6 +21,7 @@ pub struct Fitter<'a> {
     spec: &'a DiagramSpec,
     max_iterations: usize,
     seed: Option<u64>,
+    loss_type: LossType,
 }
 
 impl<'a> Fitter<'a> {
@@ -43,6 +45,7 @@ impl<'a> Fitter<'a> {
             spec,
             max_iterations: 100,
             seed: None,
+            loss_type: LossType::region_error(),
         }
     }
 
@@ -82,6 +85,12 @@ impl<'a> Fitter<'a> {
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
+        self
+    }
+
+    /// Set the loss function type for optimization.
+    pub fn loss_type(mut self, loss_type: LossType) -> Self {
+        self.loss_type = loss_type;
         self
     }
 
@@ -155,6 +164,7 @@ impl<'a> Fitter<'a> {
         let (final_positions, final_radii, _loss) = if optimize {
             let config = final_layout::FinalLayoutConfig {
                 max_iterations: self.max_iterations,
+                loss_type: self.loss_type,
                 ..Default::default()
             };
 

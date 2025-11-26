@@ -1,4 +1,4 @@
-//! Final layout optimization using region error minimization.
+//! Final layout optimization.
 //!
 //! This module implements the second optimization step that refines the initial
 //! layout by minimizing the difference between target exclusive areas and actual
@@ -18,6 +18,8 @@ use crate::spec::PreprocessedSpec;
 pub(crate) struct FinalLayoutConfig {
     /// Maximum number of optimization iterations
     pub max_iterations: usize,
+    /// Loss function
+    pub loss_type: crate::loss::LossType,
     /// Tolerance for convergence (currently unused, reserved for future use)
     #[allow(dead_code)]
     pub tolerance: f64,
@@ -27,6 +29,7 @@ impl Default for FinalLayoutConfig {
     fn default() -> Self {
         Self {
             max_iterations: 500,
+            loss_type: crate::loss::LossType::region_error(),
             tolerance: 1e-6,
         }
     }
@@ -52,7 +55,10 @@ pub(crate) fn optimize_layout(
 
     let initial_param = DVector::from_vec(initial_params);
 
-    let cost_function = RegionErrorCost { spec };
+    // Create loss function from config
+    let loss_fn = config.loss_type.create();
+
+    let cost_function = DiagramCost { spec, loss_fn };
 
     // NelderMead Takes a vector of parameter vectors. The number of parameter vectors must be n +
     // 1 where n is the number of optimization parameters.
@@ -92,11 +98,12 @@ pub(crate) fn optimize_layout(
 /// Cost function for region error optimization.
 ///
 /// Computes the discrepancy between target exclusive areas and actual fitted areas.
-struct RegionErrorCost<'a> {
+struct DiagramCost<'a> {
     spec: &'a PreprocessedSpec,
+    loss_fn: Box<dyn crate::loss::LossFunction>,
 }
 
-impl<'a> RegionErrorCost<'a> {
+impl<'a> DiagramCost<'a> {
     /// Extract circles from parameter vector.
     fn params_to_circles(&self, params: &DVector<f64>) -> Vec<Circle> {
         let n_sets = self.spec.n_sets;
@@ -115,7 +122,7 @@ impl<'a> RegionErrorCost<'a> {
     }
 }
 
-impl<'a> CostFunction for RegionErrorCost<'a> {
+impl<'a> CostFunction for DiagramCost<'a> {
     type Param = DVector<f64>;
     type Output = f64;
 
@@ -124,7 +131,10 @@ impl<'a> CostFunction for RegionErrorCost<'a> {
 
         let exclusive_areas = diagram::compute_exclusive_regions(&circles);
 
-        let error = diagram::compute_region_error(&exclusive_areas, &self.spec.exclusive_areas);
+        // Use the configured loss function
+        let error = self
+            .loss_fn
+            .evaluate(&exclusive_areas, &self.spec.exclusive_areas);
 
         Ok(error)
     }
@@ -226,6 +236,7 @@ mod tests {
         ];
 
         let config = FinalLayoutConfig {
+            loss_type: crate::loss::LossType::region_error(),
             max_iterations: 50,
             tolerance: 1e-4,
         };
@@ -254,8 +265,10 @@ mod tests {
 
         let preprocessed = spec.preprocess().unwrap();
 
-        let cost_fn = RegionErrorCost {
+        let loss_fn = crate::loss::LossType::region_error().create();
+        let cost_fn = DiagramCost {
             spec: &preprocessed,
+            loss_fn,
         };
 
         // Create parameter vector
@@ -307,6 +320,7 @@ mod tests {
         let radii = vec![1.0, 1.0];
 
         let config = FinalLayoutConfig {
+            loss_type: crate::loss::LossType::region_error(),
             max_iterations: 100,
             tolerance: 1e-6,
         };
@@ -365,6 +379,7 @@ mod tests {
         }
 
         let config = FinalLayoutConfig {
+            loss_type: crate::loss::LossType::region_error(),
             max_iterations: 200,
             tolerance: 1e-6,
         };
@@ -425,6 +440,7 @@ mod tests {
             }
 
             let config = FinalLayoutConfig {
+                loss_type: crate::loss::LossType::region_error(),
                 max_iterations: 200,
                 tolerance: 1e-6,
             };

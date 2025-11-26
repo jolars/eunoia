@@ -368,22 +368,6 @@ fn is_subset(mask1: RegionMask, mask2: RegionMask) -> bool {
     (mask1 & mask2) == mask1
 }
 
-/// Compute region error: sum of squared differences between fitted and target areas.
-pub(crate) fn compute_region_error(
-    fitted_areas: &HashMap<RegionMask, f64>,
-    target_areas: &HashMap<RegionMask, f64>,
-) -> f64 {
-    let mut error = 0.0;
-
-    for (&mask, &target) in target_areas {
-        let fitted = fitted_areas.get(&mask).copied().unwrap_or(0.0);
-        let diff = fitted - target;
-        error += diff * diff;
-    }
-
-    error
-}
-
 /// Convert a Combination to a bit mask.
 pub(crate) fn combination_to_mask(combo: &Combination, set_names: &[String]) -> RegionMask {
     let combo_sets = combo.sets();
