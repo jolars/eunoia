@@ -186,8 +186,7 @@ pub fn generate_from_spec(
     let wasm_circles: Vec<WasmCircle> = diagram_spec
         .set_names()
         .iter()
-        .enumerate()
-        .filter_map(|(_i, name)| {
+        .filter_map(|name| {
             layout.shape_for_set(name).map(|shape| {
                 WasmCircle::new(
                     shape.center().x(),
