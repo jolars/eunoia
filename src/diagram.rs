@@ -140,11 +140,7 @@ impl DiagramSpec {
         }
 
         // 4. Compute pairwise relationships
-        let relationships = Self::compute_pairwise_relations(
-            &non_empty_sets,
-            &filtered_inclusive,
-            &filtered_exclusive,
-        )?;
+        let relationships = Self::compute_pairwise_relations(&non_empty_sets, &filtered_inclusive)?;
 
         Ok(PreprocessedSpec {
             set_names: non_empty_sets,
@@ -161,7 +157,6 @@ impl DiagramSpec {
     fn compute_pairwise_relations(
         set_names: &[String],
         inclusive_areas: &HashMap<Combination, f64>,
-        exclusive_areas: &HashMap<Combination, f64>,
     ) -> Result<PairwiseRelations, DiagramError> {
         let n = set_names.len();
 
