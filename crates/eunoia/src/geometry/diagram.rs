@@ -928,7 +928,6 @@ mod tests {
     }
 
     #[test]
-
     fn test_eulerr_comparison_five_circles_circular() {
         let c1 = Circle::new(Point::new(2.0000000000, 0.0000000000), 1.5000000000); // A
         let c2 = Circle::new(Point::new(0.6180339887, 1.9021130326), 1.5000000000); // B
@@ -1001,7 +1000,6 @@ mod tests {
     }
 
     #[test]
-
     fn test_eulerr_comparison_five_circles_cross() {
         let c1 = Circle::new(Point::new(0.0000000000, 0.0000000000), 1.0000000000); // A
         let c2 = Circle::new(Point::new(1.2000000000, 0.0000000000), 0.8000000000); // B
@@ -1072,109 +1070,6 @@ mod tests {
             );
         }
     }
-}
-#[cfg(test)]
-mod analyze_sparse {
-    use super::*;
-
-    #[test]
-    fn analyze_why_sparse_fails() {
-        // Six circles all overlapping at center
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
-
-        let intersections = collect_intersections(&circles, 6);
-
-        println!("\n=== Intersection Analysis ===");
-        println!("Total intersection points: {}", intersections.len());
-
-        // Check what masks we get from intersection points
-        let mut masks_from_points = std::collections::HashSet::new();
-        for info in &intersections {
-            let mask = adopters_to_mask(info.adopters());
-            masks_from_points.insert(mask);
-        }
-
-        println!(
-            "Unique masks from intersection points: {}",
-            masks_from_points.len()
-        );
-
-        // Check some specific combinations
-        println!("\n=== Checking specific combinations ===");
-
-        // Check if A-B (0b000011) has intersection points
-        let ab_mask = 0b000011;
-        let ab_points: Vec<_> = intersections
-            .iter()
-            .filter(|info| adopters_to_mask(info.adopters()) == ab_mask)
-            .collect();
-        println!("A-B only points: {}", ab_points.len());
-
-        // Check if A-B have ANY shared points
-        let ab_shared: Vec<_> = intersections
-            .iter()
-            .filter(|info| {
-                let adopters = info.adopters();
-                adopters.contains(&0) && adopters.contains(&1)
-            })
-            .collect();
-        println!("A-B shared points (any mask): {}", ab_shared.len());
-
-        // Key question: do A and B actually intersect?
-        let ab_int_area = circles[0].intersection_area(&circles[1]);
-        println!("A-B intersection area: {:.6}", ab_int_area);
-
-        // The problem: when ALL six circles meet at a central region,
-        // the A-B intersection points are ALSO in C, D, E, F
-        // So there are NO points with mask exactly 0b000011
-        // But A-B DO have a pairwise intersection area!
-
-        println!("\n=== The Problem ===");
-        println!(
-            "A-B have intersection area {:.3}, but no points with mask exactly A-B",
-            ab_int_area
-        );
-        println!("All A-B boundary points are also in other circles (higher-order intersections)");
-        println!("Sparse discovery looks for unique points per region, but in dense overlap,");
-        println!("many regions don't have unique points - their boundaries are all shared!");
-    }
-}
-
-#[cfg(test)]
-mod test_improved_discovery {
-    use super::*;
-
-    #[test]
-    fn test_discover_six_overlap() {
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
-
-        let intersections = collect_intersections(&circles, 6);
-        let regions = discover_regions(&circles, &intersections, 6);
-
-        println!("\n=== Improved Discovery ===");
-        println!("Discovered: {} / 63 regions", regions.len());
-        println!(
-            "Saved: {} region computations vs full enumeration",
-            63 - regions.len()
-        );
-    }
-}
-
-#[cfg(test)]
-mod test_hexagon_pruning {
-    use super::*;
 
     #[test]
     fn test_hexagon_pruning() {
@@ -1193,309 +1088,49 @@ mod test_hexagon_pruning {
         println!("\n=== Hexagon (sparse overlap) ===");
         println!("Discovered: {} / 63 regions", regions.len());
         println!("Pruned: {} unnecessary computations!", 63 - regions.len());
+
+        assert!(regions.len() < 63, "Should have pruned some regions");
     }
-}
-
-#[test]
-fn test_eulerr_comparison_six_circles_all_overlap() {
-    let c1 = Circle::new(Point::new(1.5000000000, 0.0000000000), 1.8000000000); // A
-    let c2 = Circle::new(Point::new(0.7500000000, 1.2990381057), 1.8000000000); // B
-    let c3 = Circle::new(Point::new(-0.7500000000, 1.2990381057), 1.8000000000); // C
-    let c4 = Circle::new(Point::new(-1.5000000000, 0.0000000000), 1.8000000000); // D
-    let c5 = Circle::new(Point::new(-0.7500000000, -1.2990381057), 1.8000000000); // E
-    let c6 = Circle::new(Point::new(0.7500000000, -1.2990381057), 1.8000000000); // F
-    let circles = vec![c1, c2, c3, c4, c5, c6];
-
-    // Debug: compute overlapping for ABCDEF
-    let intersections = collect_intersections(&circles, 6);
-    eprintln!("Total intersection points: {}", intersections.len());
-
-    // Check how many points qualify for ABCDEF
-    let mask = 0b111111;
-    let count = intersections
-        .iter()
-        .filter(|info| {
-            let (p1, p2) = info.parents();
-            let parents_in_mask = (mask & (1 << p1)) != 0 && (mask & (1 << p2)) != 0;
-            let adopter_mask = adopters_to_mask(info.adopters());
-            let mask_subset_of_adopters = (mask & adopter_mask) == mask;
-            parents_in_mask && mask_subset_of_adopters
-        })
-        .count();
-    eprintln!("Points qualifying for ABCDEF: {}", count);
-
-    let regions = discover_regions(&circles, &intersections, 6);
-    let mut overlapping_areas = std::collections::HashMap::new();
-    for &mask in &regions {
-        let area = compute_region_area(mask, &circles, &intersections, 6);
-        overlapping_areas.insert(mask, area);
-    }
-    eprintln!(
-        "ABCDEF (0b111111) overlapping: {}",
-        overlapping_areas[&0b111111]
-    );
-
-    let areas = compute_exclusive_areas_from_layout(
-        &circles,
-        &[
-            "A".to_string(),
-            "B".to_string(),
-            "C".to_string(),
-            "D".to_string(),
-            "E".to_string(),
-            "F".to_string(),
-        ],
-    );
-
-    let expected_areas = vec![
-        (Combination::new(&["A"]), 1.9828808649),
-        (Combination::new(&["B"]), 1.9828808649),
-        (Combination::new(&["C"]), 1.9828808649),
-        (Combination::new(&["D"]), 1.9828808649),
-        (Combination::new(&["E"]), 1.9828808649),
-        (Combination::new(&["F"]), 1.9828808649),
-        (
-            Combination::new(&["A", "B", "C", "D", "E", "F"]),
-            0.3062166, // 6-way intersection exclusive area from eulerr
-        ),
-    ];
-
-    for (combo, expected) in expected_areas {
-        let computed = areas.get(&combo).copied().unwrap_or(0.0);
-        let error = if expected > 1e-10 {
-            (computed - expected).abs() / expected
-        } else {
-            (computed - expected).abs()
-        };
-        assert!(
-            error < 0.01,
-            "Area for {:?} should match: {} vs {} (error: {})",
-            combo.sets(),
-            computed,
-            expected,
-            error
-        );
-    }
-}
-
-#[cfg(test)]
-mod debug_ie_six {
-    use super::*;
 
     #[test]
-    fn debug_ie_six_overlap() {
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
+    fn test_eulerr_comparison_six_circles_all_overlap() {
+        let c1 = Circle::new(Point::new(1.5000000000, 0.0000000000), 1.8000000000); // A
+        let c2 = Circle::new(Point::new(0.7500000000, 1.2990381057), 1.8000000000); // B
+        let c3 = Circle::new(Point::new(-0.7500000000, 1.2990381057), 1.8000000000); // C
+        let c4 = Circle::new(Point::new(-1.5000000000, 0.0000000000), 1.8000000000); // D
+        let c5 = Circle::new(Point::new(-0.7500000000, -1.2990381057), 1.8000000000); // E
+        let c6 = Circle::new(Point::new(0.7500000000, -1.2990381057), 1.8000000000); // F
+        let circles = vec![c1, c2, c3, c4, c5, c6];
 
-        println!("\n=== Circle A area: {:.6}", circles[0].area());
-
+        // Debug: compute overlapping for ABCDEF
         let intersections = collect_intersections(&circles, 6);
+        eprintln!("Total intersection points: {}", intersections.len());
+
+        // Check how many points qualify for ABCDEF
+        let mask = 0b111111;
+        let count = intersections
+            .iter()
+            .filter(|info| {
+                let (p1, p2) = info.parents();
+                let parents_in_mask = (mask & (1 << p1)) != 0 && (mask & (1 << p2)) != 0;
+                let adopter_mask = adopters_to_mask(info.adopters());
+                let mask_subset_of_adopters = (mask & adopter_mask) == mask;
+                parents_in_mask && mask_subset_of_adopters
+            })
+            .count();
+        eprintln!("Points qualifying for ABCDEF: {}", count);
+
         let regions = discover_regions(&circles, &intersections, 6);
-
-        println!("Regions discovered: {}", regions.len());
-
-        let mut overlapping = std::collections::HashMap::new();
+        let mut overlapping_areas = std::collections::HashMap::new();
         for &mask in &regions {
             let area = compute_region_area(mask, &circles, &intersections, 6);
-            overlapping.insert(mask, area);
+            overlapping_areas.insert(mask, area);
         }
-
-        println!("\n=== Before IE ===");
-        println!(
-            "A (0b000001): {:.6}",
-            overlapping.get(&0b000001).copied().unwrap_or(0.0)
-        );
-        println!(
-            "ABCDEF (0b111111): {:.6}",
-            overlapping.get(&0b111111).copied().unwrap_or(0.0)
+        eprintln!(
+            "ABCDEF (0b111111) overlapping: {}",
+            overlapping_areas[&0b111111]
         );
 
-        let exclusive = to_exclusive_areas(&overlapping);
-
-        println!("\n=== After IE ===");
-        println!(
-            "A (0b000001): {:.6}",
-            exclusive.get(&0b000001).copied().unwrap_or(0.0)
-        );
-        println!(
-            "ABCDEF (0b111111): {:.6}",
-            exclusive.get(&0b111111).copied().unwrap_or(0.0)
-        );
-
-        println!("\n=== Expected ===");
-        println!("A: 1.9828808649");
-        println!("ABCDEF: 0.0343237063");
-    }
-}
-
-#[cfg(test)]
-mod check_zero_regions {
-    use super::*;
-
-    #[test]
-    fn check_zero_area_regions() {
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
-
-        let intersections = collect_intersections(&circles, 6);
-        let regions = discover_regions(&circles, &intersections, 6);
-
-        let mut zero_count = 0;
-        let mut nonzero_count = 0;
-
-        for &mask in &regions {
-            let area = compute_region_area(mask, &circles, &intersections, 6);
-            if area < 1e-10 {
-                zero_count += 1;
-            } else {
-                nonzero_count += 1;
-            }
-        }
-
-        println!("\n=== Region areas ===");
-        println!("Zero area: {}", zero_count);
-        println!("Non-zero area: {}", nonzero_count);
-        println!("Total: {}", regions.len());
-        println!(
-            "\nWe're discovering {} regions that don't actually exist!",
-            zero_count
-        );
-    }
-}
-
-#[cfg(test)]
-mod trace_ie {
-    use super::*;
-
-    #[test]
-    fn trace_inclusion_exclusion() {
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
-
-        let intersections = collect_intersections(&circles, 6);
-        let regions = discover_regions(&circles, &intersections, 6);
-
-        let mut overlapping = std::collections::HashMap::new();
-        for &mask in &regions {
-            let area = compute_region_area(mask, &circles, &intersections, 6);
-            overlapping.insert(mask, area);
-        }
-
-        // Manually trace IE for mask 0b000001 (A)
-        let a_mask = 0b000001;
-        let a_overlapping = overlapping[&a_mask];
-
-        println!("\n=== Tracing IE for A (0b000001) ===");
-        println!("Initial overlapping area: {:.6}", a_overlapping);
-
-        let mut a_exclusive = a_overlapping;
-        let mut subtracted = Vec::new();
-
-        for (&mask, &area) in &overlapping {
-            if mask != a_mask && is_subset(a_mask, mask) && mask.count_ones() > 1 {
-                println!("Subtracting {:#08b} (area {:.6})", mask, area);
-                a_exclusive -= area;
-                subtracted.push((mask, area));
-            }
-        }
-
-        println!(
-            "\nTotal subtracted: {:.6}",
-            subtracted.iter().map(|(_, a)| a).sum::<f64>()
-        );
-        println!("Final exclusive area: {:.6}", a_exclusive);
-        println!("Expected: 1.9828808649");
-    }
-}
-
-#[cfg(test)]
-mod monte_carlo_verification {
-    use super::*;
-
-    #[test]
-    fn verify_six_overlap_monte_carlo() {
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
-
-        // Use Monte Carlo to estimate exclusive areas
-        let n_samples = 100_000;
-
-        println!(
-            "\n=== Monte Carlo Verification ({}M samples) ===",
-            n_samples / 1_000_000
-        );
-
-        // Find bounding box
-        let mut min_x = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-
-        for circle in &circles {
-            let c = circle.center();
-            let r = circle.radius();
-            min_x = min_x.min(c.x() - r);
-            max_x = max_x.max(c.x() + r);
-            min_y = min_y.min(c.y() - r);
-            max_y = max_y.max(c.y() + r);
-        }
-
-        let bbox_area = (max_x - min_x) * (max_y - min_y);
-
-        // Count points in each exclusive region
-        let mut region_counts = std::collections::HashMap::new();
-
-        for _ in 0..n_samples {
-            let x = min_x + rand::random::<f64>() * (max_x - min_x);
-            let y = min_y + rand::random::<f64>() * (max_y - min_y);
-            let pt = Point::new(x, y);
-
-            // Check which circles contain this point
-            let mut mask = 0;
-            for (i, circle) in circles.iter().enumerate() {
-                if circle.contains_point(&pt) {
-                    mask |= 1 << i;
-                }
-            }
-
-            if mask != 0 {
-                *region_counts.entry(mask).or_insert(0) += 1;
-            }
-        }
-
-        println!("\n=== Monte Carlo Results ===");
-        println!(
-            "A (0b000001): {:.6}",
-            region_counts.get(&0b000001).copied().unwrap_or(0) as f64 / n_samples as f64
-                * bbox_area
-        );
-        println!(
-            "ABCDEF (0b111111): {:.6}",
-            region_counts.get(&0b111111).copied().unwrap_or(0) as f64 / n_samples as f64
-                * bbox_area
-        );
-
-        println!("\n=== Our Implementation ===");
         let areas = compute_exclusive_areas_from_layout(
             &circles,
             &[
@@ -1507,252 +1142,37 @@ mod monte_carlo_verification {
                 "F".to_string(),
             ],
         );
-        println!(
-            "A: {:.6}",
-            areas.get(&Combination::new(&["A"])).copied().unwrap_or(0.0)
-        );
-        println!(
-            "ABCDEF: {:.6}",
-            areas
-                .get(&Combination::new(&["A", "B", "C", "D", "E", "F"]))
-                .copied()
-                .unwrap_or(0.0)
-        );
 
-        println!("\n=== Expected from eulerr ===");
-        println!("A: 1.9828808649");
-        println!("ABCDEF: 0.0343237063");
-    }
-}
+        let expected_areas = vec![
+            (Combination::new(&["A"]), 1.9828808649),
+            (Combination::new(&["B"]), 1.9828808649),
+            (Combination::new(&["C"]), 1.9828808649),
+            (Combination::new(&["D"]), 1.9828808649),
+            (Combination::new(&["E"]), 1.9828808649),
+            (Combination::new(&["F"]), 1.9828808649),
+            (
+                Combination::new(&["A", "B", "C", "D", "E", "F"]),
+                0.3062166, // 6-way intersection exclusive area from eulerr
+            ),
+        ];
 
-#[cfg(test)]
-mod trace_ie_order {
-    use super::*;
-
-    #[test]
-    fn trace_ie_correct_order() {
-        // Simple 3-circle case to understand the algorithm
-        let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
-        let c2 = Circle::new(Point::new(1.5, 0.0), 1.0);
-        let c3 = Circle::new(Point::new(0.75, 1.3), 1.0);
-        let circles = vec![c1, c2, c3];
-
-        let intersections = collect_intersections(&circles, 3);
-        let regions = discover_regions(&circles, &intersections, 3);
-
-        let mut overlapping = std::collections::HashMap::new();
-        for &mask in &regions {
-            let area = compute_region_area(mask, &circles, &intersections, 3);
-            overlapping.insert(mask, area);
+        for (combo, expected) in expected_areas {
+            let computed = areas.get(&combo).copied().unwrap_or(0.0);
+            let error = if expected > 1e-10 {
+                (computed - expected).abs() / expected
+            } else {
+                (computed - expected).abs()
+            };
+            assert!(
+                error < 0.01,
+                "Area for {:?} should match: {} vs {} (error: {})",
+                combo.sets(),
+                computed,
+                expected,
+                error
+            );
         }
-
-        println!("\n=== Overlapping areas ===");
-        println!(
-            "A (0b001): {:.6}",
-            overlapping.get(&0b001).copied().unwrap_or(0.0)
-        );
-        println!(
-            "B (0b010): {:.6}",
-            overlapping.get(&0b010).copied().unwrap_or(0.0)
-        );
-        println!(
-            "C (0b100): {:.6}",
-            overlapping.get(&0b100).copied().unwrap_or(0.0)
-        );
-        println!(
-            "AB (0b011): {:.6}",
-            overlapping.get(&0b011).copied().unwrap_or(0.0)
-        );
-        println!(
-            "AC (0b101): {:.6}",
-            overlapping.get(&0b101).copied().unwrap_or(0.0)
-        );
-        println!(
-            "BC (0b110): {:.6}",
-            overlapping.get(&0b110).copied().unwrap_or(0.0)
-        );
-        println!(
-            "ABC (0b111): {:.6}",
-            overlapping.get(&0b111).copied().unwrap_or(0.0)
-        );
-
-        println!("\n=== IE should process in this order ===");
-        println!("1. ABC (0b111) - largest, no supersets, stays as is");
-        println!("2. AB (0b011) - subtract ABC");
-        println!("3. AC (0b101) - subtract ABC");
-        println!("4. BC (0b110) - subtract ABC");
-        println!("5. A (0b001) - subtract AB, AC, ABC");
-        println!("6. B (0b010) - subtract AB, BC, ABC");
-        println!("7. C (0b100) - subtract AC, BC, ABC");
-
-        println!("\n=== Manual correct IE for A ===");
-        let a_over = overlapping[&0b001];
-        let ab_over = overlapping[&0b011];
-        let ac_over = overlapping[&0b101];
-        let abc_over = overlapping[&0b111];
-
-        // ABC exclusive = ABC overlapping (no supersets)
-        let abc_excl = abc_over;
-
-        // AB exclusive = AB overlapping - ABC exclusive
-        let ab_excl = ab_over - abc_excl;
-
-        // AC exclusive = AC overlapping - ABC exclusive
-        let ac_excl = ac_over - abc_excl;
-
-        // A exclusive = A overlapping - AB exclusive - AC exclusive - ABC exclusive
-        let a_excl = a_over - ab_excl - ac_excl - abc_excl;
-
-        println!("A exclusive should be: {:.6}", a_excl);
     }
-}
-
-#[cfg(test)]
-mod check_our_ie {
-    use super::*;
-
-    #[test]
-    fn check_our_ie_algorithm() {
-        let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
-        let c2 = Circle::new(Point::new(1.5, 0.0), 1.0);
-        let c3 = Circle::new(Point::new(0.75, 1.3), 1.0);
-        let circles = vec![c1, c2, c3];
-
-        let intersections = collect_intersections(&circles, 3);
-        let regions = discover_regions(&circles, &intersections, 3);
-
-        let mut overlapping = std::collections::HashMap::new();
-        for &mask in &regions {
-            let area = compute_region_area(mask, &circles, &intersections, 3);
-            overlapping.insert(mask, area);
-        }
-
-        let exclusive = to_exclusive_areas(&overlapping);
-
-        println!("\n=== Our implementation ===");
-        println!(
-            "A exclusive: {:.6}",
-            exclusive.get(&0b001).copied().unwrap_or(0.0)
-        );
-        println!("Expected: 2.319140");
-    }
-}
-
-#[cfg(test)]
-mod trace_six_ie_detail {
-    use super::*;
-
-    #[test]
-    fn trace_six_ie_in_detail() {
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
-
-        let intersections = collect_intersections(&circles, 6);
-        let regions = discover_regions(&circles, &intersections, 6);
-
-        let mut overlapping = std::collections::HashMap::new();
-        for &mask in &regions {
-            let area = compute_region_area(mask, &circles, &intersections, 6);
-            overlapping.insert(mask, area);
-        }
-
-        // Sort like our IE does
-        let mut masks: Vec<_> = overlapping.keys().copied().collect();
-        masks.sort_by_key(|m| (m.count_ones(), *m));
-
-        println!("\n=== Sorted masks (first 10) ===");
-        (0..10.min(masks.len())).for_each(|i| {
-            println!("{}: {:#08b} ({} bits)", i, masks[i], masks[i].count_ones());
-        });
-
-        println!("\n=== Sorted masks (last 10) ===");
-        ((masks.len() - 10).max(0)..masks.len()).for_each(|i| {
-            println!("{}: {:#08b} ({} bits)", i, masks[i], masks[i].count_ones());
-        });
-
-        // Find A and ABCDEF
-        let a_idx = masks.iter().position(|&m| m == 0b000001).unwrap();
-        let abcdef_idx = masks.iter().position(|&m| m == 0b111111).unwrap();
-
-        println!("\n=== Key positions ===");
-        println!("A (0b000001) at index: {}", a_idx);
-        println!("ABCDEF (0b111111) at index: {}", abcdef_idx);
-        println!("\nProcessing order (reverse): {} -> 0", masks.len() - 1);
-        println!(
-            "So ABCDEF processed at position: {}",
-            masks.len() - 1 - abcdef_idx
-        );
-        println!("And A processed at position: {}", masks.len() - 1 - a_idx);
-    }
-}
-
-#[cfg(test)]
-mod trace_a_subtractions {
-    use super::*;
-
-    #[test]
-    fn trace_what_a_subtracts() {
-        let angles: Vec<f64> = (0..6)
-            .map(|i| i as f64 * std::f64::consts::PI / 3.0)
-            .collect();
-        let circles: Vec<Circle> = angles
-            .iter()
-            .map(|&angle| Circle::new(Point::new(1.5 * angle.cos(), 1.5 * angle.sin()), 1.8))
-            .collect();
-
-        let intersections = collect_intersections(&circles, 6);
-        let regions = discover_regions(&circles, &intersections, 6);
-
-        let mut overlapping = std::collections::HashMap::new();
-        for &mask in &regions {
-            let area = compute_region_area(mask, &circles, &intersections, 6);
-            overlapping.insert(mask, area);
-        }
-
-        // Manually do IE for A
-        let exclusive = overlapping.clone();
-        let mut masks: Vec<_> = overlapping.keys().copied().collect();
-        masks.sort_by_key(|m| (m.count_ones(), *m));
-
-        let a_mask = 0b000001;
-        let a_idx = masks.iter().position(|&m| m == a_mask).unwrap();
-
-        println!("\n=== When processing A (index {}) ===", a_idx);
-        println!("A overlapping: {:.6}", overlapping[&a_mask]);
-
-        let mut to_subtract = 0.0;
-        let mut count = 0;
-
-        for j in (a_idx + 1)..masks.len() {
-            let mask_j = masks[j];
-            if is_subset(a_mask, mask_j) {
-                println!("  Subtracting {:#08b}: {:.6}", mask_j, exclusive[&mask_j]);
-                to_subtract += exclusive[&mask_j];
-                count += 1;
-                if count >= 10 {
-                    println!("  ... and {} more", masks.len() - j - 1);
-                    break;
-                }
-            }
-        }
-
-        println!("\nTotal to subtract: {:.6}", to_subtract);
-        println!(
-            "A exclusive would be: {:.6}",
-            overlapping[&a_mask] - to_subtract
-        );
-        println!("Expected: ~1.983");
-    }
-}
-
-#[cfg(test)]
-mod mc_vs_exact {
-    use super::*;
 
     #[test]
     fn compare_abcdef_exact_vs_monte_carlo() {
