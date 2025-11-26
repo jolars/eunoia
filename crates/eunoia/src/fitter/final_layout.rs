@@ -8,7 +8,6 @@ use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
 
-use crate::geometry::shapes::circle::Circle;
 use crate::geometry::shapes::Shape;
 use crate::spec::PreprocessedSpec;
 
