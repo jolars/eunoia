@@ -1,51 +1,51 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  
+  import { onMount } from "svelte";
+
   interface Circle {
     x: number;
     y: number;
     radius: number;
     label: string;
   }
-  
+
   interface DiagramRow {
     input: string;
     size: number;
   }
-  
+
   let circles = $state<Circle[]>([]);
   let wasmModule = $state<any>(null);
   let loading = $state(true);
-  let error = $state('');
+  let error = $state("");
   let loss = $state<number>(0);
   let targetAreas = $state<Record<string, number>>({});
   let fittedAreas = $state<Record<string, number>>({});
-  
+
   // Diagram specification
   let diagramRows = $state<DiagramRow[]>([
-    { input: 'A', size: 3 },
-    { input: 'B', size: 5 },
-    { input: 'A&B', size: 1 }
+    { input: "A", size: 3 },
+    { input: "B", size: 5 },
+    { input: "A&B", size: 1 },
   ]);
 
-  let inputType = $state<'exclusive' | 'inclusive'>('exclusive');
+  let inputType = $state<"exclusive" | "inclusive">("exclusive");
   let useInitialOnly = $state(false);
-  
+
   const colors = [
-    'rgba(59, 130, 246, 0.3)',   // blue
-    'rgba(239, 68, 68, 0.3)',    // red
-    'rgba(34, 197, 94, 0.3)',    // green
-    'rgba(234, 179, 8, 0.3)',    // yellow
-    'rgba(168, 85, 247, 0.3)',   // purple
+    "rgba(59, 130, 246, 0.3)", // blue
+    "rgba(239, 68, 68, 0.3)", // red
+    "rgba(34, 197, 94, 0.3)", // green
+    "rgba(234, 179, 8, 0.3)", // yellow
+    "rgba(168, 85, 247, 0.3)", // purple
   ];
 
   onMount(async () => {
     try {
       // Import and initialize the WASM module
-      const wasm = await import('../../pkg/eunoia.js');
+      const wasm = await import("../../pkg/eunoia.js");
       await wasm.default(); // Initialize WASM
       wasmModule = wasm;
-      
+
       loading = false;
       // The reactive statement will generate the diagram from spec
     } catch (e) {
@@ -54,52 +54,52 @@
       console.error(e);
     }
   });
-  
+
   function addRow() {
-    diagramRows = [...diagramRows, { input: '', size: 0 }];
+    diagramRows = [...diagramRows, { input: "", size: 0 }];
   }
-  
+
   function removeRow(index: number) {
     diagramRows = diagramRows.filter((_, i) => i !== index);
   }
-  
+
   function generateFromSpec() {
     if (!wasmModule || diagramRows.length === 0) return;
-    
+
     try {
       // Convert diagramRows to DiagramSpec objects
       const specs = diagramRows
-        .filter(row => row.input.trim() !== '' && row.size >= 0)
-        .map(row => new wasmModule.DiagramSpec(row.input, row.size));
-      
+        .filter((row) => row.input.trim() !== "" && row.size >= 0)
+        .map((row) => new wasmModule.DiagramSpec(row.input, row.size));
+
       if (specs.length === 0) {
         circles = [];
-        error = '';
+        error = "";
         loss = 0;
         targetAreas = {};
         fittedAreas = {};
         return;
       }
-      
+
       // Generate diagram from specification
-      const generateFn = useInitialOnly 
-        ? wasmModule.generate_from_spec_initial 
+      const generateFn = useInitialOnly
+        ? wasmModule.generate_from_spec_initial
         : wasmModule.generate_from_spec;
       const result = generateFn(specs, inputType);
       circles = Array.from(result);
-      error = '';
-      
+      error = "";
+
       // Get debug info separately using simple arrays
       try {
         const inputs = diagramRows
-          .filter(row => row.input.trim() !== '' && row.size >= 0)
-          .map(row => row.input);
+          .filter((row) => row.input.trim() !== "" && row.size >= 0)
+          .map((row) => row.input);
         const sizes = diagramRows
-          .filter(row => row.input.trim() !== '' && row.size >= 0)
-          .map(row => row.size);
-        
-        const debugFn = useInitialOnly 
-          ? wasmModule.get_debug_info_initial 
+          .filter((row) => row.input.trim() !== "" && row.size >= 0)
+          .map((row) => row.size);
+
+        const debugFn = useInitialOnly
+          ? wasmModule.get_debug_info_initial
           : wasmModule.get_debug_info_simple;
         const debugJson = debugFn(inputs, sizes, inputType);
         const debugData = JSON.parse(debugJson);
@@ -107,7 +107,7 @@
         targetAreas = debugData.target_areas;
         fittedAreas = debugData.fitted_areas;
       } catch (debugError) {
-        console.error('Debug info error:', debugError);
+        console.error("Debug info error:", debugError);
         loss = 0;
         targetAreas = {};
         fittedAreas = {};
@@ -121,54 +121,62 @@
       console.error(e);
     }
   }
-  
+
   // Auto-generate diagram when specification changes
   // Only trigger when size values, input type, or initial-only flag change
   $effect(() => {
     if (wasmModule && diagramRows.length > 0) {
       // Track size values, input type, and useInitialOnly flag
-      const sizeSignature = diagramRows.map(row => row.size).join(',');
-      console.log('Generating diagram from spec (sizes/type changed):', sizeSignature, inputType, 'initial-only:', useInitialOnly);
+      const sizeSignature = diagramRows.map((row) => row.size).join(",");
+      console.log(
+        "Generating diagram from spec (sizes/type changed):",
+        sizeSignature,
+        inputType,
+        "initial-only:",
+        useInitialOnly,
+      );
       generateFromSpec();
     }
   });
-  
+
   // Calculate SVG viewBox to fit all circles with proper padding
   let viewBox = $derived.by(() => {
-    if (circles.length === 0) return '0 0 400 400';
-    
-    const xs = circles.map(c => c.x);
-    const ys = circles.map(c => c.y);
-    const rs = circles.map(c => c.radius);
-    
+    if (circles.length === 0) return "0 0 400 400";
+
+    const xs = circles.map((c) => c.x);
+    const ys = circles.map((c) => c.y);
+    const rs = circles.map((c) => c.radius);
+
     const minX = Math.min(...xs.map((x, i) => x - rs[i]));
     const maxX = Math.max(...xs.map((x, i) => x + rs[i]));
     const minY = Math.min(...ys.map((y, i) => y - rs[i]));
     const maxY = Math.max(...ys.map((y, i) => y + rs[i]));
-    
+
     const width = maxX - minX;
     const height = maxY - minY;
-    
+
     // Add padding as a percentage of the size (10% on each side)
     const paddingPercent = 0.1;
     const paddingX = width * paddingPercent;
     const paddingY = height * paddingPercent;
-    
+
     return `${minX - paddingX} ${minY - paddingY} ${width + 2 * paddingX} ${height + 2 * paddingY}`;
   });
-  
+
   // Calculate appropriate stroke width and font size based on viewBox dimensions
-  let avgRadius = $derived(circles.length > 0 
-    ? circles.reduce((sum, c) => sum + c.radius, 0) / circles.length 
-    : 1);
+  let avgRadius = $derived(
+    circles.length > 0
+      ? circles.reduce((sum, c) => sum + c.radius, 0) / circles.length
+      : 1,
+  );
   let strokeWidth = $derived(avgRadius * 0.02); // 2% of average radius
-  
+
   // Font size based on the viewBox dimensions, not individual circles
   let viewBoxDimension = $derived.by(() => {
     if (circles.length === 0) return 400;
-    const xs = circles.map(c => c.x);
-    const ys = circles.map(c => c.y);
-    const rs = circles.map(c => c.radius);
+    const xs = circles.map((c) => c.x);
+    const ys = circles.map((c) => c.y);
+    const rs = circles.map((c) => c.radius);
     const minX = Math.min(...xs.map((x, i) => x - rs[i]));
     const maxX = Math.max(...xs.map((x, i) => x + rs[i]));
     const minY = Math.min(...ys.map((y, i) => y - rs[i]));
@@ -184,10 +192,12 @@
       <h1 class="text-4xl font-bold text-gray-900 mb-2">Eunoia Debug Viewer</h1>
       <p class="text-gray-600">Visualize Euler diagram layouts</p>
     </header>
-    
+
     {#if loading}
       <div class="bg-white rounded-lg shadow p-8 text-center">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+        <div
+          class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"
+        ></div>
         <p class="mt-4 text-gray-600">Loading WASM module...</p>
       </div>
     {:else}
@@ -196,17 +206,19 @@
           <p class="text-red-800">{error}</p>
         </div>
       {/if}
-      
+
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Controls -->
         <div class="lg:col-span-1 space-y-6">
           <!-- Diagram Specification -->
           <div class="bg-white rounded-lg shadow p-6">
             <h2 class="text-xl font-semibold mb-4">Diagram Specification</h2>
-            
+
             <!-- Input Type Selection -->
             <div class="mb-4">
-              <div class="block text-sm font-medium text-gray-700 mb-2">Input Type</div>
+              <div class="block text-sm font-medium text-gray-700 mb-2">
+                Input Type
+              </div>
               <div class="flex gap-4">
                 <label class="flex items-center cursor-pointer">
                   <input
@@ -228,9 +240,9 @@
                 </label>
               </div>
               <p class="mt-1 text-xs text-gray-500">
-                {inputType === 'exclusive' 
-                  ? 'Values are exclusive regions (A=5, B=2, A&B=1 → total A=6, B=3)' 
-                  : 'Values are inclusive regions (A=6, B=3, A&B=1)'}
+                {inputType === "exclusive"
+                  ? "Values are exclusive regions (A=5, B=2, A&B=1 → total A=6, B=3)"
+                  : "Values are inclusive regions (A=6, B=3, A&B=1)"}
               </p>
             </div>
 
@@ -242,20 +254,24 @@
                   bind:checked={useInitialOnly}
                   class="mr-2"
                 />
-                <span class="text-sm font-medium text-gray-700">Use initial layout only (skip optimization)</span>
+                <span class="text-sm font-medium text-gray-700"
+                  >Use initial layout only (skip optimization)</span
+                >
               </label>
               <p class="mt-1 text-xs text-gray-500">
                 Shows MDS-based initial positions without final optimization
               </p>
             </div>
-            
+
             <div class="space-y-3">
-              <div class="grid grid-cols-12 gap-2 text-sm font-medium text-gray-700">
+              <div
+                class="grid grid-cols-12 gap-2 text-sm font-medium text-gray-700"
+              >
                 <div class="col-span-6">Input</div>
                 <div class="col-span-4">Size</div>
                 <div class="col-span-2"></div>
               </div>
-              
+
               {#each diagramRows as row, i}
                 <div class="grid grid-cols-12 gap-2">
                   <input
@@ -280,7 +296,7 @@
                   </button>
                 </div>
               {/each}
-              
+
               <button
                 onclick={() => addRow()}
                 class="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
@@ -289,23 +305,28 @@
               </button>
             </div>
           </div>
-          
+
           <!-- Debug Information -->
           {#if circles.length > 0}
             <div class="bg-white rounded-lg shadow p-6 mt-6">
               <h2 class="text-xl font-semibold mb-4">Debug Information</h2>
-              
+
               <div class="mb-4">
-                <div class="text-sm font-medium text-gray-700 mb-1">Loss: <span class="font-mono">{loss.toFixed(4)}</span></div>
+                <div class="text-sm font-medium text-gray-700 mb-1">
+                  Loss: <span class="font-mono">{loss.toFixed(4)}</span>
+                </div>
                 <div class="text-xs text-gray-500 mt-2">
-                  Target keys: {Object.keys(targetAreas).length} | 
-                  Fitted keys: {Object.keys(fittedAreas).length}
+                  Target keys: {Object.keys(targetAreas).length} | Fitted keys: {Object.keys(
+                    fittedAreas,
+                  ).length}
                 </div>
               </div>
-              
+
               <div class="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <h3 class="font-semibold text-gray-700 mb-2">Target (Disjoint)</h3>
+                  <h3 class="font-semibold text-gray-700 mb-2">
+                    Target (Disjoint)
+                  </h3>
                   <div class="space-y-1 font-mono text-xs">
                     {#if Object.keys(targetAreas).length === 0}
                       <div class="text-gray-400">No data</div>
@@ -319,9 +340,11 @@
                     {/if}
                   </div>
                 </div>
-                
+
                 <div>
-                  <h3 class="font-semibold text-gray-700 mb-2">Fitted (Disjoint)</h3>
+                  <h3 class="font-semibold text-gray-700 mb-2">
+                    Fitted (Disjoint)
+                  </h3>
                   <div class="space-y-1 font-mono text-xs">
                     {#if Object.keys(fittedAreas).length === 0}
                       <div class="text-gray-400">No data</div>
@@ -329,7 +352,11 @@
                       {#each Object.entries(fittedAreas).sort() as [combo, area]}
                         <div class="flex justify-between">
                           <span>{combo}:</span>
-                          <span class:text-red-600={Math.abs(area - (targetAreas[combo] || 0)) > 0.1}>
+                          <span
+                            class:text-red-600={Math.abs(
+                              area - (targetAreas[combo] || 0),
+                            ) > 0.1}
+                          >
                             {area.toFixed(3)}
                           </span>
                         </div>
@@ -341,12 +368,12 @@
             </div>
           {/if}
         </div>
-        
+
         <!-- Visualization -->
         <div class="lg:col-span-2">
           <div class="bg-white rounded-lg shadow p-6">
             <h2 class="text-xl font-semibold mb-4">Diagram</h2>
-            
+
             <svg
               {viewBox}
               class="w-full h-auto border border-gray-200 rounded"
@@ -359,7 +386,7 @@
                   cy={circle.y}
                   r={circle.radius}
                   fill={colors[i % colors.length]}
-                  stroke={colors[i % colors.length].replace('0.3', '1')}
+                  stroke={colors[i % colors.length].replace("0.3", "1")}
                   stroke-width={strokeWidth}
                 />
                 <text
