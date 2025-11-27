@@ -54,13 +54,18 @@ Pure Rust library with no platform-specific dependencies.
   - `input.rs`: Input type specification (disjoint vs union)
   - `spec_builder.rs`: DiagramSpecBuilder for fluent API
 - **`geometry/`**: Geometric primitives and operations
-  - `point.rs`: 2D point representation
-  - `line.rs`: Line representation
-  - `line_segment.rs`: Line segment representation
-  - `shapes.rs`: Shape trait definition with common operations (Area, Centroid,
-    Distance, Contains, Intersects, IntersectionArea, Perimeter, etc.)
-  - `shapes/`: Shape implementations (currently `circle.rs` and `rectangle.rs`)
+  - `primitives/`: Basic geometric elements
+    - `point.rs`: 2D point representation
+    - `line.rs`: Line representation
+  - `traits.rs`: Trait definitions for geometric capabilities
+    - Composable traits: `Distance`, `Area`, `Centroid`, `Perimeter`, `BoundingBox`
+    - `Closed`: Trait for closed shapes (bundles geometric properties + spatial relations)
+    - `DiagramShape`: Trait for shapes usable in diagrams (adds optimization methods)
+  - `shapes/`: Shape implementations
+    - `circle.rs`: Circle shape implementation
+    - `rectangle.rs`: Rectangle shape implementation (for bounding boxes)
   - `operations/`: Specialized geometric operations (currently `overlaps.rs`)
+  - `diagram.rs`: Diagram-specific logic (region discovery, area computation)
 - **`fitter/`**: Layout optimization
   - `layout.rs`: Layout representation (result of fitting)
   - `initial_layout.rs`: Initial layout computation
@@ -99,15 +104,15 @@ Interactive diagram viewer built with Svelte + TypeScript.
    - **Note**: Initial layout always uses circles, regardless of final shape type (this is what eulerr does)
 
 2. **Convert to Shape-Specific Parameters**:
-   - Initial circle parameters are converted to target shape parameters via `Shape::params_from_circle()`
+   - Initial circle parameters are converted to target shape parameters via `DiagramShape::params_from_circle()`
    - Circle: `[x, y, r]` → `[x, y, r]` (identity)
    - Ellipse (future): `[x, y, r]` → `[x, y, r, r, 0.0]` (semi-major=semi-minor=r, angle=0)
 
 3. **Final Optimization (shape-specific)**:
    - Optimizes actual shape parameters (not circles!)
-   - Uses `Shape::compute_exclusive_regions()` for exact area computation
+   - Uses `DiagramShape::compute_exclusive_regions()` for exact area computation
    - Minimizes loss function (currently region error) using argmin + Nelder-Mead
-   - Constructs final shapes via `Shape::from_params()`
+   - Constructs final shapes via `DiagramShape::from_params()`
 
 4. **Layout Finalization**:
    - Return fitted shapes with computed areas
@@ -157,10 +162,24 @@ Use the Rust 2018+ module system:
 src/
 ├── lib.rs
 ├── spec.rs              # Module definition
-├── spec/                # Submodules of diagram
+├── spec/                # Submodules of spec
 │   ├── spec_builder.rs
 │   ├── combination.rs
 │   └── input.rs
+├── geometry.rs          # Module definition
+├── geometry/            # Submodules of geometry
+│   ├── primitives.rs    # Primitives module definition
+│   ├── primitives/
+│   │   ├── point.rs
+│   │   └── line.rs
+│   ├── traits.rs        # All trait definitions
+│   ├── shapes.rs        # Shapes module definition
+│   ├── shapes/
+│   │   ├── circle.rs
+│   │   └── rectangle.rs
+│   ├── operations.rs
+│   ├── operations/
+│   └── diagram.rs
 ├── fitter.rs            # Module definition
 └── fitter/              # Submodules of fitter
     ├── initial_layout.rs
@@ -219,6 +238,12 @@ To add a new shape type (e.g., Ellipse):
 1. **Create module in `src/geometry/shapes/`**:
    ```rust
    // src/geometry/shapes/ellipse.rs
+   use crate::geometry::primitives::Point;
+   use crate::geometry::shapes::Rectangle;
+   use crate::geometry::traits::{
+       Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter,
+   };
+   
    pub struct Ellipse {
        center: Point,
        semi_major: f64,
@@ -227,27 +252,42 @@ To add a new shape type (e.g., Ellipse):
    }
    ```
 
-2. **Implement the `Shape` trait**:
+2. **Implement the component traits**:
    ```rust
-   impl Shape for Ellipse {
+   impl Area for Ellipse {
        fn area(&self) -> f64 { ... }
+   }
+   
+   impl Centroid for Ellipse {
+       fn centroid(&self) -> (f64, f64) { ... }
+   }
+   
+   impl Distance for Ellipse {
        fn distance(&self, other: &Self) -> f64 { ... }
+   }
+   
+   impl Perimeter for Ellipse {
+       fn perimeter(&self) -> f64 { ... }
+   }
+   
+   impl BoundingBox for Ellipse {
+       fn bounding_box(&self) -> Rectangle { ... }
+   }
+   
+   impl Closed for Ellipse {
        fn contains(&self, other: &Self) -> bool { ... }
+       fn contains_point(&self, point: &Point) -> bool { ... }
        fn intersects(&self, other: &Self) -> bool { ... }
        fn intersection_area(&self, other: &Self) -> f64 { ... }
        fn intersection_points(&self, other: &Self) -> Vec<Point> { ... }
-       fn centroid(&self) -> (f64, f64) { ... }
-       fn perimeter(&self) -> f64 { ... }
-       fn contains_point(&self, point: &Point) -> bool { ... }
-       fn bounding_box(&self) -> Rectangle { ... }
-       
-       // Exact area computation for multiple ellipses
+   }
+   
+   impl DiagramShape for Ellipse {
        fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
            // Implement exact ellipse intersection geometry
            // For 3+ ellipses, you may fall back to Monte Carlo
        }
        
-       // Parameter conversion
        fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
            vec![x, y, radius, radius, 0.0]  // a=b=r, angle=0 (circle is special ellipse)
        }

@@ -184,11 +184,20 @@ eunoia/
 │   │   │   │   └── input.rs
 │   │   │   ├── error.rs    # Error types
 │   │   │   ├── geometry.rs # Geometry module definition
-│   │   │   ├── geometry/   # Geometric primitives
-│   │   │   │   ├── point.rs
-│   │   │   │   ├── shapes.rs
-│   │   │   │   └── shapes/
-│   │   │   │       └── circle.rs
+│   │   │   ├── geometry/   # Geometric primitives and operations
+│   │   │   │   ├── primitives.rs    # Primitives module
+│   │   │   │   ├── primitives/
+│   │   │   │   │   ├── point.rs
+│   │   │   │   │   └── line.rs
+│   │   │   │   ├── traits.rs        # Trait definitions
+│   │   │   │   ├── shapes.rs        # Shapes module
+│   │   │   │   ├── shapes/
+│   │   │   │   │   ├── circle.rs
+│   │   │   │   │   └── rectangle.rs
+│   │   │   │   ├── operations.rs
+│   │   │   │   ├── operations/
+│   │   │   │   │   └── overlaps.rs
+│   │   │   │   └── diagram.rs
 │   │   │   ├── fitter.rs   # Fitter module definition
 │   │   │   └── fitter/     # Optimization algorithms
 │   │   │       ├── layout.rs
@@ -206,6 +215,19 @@ eunoia/
 We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of
 `module/mod.rs`).
 
+### Geometry Module Organization
+
+The geometry module is organized into clear sub-modules:
+
+- **`primitives/`**: Basic geometric elements (Point, Line)
+- **`traits.rs`**: All trait definitions
+  - Composable traits: `Distance`, `Area`, `Centroid`, `Perimeter`, `BoundingBox`
+  - `Closed`: Trait for closed shapes (spatial relations)
+  - `DiagramShape`: Trait for diagram shapes (adds optimization methods)
+- **`shapes/`**: Closed shape implementations (Circle, Rectangle)
+- **`operations/`**: Geometric algorithms
+- **`diagram.rs`**: Diagram-specific logic
+
 ### Working with the Workspace
 
 - **Build core library**: `cargo build` (default) or `cargo build -p eunoia`
@@ -219,12 +241,22 @@ We use the **Rust 2018+ module system** (`module.rs` + `module/` instead of
 
 We welcome contributions in these areas:
 
-- **New shapes**: Ellipse, rectangle, triangle implementations
+- **New shapes**: Ellipse, triangle implementations (see `.github/copilot-instructions.md` for trait system guide)
 - **Polygon utilities**: Shape conversion, intersection splitting
 - **Label placement**: Poles of inaccessibility, centroid calculations
 - **Documentation**: Examples, tutorials, API docs
-- **Tests**: Edge cases, property-based tests
+- **Tests**: Edge cases, property-based tests (consider using `proptest` crate)
 - **Performance**: Optimization, profiling
+
+### Implementing New Shapes
+
+When adding a new shape, you'll need to implement several traits:
+
+1. Component traits: `Area`, `Centroid`, `Distance`, `Perimeter`, `BoundingBox`
+2. `Closed` trait: Spatial relations (contains, intersects, intersection_area, etc.)
+3. `DiagramShape` trait: Diagram-specific methods (compute_exclusive_regions, parameter conversion)
+
+See `.github/copilot-instructions.md` for detailed examples.
 
 ## Getting Help
 
