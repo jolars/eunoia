@@ -19,12 +19,29 @@ use std::collections::HashMap;
 /// Fitter for creating diagram layouts from specifications.
 ///
 /// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
-/// Defaults to `Circle` for backward compatibility.
+/// The specification itself is shape-agnostic - the shape type is chosen here.
+///
+/// # Examples
+///
+/// ```
+/// use eunoia::{DiagramSpecBuilder, Fitter};
+/// use eunoia::geometry::shapes::Circle;
+///
+/// let spec = DiagramSpecBuilder::new()
+///     .set("A", 10.0)
+///     .set("B", 8.0)
+///     .build()
+///     .unwrap();
+///
+/// // Choose shape type when fitting
+/// let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
+/// ```
 pub struct Fitter<'a, S: DiagramShape = Circle> {
-    spec: &'a DiagramSpec<S>,
+    spec: &'a DiagramSpec,
     max_iterations: usize,
     seed: Option<u64>,
     loss_type: LossType,
+    _shape: std::marker::PhantomData<S>,
 }
 
 impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
@@ -34,22 +51,23 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
-    /// use eunoia::geometry::shapes::circle::Circle;
+    /// use eunoia::geometry::shapes::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::<Circle>::new()
+    /// let spec = DiagramSpecBuilder::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .build()
     ///     .unwrap();
     ///
-    /// let fitter = Fitter::new(&spec);
+    /// let fitter = Fitter::<Circle>::new(&spec);
     /// ```
-    pub fn new(spec: &'a DiagramSpec<S>) -> Self {
+    pub fn new(spec: &'a DiagramSpec) -> Self {
         Fitter {
             spec,
             max_iterations: 100,
             seed: None,
             loss_type: LossType::region_error(),
+            _shape: std::marker::PhantomData,
         }
     }
 
@@ -59,14 +77,14 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
-    /// use eunoia::geometry::shapes::circle::Circle;
+    /// use eunoia::geometry::shapes::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::<Circle>::new()
+    /// let spec = DiagramSpecBuilder::new()
     ///     .set("A", 10.0)
     ///     .build()
     ///     .unwrap();
     ///
-    /// let fitter = Fitter::new(&spec).max_iterations(500);
+    /// let fitter = Fitter::<Circle>::new(&spec).max_iterations(500);
     /// ```
     pub fn max_iterations(mut self, max: usize) -> Self {
         self.max_iterations = max;
@@ -79,15 +97,15 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
-    /// use eunoia::geometry::shapes::circle::Circle;
+    /// use eunoia::geometry::shapes::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::<Circle>::new()
+    /// let spec = DiagramSpecBuilder::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .build()
     ///     .unwrap();
     ///
-    /// let layout = Fitter::new(&spec).seed(42).fit().unwrap();
+    /// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
     /// ```
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
@@ -109,16 +127,16 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, Fitter};
-    /// use eunoia::geometry::shapes::circle::Circle;
+    /// use eunoia::geometry::shapes::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::<Circle>::new()
+    /// let spec = DiagramSpecBuilder::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .intersection(&["A", "B"], 2.0)
     ///     .build()
     ///     .unwrap();
     ///
-    /// let layout = Fitter::new(&spec).fit().unwrap();
+    /// let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
     /// println!("Loss: {}", layout.loss());
     /// ```
     pub fn fit(self) -> Result<Layout<S>, DiagramError> {
@@ -175,7 +193,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                 ..Default::default()
             };
 
-            final_layout::optimize_layout(&spec, &initial_positions, &initial_radii, config)
+            final_layout::optimize_layout::<S>(&spec, &initial_positions, &initial_radii, config)
                 .map_err(|e| {
                     DiagramError::InvalidCombination(format!("Optimization failed: {}", e))
                 })?
@@ -218,7 +236,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// This always uses circles for initial layout, regardless of final shape type.
     #[allow(clippy::needless_range_loop)]
     fn compute_optimal_distances(
-        spec: &crate::spec::PreprocessedSpec<S>,
+        spec: &crate::spec::PreprocessedSpec,
     ) -> Result<Vec<Vec<f64>>, DiagramError> {
         let n_sets = spec.n_sets;
         let mut optimal_distances = vec![vec![0.0; n_sets]; n_sets];
@@ -253,13 +271,13 @@ mod tests {
 
     #[test]
     fn test_fitter_basic() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .build()
             .unwrap();
 
-        let layout = Fitter::new(&spec).fit().unwrap();
+        let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 
         assert_eq!(layout.shapes().len(), 2);
         assert!(layout.loss() >= 0.0);
@@ -267,14 +285,14 @@ mod tests {
 
     #[test]
     fn test_fitter_with_intersection() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .intersection(&["A", "B"], 2.0)
             .build()
             .unwrap();
 
-        let layout = Fitter::new(&spec).fit().unwrap();
+        let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 
         assert_eq!(layout.shapes().len(), 2);
         assert_eq!(layout.requested().len(), 3); // A, B, A&B
@@ -282,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_russian_doll_initial_fit() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 1.0)
             .intersection(&["A", "B"], 1.0)
             .intersection(&["A", "B", "C"], 1.0)
@@ -290,7 +308,10 @@ mod tests {
             .build()
             .unwrap();
 
-        let layout = Fitter::new(&spec).seed(42).fit_initial_only().unwrap();
+        let layout = Fitter::<Circle>::new(&spec)
+            .seed(42)
+            .fit_initial_only()
+            .unwrap();
 
         println!("Initial layout loss: {}", layout.loss());
 
@@ -300,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_seed_reproducibility() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .intersection(&["A", "B"], 2.0)
@@ -308,8 +329,8 @@ mod tests {
             .unwrap();
 
         // Same seed should produce identical results
-        let layout1 = Fitter::new(&spec).seed(42).fit().unwrap();
-        let layout2 = Fitter::new(&spec).seed(42).fit().unwrap();
+        let layout1 = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let layout2 = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
 
         assert_eq!(layout1.loss(), layout2.loss());
 

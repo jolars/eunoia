@@ -12,16 +12,20 @@
 //! ## Example
 //!
 //! ```rust
-//! use eunoia::{DiagramSpecBuilder, InputType};
+//! use eunoia::{DiagramSpecBuilder, Fitter, InputType};
 //! use eunoia::geometry::shapes::Circle;
 //!
-//! let spec = DiagramSpecBuilder::<Circle>::new()
+//! // Build specification (shape-agnostic)
+//! let spec = DiagramSpecBuilder::new()
 //!     .set("A", 5.0)
 //!     .set("B", 2.0)
 //!     .intersection(&["A", "B"], 1.0)
 //!     .input_type(InputType::Exclusive)
 //!     .build()
 //!     .expect("Failed to build diagram specification");
+//!
+//! // Choose shape type when fitting
+//! let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 //! ```
 
 pub mod error;

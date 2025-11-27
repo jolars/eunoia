@@ -2,52 +2,50 @@
 
 use super::{Combination, DiagramSpec, InputType};
 use crate::error::DiagramError;
-use crate::geometry::shapes::Circle;
-use crate::geometry::traits::DiagramShape;
 use std::collections::{HashMap, HashSet};
-use std::marker::PhantomData;
 
 /// Builder for creating diagram specifications with a fluent API.
 ///
-/// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
-/// Defaults to `Circle` for backward compatibility.
+/// The specification is shape-agnostic - the shape type is determined when
+/// fitting the diagram using a `Fitter`, not when building the spec.
 ///
 /// # Examples
 ///
 /// ```
-/// use eunoia::{DiagramSpecBuilder, InputType};
-/// use eunoia::geometry::shapes::circle::Circle;
+/// use eunoia::{DiagramSpecBuilder, InputType, Fitter};
+/// use eunoia::geometry::shapes::Circle;
 ///
-/// let spec = DiagramSpecBuilder::<Circle>::new()
+/// let spec = DiagramSpecBuilder::new()
 ///     .set("A", 5.0)
 ///     .set("B", 2.0)
 ///     .intersection(&["A", "B"], 1.0)
 ///     .input_type(InputType::Exclusive)
 ///     .build()
 ///     .expect("Failed to build diagram specification");
+///
+/// // Shape type is chosen when fitting
+/// let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 /// ```
 #[derive(Debug)]
-pub struct DiagramSpecBuilder<S: DiagramShape = Circle> {
+pub struct DiagramSpecBuilder {
     combinations: HashMap<Combination, f64>,
     input_type: Option<InputType>,
     set_order: Vec<String>,
-    _shape: PhantomData<S>,
 }
 
-impl<S: DiagramShape> Default for DiagramSpecBuilder<S> {
+impl Default for DiagramSpecBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<S: DiagramShape> DiagramSpecBuilder<S> {
+impl DiagramSpecBuilder {
     /// Creates a new diagram builder.
     pub fn new() -> Self {
         DiagramSpecBuilder {
             combinations: HashMap::new(),
             input_type: None,
             set_order: Vec::new(),
-            _shape: PhantomData,
         }
     }
 
@@ -62,9 +60,9 @@ impl<S: DiagramShape> DiagramSpecBuilder<S> {
     ///
     /// ```
     /// use eunoia::DiagramSpecBuilder;
-    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let builder = DiagramSpecBuilder::<Circle>::new()
+    ///
+    /// let builder = DiagramSpecBuilder::new()
     ///     .set("A", 10.0);
     /// ```
     pub fn set(mut self, name: impl Into<String>, value: f64) -> Self {
@@ -89,9 +87,9 @@ impl<S: DiagramShape> DiagramSpecBuilder<S> {
     ///
     /// ```
     /// use eunoia::DiagramSpecBuilder;
-    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let builder = DiagramSpecBuilder::<Circle>::new()
+    ///
+    /// let builder = DiagramSpecBuilder::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
     ///     .intersection(&["A", "B"], 2.0);
@@ -112,9 +110,9 @@ impl<S: DiagramShape> DiagramSpecBuilder<S> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, InputType};
-    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let builder = DiagramSpecBuilder::<Circle>::new()
+    ///
+    /// let builder = DiagramSpecBuilder::new()
     ///     .input_type(InputType::Exclusive);
     /// ```
     pub fn input_type(mut self, input_type: InputType) -> Self {
@@ -135,16 +133,16 @@ impl<S: DiagramShape> DiagramSpecBuilder<S> {
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, InputType};
-    /// use eunoia::geometry::shapes::circle::Circle;
     ///
-    /// let spec = DiagramSpecBuilder::<Circle>::new()
+    ///
+    /// let spec = DiagramSpecBuilder::new()
     ///     .set("A", 5.0)
     ///     .set("B", 2.0)
     ///     .intersection(&["A", "B"], 1.0)
     ///     .build()
     ///     .expect("Failed to build diagram specification");
     /// ```
-    pub fn build(self) -> Result<DiagramSpec<S>, DiagramError> {
+    pub fn build(self) -> Result<DiagramSpec, DiagramError> {
         // Check that we have at least one set
         if self.combinations.is_empty() {
             return Err(DiagramError::EmptySets);
@@ -205,12 +203,12 @@ impl<S: DiagramShape> DiagramSpecBuilder<S> {
         let (exclusive_areas, inclusive_areas) = match input_type {
             InputType::Exclusive => {
                 let exclusive = combinations;
-                let inclusive = DiagramSpec::<S>::exclusive_to_inclusive_static(&exclusive)?;
+                let inclusive = DiagramSpec::exclusive_to_inclusive_static(&exclusive)?;
                 (exclusive, inclusive)
             }
             InputType::Inclusive => {
                 let inclusive = combinations;
-                let exclusive = DiagramSpec::<S>::inclusive_to_exclusive_static(&inclusive)?;
+                let exclusive = DiagramSpec::inclusive_to_exclusive_static(&inclusive)?;
                 (exclusive, inclusive)
             }
         };
@@ -220,7 +218,6 @@ impl<S: DiagramShape> DiagramSpecBuilder<S> {
             inclusive_areas,
             input_type,
             set_names: ordered_set_names,
-            _shape: PhantomData,
         })
     }
 }
@@ -231,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_builder_simple() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .build()
@@ -248,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_intersection() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .intersection(&["A", "B"], 1.0)
@@ -265,7 +262,7 @@ mod tests {
     fn test_builder_implicit_zero_set() {
         // When a set is referenced in an intersection but not defined as a single set,
         // it should be implicitly added with value 0.0
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("B", 5.0)
             .intersection(&["A", "B"], 1.0)
             .input_type(InputType::Exclusive)
@@ -284,7 +281,7 @@ mod tests {
     fn test_contained_set_exclusive() {
         // Test case: A=0, B=5, A&B=1 (exclusive)
         // This means A is entirely contained within B
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 0.0)
             .set("B", 5.0)
             .intersection(&["A", "B"], 1.0)
@@ -313,7 +310,7 @@ mod tests {
     fn test_implicit_set_from_three_way() {
         // Test case: A=0, B=5, A&B=1, A&B&C=0.1 (disjoint)
         // Set C is only referenced in the 3-way intersection
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 0.0)
             .set("B", 5.0)
             .intersection(&["A", "B"], 1.0)
@@ -339,7 +336,7 @@ mod tests {
     fn test_nested_containment() {
         // Test case: B=5, A&B=2, A&B&C=1 (disjoint)
         // A is contained in B, and C is contained in A&B
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("B", 5.0)
             .intersection(&["A", "B"], 2.0)
             .intersection(&["A", "B", "C"], 1.0)
@@ -371,20 +368,20 @@ mod tests {
 
     #[test]
     fn test_builder_negative_value_error() {
-        let result = DiagramSpecBuilder::<Circle>::new().set("A", -5.0).build();
+        let result = DiagramSpecBuilder::new().set("A", -5.0).build();
 
         assert!(matches!(result, Err(DiagramError::InvalidValue { .. })));
     }
 
     #[test]
     fn test_builder_empty_error() {
-        let result = DiagramSpecBuilder::<Circle>::new().build();
+        let result = DiagramSpecBuilder::new().build();
         assert!(matches!(result, Err(DiagramError::EmptySets)));
     }
 
     #[test]
     fn test_three_way_intersection() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .set("C", 12.0)
@@ -402,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_get_combination() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .set("B", 2.0)
             .intersection(&["A", "B"], 1.0)

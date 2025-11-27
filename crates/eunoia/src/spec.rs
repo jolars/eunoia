@@ -12,10 +12,7 @@ pub use combination::Combination;
 pub use input::InputType;
 pub use spec_builder::DiagramSpecBuilder;
 
-use crate::geometry::shapes::Circle;
-use crate::geometry::traits::DiagramShape;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 
 /// Represents a complete Euler or Venn diagram specification.
 ///
@@ -25,10 +22,10 @@ use std::marker::PhantomData;
 ///
 /// Both exclusive and inclusive representations are stored for efficient access.
 ///
-/// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
-/// Defaults to `Circle` for backward compatibility.
+/// The diagram specification is shape-agnostic - the shape type is determined
+/// when fitting the diagram, not when building the specification.
 #[derive(Debug, Clone)]
-pub struct DiagramSpec<S: DiagramShape = Circle> {
+pub struct DiagramSpec {
     /// Exclusive areas (unique parts of each combination)
     pub(crate) exclusive_areas: HashMap<Combination, f64>,
 
@@ -40,12 +37,9 @@ pub struct DiagramSpec<S: DiagramShape = Circle> {
 
     /// Set of all unique set names in the diagram (ordered).
     pub(crate) set_names: Vec<String>,
-
-    /// Marker for shape type (zero-sized)
-    _shape: PhantomData<S>,
 }
 
-impl<S: DiagramShape> DiagramSpec<S> {
+impl DiagramSpec {
     /// Returns the input type for this diagram specification.
     pub fn input_type(&self) -> InputType {
         self.input_type
@@ -82,7 +76,7 @@ impl<S: DiagramShape> DiagramSpec<S> {
     /// 1. Removes empty sets (area < ε)
     /// 2. Removes combinations containing empty sets
     /// 3. Computes pairwise relationships (subset, disjoint)
-    pub(crate) fn preprocess(&self) -> Result<PreprocessedSpec<S>, DiagramError> {
+    pub(crate) fn preprocess(&self) -> Result<PreprocessedSpec, DiagramError> {
         const EPSILON: f64 = 1e-10; // sqrt of machine epsilon
 
         // 1. Find empty sets (use inclusive areas to determine empty sets)
@@ -176,7 +170,6 @@ impl<S: DiagramShape> DiagramSpec<S> {
             n_sets,
             set_areas,
             relationships,
-            _shape: PhantomData,
         })
     }
 
@@ -319,7 +312,7 @@ impl<S: DiagramShape> DiagramSpec<S> {
 /// This is created by filtering out empty sets from a DiagramSpec and
 /// computing additional metadata needed for optimization.
 #[allow(dead_code)] // Some fields reserved for future use
-pub(crate) struct PreprocessedSpec<S: DiagramShape = Circle> {
+pub(crate) struct PreprocessedSpec {
     /// Non-empty set names in canonical order
     pub(crate) set_names: Vec<String>,
 
@@ -340,9 +333,6 @@ pub(crate) struct PreprocessedSpec<S: DiagramShape = Circle> {
 
     /// Pairwise relationships
     pub(crate) relationships: PairwiseRelations,
-
-    /// Marker for shape type (zero-sized)
-    _shape: PhantomData<S>,
 }
 
 /// Pairwise relationships between sets (internal).
@@ -387,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_both_representations_available() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 10.0)
             .set("B", 8.0)
             .intersection(&["A", "B"], 2.0)
@@ -414,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_exclusive_input() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0) // exclusive A-only
             .set("B", 2.0) // exclusive B-only
             .intersection(&["A", "B"], 1.0) // exclusive overlap

@@ -40,7 +40,7 @@ impl Default for FinalLayoutConfig {
 ///
 /// Returns the optimized parameters as a flat vector along with the loss.
 pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
-    spec: &PreprocessedSpec<S>,
+    spec: &PreprocessedSpec,
     initial_positions: &[f64], // [x0, y0, x1, y1, ..., xn, yn]
     initial_radii: &[f64],     // [r0, r1, ..., rn]
     config: FinalLayoutConfig,
@@ -62,10 +62,11 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     // Create loss function from config
     let loss_fn = config.loss_type.create();
 
-    let cost_function = DiagramCost {
+    let cost_function = DiagramCost::<S> {
         spec,
         loss_fn,
         params_per_shape,
+        _shape: std::marker::PhantomData,
     };
 
     // NelderMead Takes a vector of parameter vectors. The number of parameter vectors must be n +
@@ -104,9 +105,10 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
 ///
 /// Computes the discrepancy between target exclusive areas and actual fitted areas.
 struct DiagramCost<'a, S: DiagramShape + Copy + 'static> {
-    spec: &'a PreprocessedSpec<S>,
+    spec: &'a PreprocessedSpec,
     loss_fn: Box<dyn crate::loss::LossFunction>,
     params_per_shape: usize,
+    _shape: std::marker::PhantomData<S>,
 }
 
 impl<'a, S: DiagramShape + Copy + 'static> DiagramCost<'a, S> {
@@ -199,7 +201,7 @@ mod tests {
         pub fn create_spec_from_exclusive(
             exclusive_areas: HashMap<Combination, f64>,
         ) -> DiagramSpec {
-            let mut builder = DiagramSpecBuilder::<Circle>::new();
+            let mut builder = DiagramSpecBuilder::new();
 
             // Add all single sets
             for (combo, &area) in &exclusive_areas {
@@ -225,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_optimize_layout_simple() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 3.0)
             .set("B", 4.0)
             .intersection(&["A", "B"], 1.0)
@@ -247,7 +249,7 @@ mod tests {
             tolerance: 1e-4,
         };
 
-        let result = optimize_layout(&preprocessed, &positions, &radii, config);
+        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
         assert!(result.is_ok());
 
         let (final_params, loss) = result.unwrap();
@@ -262,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_cost_function_computes() {
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)
             .set("B", 5.0)
             .intersection(&["A", "B"], 2.0)
@@ -272,10 +274,11 @@ mod tests {
         let preprocessed = spec.preprocess().unwrap();
 
         let loss_fn = crate::loss::LossType::region_error().create();
-        let cost_fn = DiagramCost {
+        let cost_fn = DiagramCost::<Circle> {
             spec: &preprocessed,
             loss_fn,
             params_per_shape: Circle::n_params(),
+            _shape: std::marker::PhantomData,
         };
 
         // Create parameter vector
@@ -332,7 +335,7 @@ mod tests {
             tolerance: 1e-6,
         };
 
-        let result = optimize_layout(&preprocessed, &positions, &radii, config);
+        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
         assert!(result.is_ok());
 
         let (_, loss) = result.unwrap();
@@ -391,7 +394,7 @@ mod tests {
             tolerance: 1e-6,
         };
 
-        let result = optimize_layout(&preprocessed, &positions, &radii, config);
+        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
         assert!(result.is_ok());
 
         let (final_pos, loss) = result.unwrap();
@@ -451,7 +454,7 @@ mod tests {
                 tolerance: 1e-6,
             };
 
-            let result = optimize_layout(&preprocessed, &positions, &radii, config);
+            let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
             assert!(result.is_ok(), "Optimization failed for config {}", i);
 
             let (_, loss) = result.unwrap();

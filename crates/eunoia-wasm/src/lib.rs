@@ -149,7 +149,7 @@ pub fn generate_from_spec(
     };
 
     // Build diagram spec using DiagramSpecBuilder
-    let mut builder = DiagramSpecBuilder::<Circle>::new();
+    let mut builder = DiagramSpecBuilder::new();
 
     for spec in &specs {
         let input = spec.input.trim();
@@ -178,7 +178,7 @@ pub fn generate_from_spec(
         .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
 
     // Fit the diagram using circles
-    let fitter = Fitter::new(&diagram_spec);
+    let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
@@ -224,7 +224,7 @@ pub fn generate_from_spec_with_debug(
     };
 
     // Build diagram spec using DiagramSpecBuilder
-    let mut builder = DiagramSpecBuilder::<Circle>::new();
+    let mut builder = DiagramSpecBuilder::new();
 
     for spec in &specs {
         let input = spec.input.trim();
@@ -253,7 +253,7 @@ pub fn generate_from_spec_with_debug(
         .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
 
     // Fit the diagram using circles
-    let fitter = Fitter::new(&diagram_spec);
+    let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
@@ -324,7 +324,7 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
     };
 
     web_sys::console::log_1(&"[Rust] Building spec...".into());
-    let mut builder = DiagramSpecBuilder::<Circle>::new();
+    let mut builder = DiagramSpecBuilder::new();
     for spec in &specs {
         let input = spec.input.trim();
         let size = spec.size;
@@ -346,7 +346,7 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
     web_sys::console::log_1(&"[Rust] Fitting...".into());
-    let fitter = Fitter::new(&diagram_spec);
+    let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
@@ -397,7 +397,7 @@ pub fn get_debug_info_simple(
         _ => return Err(JsValue::from_str("Invalid input type")),
     };
 
-    let mut builder = DiagramSpecBuilder::<Circle>::new();
+    let mut builder = DiagramSpecBuilder::new();
     for (input, size) in inputs.iter().zip(sizes.iter()) {
         if input.trim().is_empty() || *size < 0.0 {
             continue;
@@ -414,7 +414,7 @@ pub fn get_debug_info_simple(
         .input_type(input_type_enum)
         .build()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
-    let fitter = Fitter::new(&diagram_spec);
+    let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
@@ -466,7 +466,7 @@ pub fn generate_from_spec_initial(
     };
 
     // Build diagram spec
-    let mut builder = DiagramSpecBuilder::<Circle>::new();
+    let mut builder = DiagramSpecBuilder::new();
 
     for spec in &specs {
         let input = spec.input.trim();
@@ -491,7 +491,7 @@ pub fn generate_from_spec_initial(
         .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
 
     // Fit using initial layout only
-    let fitter = Fitter::new(&diagram_spec);
+    let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit_initial_only()
         .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
@@ -532,7 +532,7 @@ pub fn get_debug_info_initial(
         _ => return Err(JsValue::from_str("Invalid input type")),
     };
 
-    let mut builder = DiagramSpecBuilder::<Circle>::new();
+    let mut builder = DiagramSpecBuilder::new();
     for (input, size) in inputs.iter().zip(sizes.iter()) {
         if input.trim().is_empty() || *size < 0.0 {
             continue;
@@ -549,7 +549,7 @@ pub fn get_debug_info_initial(
         .input_type(input_type_enum)
         .build()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
-    let fitter = Fitter::new(&diagram_spec);
+    let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit_initial_only()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;

@@ -38,7 +38,7 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     pub(crate) fn new(
         shapes: Vec<S>,
         set_to_shape: HashMap<String, usize>,
-        spec: &DiagramSpec<S>,
+        spec: &DiagramSpec,
         iterations: usize,
     ) -> Self {
         let requested = spec.exclusive_areas().clone();
@@ -96,7 +96,7 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     }
 
     /// Compute all combination areas from current shapes.
-    fn compute_fitted_areas(shapes: &[S], spec: &DiagramSpec<S>) -> HashMap<Combination, f64> {
+    fn compute_fitted_areas(shapes: &[S], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();
 
         // Check if S is Circle at runtime using type introspection
@@ -135,7 +135,7 @@ mod tests {
     fn test_layout_creation() {
         use crate::geometry::primitives::Point;
 
-        let spec = DiagramSpecBuilder::<Circle>::new()
+        let spec = DiagramSpecBuilder::new()
             .set("A", std::f64::consts::PI)
             .build()
             .unwrap();
@@ -154,10 +154,7 @@ mod tests {
     fn test_shape_for_set() {
         use crate::geometry::primitives::Point;
 
-        let spec = DiagramSpecBuilder::<Circle>::new()
-            .set("A", 10.0)
-            .build()
-            .unwrap();
+        let spec = DiagramSpecBuilder::new().set("A", 10.0).build().unwrap();
 
         let shapes = vec![Circle::new(Point::new(1.0, 2.0), 3.0)];
         let mut set_to_shape = HashMap::new();
