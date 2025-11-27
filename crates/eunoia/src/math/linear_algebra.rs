@@ -24,6 +24,8 @@
 //! Key property: `A × adj(A) = det(A) × I`, therefore `A^(-1) = adj(A) / det(A)`
 
 use nalgebra::Matrix3;
+use nalgebra::Vector3;
+use num_complex::Complex64;
 
 /// Extension trait for `nalgebra::Matrix3`.
 ///
@@ -76,38 +78,6 @@ pub trait Matrix3Ext {
     /// let det = m.determinant();
     /// ```
     fn adjugate(&self) -> Matrix3<f64>;
-
-    /// Constructs a skew-symmetric matrix from a 3D vector.
-    ///
-    /// For a vector v = [x, y, z], the skew-symmetric matrix is:
-    /// ```text
-    /// ┌            ┐
-    /// │  0  -z   y │
-    /// │  z   0  -x │
-    /// │ -y   x   0 │
-    /// └            ┘
-    /// ```
-    ///
-    /// # Properties
-    ///
-    /// - The matrix satisfies: S^T = -S (antisymmetric)
-    /// - For any vector w: S × w = v × w (cross product)
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::math::linear_algebra::Matrix3Ext;
-    /// use nalgebra::{Matrix3, Vector3};
-    ///
-    /// let v = Vector3::new(1.0, 2.0, 3.0);
-    /// let skew = Matrix3::<f64>::skew_symmetric(&v);
-    ///
-    /// // Verify it's skew-symmetric: S^T = -S
-    /// assert_eq!(skew.transpose(), -skew);
-    /// ```
-    fn skew_symmetric(v: &nalgebra::Vector3<f64>) -> Matrix3<f64> {
-        Matrix3::new(0.0, -v[2], v[1], v[2], 0.0, -v[0], -v[1], v[0], 0.0)
-    }
 }
 
 impl Matrix3Ext for Matrix3<f64> {
@@ -137,6 +107,38 @@ impl Matrix3Ext for Matrix3<f64> {
 
     fn adjugate(&self) -> Matrix3<f64> {
         self.cofactor_matrix().transpose()
+    }
+}
+
+/// Generic extension trait for Vector3
+pub trait Vector3Ext {
+    type Output;
+    fn skew_symmetric_matrix(&self) -> Self::Output;
+}
+
+impl Vector3Ext for Vector3<f64> {
+    type Output = Matrix3<f64>;
+    fn skew_symmetric_matrix(&self) -> Matrix3<f64> {
+        Matrix3::new(
+            0.0, -self[2], self[1], self[2], 0.0, -self[0], -self[1], self[0], 0.0,
+        )
+    }
+}
+
+impl Vector3Ext for Vector3<Complex64> {
+    type Output = Matrix3<Complex64>;
+    fn skew_symmetric_matrix(&self) -> Matrix3<Complex64> {
+        Matrix3::new(
+            Complex64::new(0.0, 0.0),
+            -self[2],
+            self[1],
+            self[2],
+            Complex64::new(0.0, 0.0),
+            -self[0],
+            -self[1],
+            self[0],
+            Complex64::new(0.0, 0.0),
+        )
     }
 }
 
@@ -268,7 +270,7 @@ mod tests {
         use nalgebra::Vector3;
 
         let v = Vector3::new(1.0, 2.0, 3.0);
-        let skew = Matrix3::skew_symmetric(&v);
+        let skew = v.skew_symmetric_matrix();
 
         // Verify the structure
         let expected = Matrix3::new(0.0, -3.0, 2.0, 3.0, 0.0, -1.0, -2.0, 1.0, 0.0);
