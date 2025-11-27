@@ -13,6 +13,7 @@ categories = ["graphics", "visualization", "mathematics"]
 argmin = "0.11.0"
 argmin-math = { version = "0.5.1", features = ["nalgebra_latest"] }
 nalgebra = "0.34.1"
+num-complex = "0.4"
 rand = "0.9"
 
 [features]

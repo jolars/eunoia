@@ -91,6 +91,7 @@ dependencies = [
  "argmin",
  "argmin-math",
  "nalgebra",
+ "num-complex",
  "rand",
 ]
 
