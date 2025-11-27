@@ -127,10 +127,7 @@ impl BoundingBox for Ellipse {
                 .sqrt();
 
         Rectangle::new(
-            Point::new(
-                self.center.x() - width / 2.0,
-                self.center.y() - height / 2.0,
-            ),
+            self.center,
             width,
             height,
         )
