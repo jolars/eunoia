@@ -1,5 +1,7 @@
 # Eunoia - Copilot Instructions
 
+**IMPORTANT**: When making changes that affect the architecture, API, or patterns described in this file, **always update this file** to reflect those changes. This file should always represent the current state of the project.
+
 ## Project Overview
 
 Eunoia is a Rust library for creating Euler and Venn diagrams using various
@@ -355,6 +357,42 @@ The entire optimization pipeline is **shape-generic** - no changes needed to fit
   - `compute_layout(n_sets: usize)`: Generate circular arrangement
 - Web app uses reactive Svelte components for real-time updates
 
+## API Design
+
+### Shape-Agnostic Specifications
+
+The API is designed with a clear separation of concerns:
+
+```rust
+use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+use eunoia::geometry::shapes::Circle;
+
+// 1. Build specification (shape-agnostic)
+let spec = DiagramSpecBuilder::new()
+    .set("A", 5.0)
+    .set("B", 2.0)
+    .intersection(&["A", "B"], 1.0)
+    .input_type(InputType::Exclusive)
+    .build()
+    .unwrap();
+
+// 2. Choose shape type when fitting
+let layout = Fitter::<Circle>::new(&spec)
+    .seed(42)
+    .fit()
+    .unwrap();
+
+// 3. Easy to try different shapes with same spec
+// let layout = Fitter::<Ellipse>::new(&spec).fit().unwrap();
+```
+
+**Key points:**
+- `DiagramSpec` is shape-agnostic (no type parameter)
+- `DiagramSpecBuilder` is shape-agnostic (no type parameter)
+- `Fitter<S>` has the shape type parameter - this is where you choose the shape
+- `Layout<S>` contains the fitted shapes (has type parameter)
+- This allows reusing the same specification with different shape types
+
 ## Current Status
 
 - ✅ Cargo workspace with separate crates for core and WASM
@@ -369,8 +407,10 @@ The entire optimization pipeline is **shape-generic** - no changes needed to fit
   - `params_from_circle()` - Convert initial circle params to shape params
   - `n_params()` - Number of parameters per shape
   - `from_params()` - Construct shape from parameters
-- ✅ DiagramSpecBuilder with fluent API for input (generic over shape type)
+- ✅ DiagramSpecBuilder with fluent API for input (shape-agnostic)
 - ✅ **Shape-generic fitter with two-phase optimization**
+  - Specification is shape-agnostic (no type parameter on DiagramSpec)
+  - Shape type is chosen when creating Fitter (`Fitter::<Circle>::new(&spec)`)
   - Initial layout: MDS with circles (always uses circles)
   - Final optimization: Shape-specific parameter optimization
 - ✅ Region error loss function with sparse region discovery
