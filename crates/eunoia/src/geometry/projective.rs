@@ -13,6 +13,9 @@
 //! Similarly, lines are represented as [a, b, c] where points [x, y, w] on the line
 //! satisfy ax + by + cw = 0.
 //!
+//! Conic sections (circles, ellipses, parabolas, hyperbolas) are represented by
+//! 3×3 symmetric matrices C where points on the conic satisfy pᵀCp = 0.
+//!
 //! # Use Cases
 //!
 //! - **Ellipse intersection**: Computing intersection points of two ellipses using
@@ -20,8 +23,10 @@
 //! - **Degeneracies**: Handling tangent cases and points at infinity gracefully
 //! - **Transformations**: Projective transformations unify affine and perspective operations
 
+pub mod conic;
 pub mod line;
 pub mod point;
 
+pub use conic::Conic;
 pub use line::HomogeneousLine;
 pub use point::HomogeneousPoint;
