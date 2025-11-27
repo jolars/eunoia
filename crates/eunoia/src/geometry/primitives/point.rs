@@ -1,5 +1,7 @@
 //! 2D point representation.
 
+use crate::geometry::traits::Distance;
+
 /// A point in 2D Cartesian space.
 ///
 /// `Point` represents a location using x and y coordinates. It is used as the
@@ -8,7 +10,7 @@
 /// # Examples
 ///
 /// ```
-/// use eunoia::geometry::point::Point;
+/// use eunoia::geometry::primitives::Point;
 ///
 /// let origin = Point::new(0.0, 0.0);
 /// let point = Point::new(3.0, 4.0);
@@ -32,7 +34,7 @@ impl Point {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::point::Point;
+    /// use eunoia::geometry::primitives::Point;
     ///
     /// let point = Point::new(1.5, 2.5);
     /// ```
@@ -114,6 +116,12 @@ impl Point {
     }
 
     pub const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
+}
+
+impl Distance for Point {
+    fn distance(&self, other: &Self) -> f64 {
+        (self.x - other.x).hypot(self.y - other.y)
+    }
 }
 
 /// Centroid of a set of points.

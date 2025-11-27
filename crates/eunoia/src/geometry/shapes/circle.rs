@@ -1,10 +1,12 @@
 //! Circle shape implementation.
 
 use crate::geometry::diagram::IntersectionPoint;
-use crate::geometry::point;
-use crate::geometry::point::Point;
-use crate::geometry::rectangle::Rectangle;
-use crate::geometry::shapes::Shape;
+use crate::geometry::primitives::point;
+use crate::geometry::primitives::Point;
+use crate::geometry::shapes::Rectangle;
+use crate::geometry::traits::{
+    Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter,
+};
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::brent::BrentOpt;
 
@@ -17,9 +19,9 @@ use argmin::solver::brent::BrentOpt;
 /// # Examples
 ///
 /// ```
-/// use eunoia::geometry::shapes::circle::Circle;
-/// use eunoia::geometry::shapes::Shape;
-/// use eunoia::geometry::point::Point;
+/// use eunoia::geometry::shapes::Circle;
+/// use eunoia::geometry::traits::{Area, Closed};
+/// use eunoia::geometry::primitives::Point;
 ///
 /// let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
 /// let c2 = Circle::new(Point::new(3.0, 0.0), 1.0);
@@ -33,16 +35,20 @@ pub struct Circle {
     radius: f64,
 }
 
-impl Shape for Circle {
+impl Area for Circle {
     /// Computes the area of the circle using the formula A = πr².
     fn area(&self) -> f64 {
         std::f64::consts::PI * self.radius * self.radius
     }
+}
 
+impl Centroid for Circle {
     fn centroid(&self) -> (f64, f64) {
         (self.center.x(), self.center.y())
     }
+}
 
+impl Distance for Circle {
     /// Computes the minimum distance between the boundaries of two circles.
     ///
     /// Returns 0.0 if the circles overlap or touch.
@@ -56,10 +62,33 @@ impl Shape for Circle {
             0.0
         }
     }
+}
 
+impl Perimeter for Circle {
+    /// Compute the perimeter of the circle.
+    fn perimeter(&self) -> f64 {
+        2.0 * std::f64::consts::PI * self.radius
+    }
+}
+
+impl BoundingBox for Circle {
+    fn bounding_box(&self) -> Rectangle {
+        let width = 2.0 * self.radius;
+        let height = 2.0 * self.radius;
+
+        Rectangle::new(self.center, width, height)
+    }
+}
+
+impl Closed for Circle {
     fn contains(&self, other: &Self) -> bool {
         let center_distance = self.center.distance(&other.center);
         center_distance + other.radius <= self.radius
+    }
+
+    fn contains_point(&self, point: &Point) -> bool {
+        let dist = self.center.distance(point);
+        dist <= self.radius
     }
 
     /// Checks if two circles intersect (share any common points).
@@ -70,16 +99,6 @@ impl Shape for Circle {
     fn intersects(&self, other: &Self) -> bool {
         let center_distance = self.center.distance(&other.center);
         center_distance >= self.radius + other.radius
-    }
-
-    fn contains_point(&self, point: &Point) -> bool {
-        let dist = self.center.distance(point);
-        dist <= self.radius
-    }
-
-    /// Compute the perimeter of the circle.
-    fn perimeter(&self) -> f64 {
-        2.0 * std::f64::consts::PI * self.radius
     }
 
     /// Computes the area of intersection between two circles.
@@ -143,14 +162,9 @@ impl Shape for Circle {
             vec![intersection1, intersection2]
         }
     }
+}
 
-    fn bounding_box(&self) -> Rectangle {
-        let width = 2.0 * self.radius;
-        let height = 2.0 * self.radius;
-
-        Rectangle::new(self.center, width, height)
-    }
-
+impl DiagramShape for Circle {
     fn compute_exclusive_regions(
         shapes: &[Self],
     ) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64> {
@@ -207,8 +221,8 @@ impl Circle {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::shapes::circle::Circle;
-    /// use eunoia::geometry::point::Point;
+    /// use eunoia::geometry::shapes::Circle;
+    /// use eunoia::geometry::primitives::Point;
     ///
     /// let circle = Circle::new(Point::new(1.0, 2.0), 3.0);
     /// ```

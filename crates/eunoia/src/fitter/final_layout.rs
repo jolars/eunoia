@@ -8,7 +8,7 @@ use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::neldermead::NelderMead;
 use nalgebra::DVector;
 
-use crate::geometry::shapes::Shape;
+use crate::geometry::traits::DiagramShape;
 use crate::spec::PreprocessedSpec;
 
 /// Configuration for final layout optimization.
@@ -39,7 +39,7 @@ impl Default for FinalLayoutConfig {
 /// to shape-specific parameters, then optimizes those parameters.
 ///
 /// Returns the optimized parameters as a flat vector along with the loss.
-pub(crate) fn optimize_layout<S: Shape + Copy + 'static>(
+pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec<S>,
     initial_positions: &[f64], // [x0, y0, x1, y1, ..., xn, yn]
     initial_radii: &[f64],     // [r0, r1, ..., rn]
@@ -103,13 +103,13 @@ pub(crate) fn optimize_layout<S: Shape + Copy + 'static>(
 /// Cost function for region error optimization.
 ///
 /// Computes the discrepancy between target exclusive areas and actual fitted areas.
-struct DiagramCost<'a, S: Shape + Copy + 'static> {
+struct DiagramCost<'a, S: DiagramShape + Copy + 'static> {
     spec: &'a PreprocessedSpec<S>,
     loss_fn: Box<dyn crate::loss::LossFunction>,
     params_per_shape: usize,
 }
 
-impl<'a, S: Shape + Copy + 'static> DiagramCost<'a, S> {
+impl<'a, S: DiagramShape + Copy + 'static> DiagramCost<'a, S> {
     /// Extract shapes from parameter vector.
     fn params_to_shapes(&self, params: &DVector<f64>) -> Vec<S> {
         let n_sets = self.spec.n_sets;
@@ -124,7 +124,7 @@ impl<'a, S: Shape + Copy + 'static> DiagramCost<'a, S> {
     }
 }
 
-impl<'a, S: Shape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
+impl<'a, S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
     type Param = DVector<f64>;
     type Output = f64;
 
@@ -147,8 +147,8 @@ impl<'a, S: Shape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
 mod tests {
     use super::*;
     use crate::geometry::diagram;
-    use crate::geometry::point::Point;
-    use crate::geometry::shapes::circle::Circle;
+    use crate::geometry::primitives::Point;
+    use crate::geometry::shapes::Circle;
     use crate::spec::{DiagramSpec, DiagramSpecBuilder};
 
     /// Test helper utilities for final layout testing

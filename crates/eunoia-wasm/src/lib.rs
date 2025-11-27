@@ -4,7 +4,7 @@
 //! enabling Euler and Venn diagram generation in web browsers.
 
 use eunoia::geometry::diagram;
-use eunoia::geometry::shapes::circle::Circle;
+use eunoia::geometry::shapes::Circle;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -188,12 +188,12 @@ pub fn generate_from_spec(
         .set_names()
         .iter()
         .filter_map(|name| {
-            layout.shape_for_set(name).map(|shape| {
+            layout.shape_for_set(name).map(|shape: &Circle| {
                 WasmCircle::new(
                     shape.center().x(),
                     shape.center().y(),
                     shape.radius(),
-                    name.clone(),
+                    name.to_string(),
                 )
             })
         })
@@ -263,12 +263,12 @@ pub fn generate_from_spec_with_debug(
         .set_names()
         .iter()
         .filter_map(|name| {
-            layout.shape_for_set(name).map(|shape| {
+            layout.shape_for_set(name).map(|shape: &Circle| {
                 WasmCircle::new(
                     shape.center().x(),
                     shape.center().y(),
                     shape.radius(),
-                    name.clone(),
+                    name.to_string(),
                 )
             })
         })
@@ -501,12 +501,12 @@ pub fn generate_from_spec_initial(
         .set_names()
         .iter()
         .filter_map(|name| {
-            layout.shape_for_set(name).map(|shape| {
+            layout.shape_for_set(name).map(|shape: &Circle| {
                 WasmCircle::new(
                     shape.center().x(),
                     shape.center().y(),
                     shape.radius(),
-                    name.clone(),
+                    name.to_string(),
                 )
             })
         })

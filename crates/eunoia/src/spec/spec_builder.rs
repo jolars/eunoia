@@ -2,8 +2,8 @@
 
 use super::{Combination, DiagramSpec, InputType};
 use crate::error::DiagramError;
-use crate::geometry::shapes::circle::Circle;
-use crate::geometry::shapes::Shape;
+use crate::geometry::shapes::Circle;
+use crate::geometry::traits::DiagramShape;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
@@ -27,20 +27,20 @@ use std::marker::PhantomData;
 ///     .expect("Failed to build diagram specification");
 /// ```
 #[derive(Debug)]
-pub struct DiagramSpecBuilder<S: Shape = Circle> {
+pub struct DiagramSpecBuilder<S: DiagramShape = Circle> {
     combinations: HashMap<Combination, f64>,
     input_type: Option<InputType>,
     set_order: Vec<String>,
     _shape: PhantomData<S>,
 }
 
-impl<S: Shape> Default for DiagramSpecBuilder<S> {
+impl<S: DiagramShape> Default for DiagramSpecBuilder<S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<S: Shape> DiagramSpecBuilder<S> {
+impl<S: DiagramShape> DiagramSpecBuilder<S> {
     /// Creates a new diagram builder.
     pub fn new() -> Self {
         DiagramSpecBuilder {

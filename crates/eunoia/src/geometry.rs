@@ -4,9 +4,7 @@
 //! the library, including points, shapes, and geometric operations.
 
 pub mod diagram;
-pub mod line;
-pub mod line_segment;
 pub mod operations;
-pub mod point;
-pub mod rectangle;
+pub mod primitives;
 pub mod shapes;
+pub mod traits;

@@ -1,6 +1,7 @@
 //! Axis-aligned rectangle shape implementation.
 
-use crate::geometry::point::Point;
+use crate::geometry::primitives::Point;
+use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, Distance, Perimeter};
 
 /// An axis-aligned rectangle defined by a center point, width, and height.
 ///
@@ -10,8 +11,10 @@ use crate::geometry::point::Point;
 /// # Examples
 ///
 /// ```
-/// use eunoia::geometry::rectangle::Rectangle;
-/// use eunoia::geometry::point::Point;
+/// use eunoia::geometry::shapes::Rectangle;
+/// use eunoia::geometry::traits::Area;
+/// use eunoia::geometry::traits::Closed;
+/// use eunoia::geometry::primitives::Point;
 ///
 /// let r1 = Rectangle::new(Point::new(0.0, 0.0), 4.0, 2.0);
 /// let r2 = Rectangle::new(Point::new(3.0, 0.0), 2.0, 3.0);
@@ -39,8 +42,8 @@ impl Rectangle {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::rectangle::Rectangle;
-    /// use eunoia::geometry::point::Point;
+    /// use eunoia::geometry::shapes::Rectangle;
+    /// use eunoia::geometry::primitives::Point;
     ///
     /// let rect = Rectangle::new(Point::new(1.0, 2.0), 4.0, 3.0);
     /// ```
@@ -111,20 +114,39 @@ impl Rectangle {
             Point::new(x_min, y_max),
         ]
     }
+}
 
+impl Area for Rectangle {
     /// Computes the area of the rectangle using the formula A = width × height.
-    pub fn area(&self) -> f64 {
+    fn area(&self) -> f64 {
         self.width * self.height
     }
+}
 
-    pub fn centroid(&self) -> (f64, f64) {
+impl Perimeter for Rectangle {
+    fn perimeter(&self) -> f64 {
+        2.0 * (self.width + self.height)
+    }
+}
+
+impl BoundingBox for Rectangle {
+    fn bounding_box(&self) -> Rectangle {
+        *self
+    }
+}
+
+impl Centroid for Rectangle {
+    /// Returns the centroid (center point) of the rectangle.
+    fn centroid(&self) -> (f64, f64) {
         (self.center.x(), self.center.y())
     }
+}
 
+impl Distance for Rectangle {
     /// Computes the minimum distance between the boundaries of two rectangles.
     ///
     /// Returns 0.0 if the rectangles overlap or touch.
-    pub fn distance(&self, other: &Self) -> f64 {
+    fn distance(&self, other: &Self) -> f64 {
         let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
         let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
 
@@ -146,38 +168,34 @@ impl Rectangle {
 
         (dx * dx + dy * dy).sqrt()
     }
+}
 
-    pub fn contains(&self, other: &Self) -> bool {
+#[allow(dead_code)]
+impl Closed for Rectangle {
+    fn contains(&self, other: &Self) -> bool {
         let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
         let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
 
         x2_min >= x1_min && x2_max <= x1_max && y2_min >= y1_min && y2_max <= y1_max
     }
 
-    pub fn intersects(&self, other: &Self) -> bool {
+    /// Checks if a point is inside the rectangle (including the boundary).
+    fn contains_point(&self, point: &Point) -> bool {
+        let (x_min, x_max, y_min, y_max) = self.bounds();
+        point.x() >= x_min && point.x() <= x_max && point.y() >= y_min && point.y() <= y_max
+    }
+
+    fn intersects(&self, other: &Self) -> bool {
         let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
         let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
 
         !(x1_max < x2_min || x2_max < x1_min || y1_max < y2_min || y2_max < y1_min)
     }
 
-    pub fn contains_point(&self, point: &Point) -> bool {
-        let (x_min, x_max, y_min, y_max) = self.bounds();
-        point.x() >= x_min && point.x() <= x_max && point.y() >= y_min && point.y() <= y_max
-    }
-
-    pub fn perimeter(&self) -> f64 {
-        2.0 * (self.width + self.height)
-    }
-
-    pub fn bounding_box(&self) -> Rectangle {
-        *self
-    }
-
     /// Computes the area of intersection between two axis-aligned rectangles.
     ///
     /// Returns 0 if rectangles don't overlap.
-    pub fn intersection_area(&self, other: &Self) -> f64 {
+    fn intersection_area(&self, other: &Self) -> f64 {
         let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
         let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
 
@@ -191,7 +209,7 @@ impl Rectangle {
     ///
     /// For axis-aligned rectangles, intersection points are at the corners
     /// of the overlapping region.
-    pub fn intersection_points(&self, other: &Self) -> Vec<Point> {
+    fn intersection_points(&self, other: &Self) -> Vec<Point> {
         if !self.intersects(other) {
             return vec![];
         }

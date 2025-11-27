@@ -12,8 +12,8 @@ pub use combination::Combination;
 pub use input::InputType;
 pub use spec_builder::DiagramSpecBuilder;
 
-use crate::geometry::shapes::circle::Circle;
-use crate::geometry::shapes::Shape;
+use crate::geometry::shapes::Circle;
+use crate::geometry::traits::DiagramShape;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -28,7 +28,7 @@ use std::marker::PhantomData;
 /// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
 /// Defaults to `Circle` for backward compatibility.
 #[derive(Debug, Clone)]
-pub struct DiagramSpec<S: Shape = Circle> {
+pub struct DiagramSpec<S: DiagramShape = Circle> {
     /// Exclusive areas (unique parts of each combination)
     pub(crate) exclusive_areas: HashMap<Combination, f64>,
 
@@ -45,7 +45,7 @@ pub struct DiagramSpec<S: Shape = Circle> {
     _shape: PhantomData<S>,
 }
 
-impl<S: Shape> DiagramSpec<S> {
+impl<S: DiagramShape> DiagramSpec<S> {
     /// Returns the input type for this diagram specification.
     pub fn input_type(&self) -> InputType {
         self.input_type
@@ -319,7 +319,7 @@ impl<S: Shape> DiagramSpec<S> {
 /// This is created by filtering out empty sets from a DiagramSpec and
 /// computing additional metadata needed for optimization.
 #[allow(dead_code)] // Some fields reserved for future use
-pub(crate) struct PreprocessedSpec<S: Shape = Circle> {
+pub(crate) struct PreprocessedSpec<S: DiagramShape = Circle> {
     /// Non-empty set names in canonical order
     pub(crate) set_names: Vec<String>,
 

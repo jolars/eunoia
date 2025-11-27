@@ -1,6 +1,6 @@
 //! Line representation.
 
-use super::point::Point;
+use crate::geometry::primitives::Point;
 
 /// An infinite line in 2D space.
 ///
@@ -11,8 +11,8 @@ use super::point::Point;
 /// # Examples
 ///
 /// ```
-/// use eunoia::geometry::line::Line;
-/// use eunoia::geometry::point::Point;
+/// use eunoia::geometry::primitives::Line;
+/// use eunoia::geometry::primitives::Point;
 ///
 /// let line = Line::from_points(Point::new(0.0, 0.0), Point::new(1.0, 2.0));
 /// # assert_eq!(line.slope(), Some(2.0));
@@ -31,8 +31,8 @@ impl Line {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::line::Line;
-    /// use eunoia::geometry::point::Point;
+    /// use eunoia::geometry::primitives::Line;
+    /// use eunoia::geometry::primitives::Point;
     ///
     /// let line = Line::from_points(Point::new(0.0, 0.0), Point::new(2.0, 4.0));
     /// # assert_eq!(line.slope(), Some(2.0));
@@ -53,7 +53,7 @@ impl Line {
     /// # Examples
     ///
     /// ```
-    /// use eunoia::geometry::line::Line;
+    /// use eunoia::geometry::primitives::Line;
     ///
     /// let line = Line::from_slope_intercept(2.0, 3.0);
     /// # assert_eq!(line.slope(), Some(2.0));

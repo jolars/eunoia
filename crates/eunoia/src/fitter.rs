@@ -8,8 +8,8 @@ pub use layout::Layout;
 
 use crate::error::DiagramError;
 use crate::geometry::shapes::circle::distance_for_overlap;
-use crate::geometry::shapes::circle::Circle;
-use crate::geometry::shapes::Shape;
+use crate::geometry::shapes::Circle;
+use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
 use crate::spec::DiagramSpec;
 use rand::rngs::StdRng;
@@ -20,14 +20,14 @@ use std::collections::HashMap;
 ///
 /// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
 /// Defaults to `Circle` for backward compatibility.
-pub struct Fitter<'a, S: Shape = Circle> {
+pub struct Fitter<'a, S: DiagramShape = Circle> {
     spec: &'a DiagramSpec<S>,
     max_iterations: usize,
     seed: Option<u64>,
     loss_type: LossType,
 }
 
-impl<'a, S: Shape + Copy + 'static> Fitter<'a, S> {
+impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Create a new fitter for the given specification.
     ///
     /// # Examples

@@ -13,7 +13,7 @@
 //!
 //! ```rust
 //! use eunoia::{DiagramSpecBuilder, InputType};
-//! use eunoia::geometry::shapes::circle::Circle;
+//! use eunoia::geometry::shapes::Circle;
 //!
 //! let spec = DiagramSpecBuilder::<Circle>::new()
 //!     .set("A", 5.0)

@@ -1,6 +1,6 @@
-use crate::geometry::point::Point;
-use crate::geometry::shapes::circle::Circle;
-use crate::geometry::shapes::Shape;
+use crate::geometry::primitives::Point;
+use crate::geometry::shapes::Circle;
+use crate::geometry::traits::{Area, Closed, DiagramShape};
 use crate::spec::Combination;
 use std::collections::HashMap;
 
@@ -419,7 +419,7 @@ pub fn compute_exclusive_areas_from_layout(
 }
 
 /// Compute all exclusive areas from a generic shape layout
-pub fn compute_exclusive_areas_from_layout_generic<S: Shape + Copy>(
+pub fn compute_exclusive_areas_from_layout_generic<S: DiagramShape + Copy>(
     shapes: &[S],
     set_names: &[String],
 ) -> HashMap<Combination, f64> {
@@ -456,7 +456,7 @@ pub fn compute_exclusive_areas_from_layout_generic<S: Shape + Copy>(
 }
 
 /// Collect all intersection points between pairs of generic shapes.
-pub fn collect_intersections_generic<S: Shape>(
+pub fn collect_intersections_generic<S: DiagramShape>(
     shapes: &[S],
     n_sets: usize,
 ) -> Vec<IntersectionPoint> {
@@ -487,7 +487,7 @@ pub fn collect_intersections_generic<S: Shape>(
 }
 
 /// Discover which regions actually exist for generic shapes.
-pub fn discover_regions_generic<S: Shape>(
+pub fn discover_regions_generic<S: DiagramShape>(
     shapes: &[S],
     intersections: &[IntersectionPoint],
     n_sets: usize,
@@ -585,7 +585,7 @@ pub fn discover_regions_generic<S: Shape>(
 }
 
 /// Compute region area for generic shapes using Monte Carlo.
-pub fn compute_region_area_generic<S: Shape + Copy>(
+pub fn compute_region_area_generic<S: DiagramShape + Copy>(
     mask: RegionMask,
     shapes: &[S],
     n_sets: usize,

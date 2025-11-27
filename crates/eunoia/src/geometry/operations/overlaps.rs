@@ -1,7 +1,7 @@
 use crate::geometry::diagram::IntersectionPoint;
-use crate::geometry::point::Point;
-use crate::geometry::shapes::circle::Circle;
-use crate::geometry::shapes::Shape;
+use crate::geometry::primitives::Point;
+use crate::geometry::shapes::Circle;
+use crate::geometry::traits::{Area, Closed, DiagramShape};
 use rand::Rng;
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ pub enum OverlapMethod {
     Exact,
 }
 
-pub fn compute_overlaps<S: Shape>(
+pub fn compute_overlaps<S: DiagramShape>(
     shapes: &[S],
     method: OverlapMethod,
     rng: &mut dyn rand::RngCore,
@@ -91,7 +91,7 @@ pub fn compute_overlaps_circles(circles: &[Circle]) -> f64 {
 /// # Returns
 ///
 /// Intersection area estimate (area where ALL shapes overlap)
-fn monte_carlo_overlap<S: Shape>(
+fn monte_carlo_overlap<S: DiagramShape>(
     shapes: &[S],
     n_samples: usize,
     rng: &mut dyn rand::RngCore,
@@ -167,7 +167,7 @@ fn monte_carlo_overlap<S: Shape>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::shapes::circle::Circle;
+    use crate::geometry::shapes::Circle;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 

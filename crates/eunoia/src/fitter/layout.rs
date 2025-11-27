@@ -1,8 +1,8 @@
 //! Layout representation - the result of fitting a diagram specification.
 
 use crate::geometry::diagram;
-use crate::geometry::shapes::circle::Circle;
-use crate::geometry::shapes::Shape;
+use crate::geometry::shapes::Circle;
+use crate::geometry::traits::DiagramShape;
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ use std::collections::HashMap;
 /// The type parameter `S` determines which shape type was used (e.g., Circle, Ellipse).
 /// Defaults to `Circle` for backward compatibility.
 #[derive(Debug, Clone)]
-pub struct Layout<S: Shape = Circle> {
+pub struct Layout<S: DiagramShape = Circle> {
     /// The fitted shapes (one per set).
     pub(crate) shapes: Vec<S>,
 
@@ -31,7 +31,7 @@ pub struct Layout<S: Shape = Circle> {
     iterations: usize,
 }
 
-impl<S: Shape + Copy + 'static> Layout<S> {
+impl<S: DiagramShape + Copy + 'static> Layout<S> {
     /// Creates a new layout from shapes and specification.
     ///
     /// This computes the fitted areas and loss automatically.
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_layout_creation() {
-        use crate::geometry::point::Point;
+        use crate::geometry::primitives::Point;
 
         let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", std::f64::consts::PI)
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_shape_for_set() {
-        use crate::geometry::point::Point;
+        use crate::geometry::primitives::Point;
 
         let spec = DiagramSpecBuilder::<Circle>::new()
             .set("A", 10.0)
