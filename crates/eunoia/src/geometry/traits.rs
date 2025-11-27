@@ -29,8 +29,8 @@ pub trait Area {
 
 /// Trait for objects that have a definable centroid (center of mass).
 pub trait Centroid {
-    /// Returns the centroid (center point) as (x, y) coordinates.
-    fn centroid(&self) -> (f64, f64);
+    /// Returns the centroid (center point) as a Point.
+    fn centroid(&self) -> Point;
 }
 
 /// Trait for objects that have a measurable perimeter.
