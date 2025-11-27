@@ -1,5 +1,7 @@
 //! Ellipse shape
 
+use std::f64::consts::PI;
+
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Rectangle;
 use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, Distance, Perimeter};
@@ -55,7 +57,7 @@ impl Ellipse {
 
         // Ensure CCW ordering.
         if t1 < t0 {
-            t1 += 2.0 * std::f64::consts::PI;
+            t1 += 2.0 * PI;
         }
 
         self.sector_area(t1) - self.sector_area(t0)
@@ -74,18 +76,17 @@ impl Ellipse {
 
         // 3. Ensure CCW ordering.
         if theta1 < theta0 {
-            theta1 += 2.0 * std::f64::consts::PI;
+            theta1 += 2.0 * PI;
         }
 
         // 4. Triangle correction (signed area of parallelogram / 2).
         let triangle = 0.5 * (p1.x() * p0.y() - p0.x() * p1.y()).abs();
 
         // 5. Minor or major arc?
-        if (theta1 - theta0) <= std::f64::consts::PI {
+        if (theta1 - theta0) <= PI {
             self.sector_area(theta1) - self.sector_area(theta0) - triangle
         } else {
-            self.area()
-                - (self.sector_area(theta0 + 2.0 * std::f64::consts::PI) - self.sector_area(theta1))
+            self.area() - (self.sector_area(theta0 + 2.0 * PI) - self.sector_area(theta1))
                 + triangle
         }
     }
@@ -93,7 +94,7 @@ impl Ellipse {
 
 impl Area for Ellipse {
     fn area(&self) -> f64 {
-        std::f64::consts::PI * self.semi_major * self.semi_minor
+        PI * self.semi_major * self.semi_minor
     }
 }
 
@@ -103,7 +104,7 @@ impl Perimeter for Ellipse {
         let a = self.semi_major;
         let b = self.semi_minor;
         let h = ((a - b).powi(2)) / ((a + b).powi(2));
-        std::f64::consts::PI * (a + b) * (1.0 + (3.0 * h) / (10.0 + (4.0 - 3.0 * h).sqrt()))
+        PI * (a + b) * (1.0 + (3.0 * h) / (10.0 + (4.0 - 3.0 * h).sqrt()))
     }
 }
 
@@ -184,8 +185,8 @@ mod tests {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
 
         // Quarter sector from 0 to π/2
-        let sector_between = ellipse.sector_area_between(0.0, std::f64::consts::PI / 2.0);
-        let expected = ellipse.sector_area(std::f64::consts::PI / 2.0) - ellipse.sector_area(0.0);
+        let sector_between = ellipse.sector_area_between(0.0, PI / 2.0);
+        let expected = ellipse.sector_area(PI / 2.0) - ellipse.sector_area(0.0);
 
         assert!(approx_eq(sector_between, expected));
         assert!(approx_eq(sector_between, ellipse.area() / 4.0));
@@ -197,14 +198,13 @@ mod tests {
 
         // When theta1 < theta0, it should add 2π to theta1 for CCW ordering
         // Going from 3π/4 to π/4 CCW (wrapping around through 0)
-        let theta0 = 3.0 * std::f64::consts::PI / 4.0;
-        let theta1 = std::f64::consts::PI / 4.0;
+        let theta0 = 3.0 * PI / 4.0;
+        let theta1 = PI / 4.0;
 
         let sector_between = ellipse.sector_area_between(theta0, theta1);
 
         // This should be equivalent to going from 3π/4 to (π/4 + 2π)
-        let expected =
-            ellipse.sector_area(theta1 + 2.0 * std::f64::consts::PI) - ellipse.sector_area(theta0);
+        let expected = ellipse.sector_area(theta1 + 2.0 * PI) - ellipse.sector_area(theta0);
 
         assert!(
             approx_eq(sector_between, expected),
@@ -223,7 +223,7 @@ mod tests {
         let ellipse = Ellipse::new(Point::new(1.0, 2.0), 3.0, 2.5, 0.3);
 
         // Same angle should give zero sector area
-        let angle = std::f64::consts::PI / 3.0;
+        let angle = PI / 3.0;
         let sector = ellipse.sector_area_between(angle, angle);
 
         assert!(approx_eq(sector, 0.0));
@@ -234,7 +234,7 @@ mod tests {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
 
         // Full rotation: from 0 to 2π
-        let sector = ellipse.sector_area_between(0.0, 2.0 * std::f64::consts::PI);
+        let sector = ellipse.sector_area_between(0.0, 2.0 * PI);
 
         assert!(approx_eq(sector, ellipse.area()));
     }
@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn test_sector_full_ellipse() {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), 3.0, 2.0, 0.0);
-        let full_angle = 2.0 * std::f64::consts::PI;
+        let full_angle = 2.0 * PI;
         let sector = ellipse.sector_area(full_angle);
         assert!(approx_eq(sector, ellipse.area()));
     }
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn test_sector_half_ellipse() {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), 4.0, 3.0, 0.0);
-        let half_angle = std::f64::consts::PI;
+        let half_angle = PI;
         let sector = ellipse.sector_area(half_angle);
         assert!(approx_eq(sector, ellipse.area() / 2.0));
     }
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn test_sector_quarter_ellipse() {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
-        let quarter_angle = std::f64::consts::PI / 2.0;
+        let quarter_angle = PI / 2.0;
         let sector = ellipse.sector_area(quarter_angle);
         assert!(approx_eq(sector, ellipse.area() / 4.0));
     }
@@ -277,7 +277,7 @@ mod tests {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), radius, radius, 0.0);
         let circle = Circle::new(Point::new(0.0, 0.0), radius);
 
-        let angle = std::f64::consts::PI / 3.0;
+        let angle = PI / 3.0;
         let ellipse_sector = ellipse.sector_area(angle);
         let circle_sector = circle.sector_area(angle);
 
@@ -292,12 +292,12 @@ mod tests {
 
         let test_angles = vec![
             0.0,
-            std::f64::consts::PI / 6.0,
-            std::f64::consts::PI / 4.0,
-            std::f64::consts::PI / 2.0,
-            std::f64::consts::PI,
-            3.0 * std::f64::consts::PI / 2.0,
-            2.0 * std::f64::consts::PI,
+            PI / 6.0,
+            PI / 4.0,
+            PI / 2.0,
+            PI,
+            3.0 * PI / 2.0,
+            2.0 * PI,
         ];
 
         for angle in test_angles {
@@ -334,7 +334,7 @@ mod tests {
         let circle = Circle::new(Point::new(0.0, 0.0), radius);
 
         // Test angle
-        let angle = std::f64::consts::PI / 4.0;
+        let angle = PI / 4.0;
 
         // Points on circle boundary
         let p0 = Point::new(radius, 0.0);
@@ -355,7 +355,7 @@ mod tests {
     fn test_ellipse_segment_small_angle() {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), 3.0, 2.0, 0.0);
 
-        let angle = std::f64::consts::PI / 12.0; // 15 degrees
+        let angle = PI / 12.0; // 15 degrees
         let p0 = Point::new(ellipse.semi_major(), 0.0);
         let p1 = Point::new(
             ellipse.semi_major() * angle.cos(),
@@ -422,7 +422,7 @@ mod tests {
         let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
 
         // 30 degree segment (π/6)
-        let angle = std::f64::consts::PI / 6.0;
+        let angle = PI / 6.0;
         let p0 = Point::new(ellipse.semi_major(), 0.0);
         let p1 = Point::new(
             ellipse.semi_major() * angle.cos(),
@@ -439,7 +439,7 @@ mod tests {
         );
 
         // 60 degree segment (π/3)
-        let angle = std::f64::consts::PI / 3.0;
+        let angle = PI / 3.0;
         let p2 = Point::new(
             ellipse.semi_major() * angle.cos(),
             ellipse.semi_minor() * angle.sin(),
@@ -467,7 +467,7 @@ mod tests {
         // When theta1 - theta0 > π, the algorithm computes the MAJOR arc segment.
         // This is the correct behavior: going CCW from 0° to 270° covers 270° of arc,
         // which is the larger of the two possible segments between these points.
-        let angle = 3.0 * std::f64::consts::PI / 2.0;
+        let angle = 3.0 * PI / 2.0;
         let p0 = Point::new(ellipse.semi_major(), 0.0);
         let p1 = Point::new(
             ellipse.semi_major() * angle.cos(),

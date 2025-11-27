@@ -1,5 +1,7 @@
 //! Circle shape implementation.
 
+use std::f64::consts::PI;
+
 use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::primitives::point;
 use crate::geometry::primitives::Point;
@@ -38,7 +40,7 @@ pub struct Circle {
 impl Area for Circle {
     /// Computes the area of the circle using the formula A = πr².
     fn area(&self) -> f64 {
-        std::f64::consts::PI * self.radius * self.radius
+        PI * self.radius * self.radius
     }
 }
 
@@ -67,7 +69,7 @@ impl Distance for Circle {
 impl Perimeter for Circle {
     /// Compute the perimeter of the circle.
     fn perimeter(&self) -> f64 {
-        2.0 * std::f64::consts::PI * self.radius
+        2.0 * PI * self.radius
     }
 }
 
@@ -123,7 +125,7 @@ impl Closed for Circle {
         if d <= (self.radius - other.radius).abs() {
             // One circle is completely inside the other
             let smaller_radius = self.radius.min(other.radius);
-            return std::f64::consts::PI * smaller_radius * smaller_radius;
+            return PI * smaller_radius * smaller_radius;
         }
 
         let r1 = self.radius;
@@ -544,13 +546,13 @@ mod tests {
     #[test]
     fn test_circle_area() {
         let circle = Circle::new(Point::new(0.0, 0.0), 1.0);
-        assert!(approx_eq(circle.area(), std::f64::consts::PI));
+        assert!(approx_eq(circle.area(), PI));
 
         let circle2 = Circle::new(Point::new(0.0, 0.0), 2.0);
-        assert!(approx_eq(circle2.area(), 4.0 * std::f64::consts::PI));
+        assert!(approx_eq(circle2.area(), 4.0 * PI));
 
         let circle3 = Circle::new(Point::new(5.0, 5.0), 3.0);
-        assert!(approx_eq(circle3.area(), 9.0 * std::f64::consts::PI));
+        assert!(approx_eq(circle3.area(), 9.0 * PI));
     }
 
     #[test]
@@ -641,7 +643,7 @@ mod tests {
     fn test_intersection_area_complete_overlap_same_size() {
         let circle1 = Circle::new(Point::new(0.0, 0.0), 2.0);
         let circle2 = Circle::new(Point::new(0.0, 0.0), 2.0);
-        let expected = std::f64::consts::PI * 4.0;
+        let expected = PI * 4.0;
         assert!(approx_eq(circle1.intersection_area(&circle2), expected));
     }
 
@@ -649,7 +651,7 @@ mod tests {
     fn test_intersection_area_one_inside_other() {
         let large = Circle::new(Point::new(0.0, 0.0), 5.0);
         let small = Circle::new(Point::new(1.0, 0.0), 2.0);
-        let expected = std::f64::consts::PI * 4.0; // Area of smaller circle
+        let expected = PI * 4.0; // Area of smaller circle
         assert!(approx_eq(large.intersection_area(&small), expected));
         assert!(approx_eq(small.intersection_area(&large), expected));
     }
@@ -663,7 +665,7 @@ mod tests {
         // For two unit circles with centers 1 apart, there's a known formula
         // The intersection area should be positive and less than π
         assert!(area > 0.0);
-        assert!(area < std::f64::consts::PI);
+        assert!(area < PI);
     }
 
     #[test]
@@ -683,7 +685,7 @@ mod tests {
 
         // Should be positive and at most the smaller circle's area
         assert!(area > 0.0);
-        assert!(area <= std::f64::consts::PI * 1.0 * 1.0);
+        assert!(area <= PI * 1.0 * 1.0);
     }
 
     #[test]
@@ -714,7 +716,7 @@ mod tests {
     fn test_distance_for_overlap_full_overlap() {
         let r1 = 3.0;
         let r2 = 2.0;
-        let overlap = std::f64::consts::PI * r2 * r2; // Full area of smaller circle
+        let overlap = PI * r2 * r2; // Full area of smaller circle
 
         let distance = distance_for_overlap(r1, r2, overlap, None, None).unwrap();
 
@@ -960,16 +962,12 @@ mod tests {
     fn test_perimeter() {
         let c = Circle::new(Point::new(0.0, 0.0), 1.0);
         let perimeter = c.perimeter();
-        assert!(approx_eq(perimeter, 2.0 * std::f64::consts::PI));
+        assert!(approx_eq(perimeter, 2.0 * PI));
     }
 
     #[test]
     fn test_perimeter_various_radii() {
-        let test_cases = vec![
-            (0.5, std::f64::consts::PI),
-            (2.0, 4.0 * std::f64::consts::PI),
-            (10.0, 20.0 * std::f64::consts::PI),
-        ];
+        let test_cases = vec![(0.5, PI), (2.0, 4.0 * PI), (10.0, 20.0 * PI)];
 
         for (radius, expected) in test_cases {
             let c = Circle::new(Point::new(0.0, 0.0), radius);
@@ -980,7 +978,7 @@ mod tests {
     #[test]
     fn test_sector_area_full_circle() {
         let c = Circle::new(Point::new(0.0, 0.0), 2.0);
-        let full_circle_angle = 2.0 * std::f64::consts::PI;
+        let full_circle_angle = 2.0 * PI;
         let sector = c.sector_area(full_circle_angle);
         assert!(approx_eq(sector, c.area()));
     }
@@ -988,7 +986,7 @@ mod tests {
     #[test]
     fn test_sector_area_half_circle() {
         let c = Circle::new(Point::new(0.0, 0.0), 3.0);
-        let half_circle_angle = std::f64::consts::PI;
+        let half_circle_angle = PI;
         let sector = c.sector_area(half_circle_angle);
         assert!(approx_eq(sector, c.area() / 2.0));
     }
@@ -996,7 +994,7 @@ mod tests {
     #[test]
     fn test_sector_area_quarter_circle() {
         let c = Circle::new(Point::new(0.0, 0.0), 4.0);
-        let quarter_circle_angle = std::f64::consts::PI / 2.0;
+        let quarter_circle_angle = PI / 2.0;
         let sector = c.sector_area(quarter_circle_angle);
         assert!(approx_eq(sector, c.area() / 4.0));
     }
@@ -1011,7 +1009,7 @@ mod tests {
     #[test]
     fn test_segment_area_from_angle_semicircle() {
         let c = Circle::new(Point::new(0.0, 0.0), 2.0);
-        let angle = std::f64::consts::PI;
+        let angle = PI;
         let segment = c.segment_area_from_angle(angle);
         // For a semicircle, segment area equals sector area (half circle)
         assert!(approx_eq(segment, c.area() / 2.0));
@@ -1027,7 +1025,7 @@ mod tests {
     #[test]
     fn test_segment_area_from_angle_small() {
         let c = Circle::new(Point::new(0.0, 0.0), 1.0);
-        let angle = std::f64::consts::PI / 6.0; // 30 degrees
+        let angle = PI / 6.0; // 30 degrees
         let segment = c.segment_area_from_angle(angle);
 
         // Segment should be positive and less than sector area
@@ -1061,7 +1059,7 @@ mod tests {
     #[test]
     fn test_segment_area_from_chord_vs_angle_consistency() {
         let c = Circle::new(Point::new(0.0, 0.0), 3.0);
-        let angle = std::f64::consts::PI / 3.0; // 60 degrees
+        let angle = PI / 3.0; // 60 degrees
 
         // Calculate chord length from angle
         let chord_length = 2.0 * c.radius() * (angle / 2.0).sin();
@@ -1076,7 +1074,7 @@ mod tests {
     #[test]
     fn test_segment_area_relationships() {
         let c = Circle::new(Point::new(0.0, 0.0), 1.0);
-        let angle = std::f64::consts::PI / 4.0; // 45 degrees
+        let angle = PI / 4.0; // 45 degrees
 
         let sector = c.sector_area(angle);
         let segment = c.segment_area_from_angle(angle);
