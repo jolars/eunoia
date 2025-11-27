@@ -121,9 +121,8 @@ impl Point {
     }
 
     pub fn to_ellipse_frame(self, e: &Ellipse) -> Self {
-        self.translate(-e.center().x(), -e.center().y());
-        self.rotate(-e.rotation());
-        self
+        self.translate(-e.center().x(), -e.center().y())
+            .rotate(-e.rotation())
     }
 
     pub const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
