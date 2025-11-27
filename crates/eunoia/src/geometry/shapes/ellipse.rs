@@ -1,4 +1,4 @@
-//! Ellipse shape
+//! Ellipse shape implementation.
 
 use std::f64::consts::PI;
 
@@ -6,6 +6,23 @@ use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Rectangle;
 use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, Distance, Perimeter};
 
+/// An ellipse defined by a center point, semi-major and semi-minor axes, and rotation.
+///
+/// Ellipses provide more flexibility than circles for Euler and Venn diagrams,
+/// allowing better fits for asymmetric set relationships. The ellipse is defined
+/// by its center, semi-major axis (longest radius), semi-minor axis (shortest radius),
+/// and a rotation angle in radians.
+///
+/// # Examples
+///
+/// ```
+/// use eunoia::geometry::shapes::Ellipse;
+/// use eunoia::geometry::traits::Area;
+/// use eunoia::geometry::primitives::Point;
+///
+/// let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
+/// let area = ellipse.area();
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ellipse {
     center: Point,
@@ -15,6 +32,23 @@ pub struct Ellipse {
 }
 
 impl Ellipse {
+    /// Creates a new ellipse with the specified center, semi-axes, and rotation.
+    ///
+    /// # Arguments
+    ///
+    /// * `center` - The center point of the ellipse
+    /// * `semi_major` - The semi-major axis length (longest radius)
+    /// * `semi_minor` - The semi-minor axis length (shortest radius)
+    /// * `rotation` - The rotation angle in radians (counter-clockwise from positive x-axis)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Ellipse;
+    /// use eunoia::geometry::primitives::Point;
+    ///
+    /// let ellipse = Ellipse::new(Point::new(1.0, 2.0), 5.0, 3.0, 0.0);
+    /// ```
     pub fn new(center: Point, semi_major: f64, semi_minor: f64, rotation: f64) -> Self {
         Self {
             center,
@@ -24,23 +58,46 @@ impl Ellipse {
         }
     }
 
+    /// Returns the center point of the ellipse.
     pub fn center(&self) -> Point {
         self.center
     }
 
+    /// Returns the semi-major axis length (longest radius).
     pub fn semi_major(&self) -> f64 {
         self.semi_major
     }
 
+    /// Returns the semi-minor axis length (shortest radius).
     pub fn semi_minor(&self) -> f64 {
         self.semi_minor
     }
 
+    /// Returns the rotation angle in radians.
     pub fn rotation(&self) -> f64 {
         self.rotation
     }
 
-    /// Elliptical sector primitive, exactly as in your C++ implementation.
+    /// Computes the area of an elliptical sector from angle 0 to the given angle.
+    ///
+    /// Uses the exact formula for elliptical sector area. This is a primitive
+    /// operation used by other segment and area computations.
+    ///
+    /// # Arguments
+    ///
+    /// * `theta` - The angle in radians (measured from the positive x-axis in the
+    ///   ellipse's local coordinate system)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Ellipse;
+    /// use eunoia::geometry::primitives::Point;
+    /// use std::f64::consts::PI;
+    ///
+    /// let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
+    /// let quarter_sector = ellipse.sector_area(PI / 2.0);
+    /// ```
     pub fn sector_area(&self, theta: f64) -> f64 {
         let a = self.semi_major;
         let b = self.semi_minor;
@@ -51,6 +108,27 @@ impl Ellipse {
         0.5 * a * b * (theta - num.atan2(den))
     }
 
+    /// Computes the area of an elliptical sector between two angles.
+    ///
+    /// The sector is computed in counter-clockwise (CCW) order from `theta0` to `theta1`.
+    /// If `theta1 < theta0`, the function automatically adjusts by adding 2π to `theta1`
+    /// to maintain CCW ordering.
+    ///
+    /// # Arguments
+    ///
+    /// * `theta0` - The starting angle in radians
+    /// * `theta1` - The ending angle in radians
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Ellipse;
+    /// use eunoia::geometry::primitives::Point;
+    /// use std::f64::consts::PI;
+    ///
+    /// let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
+    /// let half_sector = ellipse.sector_area_between(0.0, PI);
+    /// ```
     pub fn sector_area_between(&self, theta0: f64, theta1: f64) -> f64 {
         let t0 = theta0;
         let mut t1 = theta1;
@@ -63,8 +141,33 @@ impl Ellipse {
         self.sector_area(t1) - self.sector_area(t0)
     }
 
-    /// Computes an ellipse segment area between two boundary points.
-    /// Perfectly mirrors the C++ logic, including CCW ordering.
+    /// Computes the area of an ellipse segment between two boundary points.
+    ///
+    /// An ellipse segment is the region bounded by an arc and the chord connecting
+    /// its endpoints. This method transforms the points into the ellipse's local
+    /// coordinate system and computes the segment area using sector and triangle
+    /// corrections.
+    ///
+    /// The segment is computed in CCW order from `p0` to `p1`. For arcs spanning
+    /// more than π radians (major arc), the computation accounts for the larger
+    /// segment.
+    ///
+    /// # Arguments
+    ///
+    /// * `p0` - The first boundary point on the ellipse
+    /// * `p1` - The second boundary point on the ellipse
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Ellipse;
+    /// use eunoia::geometry::primitives::Point;
+    ///
+    /// let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
+    /// let p0 = Point::new(5.0, 0.0);  // Point on ellipse at angle 0
+    /// let p1 = Point::new(0.0, 3.0);  // Point on ellipse at angle π/2
+    /// let segment_area = ellipse.ellipse_segment(p0, p1);
+    /// ```
     pub fn ellipse_segment(&self, p0: Point, p1: Point) -> f64 {
         // 1. Move into ellipse coordinate system.
         let p0 = p0.to_ellipse_frame(self);
