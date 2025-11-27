@@ -138,6 +138,25 @@ impl Point {
             .rotate(-e.rotation())
     }
 
+    /// Converts this Euclidean point to homogeneous coordinates.
+    ///
+    /// The point (x, y) is represented as [x, y, 1] in homogeneous coordinates.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::primitives::Point;
+    ///
+    /// let p = Point::new(2.0, 3.0);
+    /// let h = p.to_homogeneous();
+    /// assert_eq!(h.x(), 2.0);
+    /// assert_eq!(h.y(), 3.0);
+    /// assert_eq!(h.w(), 1.0);
+    /// ```
+    pub fn to_homogeneous(self) -> crate::geometry::projective::HomogeneousPoint {
+        crate::geometry::projective::HomogeneousPoint::from_euclidean(self)
+    }
+
     pub const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
 }
 

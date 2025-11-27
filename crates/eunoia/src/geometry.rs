@@ -6,5 +6,6 @@
 pub mod diagram;
 pub mod operations;
 pub mod primitives;
+pub mod projective;
 pub mod shapes;
 pub mod traits;
