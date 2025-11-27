@@ -77,7 +77,37 @@ pub trait Matrix3Ext {
     /// ```
     fn adjugate(&self) -> Matrix3<f64>;
 
-    // Add more methods here as needed
+    /// Constructs a skew-symmetric matrix from a 3D vector.
+    ///
+    /// For a vector v = [x, y, z], the skew-symmetric matrix is:
+    /// ```text
+    /// ┌            ┐
+    /// │  0  -z   y │
+    /// │  z   0  -x │
+    /// │ -y   x   0 │
+    /// └            ┘
+    /// ```
+    ///
+    /// # Properties
+    ///
+    /// - The matrix satisfies: S^T = -S (antisymmetric)
+    /// - For any vector w: S × w = v × w (cross product)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::math::linear_algebra::Matrix3Ext;
+    /// use nalgebra::{Matrix3, Vector3};
+    ///
+    /// let v = Vector3::new(1.0, 2.0, 3.0);
+    /// let skew = Matrix3::<f64>::skew_symmetric(&v);
+    ///
+    /// // Verify it's skew-symmetric: S^T = -S
+    /// assert_eq!(skew.transpose(), -skew);
+    /// ```
+    fn skew_symmetric(v: &nalgebra::Vector3<f64>) -> Matrix3<f64> {
+        Matrix3::new(0.0, -v[2], v[1], v[2], 0.0, -v[0], -v[1], v[0], 0.0)
+    }
 }
 
 impl Matrix3Ext for Matrix3<f64> {
@@ -231,5 +261,35 @@ mod tests {
         let expected: Matrix3<f64> =
             Matrix3::new(-8.0, 18.0, -4.0, -5.0, 12.0, -1.0, 4.0, -6.0, 2.0);
         assert_eq!(adj, expected);
+    }
+
+    #[test]
+    fn test_skew_symmetric() {
+        use nalgebra::Vector3;
+
+        let v = Vector3::new(1.0, 2.0, 3.0);
+        let skew = Matrix3::skew_symmetric(&v);
+
+        // Verify the structure
+        let expected = Matrix3::new(0.0, -3.0, 2.0, 3.0, 0.0, -1.0, -2.0, 1.0, 0.0);
+        assert_eq!(skew, expected);
+
+        // Verify skew-symmetric property: S^T = -S
+        assert_eq!(skew.transpose(), -skew);
+
+        // Verify cross product property: S × w = v × w
+        let w = Vector3::new(4.0, 5.0, 6.0);
+        let cross_via_matrix = skew * w;
+        let cross_direct = v.cross(&w);
+
+        for i in 0..3 {
+            assert!(
+                approx_eq(cross_via_matrix[i], cross_direct[i]),
+                "Cross product mismatch at index {}: matrix={}, direct={}",
+                i,
+                cross_via_matrix[i],
+                cross_direct[i]
+            );
+        }
     }
 }
