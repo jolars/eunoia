@@ -138,34 +138,34 @@ impl BoundingBox for Ellipse {
 }
 
 impl Distance for Ellipse {
-    fn distance(&self, other: &Self) -> f64 {
+    fn distance(&self, _other: &Self) -> f64 {
         // Placeholder implementation
         unimplemented!()
     }
 }
 
 impl Closed for Ellipse {
-    fn contains(&self, other: &Self) -> bool {
+    fn contains(&self, _other: &Self) -> bool {
         // Placeholder implementation
         unimplemented!()
     }
 
-    fn contains_point(&self, point: &Point) -> bool {
+    fn contains_point(&self, _point: &Point) -> bool {
         // Placeholder implementation
         unimplemented!()
     }
 
-    fn intersects(&self, other: &Self) -> bool {
+    fn intersects(&self, _other: &Self) -> bool {
         // Placeholder implementation
         unimplemented!()
     }
 
-    fn intersection_area(&self, other: &Self) -> f64 {
+    fn intersection_area(&self, _other: &Self) -> f64 {
         // Placeholder implementation
         unimplemented!()
     }
 
-    fn intersection_points(&self, other: &Self) -> Vec<Point> {
+    fn intersection_points(&self, _other: &Self) -> Vec<Point> {
         // Placeholder implementation
         unimplemented!()
     }
