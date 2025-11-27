@@ -137,8 +137,8 @@ impl BoundingBox for Rectangle {
 
 impl Centroid for Rectangle {
     /// Returns the centroid (center point) of the rectangle.
-    fn centroid(&self) -> (f64, f64) {
-        (self.center.x(), self.center.y())
+    fn centroid(&self) -> Point {
+        self.center
     }
 }
 
@@ -305,9 +305,9 @@ mod tests {
     #[test]
     fn test_rectangle_centroid() {
         let rect = Rectangle::new(Point::new(3.0, 4.0), 2.0, 2.0);
-        let (cx, cy) = rect.centroid();
-        assert!(approx_eq(cx, 3.0));
-        assert!(approx_eq(cy, 4.0));
+        let centroid = rect.centroid();
+        assert!(approx_eq(centroid.x(), 3.0));
+        assert!(approx_eq(centroid.y(), 4.0));
     }
 
     #[test]

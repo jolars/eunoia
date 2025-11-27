@@ -8,7 +8,9 @@
 //! - Diagram-specific operations: `DiagramShape` (composes all of the above)
 
 pub mod circle;
+pub mod ellipse;
 pub mod rectangle;
 
 pub use circle::Circle;
+pub use ellipse::Ellipse;
 pub use rectangle::Rectangle;
