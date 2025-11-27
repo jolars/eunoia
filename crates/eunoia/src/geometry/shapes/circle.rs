@@ -43,8 +43,8 @@ impl Area for Circle {
 }
 
 impl Centroid for Circle {
-    fn centroid(&self) -> (f64, f64) {
-        (self.center.x(), self.center.y())
+    fn centroid(&self) -> Point {
+        self.center
     }
 }
 

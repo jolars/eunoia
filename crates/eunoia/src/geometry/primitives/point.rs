@@ -1,5 +1,6 @@
 //! 2D point representation.
 
+use crate::geometry::shapes::Ellipse;
 use crate::geometry::traits::Distance;
 
 /// A point in 2D Cartesian space.
@@ -64,6 +65,10 @@ impl Point {
         (other.y - self.y).atan2(other.x - self.x)
     }
 
+    pub fn angle_from_origin(&self) -> f64 {
+        self.y.atan2(self.x)
+    }
+
     pub fn rotate_around(&self, other: &Self, angle: f64) -> Self {
         let (sin_theta, cos_theta) = angle.sin_cos();
         let dx = self.x - other.x;
@@ -113,6 +118,12 @@ impl Point {
             x: -self.x,
             y: -self.y,
         }
+    }
+
+    pub fn to_ellipse_frame(self, e: &Ellipse) -> Self {
+        self.translate(-e.center().x(), -e.center().y());
+        self.rotate(-e.rotation());
+        self
     }
 
     pub const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
