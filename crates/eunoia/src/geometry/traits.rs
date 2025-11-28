@@ -48,7 +48,7 @@ pub trait BoundingBox {
 /// Trait for spatial relationships between objects of the same type.
 ///
 /// This covers containment, intersection testing, and computing intersection areas/points.
-pub trait Closed: Sized + Area + BoundingBox + Distance + Perimeter + Centroid {
+pub trait Closed: Sized + Area + BoundingBox + Perimeter + Centroid {
     /// Checks if this object contains another object entirely within its boundaries.
     fn contains(&self, other: &Self) -> bool;
 
