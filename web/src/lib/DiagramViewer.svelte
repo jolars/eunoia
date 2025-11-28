@@ -55,6 +55,7 @@
   let shapeType = $state<"circle" | "ellipse">("circle");
   let usePolygons = $state(true);
   let polygonVertices = $state(64);
+  let optimizer = $state<"NelderMead" | "Lbfgs" | "ConjugateGradient">("NelderMead");
   let seed = $state<number | undefined>(undefined);
   let useSeed = $state(false);
 
@@ -158,11 +159,19 @@
       } else {
         // Generate as analytical shapes
         polygons = [];
+        
+        // Map optimizer string to WasmOptimizer enum value
+        const optimizerValue = optimizer === "NelderMead" ? wasmModule.WasmOptimizer.NelderMead
+                             : optimizer === "Lbfgs" ? wasmModule.WasmOptimizer.Lbfgs
+                             : wasmModule.WasmOptimizer.ConjugateGradient;
+        
+        console.log("Using optimizer:", optimizer, "enum value:", optimizerValue);
+        
         if (shapeType === "circle") {
           const generateFn = useInitialOnly
             ? wasmModule.generate_from_spec_initial
             : wasmModule.generate_from_spec;
-          const result = generateFn(specs, inputType, seedValue);
+          const result = generateFn(specs, inputType, seedValue, optimizerValue);
           circles = Array.from(result.circles);
           ellipses = [];
           
@@ -175,6 +184,7 @@
             specs,
             inputType,
             seedValue,
+            optimizerValue,
           );
           ellipses = Array.from(result.ellipses);
           circles = [];
@@ -203,9 +213,10 @@
   // Auto-generate diagram when specification changes
   $effect(() => {
     if (wasmModule && diagramRows.length > 0) {
-      // Track all relevant parameters including seed
+      // Track all relevant parameters - explicitly reference optimizer to ensure tracking
       const sizeSignature = diagramRows.map((row) => row.size).join(",");
       const effectiveSeed = useSeed && seed !== undefined ? seed : "none";
+      const currentOptimizer = optimizer; // Explicitly track optimizer
       console.log(
         "Generating diagram:",
         sizeSignature,
@@ -217,6 +228,8 @@
         useInitialOnly,
         "seed:",
         effectiveSeed,
+        "optimizer:",
+        currentOptimizer,
       );
       generateFromSpec();
     }
@@ -412,6 +425,24 @@
                   <span class="text-sm">Ellipses</span>
                 </label>
               </div>
+            </div>
+
+            <!-- Optimizer Selection -->
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Optimizer
+              </label>
+              <select
+                bind:value={optimizer}
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="NelderMead">Nelder-Mead (default, robust)</option>
+                <option value="Lbfgs">L-BFGS (gradient-based)</option>
+                <option value="ConjugateGradient">Conjugate Gradient</option>
+              </select>
+              <p class="mt-1 text-xs text-gray-500">
+                Optimization method for fitting shapes
+              </p>
             </div>
 
             <!-- Polygon Rendering Option -->

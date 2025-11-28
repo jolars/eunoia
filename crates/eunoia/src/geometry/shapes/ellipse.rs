@@ -921,26 +921,26 @@ impl DiagramShape for Ellipse {
     }
 
     fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
-        // Convert circle to ellipse using radius+log_aspect parameterization:
-        // radius = r (geometric mean), log_aspect = 0.0 (circle, aspect_ratio = 1.0), rotation = 0
-        vec![x, y, radius, 0.0, 0.0]
+        // Convert circle to ellipse using direct semi-axis representation:
+        // semi_major = semi_minor = radius (circle), rotation = 0
+        vec![x, y, radius, radius, 0.0]
     }
 
     fn n_params() -> usize {
-        5 // x, y, radius, log_aspect, rotation
+        5 // x, y, semi_major, semi_minor, rotation
     }
 
     fn from_params(params: &[f64]) -> Self {
         assert_eq!(
             params.len(),
             5,
-            "Ellipse requires 5 parameters: x, y, radius, log_aspect, rotation"
+            "Ellipse requires 5 parameters: x, y, semi_major, semi_minor, rotation"
         );
 
-        Ellipse::from_radius_ratio(
+        Ellipse::new(
             Point::new(params[0], params[1]),
-            params[2],
-            params[3],
+            params[2].abs(), // Ensure positive semi_major
+            params[3].abs(), // Ensure positive semi_minor
             params[4],
         )
     }
@@ -1857,13 +1857,13 @@ mod tests {
     fn test_diagram_shape_params_from_circle() {
         use crate::geometry::traits::DiagramShape;
 
-        // params_from_circle should give radius+log_aspect parameterization
+        // params_from_circle should give direct semi-axis parameterization
         let params = Ellipse::params_from_circle(1.0, 2.0, 3.0);
         assert_eq!(params.len(), 5);
         assert_eq!(params[0], 1.0); // x
         assert_eq!(params[1], 2.0); // y
-        assert_eq!(params[2], 3.0); // radius
-        assert_eq!(params[3], 0.0); // log_aspect (circle: ln(1) = 0)
+        assert_eq!(params[2], 3.0); // semi_major (same as radius for circle)
+        assert_eq!(params[3], 3.0); // semi_minor (same as radius for circle)
         assert_eq!(params[4], 0.0); // rotation
 
         // from_params should reconstruct a circle

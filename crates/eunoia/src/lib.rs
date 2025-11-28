@@ -43,5 +43,5 @@ pub mod test_utils;
 
 // Re-export main API types
 pub use error::DiagramError;
-pub use fitter::{Fitter, Layout};
+pub use fitter::{Fitter, Layout, Optimizer};
 pub use spec::{Combination, DiagramSpecBuilder, InputType};

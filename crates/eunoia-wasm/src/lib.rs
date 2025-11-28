@@ -6,10 +6,30 @@
 use eunoia::geometry::diagram;
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::geometry::traits::Polygonize;
+use eunoia::{Fitter, Optimizer};
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 use console_error_panic_hook;
+
+/// Optimizer options for WASM
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum WasmOptimizer {
+    NelderMead,
+    Lbfgs,
+    ConjugateGradient,
+}
+
+impl From<WasmOptimizer> for Optimizer {
+    fn from(opt: WasmOptimizer) -> Self {
+        match opt {
+            WasmOptimizer::NelderMead => Optimizer::NelderMead,
+            WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
+            WasmOptimizer::ConjugateGradient => Optimizer::ConjugateGradient,
+        }
+    }
+}
 
 /// Initialize WASM module
 #[wasm_bindgen(start)]
@@ -827,6 +847,7 @@ pub fn generate_ellipses_from_spec(
     specs: Vec<DiagramSpec>,
     input_type: String,
     seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
 ) -> Result<EllipseResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -860,6 +881,9 @@ pub fn generate_ellipses_from_spec(
     let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
     if let Some(s) = seed {
         fitter = fitter.seed(s);
+        if let Some(opt) = optimizer {
+            fitter = fitter.optimizer(opt.into());
+        }
     }
     let layout = fitter
         .fit()

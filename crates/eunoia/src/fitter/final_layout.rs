@@ -4,12 +4,31 @@
 //! layout by minimizing the difference between target exclusive areas and actual
 //! fitted areas in the diagram.
 
-use argmin::core::{CostFunction, Error, Executor, State};
+use argmin::core::{CostFunction, Error, Executor, Gradient, State};
+use argmin::solver::conjugategradient::beta::PolakRibiere;
+use argmin::solver::conjugategradient::NonlinearConjugateGradient;
+use argmin::solver::linesearch::{
+    condition::ArmijoCondition, BacktrackingLineSearch, MoreThuenteLineSearch,
+};
 use argmin::solver::neldermead::NelderMead;
+use argmin::solver::quasinewton::LBFGS;
+use finitediff::vec;
 use nalgebra::DVector;
 
 use crate::geometry::traits::DiagramShape;
 use crate::spec::PreprocessedSpec;
+
+/// Optimizer to use for final layout optimization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Optimizer {
+    /// Nelder-Mead simplex method (derivative-free)
+    #[default]
+    NelderMead,
+    /// L-BFGS with numerical gradients (typically better for smooth problems)
+    Lbfgs,
+    /// Nonlinear Conjugate Gradient with numerical gradients
+    ConjugateGradient,
+}
 
 /// Configuration for final layout optimization.
 #[derive(Debug, Clone)]
@@ -18,6 +37,8 @@ pub(crate) struct FinalLayoutConfig {
     pub max_iterations: usize,
     /// Loss function
     pub loss_type: crate::loss::LossType,
+    /// Optimizer to use
+    pub optimizer: Optimizer,
     /// Tolerance for convergence (currently unused, reserved for future use)
     #[allow(dead_code)]
     pub tolerance: f64,
@@ -26,8 +47,9 @@ pub(crate) struct FinalLayoutConfig {
 impl Default for FinalLayoutConfig {
     fn default() -> Self {
         Self {
-            max_iterations: 5000,
+            max_iterations: 50000,
             loss_type: crate::loss::LossType::region_error(),
+            optimizer: Optimizer::NelderMead, // Nelder-Mead is more robust for now
             tolerance: 1e-6,
         }
     }
@@ -59,62 +81,101 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
 
     let initial_param = DVector::from_vec(initial_params);
 
-    // Create loss function from config
-    let loss_fn = config.loss_type.create();
+    // Choose optimizer and run based on configuration
+    let (final_params, loss) = match config.optimizer {
+        Optimizer::NelderMead => {
+            // NelderMead needs initial simplex
+            let initial_simplex = {
+                let n_params = initial_param.len();
+                let mut simplex = Vec::with_capacity(n_params + 1);
+                simplex.push(initial_param.clone());
 
-    let cost_function = DiagramCost::<S> {
-        spec,
-        loss_fn,
-        params_per_shape,
-        _shape: std::marker::PhantomData,
-    };
+                for i in 0..n_params {
+                    let mut perturbed = initial_param.clone();
+                    let x0_i = initial_param[i];
 
-    // NelderMead Takes a vector of parameter vectors. The number of parameter vectors must be n +
-    // 1 where n is the number of optimization parameters.
-    // We need to provide n + 1 initial points for the simplex.
-    // Use x_i = x_0 + delta * e_i where e_i is the ith unit vector.
-    // delta = 0.05 * |x_0,i| for x_0,i != 0, and 0.00025 otherwise.
-    // Special cases:
-    // - For ellipses (5 params), the 4th parameter is log_aspect (can be 0), use delta = -0.2
-    // - For ellipses, the 5th parameter is rotation (radians), use delta = 0.2 (~11.5°)
-    let initial_simplex = {
-        let n_params = initial_param.len();
-        let mut simplex = Vec::with_capacity(n_params + 1);
-        simplex.push(initial_param.clone());
+                    // Check parameter type for ellipses (5 params per shape)
+                    let param_idx = i % params_per_shape;
+                    let is_rotation = params_per_shape == 5 && param_idx == 4;
 
-        for i in 0..n_params {
-            let mut perturbed = initial_param.clone();
-            let x0_i = initial_param[i];
+                    let delta = if x0_i.abs() > 1e-10 {
+                        0.05 * x0_i.abs()
+                    } else if is_rotation {
+                        0.2 // ~11.5 degrees for rotation parameters
+                    } else {
+                        0.00025
+                    };
+                    perturbed[i] += delta;
+                    simplex.push(perturbed);
+                }
 
-            // Check parameter type for ellipses (5 params per shape)
-            let param_idx = i % params_per_shape;
-            let is_log_aspect = params_per_shape == 5 && param_idx == 3;
-            let is_rotation = params_per_shape == 5 && param_idx == 4;
-
-            let delta = if x0_i.abs() > 1e-10 {
-                0.05 * x0_i.abs()
-            } else if is_log_aspect {
-                -0.2 // Perturb toward more elongated (negative log_aspect)
-            } else if is_rotation {
-                0.2 // ~11.5 degrees for rotation parameters
-            } else {
-                0.00025
+                simplex
             };
-            perturbed[i] += delta;
-            simplex.push(perturbed);
+
+            let loss_fn = config.loss_type.create();
+            let cost_function = DiagramCost::<S> {
+                spec,
+                loss_fn,
+                params_per_shape,
+                _shape: std::marker::PhantomData,
+            };
+            let solver = NelderMead::new(initial_simplex);
+            let result = Executor::new(cost_function, solver)
+                .configure(|state| state.max_iters(config.max_iterations as u64))
+                .run()?;
+            (
+                result.state().get_best_param().unwrap().clone(),
+                result.state().get_cost(),
+            )
         }
-
-        simplex
+        Optimizer::Lbfgs => {
+            // L-BFGS with numerical gradients
+            let loss_fn = config.loss_type.create();
+            let cost_function_lbfgs = DiagramCost::<S> {
+                spec,
+                loss_fn,
+                params_per_shape,
+                _shape: std::marker::PhantomData,
+            };
+            let line_search = MoreThuenteLineSearch::new();
+            let solver = LBFGS::new(line_search, 10);
+            let result = Executor::new(cost_function_lbfgs, solver)
+                .configure(|state| {
+                    state
+                        .param(initial_param.clone())
+                        .max_iters(config.max_iterations as u64)
+                })
+                .run()?;
+            (
+                result.state().get_best_param().unwrap().clone(),
+                result.state().get_cost(),
+            )
+        }
+        Optimizer::ConjugateGradient => {
+            // Conjugate Gradient with numerical gradients
+            let loss_fn = config.loss_type.create();
+            let cost_function_cg = DiagramCost::<S> {
+                spec,
+                loss_fn,
+                params_per_shape,
+                _shape: std::marker::PhantomData,
+            };
+            let line_search = BacktrackingLineSearch::new(ArmijoCondition::new(0.01)?);
+            let beta_update = PolakRibiere::new();
+            let solver = NonlinearConjugateGradient::new(line_search, beta_update);
+            let result = Executor::new(cost_function_cg, solver)
+                .configure(|state| {
+                    state
+                        .param(initial_param.clone())
+                        .max_iters(config.max_iterations as u64)
+                })
+                .run()?;
+            (
+                result.state().get_best_param().unwrap().clone(),
+                result.state().get_cost(),
+            )
+        }
     };
-
-    let solver = NelderMead::new(initial_simplex);
-
-    let result = Executor::new(cost_function, solver)
-        .configure(|state| state.max_iters(config.max_iterations as u64))
-        .run()?;
-
-    let final_params = result.state().get_best_param().unwrap();
-    let loss = result.state().get_cost();
 
     Ok((final_params.as_slice().to_vec(), loss))
 }
@@ -160,6 +221,23 @@ impl<'a, S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
             .evaluate(&exclusive_areas, &self.spec.exclusive_areas);
 
         Ok(error)
+    }
+}
+
+impl<'a, S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'a, S> {
+    type Param = DVector<f64>;
+    type Gradient = DVector<f64>;
+
+    fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, Error> {
+        // Use central finite differences for numerical gradient
+        let param_vec = param.as_slice().to_vec();
+        let f = |x: &Vec<f64>| {
+            let p = DVector::from_vec(x.to_vec());
+            Ok(self.cost(&p).unwrap_or(f64::INFINITY))
+        };
+        let g_central = vec::central_diff(&f);
+        let grad_vec = g_central(&param_vec)?;
+        Ok(DVector::from_vec(grad_vec))
     }
 }
 
@@ -262,6 +340,7 @@ mod tests {
         ];
 
         let config = FinalLayoutConfig {
+            optimizer: Optimizer::NelderMead,
             loss_type: crate::loss::LossType::region_error(),
             max_iterations: 50,
             tolerance: 1e-4,
@@ -348,6 +427,7 @@ mod tests {
         let radii = vec![1.0, 1.0];
 
         let config = FinalLayoutConfig {
+            optimizer: Optimizer::NelderMead,
             loss_type: crate::loss::LossType::region_error(),
             max_iterations: 100,
             tolerance: 1e-6,
@@ -407,6 +487,7 @@ mod tests {
         }
 
         let config = FinalLayoutConfig {
+            optimizer: Optimizer::NelderMead,
             loss_type: crate::loss::LossType::region_error(),
             max_iterations: 200,
             tolerance: 1e-6,
@@ -467,6 +548,7 @@ mod tests {
             }
 
             let config = FinalLayoutConfig {
+                optimizer: Optimizer::NelderMead,
                 loss_type: crate::loss::LossType::region_error(),
                 max_iterations: 200,
                 tolerance: 1e-6,

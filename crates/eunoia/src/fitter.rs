@@ -4,6 +4,7 @@ pub mod final_layout;
 mod initial_layout;
 mod layout;
 
+pub use final_layout::Optimizer;
 pub use layout::Layout;
 
 use crate::error::DiagramError;
@@ -41,6 +42,7 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     max_iterations: usize,
     seed: Option<u64>,
     loss_type: LossType,
+    optimizer: Optimizer,
     _shape: std::marker::PhantomData<S>,
 }
 
@@ -67,6 +69,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             max_iterations: 100,
             seed: None,
             loss_type: LossType::region_error(),
+            optimizer: Optimizer::default(),
             _shape: std::marker::PhantomData,
         }
     }
@@ -88,6 +91,28 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// ```
     pub fn max_iterations(mut self, max: usize) -> Self {
         self.max_iterations = max;
+        self
+    }
+
+    /// Set the optimizer to use for final layout optimization.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, Optimizer};
+    /// use eunoia::geometry::shapes::Ellipse;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // Try L-BFGS optimizer
+    /// let fitter = Fitter::<Ellipse>::new(&spec).optimizer(Optimizer::Lbfgs);
+    /// ```
+    pub fn optimizer(mut self, optimizer: Optimizer) -> Self {
+        self.optimizer = optimizer;
         self
     }
 
@@ -190,6 +215,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             let config = final_layout::FinalLayoutConfig {
                 max_iterations: self.max_iterations,
                 loss_type: self.loss_type,
+                optimizer: self.optimizer,
                 ..Default::default()
             };
 
@@ -667,4 +693,35 @@ fn test_circles_ac_issue_seed42() {
             );
         }
     }
+}
+#[test]
+fn test_compare_optimizers() {
+    use crate::fitter::Fitter;
+    use crate::geometry::shapes::Ellipse;
+    use crate::spec::{DiagramSpecBuilder, InputType};
+
+    let spec = DiagramSpecBuilder::new()
+        .set("A", 2.2)
+        .set("B", 2.0)
+        .set("C", 2.0)
+        .intersection(&["A", "B", "C"], 1.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .unwrap();
+
+    println!("\nComparing optimizers with seed=42:");
+
+    // Try with default (L-BFGS)
+    let fitter_default = Fitter::<Ellipse>::new(&spec).seed(42);
+    let start = std::time::Instant::now();
+    let layout_default = fitter_default.fit().unwrap();
+    let time_default = start.elapsed();
+    println!(
+        "Default (L-BFGS): Loss={:.6}, Time={:.3}s",
+        layout_default.loss(),
+        time_default.as_secs_f64()
+    );
+
+    // Try with Nelder-Mead
+    // TODO: Need a way to override optimizer in Fitter
 }
