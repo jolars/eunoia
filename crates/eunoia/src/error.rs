@@ -48,3 +48,85 @@ impl Display for DiagramError {
 }
 
 impl std::error::Error for DiagramError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_undefined_set_error() {
+        let error = DiagramError::UndefinedSet("X".to_string());
+        assert_eq!(error, DiagramError::UndefinedSet("X".to_string()));
+        assert_eq!(
+            format!("{}", error),
+            "Set 'X' is referenced but never defined"
+        );
+    }
+
+    #[test]
+    fn test_invalid_value_error() {
+        let error = DiagramError::InvalidValue {
+            combination: "A&B".to_string(),
+            value: -5.0,
+        };
+        assert_eq!(
+            error,
+            DiagramError::InvalidValue {
+                combination: "A&B".to_string(),
+                value: -5.0,
+            }
+        );
+        assert_eq!(
+            format!("{}", error),
+            "Invalid value -5 for combination 'A&B'"
+        );
+    }
+
+    #[test]
+    fn test_empty_sets_error() {
+        let error = DiagramError::EmptySets;
+        assert_eq!(error, DiagramError::EmptySets);
+        assert_eq!(format!("{}", error), "No sets defined in diagram");
+    }
+
+    #[test]
+    fn test_duplicate_combination_error() {
+        let error = DiagramError::DuplicateCombination("A&B".to_string());
+        assert_eq!(error, DiagramError::DuplicateCombination("A&B".to_string()));
+        assert_eq!(
+            format!("{}", error),
+            "Combination 'A&B' defined multiple times"
+        );
+    }
+
+    #[test]
+    fn test_invalid_combination_error() {
+        let error = DiagramError::InvalidCombination("A&".to_string());
+        assert_eq!(error, DiagramError::InvalidCombination("A&".to_string()));
+        assert_eq!(format!("{}", error), "Invalid combination format: 'A&'");
+    }
+
+    #[test]
+    fn test_error_trait_implementation() {
+        let error: Box<dyn std::error::Error> = Box::new(DiagramError::EmptySets);
+        assert_eq!(format!("{}", error), "No sets defined in diagram");
+    }
+
+    #[test]
+    fn test_debug_implementation() {
+        let error = DiagramError::UndefinedSet("A".to_string());
+        let debug_str = format!("{:?}", error);
+        assert!(debug_str.contains("UndefinedSet"));
+        assert!(debug_str.contains("A"));
+    }
+
+    #[test]
+    fn test_clone_implementation() {
+        let error = DiagramError::InvalidValue {
+            combination: "test".to_string(),
+            value: 1.5,
+        };
+        let cloned = error.clone();
+        assert_eq!(error, cloned);
+    }
+}
