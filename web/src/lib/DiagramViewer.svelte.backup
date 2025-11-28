@@ -206,17 +206,15 @@
   }
 
   // Auto-generate diagram when specification changes
+  // Only trigger when size values, input type, or initial-only flag change
   $effect(() => {
     if (wasmModule && diagramRows.length > 0) {
-      // Track all relevant parameters
+      // Track size values, input type, and useInitialOnly flag
       const sizeSignature = diagramRows.map((row) => row.size).join(",");
       console.log(
-        "Generating diagram:",
+        "Generating diagram from spec (sizes/type changed):",
         sizeSignature,
         inputType,
-        shapeType,
-        usePolygons,
-        polygonVertices,
         "initial-only:",
         useInitialOnly,
       );
@@ -224,92 +222,51 @@
     }
   });
 
-  // Calculate SVG viewBox and sizes
-  let viewBox = $state("0 0 400 400");
-  let strokeWidth = $state(2);
-  let fontSize = $state(16);
+  // Calculate SVG viewBox to fit all circles with proper padding
+  let viewBox = $derived.by(() => {
+    if (circles.length === 0) return "0 0 400 400";
 
-  // Compute viewBox for SVG - fits all shapes with padding
-  $effect(() => {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
+    const xs = circles.map((c) => c.x);
+    const ys = circles.map((c) => c.y);
+    const rs = circles.map((c) => c.radius);
 
-    if (polygons.length > 0) {
-      for (const polygon of polygons) {
-        for (const vertex of polygon.vertices) {
-          minX = Math.min(minX, vertex.x);
-          minY = Math.min(minY, vertex.y);
-          maxX = Math.max(maxX, vertex.x);
-          maxY = Math.max(maxY, vertex.y);
-        }
-      }
-    } else if (circles.length > 0) {
-      for (const circle of circles) {
-        minX = Math.min(minX, circle.x - circle.radius);
-        minY = Math.min(minY, circle.y - circle.radius);
-        maxX = Math.max(maxX, circle.x + circle.radius);
-        maxY = Math.max(maxY, circle.y + circle.radius);
-      }
-    } else if (ellipses.length > 0) {
-      for (const ellipse of ellipses) {
-        // Compute bounding box for rotated ellipse
-        const a = ellipse.semi_major;
-        const b = ellipse.semi_minor;
-        const angle = ellipse.rotation;
+    const minX = Math.min(...xs.map((x, i) => x - rs[i]));
+    const maxX = Math.max(...xs.map((x, i) => x + rs[i]));
+    const minY = Math.min(...ys.map((y, i) => y - rs[i]));
+    const maxY = Math.max(...ys.map((y, i) => y + rs[i]));
 
-        // Calculate the extents of the rotated ellipse
-        const cos_angle = Math.cos(angle);
-        const sin_angle = Math.sin(angle);
+    const width = maxX - minX;
+    const height = maxY - minY;
 
-        const dx = Math.sqrt(
-          a * a * cos_angle * cos_angle + b * b * sin_angle * sin_angle,
-        );
-        const dy = Math.sqrt(
-          a * a * sin_angle * sin_angle + b * b * cos_angle * cos_angle,
-        );
+    // Add padding as a percentage of the size (10% on each side)
+    const paddingPercent = 0.1;
+    const paddingX = width * paddingPercent;
+    const paddingY = height * paddingPercent;
 
-        minX = Math.min(minX, ellipse.x - dx);
-        minY = Math.min(minY, ellipse.y - dy);
-        maxX = Math.max(maxX, ellipse.x + dx);
-        maxY = Math.max(maxY, ellipse.y + dy);
-      }
-    } else {
-      viewBox = "0 0 200 200";
-      strokeWidth = 2;
-      fontSize = 16;
-      return;
-    }
-
-    // Calculate padding as percentage of diagram size (10%)
-    const rawWidth = maxX - minX;
-    const rawHeight = maxY - minY;
-    const padding = Math.max(rawWidth, rawHeight) * 0.1;
-
-    const width = rawWidth + 2 * padding;
-    const height = rawHeight + 2 * padding;
-
-    viewBox = `${minX - padding} ${minY - padding} ${width} ${height}`;
-
-    console.log("ViewBox Debug:", {
-      minX,
-      maxX,
-      minY,
-      maxY,
-      width,
-      height,
-      viewBox,
-      numShapes: circles.length || ellipses.length || polygons.length,
-    });
-
-    // Scale stroke and font based on the coordinate space
-    const dimension = Math.max(width, height);
-    strokeWidth = dimension * 0.01; // 1% of diagram
-    fontSize = dimension * 0.08; // 8% of diagram
-
-    console.log("Sizes:", { strokeWidth, fontSize, dimension });
+    return `${minX - paddingX} ${minY - paddingY} ${width + 2 * paddingX} ${height + 2 * paddingY}`;
   });
+
+  // Calculate appropriate stroke width and font size based on viewBox dimensions
+  let avgRadius = $derived(
+    circles.length > 0
+      ? circles.reduce((sum, c) => sum + c.radius, 0) / circles.length
+      : 1,
+  );
+  let strokeWidth = $derived(avgRadius * 0.02); // 2% of average radius
+
+  // Font size based on the viewBox dimensions, not individual circles
+  let viewBoxDimension = $derived.by(() => {
+    if (circles.length === 0) return 400;
+    const xs = circles.map((c) => c.x);
+    const ys = circles.map((c) => c.y);
+    const rs = circles.map((c) => c.radius);
+    const minX = Math.min(...xs.map((x, i) => x - rs[i]));
+    const maxX = Math.max(...xs.map((x, i) => x + rs[i]));
+    const minY = Math.min(...ys.map((y, i) => y - rs[i]));
+    const maxY = Math.max(...ys.map((y, i) => y + rs[i]));
+    return Math.max(maxX - minX, maxY - minY);
+  });
+  let fontSize = $derived(viewBoxDimension * 0.05); // 5% of viewBox dimension
 </script>
 
 <div class="bg-gray-50 p-8">
@@ -373,79 +330,15 @@
                 <input
                   type="checkbox"
                   bind:checked={useInitialOnly}
-                  disabled={usePolygons}
                   class="mr-2"
                 />
-                <span
-                  class="text-sm font-medium"
-                  class:text-gray-700={!usePolygons}
-                  class:text-gray-400={usePolygons}
+                <span class="text-sm font-medium text-gray-700"
                   >Use initial layout only (skip optimization)</span
                 >
               </label>
               <p class="mt-1 text-xs text-gray-500">
                 Shows MDS-based initial positions without final optimization
-                {#if usePolygons}(Disabled with polygon rendering){/if}
               </p>
-            </div>
-
-            <!-- Shape Type Selection -->
-            <div class="mb-4">
-              <div class="block text-sm font-medium text-gray-700 mb-2">
-                Shape Type
-              </div>
-              <div class="flex gap-4">
-                <label class="flex items-center cursor-pointer">
-                  <input
-                    type="radio"
-                    bind:group={shapeType}
-                    value="circle"
-                    class="mr-2"
-                  />
-                  <span class="text-sm">Circles</span>
-                </label>
-                <label class="flex items-center cursor-pointer">
-                  <input
-                    type="radio"
-                    bind:group={shapeType}
-                    value="ellipse"
-                    class="mr-2"
-                  />
-                  <span class="text-sm">Ellipses</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Polygon Rendering Option -->
-            <div class="mb-4">
-              <label class="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  bind:checked={usePolygons}
-                  class="mr-2"
-                />
-                <span class="text-sm font-medium text-gray-700"
-                  >Render as polygons</span
-                >
-              </label>
-              <p class="mt-1 text-xs text-gray-500">
-                Convert shapes to polygons for rendering
-              </p>
-              {#if usePolygons}
-                <div class="mt-2 ml-6">
-                  <label class="flex items-center gap-2">
-                    <span class="text-xs text-gray-600">Vertices:</span>
-                    <input
-                      type="number"
-                      bind:value={polygonVertices}
-                      min="8"
-                      max="256"
-                      step="8"
-                      class="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </label>
-                </div>
-              {/if}
             </div>
 
             <div class="space-y-3">
@@ -561,8 +454,7 @@
 
             <svg
               {viewBox}
-              class="w-full border border-gray-200 rounded"
-              style="height: 600px; max-height: 80vh;"
+              class="w-full h-auto border border-gray-200 rounded"
               preserveAspectRatio="xMidYMid meet"
             >
               <!-- Polygons -->

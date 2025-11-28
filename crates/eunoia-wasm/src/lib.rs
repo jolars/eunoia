@@ -4,7 +4,8 @@
 //! enabling Euler and Venn diagram generation in web browsers.
 
 use eunoia::geometry::diagram;
-use eunoia::geometry::shapes::Circle;
+use eunoia::geometry::shapes::{Circle, Ellipse};
+use eunoia::geometry::traits::Polygonize;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -37,6 +38,82 @@ impl WasmCircle {
             radius,
             label,
         }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn label(&self) -> String {
+        self.label.clone()
+    }
+}
+
+/// An ellipse representation for WASM with label
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmEllipse {
+    pub x: f64,
+    pub y: f64,
+    pub semi_major: f64,
+    pub semi_minor: f64,
+    pub rotation: f64,
+    label: String,
+}
+
+#[wasm_bindgen]
+impl WasmEllipse {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        x: f64,
+        y: f64,
+        semi_major: f64,
+        semi_minor: f64,
+        rotation: f64,
+        label: String,
+    ) -> Self {
+        Self {
+            x,
+            y,
+            semi_major,
+            semi_minor,
+            rotation,
+            label,
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn label(&self) -> String {
+        self.label.clone()
+    }
+}
+
+/// A point in 2D space
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[wasm_bindgen]
+impl WasmPoint {
+    #[wasm_bindgen(constructor)]
+    pub fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+}
+
+/// A polygon representation for visualization
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmPolygon {
+    vertices: Vec<WasmPoint>,
+    label: String,
+}
+
+#[wasm_bindgen]
+impl WasmPolygon {
+    #[wasm_bindgen(getter)]
+    pub fn vertices(&self) -> Vec<WasmPoint> {
+        self.vertices.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -578,4 +655,190 @@ pub fn get_debug_info_initial(
     });
 
     serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{}", e)))
+}
+
+/// Generate ellipse layout from diagram specification
+#[wasm_bindgen]
+pub fn generate_ellipses_from_spec(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+) -> Result<Vec<WasmEllipse>, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        if sets.len() == 1 {
+            builder = builder.set(sets[0], size);
+        } else if sets.len() > 1 {
+            builder = builder.intersection(&sets, size);
+        }
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let fitter = Fitter::<Ellipse>::new(&diagram_spec);
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|shape: &Ellipse| {
+                WasmEllipse::new(
+                    shape.center().x(),
+                    shape.center().y(),
+                    shape.semi_major(),
+                    shape.semi_minor(),
+                    shape.rotation(),
+                    name.to_string(),
+                )
+            })
+        })
+        .collect();
+
+    Ok(wasm_ellipses)
+}
+
+/// Generate circle layout and convert to polygons for rendering
+#[wasm_bindgen]
+pub fn generate_circles_as_polygons(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+) -> Result<Vec<WasmPolygon>, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        if sets.len() == 1 {
+            builder = builder.set(sets[0], size);
+        } else if sets.len() > 1 {
+            builder = builder.intersection(&sets, size);
+        }
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let fitter = Fitter::<Circle>::new(&diagram_spec);
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let wasm_polygons: Vec<WasmPolygon> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|circle: &Circle| {
+                let polygon = circle.polygonize(n_vertices);
+                let vertices: Vec<WasmPoint> = polygon
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: name.to_string(),
+                }
+            })
+        })
+        .collect();
+
+    Ok(wasm_polygons)
+}
+
+/// Generate ellipse layout and convert to polygons for rendering
+#[wasm_bindgen]
+pub fn generate_ellipses_as_polygons(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+) -> Result<Vec<WasmPolygon>, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        if sets.len() == 1 {
+            builder = builder.set(sets[0], size);
+        } else if sets.len() > 1 {
+            builder = builder.intersection(&sets, size);
+        }
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let fitter = Fitter::<Ellipse>::new(&diagram_spec);
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let wasm_polygons: Vec<WasmPolygon> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|ellipse: &Ellipse| {
+                let polygon = ellipse.polygonize(n_vertices);
+                let vertices: Vec<WasmPoint> = polygon
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: name.to_string(),
+                }
+            })
+        })
+        .collect();
+
+    Ok(wasm_polygons)
 }
