@@ -35,6 +35,10 @@ pub mod loss;
 pub mod math;
 pub mod spec;
 
+// Internal test utilities
+#[cfg(test)]
+pub mod test_utils;
+
 // Re-export main API types
 pub use error::DiagramError;
 pub use fitter::{Fitter, Layout};
