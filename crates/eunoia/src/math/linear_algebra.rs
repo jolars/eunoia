@@ -129,15 +129,15 @@ impl Vector3Ext for Vector3<Complex64> {
     type Output = Matrix3<Complex64>;
     fn skew_symmetric_matrix(&self) -> Matrix3<Complex64> {
         Matrix3::new(
-            Complex64::new(0.0, 0.0),
+            Complex64::from(0.0),
             -self[2],
             self[1],
             self[2],
-            Complex64::new(0.0, 0.0),
+            Complex64::from(0.0),
             -self[0],
             -self[1],
             self[0],
-            Complex64::new(0.0, 0.0),
+            Complex64::from(0.0),
         )
     }
 }
