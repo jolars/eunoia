@@ -799,7 +799,8 @@ impl DiagramShape for Ellipse {
         }
 
         // 2) Discover regions (bit masks) that exist
-        let mut regions: HashSet<crate::geometry::diagram::RegionMask> = HashSet::new();
+        let mut regions: std::collections::HashSet<crate::geometry::diagram::RegionMask> =
+            std::collections::HashSet::new();
         // Singles always exist
         for i in 0..n_sets {
             regions.insert(1 << i);
@@ -820,7 +821,10 @@ impl DiagramShape for Ellipse {
             }
         }
 
-        // 3) Compute overlapping areas for each discovered region
+        // 3) Convert to Vec for deterministic iteration (same as circles)
+        let regions: Vec<crate::geometry::diagram::RegionMask> = regions.into_iter().collect();
+
+        // 4) Compute overlapping areas for each discovered region
         let mut overlapping_areas: HashMap<crate::geometry::diagram::RegionMask, f64> =
             HashMap::new();
         for &mask in &regions {
@@ -912,7 +916,7 @@ impl DiagramShape for Ellipse {
             overlapping_areas.insert(mask, area.abs());
         }
 
-        // 4) Convert overlapping to exclusive via diagram helper
+        // 5) Convert overlapping to exclusive via diagram helper
         to_exclusive_areas(&overlapping_areas)
     }
 

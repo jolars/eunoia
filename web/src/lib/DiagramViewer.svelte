@@ -41,6 +41,7 @@
   let loss = $state<number>(0);
   let targetAreas = $state<Record<string, number>>({});
   let fittedAreas = $state<Record<string, number>>({});
+  let showShapeParams = $state(false);
 
   // Diagram specification
   let diagramRows = $state<DiagramRow[]>([
@@ -202,8 +203,9 @@
   // Auto-generate diagram when specification changes
   $effect(() => {
     if (wasmModule && diagramRows.length > 0) {
-      // Track all relevant parameters
+      // Track all relevant parameters including seed
       const sizeSignature = diagramRows.map((row) => row.size).join(",");
+      const effectiveSeed = useSeed && seed !== undefined ? seed : "none";
       console.log(
         "Generating diagram:",
         sizeSignature,
@@ -213,6 +215,8 @@
         polygonVertices,
         "initial-only:",
         useInitialOnly,
+        "seed:",
+        effectiveSeed,
       );
       generateFromSpec();
     }
@@ -578,6 +582,81 @@
               </div>
             </div>
           {/if}
+
+          <!-- Shape Parameters Debug Panel -->
+          <div class="mt-6">
+            <button
+              onclick={() => (showShapeParams = !showShapeParams)}
+              class="text-sm font-medium text-blue-600 hover:text-blue-800 mb-2"
+            >
+              {showShapeParams ? "▼" : "▶"} Shape Parameters (Debug)
+            </button>
+            {#if showShapeParams}
+              <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                {#if usePolygons}
+                  <div class="text-sm text-gray-600 italic">
+                    Shape parameters not available when using polygon rendering.
+                    <button
+                      onclick={() => (usePolygons = false)}
+                      class="text-blue-600 hover:text-blue-800 underline ml-1"
+                    >
+                      Disable polygon rendering
+                    </button>
+                    to view shape parameters.
+                  </div>
+                {:else if circles.length === 0 && ellipses.length === 0}
+                  <div class="text-sm text-gray-600 italic">
+                    No shapes generated yet. Add diagram specifications above.
+                  </div>
+                {:else}
+                  <div class="space-y-2 text-sm font-mono">
+                    {#if circles.length > 0}
+                      {#each circles as circle}
+                        <div class="border-b border-gray-300 pb-2">
+                          <div class="font-semibold text-gray-700">
+                            {circle.label}:
+                          </div>
+                          <div class="pl-4 text-xs">
+                            <div>center: ({circle.x.toFixed(6)}, {circle.y.toFixed(6)})</div>
+                            <div>radius: {circle.radius.toFixed(6)}</div>
+                            <div>area: {(Math.PI * circle.radius ** 2).toFixed(6)}</div>
+                          </div>
+                        </div>
+                      {/each}
+                    {/if}
+                    {#if ellipses.length > 0}
+                      {#each ellipses as ellipse}
+                        <div class="border-b border-gray-300 pb-2">
+                          <div class="font-semibold text-gray-700">
+                            {ellipse.label}:
+                          </div>
+                          <div class="pl-4 text-xs">
+                            <div>center: ({ellipse.x.toFixed(6)}, {ellipse.y.toFixed(6)})</div>
+                            <div>semi_major: {ellipse.semi_major.toFixed(6)}</div>
+                            <div>semi_minor: {ellipse.semi_minor.toFixed(6)}</div>
+                            <div>rotation: {ellipse.rotation.toFixed(6)} rad ({(ellipse.rotation * 180 / Math.PI).toFixed(2)}°)</div>
+                            <div>aspect: {(ellipse.semi_minor / ellipse.semi_major).toFixed(6)}</div>
+                            <div>area: {(Math.PI * ellipse.semi_major * ellipse.semi_minor).toFixed(6)}</div>
+                          </div>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
+                  <div class="mt-4 text-xs text-gray-600">
+                    <div class="font-semibold mb-1">Copy for unit test:</div>
+                    <textarea
+                      readonly
+                      class="w-full h-32 p-2 bg-white border border-gray-300 rounded font-mono text-xs"
+                      value={circles.length > 0
+                        ? circles.map(c => `Circle::new(Point::new(${c.x.toFixed(6)}, ${c.y.toFixed(6)}), ${c.radius.toFixed(6)}) // ${c.label}`).join('\n')
+                        : ellipses.map(e => `Ellipse::new(Point::new(${e.x.toFixed(6)}, ${e.y.toFixed(6)}), ${e.semi_major.toFixed(6)}, ${e.semi_minor.toFixed(6)}, ${e.rotation.toFixed(6)}) // ${e.label}`).join('\n')
+                      }
+                    ></textarea>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
         </div>
 
         <!-- Visualization -->
