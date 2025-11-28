@@ -306,7 +306,7 @@
     // Scale stroke and font based on the coordinate space
     const dimension = Math.max(width, height);
     strokeWidth = dimension * 0.01; // 1% of diagram
-    fontSize = dimension * 0.08; // 8% of diagram
+    fontSize = dimension * 0.06; // 8% of diagram
 
     console.log("Sizes:", { strokeWidth, fontSize, dimension });
   });
