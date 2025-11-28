@@ -1805,7 +1805,7 @@ mod tests {
     fn test_from_radius_ratio_elongated() {
         // log_aspect = ln(0.5) ≈ -0.693 means aspect_ratio = 0.5
         let radius = 2.0;
-        let log_aspect = -0.693147180559945309; // ln(0.5)
+        let log_aspect = -std::f64::consts::LN_2; // ln(0.5)
         let e = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), radius, log_aspect, 0.0);
 
         // radius = sqrt(a * b), aspect = exp(log_aspect) = 0.5
