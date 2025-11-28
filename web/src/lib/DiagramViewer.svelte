@@ -54,6 +54,8 @@
   let shapeType = $state<"circle" | "ellipse">("circle");
   let usePolygons = $state(true);
   let polygonVertices = $state(64);
+  let seed = $state<number | undefined>(undefined);
+  let useSeed = $state(false);
 
   const colors = [
     "rgba(59, 130, 246, 0.3)", // blue
@@ -115,6 +117,9 @@
         return;
       }
 
+      // Determine seed value - convert to BigInt for WASM
+      const seedValue = useSeed && seed !== undefined ? BigInt(seed) : undefined;
+
       // Generate diagram based on shape type and polygon preference
       if (usePolygons) {
         // Generate as polygons
@@ -123,19 +128,31 @@
             specs,
             inputType,
             polygonVertices,
+            seedValue,
           );
-          polygons = Array.from(result);
+          polygons = Array.from(result.polygons);
           circles = [];
           ellipses = [];
+          
+          // Extract areas from the result (no need to refit!)
+          loss = result.loss;
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
         } else {
           const result = wasmModule.generate_ellipses_as_polygons(
             specs,
             inputType,
             polygonVertices,
+            seedValue,
           );
-          polygons = Array.from(result);
+          polygons = Array.from(result.polygons);
           circles = [];
           ellipses = [];
+          
+          // Extract areas from the result (no need to refit!)
+          loss = result.loss;
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
         }
       } else {
         // Generate as analytical shapes
@@ -144,55 +161,32 @@
           const generateFn = useInitialOnly
             ? wasmModule.generate_from_spec_initial
             : wasmModule.generate_from_spec;
-          const result = generateFn(specs, inputType);
-          circles = Array.from(result);
+          const result = generateFn(specs, inputType, seedValue);
+          circles = Array.from(result.circles);
           ellipses = [];
+          
+          // Extract areas from the result (no need to refit!)
+          loss = result.loss;
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
         } else {
           const result = wasmModule.generate_ellipses_from_spec(
             specs,
             inputType,
+            seedValue,
           );
-          ellipses = Array.from(result);
+          ellipses = Array.from(result.ellipses);
           circles = [];
+          
+          // Extract areas from the result (no need to refit!)
+          loss = result.loss;
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
         }
       }
       error = "";
 
-      // Get debug info separately using simple arrays
-      try {
-        const inputs = diagramRows
-          .filter((row) => {
-            const input = row.input.trim();
-            const size = row.size;
-            if (input === "" || size <= 0) return false;
-            if (input.endsWith("&") || input.endsWith("|")) return false;
-            return true;
-          })
-          .map((row) => row.input);
-        const sizes = diagramRows
-          .filter((row) => {
-            const input = row.input.trim();
-            const size = row.size;
-            if (input === "" || size <= 0) return false;
-            if (input.endsWith("&") || input.endsWith("|")) return false;
-            return true;
-          })
-          .map((row) => row.size);
-
-        const debugFn = useInitialOnly
-          ? wasmModule.get_debug_info_initial
-          : wasmModule.get_debug_info_simple;
-        const debugJson = debugFn(inputs, sizes, inputType);
-        const debugData = JSON.parse(debugJson);
-        loss = debugData.loss;
-        targetAreas = debugData.target_areas;
-        fittedAreas = debugData.fitted_areas;
-      } catch (debugError) {
-        console.error("Debug info error:", debugError);
-        loss = 0;
-        targetAreas = {};
-        fittedAreas = {};
-      }
+      // No need for separate debug info call - we already have the areas!
     } catch (e) {
       error = `Failed to generate diagram: ${e}`;
       circles = [];
@@ -442,6 +436,38 @@
                       max="256"
                       step="8"
                       class="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+                    />
+                  </label>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Random Seed Option -->
+            <div class="mb-4">
+              <label class="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  bind:checked={useSeed}
+                  class="mr-2"
+                />
+                <span class="text-sm font-medium text-gray-700"
+                  >Use random seed</span
+                >
+              </label>
+              <p class="mt-1 text-xs text-gray-500">
+                Set seed for reproducible layouts
+              </p>
+              {#if useSeed}
+                <div class="mt-2 ml-6">
+                  <label class="flex items-center gap-2">
+                    <span class="text-xs text-gray-600">Seed:</span>
+                    <input
+                      type="number"
+                      bind:value={seed}
+                      min="0"
+                      step="1"
+                      placeholder="e.g., 42"
+                      class="w-32 px-2 py-1 text-sm border border-gray-300 rounded"
                     />
                   </label>
                 </div>

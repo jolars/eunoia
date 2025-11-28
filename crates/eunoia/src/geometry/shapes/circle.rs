@@ -100,7 +100,10 @@ impl Closed for Circle {
     /// need correction.
     fn intersects(&self, other: &Self) -> bool {
         let center_distance = self.center.distance(&other.center);
-        center_distance >= self.radius + other.radius
+        // Circles intersect if distance is less than sum of radii
+        // Also check for containment case (distance < |r1 - r2|)
+        center_distance < self.radius + other.radius
+            && center_distance > (self.radius - other.radius).abs()
     }
 
     /// Computes the area of intersection between two circles.
@@ -625,21 +628,26 @@ mod tests {
     fn test_circle_intersects_separate() {
         let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
         let circle2 = Circle::new(Point::new(5.0, 0.0), 1.0);
-        assert!(circle1.intersects(&circle2));
+        // Distance = 5, sum of radii = 2, circles are separated
+        assert!(!circle1.intersects(&circle2));
     }
 
     #[test]
     fn test_circle_intersects_touching() {
         let circle1 = Circle::new(Point::new(0.0, 0.0), 1.0);
         let circle2 = Circle::new(Point::new(2.0, 0.0), 1.0);
-        assert!(circle1.intersects(&circle2));
+        // Distance = 2, sum of radii = 2, circles touch at exactly one point
+        // This is a boundary case - could be either true or false depending on definition
+        // We treat tangent as NOT intersecting (no area overlap)
+        assert!(!circle1.intersects(&circle2));
     }
 
     #[test]
     fn test_circle_intersects_overlapping() {
         let circle1 = Circle::new(Point::new(0.0, 0.0), 2.0);
         let circle2 = Circle::new(Point::new(1.0, 0.0), 2.0);
-        assert!(!circle1.intersects(&circle2));
+        // Distance = 1, sum of radii = 4, circles overlap
+        assert!(circle1.intersects(&circle2));
     }
 
     #[test]

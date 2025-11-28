@@ -180,6 +180,70 @@ impl DiagramResult {
     }
 }
 
+/// Result with ellipses and debug info
+#[wasm_bindgen]
+pub struct EllipseResult {
+    ellipses: Vec<WasmEllipse>,
+    loss: f64,
+    target_areas_json: String,
+    fitted_areas_json: String,
+}
+
+#[wasm_bindgen]
+impl EllipseResult {
+    #[wasm_bindgen(getter)]
+    pub fn ellipses(&self) -> Vec<WasmEllipse> {
+        self.ellipses.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn loss(&self) -> f64 {
+        self.loss
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target_areas_json(&self) -> String {
+        self.target_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fitted_areas_json(&self) -> String {
+        self.fitted_areas_json.clone()
+    }
+}
+
+/// Result with polygons and debug info
+#[wasm_bindgen]
+pub struct PolygonResult {
+    polygons: Vec<WasmPolygon>,
+    loss: f64,
+    target_areas_json: String,
+    fitted_areas_json: String,
+}
+
+#[wasm_bindgen]
+impl PolygonResult {
+    #[wasm_bindgen(getter)]
+    pub fn polygons(&self) -> Vec<WasmPolygon> {
+        self.polygons.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn loss(&self) -> f64 {
+        self.loss
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target_areas_json(&self) -> String {
+        self.target_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fitted_areas_json(&self) -> String {
+        self.fitted_areas_json.clone()
+    }
+}
+
 /// Generate a simple test layout for debugging
 #[wasm_bindgen]
 pub fn generate_test_layout() -> Vec<WasmCircle> {
@@ -210,7 +274,8 @@ pub fn compute_layout(n_sets: usize) -> Vec<WasmCircle> {
 pub fn generate_from_spec(
     specs: Vec<DiagramSpec>,
     input_type: String,
-) -> Result<Vec<WasmCircle>, JsValue> {
+    seed: Option<u64>,
+) -> Result<DiagramResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
 
@@ -255,7 +320,10 @@ pub fn generate_from_spec(
         .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
 
     // Fit the diagram using circles
-    let fitter = Fitter::<Circle>::new(&diagram_spec);
+    let mut fitter = Fitter::<Circle>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
@@ -276,7 +344,27 @@ pub fn generate_from_spec(
         })
         .collect();
 
-    Ok(wasm_circles)
+    // Extract areas from the same layout (no refitting!)
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(DiagramResult {
+        circles: wasm_circles,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
 }
 
 /// Generate layout from diagram specification with debug information
@@ -463,6 +551,8 @@ pub fn get_debug_info_simple(
     inputs: Vec<String>,
     sizes: Vec<f64>,
     input_type: String,
+    shape_type: String,
+    seed: Option<u64>,
 ) -> Result<String, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -491,30 +581,59 @@ pub fn get_debug_info_simple(
         .input_type(input_type_enum)
         .build()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
-    let fitter = Fitter::<Circle>::new(&diagram_spec);
-    let layout = fitter
-        .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    // Compute fitted areas based on shape type
+    let fitted: HashMap<String, f64> = if shape_type == "ellipse" {
+        let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
+        if let Some(s) = seed {
+            fitter = fitter.seed(s);
+        }
+        let layout = fitter
+            .fit()
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+        layout
+            .fitted()
+            .iter()
+            .map(|(combo, &area)| (combo.to_string(), area))
+            .collect()
+    } else {
+        let mut fitter = Fitter::<Circle>::new(&diagram_spec);
+        if let Some(s) = seed {
+            fitter = fitter.seed(s);
+        }
+        let layout = fitter
+            .fit()
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+        layout
+            .fitted()
+            .iter()
+            .map(|(combo, &area)| (combo.to_string(), area))
+            .collect()
+    };
+
+    let loss = if shape_type == "ellipse" {
+        let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
+        if let Some(s) = seed {
+            fitter = fitter.seed(s);
+        }
+        fitter.fit().map(|l| l.loss()).unwrap_or(0.0)
+    } else {
+        let mut fitter = Fitter::<Circle>::new(&diagram_spec);
+        if let Some(s) = seed {
+            fitter = fitter.seed(s);
+        }
+        fitter.fit().map(|l| l.loss()).unwrap_or(0.0)
+    };
 
     let mut target: HashMap<String, f64> = HashMap::new();
     for (combo, &area) in diagram_spec.exclusive_areas() {
         target.insert(combo.to_string(), area);
     }
 
-    use eunoia::geometry::diagram::compute_exclusive_areas_from_layout;
-    let circles: Vec<Circle> = diagram_spec
-        .set_names()
-        .iter()
-        .filter_map(|name| layout.shape_for_set(name).cloned())
-        .collect();
-    let fitted_exclusive = compute_exclusive_areas_from_layout(&circles, diagram_spec.set_names());
-    let mut fitted: HashMap<String, f64> = HashMap::new();
-    for (combo, area) in fitted_exclusive {
-        fitted.insert(combo.to_string(), area);
-    }
-
     let response = serde_json::json!({
-        "loss": layout.loss(),
+        "loss": loss,
         "target_areas": target,
         "fitted_areas": fitted
     });
@@ -527,7 +646,8 @@ pub fn get_debug_info_simple(
 pub fn generate_from_spec_initial(
     specs: Vec<DiagramSpec>,
     input_type: String,
-) -> Result<Vec<WasmCircle>, JsValue> {
+    seed: Option<u64>,
+) -> Result<DiagramResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
 
@@ -568,7 +688,10 @@ pub fn generate_from_spec_initial(
         .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
 
     // Fit using initial layout only
-    let fitter = Fitter::<Circle>::new(&diagram_spec);
+    let mut fitter = Fitter::<Circle>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
     let layout = fitter
         .fit_initial_only()
         .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
@@ -589,7 +712,27 @@ pub fn generate_from_spec_initial(
         })
         .collect();
 
-    Ok(wasm_circles)
+    // Extract areas from the same layout (no refitting!)
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(DiagramResult {
+        circles: wasm_circles,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
 }
 
 /// Get debug info for initial layout only
@@ -598,6 +741,8 @@ pub fn get_debug_info_initial(
     inputs: Vec<String>,
     sizes: Vec<f64>,
     input_type: String,
+    shape_type: String,
+    seed: Option<u64>,
 ) -> Result<String, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -626,30 +771,49 @@ pub fn get_debug_info_initial(
         .input_type(input_type_enum)
         .build()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
-    let fitter = Fitter::<Circle>::new(&diagram_spec);
-    let layout = fitter
-        .fit_initial_only()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    // Compute fitted areas based on shape type
+    let (loss, fitted) = if shape_type == "ellipse" {
+        let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
+        if let Some(s) = seed {
+            fitter = fitter.seed(s);
+        }
+        let layout = fitter
+            .fit_initial_only()
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+        let fitted_map: HashMap<String, f64> = layout
+            .fitted()
+            .iter()
+            .map(|(combo, &area)| (combo.to_string(), area))
+            .collect();
+
+        (layout.loss(), fitted_map)
+    } else {
+        let mut fitter = Fitter::<Circle>::new(&diagram_spec);
+        if let Some(s) = seed {
+            fitter = fitter.seed(s);
+        }
+        let layout = fitter
+            .fit_initial_only()
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+        let fitted_map: HashMap<String, f64> = layout
+            .fitted()
+            .iter()
+            .map(|(combo, &area)| (combo.to_string(), area))
+            .collect();
+
+        (layout.loss(), fitted_map)
+    };
 
     let mut target: HashMap<String, f64> = HashMap::new();
     for (combo, &area) in diagram_spec.exclusive_areas() {
         target.insert(combo.to_string(), area);
     }
 
-    use diagram::compute_exclusive_areas_from_layout;
-    let circles: Vec<Circle> = diagram_spec
-        .set_names()
-        .iter()
-        .filter_map(|name| layout.shape_for_set(name).cloned())
-        .collect();
-    let fitted_exclusive = compute_exclusive_areas_from_layout(&circles, diagram_spec.set_names());
-    let mut fitted: HashMap<String, f64> = HashMap::new();
-    for (combo, area) in fitted_exclusive {
-        fitted.insert(combo.to_string(), area);
-    }
-
     let response = serde_json::json!({
-        "loss": layout.loss(),
+        "loss": loss,
         "target_areas": target,
         "fitted_areas": fitted
     });
@@ -662,7 +826,8 @@ pub fn get_debug_info_initial(
 pub fn generate_ellipses_from_spec(
     specs: Vec<DiagramSpec>,
     input_type: String,
-) -> Result<Vec<WasmEllipse>, JsValue> {
+    seed: Option<u64>,
+) -> Result<EllipseResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
 
@@ -692,7 +857,10 @@ pub fn generate_ellipses_from_spec(
         .build()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
-    let fitter = Fitter::<Ellipse>::new(&diagram_spec);
+    let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
@@ -714,7 +882,27 @@ pub fn generate_ellipses_from_spec(
         })
         .collect();
 
-    Ok(wasm_ellipses)
+    // Extract areas from the same layout (no refitting!)
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(EllipseResult {
+        ellipses: wasm_ellipses,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
 }
 
 /// Generate circle layout and convert to polygons for rendering
@@ -723,7 +911,8 @@ pub fn generate_circles_as_polygons(
     specs: Vec<DiagramSpec>,
     input_type: String,
     n_vertices: usize,
-) -> Result<Vec<WasmPolygon>, JsValue> {
+    seed: Option<u64>,
+) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
 
@@ -753,7 +942,10 @@ pub fn generate_circles_as_polygons(
         .build()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
-    let fitter = Fitter::<Circle>::new(&diagram_spec);
+    let mut fitter = Fitter::<Circle>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
@@ -777,7 +969,27 @@ pub fn generate_circles_as_polygons(
         })
         .collect();
 
-    Ok(wasm_polygons)
+    // Extract areas from the same layout (no refitting!)
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(PolygonResult {
+        polygons: wasm_polygons,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
 }
 
 /// Generate ellipse layout and convert to polygons for rendering
@@ -786,7 +998,8 @@ pub fn generate_ellipses_as_polygons(
     specs: Vec<DiagramSpec>,
     input_type: String,
     n_vertices: usize,
-) -> Result<Vec<WasmPolygon>, JsValue> {
+    seed: Option<u64>,
+) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
 
@@ -816,7 +1029,10 @@ pub fn generate_ellipses_as_polygons(
         .build()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
-    let fitter = Fitter::<Ellipse>::new(&diagram_spec);
+    let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
@@ -840,5 +1056,25 @@ pub fn generate_ellipses_as_polygons(
         })
         .collect();
 
-    Ok(wasm_polygons)
+    // Extract areas from the same layout (no refitting!)
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(PolygonResult {
+        polygons: wasm_polygons,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
 }

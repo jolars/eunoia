@@ -302,7 +302,7 @@ pub fn compute_region_area(
 }
 
 /// Convert a region mask to a list of circle indices.
-fn mask_to_indices(mask: RegionMask, n_sets: usize) -> Vec<usize> {
+pub fn mask_to_indices(mask: RegionMask, n_sets: usize) -> Vec<usize> {
     (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect()
 }
 

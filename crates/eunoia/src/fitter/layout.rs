@@ -99,15 +99,26 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     fn compute_fitted_areas(shapes: &[S], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();
 
-        // Check if S is Circle at runtime using type introspection
-        if std::any::TypeId::of::<S>() == std::any::TypeId::of::<Circle>() {
-            // SAFETY: We just checked that S == Circle
-            let circles: &[Circle] = unsafe { std::mem::transmute(shapes) };
-            diagram::compute_exclusive_areas_from_layout(circles, set_names)
-        } else {
-            // For other shapes, use Monte Carlo
-            diagram::compute_exclusive_areas_from_layout_generic(shapes, set_names)
+        // Use the shape-specific exact computation method
+        let exclusive_areas_by_mask = S::compute_exclusive_regions(shapes);
+
+        // Convert RegionMask to Combination
+        let mut exclusive_combos = HashMap::new();
+        for (mask, area) in exclusive_areas_by_mask {
+            if area > 1e-10 {
+                // Only include non-negligible areas
+                let indices = diagram::mask_to_indices(mask, shapes.len());
+                let combo_sets: Vec<&str> =
+                    indices.iter().map(|&i| set_names[i].as_str()).collect();
+
+                if !combo_sets.is_empty() {
+                    let combo = Combination::new(&combo_sets);
+                    exclusive_combos.insert(combo, area);
+                }
+            }
         }
+
+        exclusive_combos
     }
 
     /// Compute region error loss.
@@ -166,5 +177,82 @@ mod tests {
         assert_eq!(circle.radius(), 3.0);
         assert_eq!(circle.center().x(), 1.0);
         assert_eq!(circle.center().y(), 2.0);
+    }
+
+    #[test]
+    fn test_ellipse_area_computation_uses_exact_method() {
+        use crate::geometry::primitives::Point;
+        use crate::geometry::shapes::Ellipse;
+        use crate::spec::InputType;
+
+        // Test case: Three disjoint ellipses should NOT report intersection areas
+        // This was the bug: Monte Carlo sampling was reporting spurious intersections
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 2.9)
+            .set("B", 4.9)
+            .set("C", 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        // Create three disjoint ellipses (circles for simplicity)
+        let shapes = vec![
+            Ellipse::new(Point::new(-5.0, 0.0), 1.0, 1.0, 0.0), // A: left
+            Ellipse::new(Point::new(5.0, 0.0), 1.3, 1.3, 0.0),  // B: right
+            Ellipse::new(Point::new(0.0, 5.0), 0.6, 0.6, 0.0),  // C: top
+        ];
+
+        let mut set_to_shape = HashMap::new();
+        set_to_shape.insert("A".to_string(), 0);
+        set_to_shape.insert("B".to_string(), 1);
+        set_to_shape.insert("C".to_string(), 2);
+
+        let layout = Layout::new(shapes, set_to_shape, &spec, 0);
+
+        // Check fitted areas - there should be NO intersection areas
+        let ab_combo = Combination::new(&["A", "B"]);
+        let ac_combo = Combination::new(&["A", "C"]);
+        let bc_combo = Combination::new(&["B", "C"]);
+        let abc_combo = Combination::new(&["A", "B", "C"]);
+
+        let ab_area = layout.fitted().get(&ab_combo).copied().unwrap_or(0.0);
+        let ac_area = layout.fitted().get(&ac_combo).copied().unwrap_or(0.0);
+        let bc_area = layout.fitted().get(&bc_combo).copied().unwrap_or(0.0);
+        let abc_area = layout.fitted().get(&abc_combo).copied().unwrap_or(0.0);
+
+        // All intersection areas should be zero (or negligible) since shapes are disjoint
+        assert!(
+            ab_area < 1e-6,
+            "A&B should be ~0 for disjoint shapes, got {}",
+            ab_area
+        );
+        assert!(
+            ac_area < 1e-6,
+            "A&C should be ~0 for disjoint shapes, got {}",
+            ac_area
+        );
+        assert!(
+            bc_area < 1e-6,
+            "B&C should be ~0 for disjoint shapes, got {}",
+            bc_area
+        );
+        assert!(
+            abc_area < 1e-6,
+            "A&B&C should be ~0 for disjoint shapes, got {}",
+            abc_area
+        );
+
+        // Individual areas should match shape areas
+        let a_only = layout
+            .fitted()
+            .get(&Combination::new(&["A"]))
+            .copied()
+            .unwrap_or(0.0);
+        let expected_a = std::f64::consts::PI * 1.0 * 1.0;
+        assert!(
+            (a_only - expected_a).abs() < 0.01,
+            "A area should be ~π, got {}",
+            a_only
+        );
     }
 }

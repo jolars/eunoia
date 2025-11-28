@@ -435,4 +435,236 @@ mod tests {
             ); // < 1% error with 64 vertices
         }
     }
+
+    #[test]
+    fn test_spurious_ac_intersection() {
+        use crate::geometry::shapes::Ellipse;
+        use crate::geometry::traits::{Area, Closed};
+        use crate::spec::{Combination, DiagramSpecBuilder, InputType};
+
+        // User reported: A=2.2, B=2, C=2, A&B&C=1 (exclusive)
+        // Result shows A&C=0.059 but A&C don't visually intersect
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 2.2)
+            .set("B", 2.0)
+            .set("C", 2.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        println!("\nTarget exclusive areas:");
+        for (combo, &area) in spec.exclusive_areas() {
+            println!("  {}: {:.3}", combo, area);
+        }
+
+        // Try multiple seeds to see if we can find a good solution
+        let seeds = vec![42, 123, 456, 789, 1000];
+        let mut best_loss = f64::INFINITY;
+        let mut best_seed = 0;
+
+        for &seed in &seeds {
+            let fitter = Fitter::<Ellipse>::new(&spec).seed(seed);
+            let layout = fitter.fit().unwrap();
+            if layout.loss() < best_loss {
+                best_loss = layout.loss();
+                best_seed = seed;
+            }
+        }
+
+        println!("\nBest seed: {} with loss: {:.6}", best_seed, best_loss);
+
+        // Use best seed for detailed analysis
+        let fitter = Fitter::<Ellipse>::new(&spec).seed(best_seed);
+        let layout = fitter.fit().unwrap();
+
+        println!("\nFitted exclusive areas:");
+        for (combo, &area) in layout.fitted() {
+            println!("  {}: {:.3}", combo, area);
+        }
+
+        println!("\nLoss: {:.6}", layout.loss());
+
+        // Get shapes
+        let shape_a = layout.shape_for_set("A").unwrap();
+        let shape_b = layout.shape_for_set("B").unwrap();
+        let shape_c = layout.shape_for_set("C").unwrap();
+
+        println!("\nShape details:");
+        println!(
+            "A: center=({:.3}, {:.3}), semi_major={:.3}, semi_minor={:.3}, rotation={:.3}°, area={:.3}",
+            shape_a.center().x(),
+            shape_a.center().y(),
+            shape_a.semi_major(),
+            shape_a.semi_minor(),
+            shape_a.rotation().to_degrees(),
+            shape_a.area()
+        );
+        println!(
+            "B: center=({:.3}, {:.3}), semi_major={:.3}, semi_minor={:.3}, rotation={:.3}°, area={:.3}",
+            shape_b.center().x(),
+            shape_b.center().y(),
+            shape_b.semi_major(),
+            shape_b.semi_minor(),
+            shape_b.rotation().to_degrees(),
+            shape_b.area()
+        );
+        println!(
+            "C: center=({:.3}, {:.3}), semi_major={:.3}, semi_minor={:.3}, rotation={:.3}°, area={:.3}",
+            shape_c.center().x(),
+            shape_c.center().y(),
+            shape_c.semi_major(),
+            shape_c.semi_minor(),
+            shape_c.rotation().to_degrees(),
+            shape_c.area()
+        );
+
+        // Check actual intersections
+        println!("\nActual geometry intersections:");
+        println!("  A ∩ B: {}", shape_a.intersects(shape_b));
+        println!("  A ∩ C: {}", shape_a.intersects(shape_c));
+        println!("  B ∩ C: {}", shape_b.intersects(shape_c));
+
+        let ab_points = shape_a.intersection_points(shape_b);
+        let ac_points = shape_a.intersection_points(shape_c);
+        let bc_points = shape_b.intersection_points(shape_c);
+
+        println!("\nIntersection point counts:");
+        println!("  A ∩ B: {} points", ab_points.len());
+        println!("  A ∩ C: {} points", ac_points.len());
+        println!("  B ∩ C: {} points", bc_points.len());
+
+        // Check fitted areas
+        let ac_combo = Combination::new(&["A", "C"]);
+        let ac_fitted = layout.fitted().get(&ac_combo).copied().unwrap_or(0.0);
+
+        println!("\nA&C fitted area: {:.6}", ac_fitted);
+
+        // This is challenging - with ellipses, the optimizer may struggle
+        // to avoid pairwise intersections when a 3-way intersection is required
+        println!("\n⚠️  Note: This configuration is challenging for the optimizer.");
+        println!("   Target has A&B&C intersection but no pairwise intersections.");
+        println!("   Current loss: {:.3}", layout.loss());
+    }
+}
+#[test]
+fn test_circles_ac_issue_seed42() {
+    use crate::fitter::Fitter;
+    use crate::geometry::shapes::Circle;
+    use crate::geometry::traits::Closed;
+    use crate::spec::{Combination, DiagramSpecBuilder, InputType};
+
+    // User test case: A=2.2, B=2, C=3, A&B&C=1 (exclusive), seed=42
+    // Shows A&C=0.339 but no visual intersection
+    let spec = DiagramSpecBuilder::new()
+        .set("A", 2.2)
+        .set("B", 2.0)
+        .set("C", 3.0)
+        .intersection(&["A", "B", "C"], 1.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .unwrap();
+
+    println!("\nTarget exclusive areas:");
+    for (combo, &area) in spec.exclusive_areas() {
+        println!("  {}: {:.3}", combo, area);
+    }
+
+    let fitter = Fitter::<Circle>::new(&spec).seed(42);
+    let layout = fitter.fit().unwrap();
+
+    println!("\nFitted exclusive areas:");
+    for (combo, &area) in layout.fitted() {
+        println!("  {}: {:.3}", combo, area);
+    }
+
+    println!("\nLoss: {:.6}", layout.loss());
+
+    // Get shapes
+    let shape_a = layout.shape_for_set("A").unwrap();
+    let shape_b = layout.shape_for_set("B").unwrap();
+    let shape_c = layout.shape_for_set("C").unwrap();
+
+    println!("\nCircle details:");
+    println!(
+        "A: center=({:.3}, {:.3}), radius={:.3}, area={:.3}",
+        shape_a.center().x(),
+        shape_a.center().y(),
+        shape_a.radius(),
+        std::f64::consts::PI * shape_a.radius().powi(2)
+    );
+    println!(
+        "B: center=({:.3}, {:.3}), radius={:.3}, area={:.3}",
+        shape_b.center().x(),
+        shape_b.center().y(),
+        shape_b.radius(),
+        std::f64::consts::PI * shape_b.radius().powi(2)
+    );
+    println!(
+        "C: center=({:.3}, {:.3}), radius={:.3}, area={:.3}",
+        shape_c.center().x(),
+        shape_c.center().y(),
+        shape_c.radius(),
+        std::f64::consts::PI * shape_c.radius().powi(2)
+    );
+
+    // Calculate center distances
+    let dist_ac = ((shape_a.center().x() - shape_c.center().x()).powi(2)
+        + (shape_a.center().y() - shape_c.center().y()).powi(2))
+    .sqrt();
+    let dist_ab = ((shape_a.center().x() - shape_b.center().x()).powi(2)
+        + (shape_a.center().y() - shape_b.center().y()).powi(2))
+    .sqrt();
+    let dist_bc = ((shape_b.center().x() - shape_c.center().x()).powi(2)
+        + (shape_b.center().y() - shape_c.center().y()).powi(2))
+    .sqrt();
+
+    println!("\nCenter-to-center distances:");
+    println!(
+        "  A-C: {:.3} (sum of radii: {:.3})",
+        dist_ac,
+        shape_a.radius() + shape_c.radius()
+    );
+    println!(
+        "  A-B: {:.3} (sum of radii: {:.3})",
+        dist_ab,
+        shape_a.radius() + shape_b.radius()
+    );
+    println!(
+        "  B-C: {:.3} (sum of radii: {:.3})",
+        dist_bc,
+        shape_b.radius() + shape_c.radius()
+    );
+
+    // Check actual intersections
+    println!("\nActual geometry intersections:");
+    println!("  A ∩ B: {}", shape_a.intersects(shape_b));
+    println!("  A ∩ C: {}", shape_a.intersects(shape_c));
+    println!("  B ∩ C: {}", shape_b.intersects(shape_c));
+
+    let ab_points = shape_a.intersection_points(shape_b);
+    let ac_points = shape_a.intersection_points(shape_c);
+    let bc_points = shape_b.intersection_points(shape_c);
+
+    println!("\nIntersection point counts:");
+    println!("  A ∩ B: {} points", ab_points.len());
+    println!("  A ∩ C: {} points", ac_points.len());
+    println!("  B ∩ C: {} points", bc_points.len());
+
+    // Check fitted areas
+    let ac_combo = Combination::new(&["A", "C"]);
+    let ac_fitted = layout.fitted().get(&ac_combo).copied().unwrap_or(0.0);
+
+    println!("\nA&C fitted area: {:.6}", ac_fitted);
+
+    // If distance > sum of radii, they can't intersect
+    if dist_ac > shape_a.radius() + shape_c.radius() {
+        println!("⚠️  Circles are SEPARATED (distance > sum of radii)");
+        if ac_fitted > 0.001 {
+            panic!(
+                "❌ BUG: A&C fitted area is {:.3} but circles are separated!",
+                ac_fitted
+            );
+        }
+    }
 }
