@@ -182,7 +182,7 @@ impl DiagramShape for Circle {
     }
 
     fn from_params(params: &[f64]) -> Self {
-        assert_eq!(
+        debug_assert_eq!(
             params.len(),
             3,
             "Circle requires 3 parameters: x, y, radius"

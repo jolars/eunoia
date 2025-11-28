@@ -1,5 +1,6 @@
 //! 2D point representation.
 
+use crate::geometry::projective::HomogeneousPoint;
 use crate::geometry::shapes::Ellipse;
 use crate::geometry::traits::Distance;
 
@@ -41,6 +42,13 @@ impl Point {
     /// ```
     pub fn new(x: f64, y: f64) -> Self {
         Point { x, y }
+    }
+
+    pub fn from_homogeneous(h: HomogeneousPoint) -> Self {
+        Point {
+            x: h.x() / h.w(),
+            y: h.y() / h.w(),
+        }
     }
 
     pub fn at_origin() -> Self {

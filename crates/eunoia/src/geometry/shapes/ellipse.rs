@@ -45,7 +45,7 @@ use nalgebra::Matrix2;
 use crate::geometry::primitives::Point;
 use crate::geometry::projective::Conic;
 use crate::geometry::shapes::Rectangle;
-use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, Perimeter};
+use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, DiagramShape, Perimeter};
 
 /// An ellipse defined by center, semi-major and semi-minor axes, and rotation.
 ///
@@ -389,6 +389,93 @@ impl Ellipse {
                 + triangle
         }
     }
+
+    /// Computes the lens-shaped intersection area between two ellipses with exactly two intersection points.
+    ///
+    /// For a lens, we need the segment from each ellipse that lies within the intersection region.
+    /// We determine this by testing which side of the chord connecting the intersection points
+    /// is inside both ellipses.
+    fn compute_lens_area(&self, other: &Self, p0: &Point, p1: &Point) -> f64 {
+        // Get the raw segment (between p0 and p1) for each ellipse
+        let raw_seg1 = self.ellipse_segment(*p0, *p1);
+        let raw_seg2 = other.ellipse_segment(*p0, *p1);
+
+        // For a lens intersection, the sum of the two minor segments gives us the lens area.
+        // The key insight: each ellipse contributes its minor segment to the lens.
+        // We need to ensure both are minor segments.
+
+        // A segment is minor if it's less than half the ellipse area
+        let seg1 = if raw_seg1 <= self.area() / 2.0 {
+            raw_seg1
+        } else {
+            self.area() - raw_seg1
+        };
+
+        let seg2 = if raw_seg2 <= other.area() / 2.0 {
+            raw_seg2
+        } else {
+            other.area() - raw_seg2
+        };
+
+        seg1 + seg2
+    }
+
+    /// Computes intersection area for cases with 3 or 4 intersection points.
+    ///
+    /// This handles more complex intersection patterns by:
+    /// 1. Sorting points by angle around a reference center
+    /// 2. Computing segments alternating between the two ellipses
+    fn compute_multi_point_intersection_area(&self, other: &Self, points: &[Point]) -> f64 {
+        if points.len() < 3 {
+            return 0.0;
+        }
+
+        // Use the centroid of intersection points as a reference center
+        let cx = points.iter().map(|p| p.x()).sum::<f64>() / points.len() as f64;
+        let cy = points.iter().map(|p| p.y()).sum::<f64>() / points.len() as f64;
+        let center = Point::new(cx, cy);
+
+        // Sort points by angle around the centroid
+        let mut sorted_points: Vec<Point> = points.to_vec();
+        sorted_points.sort_by(|a, b| {
+            let angle_a = (a.y() - center.y()).atan2(a.x() - center.x());
+            let angle_b = (b.y() - center.y()).atan2(b.x() - center.x());
+            angle_a.partial_cmp(&angle_b).unwrap()
+        });
+
+        // Compute area by summing alternating segments
+        let mut total_area = 0.0;
+        let n = sorted_points.len();
+
+        for i in 0..n {
+            let p0 = sorted_points[i];
+            let p1 = sorted_points[(i + 1) % n];
+
+            // Determine which ellipse the segment belongs to by checking
+            // the midpoint of the chord
+            let mid_x = (p0.x() + p1.x()) / 2.0;
+            let mid_y = (p0.y() + p1.y()) / 2.0;
+            let midpoint = Point::new(mid_x, mid_y);
+
+            // The segment belongs to the ellipse that contains the midpoint
+            // slightly inside the intersection region
+            let in_self = self.contains_point(&midpoint);
+            let in_other = other.contains_point(&midpoint);
+
+            if in_self && in_other {
+                // Midpoint is in both - use the ellipse with the smaller segment
+                let seg_self = self.ellipse_segment(p0, p1);
+                let seg_other = other.ellipse_segment(p0, p1);
+                total_area += seg_self.min(seg_other);
+            } else if in_self {
+                total_area += self.ellipse_segment(p0, p1);
+            } else if in_other {
+                total_area += other.ellipse_segment(p0, p1);
+            }
+        }
+
+        total_area
+    }
 }
 
 impl Area for Ellipse {
@@ -586,9 +673,34 @@ impl Closed for Ellipse {
         !intersection_points.is_empty()
     }
 
-    fn intersection_area(&self, _other: &Self) -> f64 {
-        // Placeholder implementation
-        unimplemented!()
+    fn intersection_area(&self, other: &Self) -> f64 {
+        // Check if one ellipse contains the other
+        if self.contains(other) {
+            return other.area();
+        }
+        if other.contains(self) {
+            return self.area();
+        }
+
+        // Get intersection points
+        let points = self.intersection_points(other);
+        let n = points.len();
+
+        match n {
+            0 => 0.0, // No intersection
+            1 => {
+                // Single point of tangency - negligible area
+                0.0
+            }
+            2 => {
+                // Two intersection points - compute the lens area
+                self.compute_lens_area(other, &points[0], &points[1])
+            }
+            _ => {
+                // Three or four intersection points
+                self.compute_multi_point_intersection_area(other, &points)
+            }
+        }
     }
 
     fn intersection_points(&self, other: &Self) -> Vec<Point> {
@@ -602,8 +714,39 @@ impl Closed for Ellipse {
         // Convert to Cartesian points
         homogeneous_points
             .into_iter()
-            .map(|hp| Point::new(hp.x(), hp.y()))
+            .map(Point::from_homogeneous)
             .collect()
+    }
+}
+
+impl DiagramShape for Ellipse {
+    fn compute_exclusive_regions(
+        _shapes: &[Self],
+    ) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64> {
+        unimplemented!("Exclusive region computation for ellipses is not yet implemented.")
+    }
+
+    fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
+        // Convert circle to ellipse: semi_major = semi_minor = radius, rotation = 0
+        vec![x, y, radius, radius, 0.0]
+    }
+
+    fn n_params() -> usize {
+        5 // x, y, semi_major, semi_minor, rotation
+    }
+
+    fn from_params(params: &[f64]) -> Self {
+        debug_assert_eq!(
+            params.len(),
+            5,
+            "Ellipse requires 5 parameters: x, y, semi_major, semi_minor, rotation"
+        );
+        Ellipse::new(
+            Point::new(params[0], params[1]),
+            params[2],
+            params[3],
+            params[4],
+        )
     }
 }
 
@@ -1114,5 +1257,308 @@ mod tests {
             assert!((first_point.x() - 2.0).abs() < 1e-6);
             assert!(first_point.y().abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn test_intersection_area_no_overlap() {
+        // Two ellipses that don't overlap
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 2.0, 1.5, 0.0);
+        let e2 = Ellipse::new(Point::new(10.0, 0.0), 2.0, 1.5, 0.0);
+
+        let area = e1.intersection_area(&e2);
+        assert!(approx_eq(area, 0.0), "Expected 0, got {}", area);
+    }
+
+    #[test]
+    fn test_intersection_area_one_contains_other() {
+        // Larger ellipse contains smaller one
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 5.0, 4.0, 0.0);
+        let e2 = Ellipse::new(Point::new(0.0, 0.0), 2.0, 1.5, 0.0);
+
+        let area = e1.intersection_area(&e2);
+        let expected = e2.area();
+
+        assert!(
+            (area - expected).abs() < 1e-8,
+            "Expected {}, got {}",
+            expected,
+            area
+        );
+
+        // Symmetric test
+        let area_reverse = e2.intersection_area(&e1);
+        assert!(
+            (area_reverse - expected).abs() < 1e-8,
+            "Expected {}, got {}",
+            expected,
+            area_reverse
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_identical_ellipses() {
+        let e1 = Ellipse::new(Point::new(1.0, 2.0), 3.0, 2.0, PI / 4.0);
+        let e2 = Ellipse::new(Point::new(1.0, 2.0), 3.0, 2.0, PI / 4.0);
+
+        let area = e1.intersection_area(&e2);
+        let expected = e1.area();
+
+        assert!(
+            (area - expected).abs() < 1e-8,
+            "Expected {}, got {}",
+            expected,
+            area
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_circles_partial_overlap() {
+        // Two identical circles with partial overlap
+        let radius = 3.0;
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), radius, radius, 0.0);
+        let e2 = Ellipse::new(Point::new(4.0, 0.0), radius, radius, 0.0);
+
+        let area = e1.intersection_area(&e2);
+
+        // For circles, we can use the analytical formula to verify
+        let c1 = Circle::new(Point::new(0.0, 0.0), radius);
+        let c2 = Circle::new(Point::new(4.0, 0.0), radius);
+        let expected = c1.intersection_area(&c2);
+
+        assert!(
+            (area - expected).abs() < 1e-6,
+            "Expected {}, got {}",
+            expected,
+            area
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_tangent_ellipses() {
+        // Two circles that are externally tangent (touch at one point)
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 2.0, 2.0, 0.0);
+        let e2 = Ellipse::new(Point::new(4.0, 0.0), 2.0, 2.0, 0.0);
+
+        let area = e1.intersection_area(&e2);
+
+        // Tangent circles should have zero intersection area
+        assert!(area < 1e-6, "Expected ~0, got {}", area);
+    }
+
+    #[test]
+    fn test_intersection_area_symmetric() {
+        // Test that intersection_area is symmetric
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 4.0, 3.0, 0.0);
+        let e2 = Ellipse::new(Point::new(3.0, 2.0), 3.5, 2.5, PI / 6.0);
+
+        let area1 = e1.intersection_area(&e2);
+        let area2 = e2.intersection_area(&e1);
+
+        assert!(
+            (area1 - area2).abs() < 1e-8,
+            "Areas should be symmetric: {} vs {}",
+            area1,
+            area2
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_bounds() {
+        // Intersection area should be bounded by the smaller ellipse area
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 5.0, 4.0, 0.0);
+        let e2 = Ellipse::new(Point::new(2.0, 1.0), 3.0, 2.5, PI / 8.0);
+
+        let area = e1.intersection_area(&e2);
+        let min_area = e1.area().min(e2.area());
+
+        assert!(
+            area >= 0.0,
+            "Intersection area should be non-negative: {}",
+            area
+        );
+        assert!(
+            area <= min_area + 1e-6,
+            "Intersection area {} should not exceed smaller ellipse area {}",
+            area,
+            min_area
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_rotated_ellipses() {
+        // Two rotated ellipses with partial overlap
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 4.0, 2.5, 0.0);
+        let e2 = Ellipse::new(Point::new(3.0, 0.0), 4.0, 2.5, PI / 2.0);
+
+        let area = e1.intersection_area(&e2);
+
+        // Should have some intersection
+        assert!(area > 0.0, "Expected positive area, got {}", area);
+        assert!(
+            area < e1.area() && area < e2.area(),
+            "Area {} should be less than both ellipse areas",
+            area
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_nearly_identical() {
+        // Two nearly identical ellipses (slightly offset)
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 3.0, 2.0, 0.0);
+        let e2 = Ellipse::new(Point::new(0.01, 0.01), 3.0, 2.0, 0.0);
+
+        let area = e1.intersection_area(&e2);
+        let expected = e1.area();
+
+        // Should be very close to full area
+        assert!(
+            (area - expected).abs() < 0.1,
+            "Expected ~{}, got {}",
+            expected,
+            area
+        );
+    }
+
+    // Helper function for Monte Carlo validation
+    fn monte_carlo_intersection_area(
+        e1: &Ellipse,
+        e2: &Ellipse,
+        n_samples: usize,
+        seed: u64,
+    ) -> f64 {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut in_both = 0;
+
+        // Bounding box for sampling - intersection of both ellipse bounding boxes
+        let bbox1 = e1.bounding_box();
+        let bbox2 = e2.bounding_box();
+        let (min1, max1) = bbox1.to_points();
+        let (min2, max2) = bbox2.to_points();
+
+        let x_min = min1.x().max(min2.x());
+        let x_max = max1.x().min(max2.x());
+        let y_min = min1.y().max(min2.y());
+        let y_max = max1.y().min(max2.y());
+
+        if x_min >= x_max || y_min >= y_max {
+            return 0.0; // No bounding box overlap
+        }
+
+        let bbox_area = (x_max - x_min) * (y_max - y_min);
+
+        for _ in 0..n_samples {
+            let x = x_min + (x_max - x_min) * rng.random::<f64>();
+            let y = y_min + (y_max - y_min) * rng.random::<f64>();
+            let p = Point::new(x, y);
+
+            if e1.contains_point(&p) && e2.contains_point(&p) {
+                in_both += 1;
+            }
+        }
+
+        (in_both as f64 / n_samples as f64) * bbox_area
+    }
+
+    #[test]
+    fn test_intersection_area_monte_carlo_circles() {
+        // Validate circle intersection against Monte Carlo sampling
+        let radius = 3.0;
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), radius, radius, 0.0);
+        let e2 = Ellipse::new(Point::new(4.0, 0.0), radius, radius, 0.0);
+
+        let exact = e1.intersection_area(&e2);
+        let mc_estimate = monte_carlo_intersection_area(&e1, &e2, 100_000, 42);
+
+        let error = (exact - mc_estimate).abs() / exact;
+        assert!(
+            error < 0.05,
+            "Monte Carlo and exact should agree within 5%: exact={}, mc={}, error={:.1}%",
+            exact,
+            mc_estimate,
+            error * 100.0
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_monte_carlo_rotated_ellipses() {
+        // Validate rotated ellipse intersection against Monte Carlo
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 4.0, 2.5, 0.0);
+        let e2 = Ellipse::new(Point::new(3.0, 0.0), 4.0, 2.5, PI / 2.0);
+
+        let exact = e1.intersection_area(&e2);
+        let mc_estimate = monte_carlo_intersection_area(&e1, &e2, 100_000, 42);
+
+        let error = (exact - mc_estimate).abs() / exact.max(mc_estimate);
+        assert!(
+            error < 0.05,
+            "Monte Carlo and exact should agree within 5%: exact={}, mc={}, error={:.1}%",
+            exact,
+            mc_estimate,
+            error * 100.0
+        );
+    }
+
+    #[test]
+    fn test_intersection_area_monte_carlo_general_ellipses() {
+        // Validate general ellipse intersection
+        let e1 = Ellipse::new(Point::new(1.0, 0.5), 3.5, 2.0, PI / 6.0);
+        let e2 = Ellipse::new(Point::new(3.0, 1.5), 3.0, 2.5, PI / 4.0);
+
+        let exact = e1.intersection_area(&e2);
+        let mc_estimate = monte_carlo_intersection_area(&e1, &e2, 150_000, 42);
+
+        // For smaller intersections, allow slightly larger relative error
+        if exact > 0.5 && mc_estimate > 0.5 {
+            let error = (exact - mc_estimate).abs() / exact.max(mc_estimate);
+            assert!(
+                error < 0.06,
+                "Monte Carlo and exact should agree within 6%: exact={}, mc={}, error={:.1}%",
+                exact,
+                mc_estimate,
+                error * 100.0
+            );
+        } else {
+            // Both should be small
+            assert!(
+                exact < 1.0 && mc_estimate < 1.0,
+                "Both should be small: exact={}, mc={}",
+                exact,
+                mc_estimate
+            );
+        }
+    }
+
+    #[test]
+    fn test_intersection_area_monte_carlo_contained() {
+        // Validate containment case
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 5.0, 4.0, 0.0);
+        let e2 = Ellipse::new(Point::new(0.5, 0.5), 2.0, 1.5, PI / 8.0);
+
+        let exact = e1.intersection_area(&e2);
+        let expected = e2.area(); // Should be the smaller ellipse
+
+        // Verify containment
+        assert!(e1.contains(&e2), "e1 should contain e2");
+        assert!(
+            (exact - expected).abs() < 1e-6,
+            "Intersection should equal smaller ellipse area: exact={}, expected={}",
+            exact,
+            expected
+        );
+
+        // Monte Carlo validation
+        let mc_estimate = monte_carlo_intersection_area(&e1, &e2, 100_000, 42);
+
+        let error = (exact - mc_estimate).abs() / exact;
+        assert!(
+            error < 0.03,
+            "Monte Carlo should agree with exact (contained case): exact={}, mc={}, error={:.1}%",
+            exact,
+            mc_estimate,
+            error * 100.0
+        );
     }
 }
