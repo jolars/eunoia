@@ -340,4 +340,61 @@ mod tests {
             assert_eq!(s1.radius(), s2.radius());
         }
     }
+
+    #[test]
+    fn test_fitter_with_ellipses_basic() {
+        use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).fit().unwrap();
+
+        assert_eq!(layout.shapes().len(), 2);
+        assert!(layout.loss() >= 0.0);
+    }
+
+    #[test]
+    fn test_fitter_with_ellipses_intersection() {
+        use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .intersection(&["A", "B"], 2.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).seed(42).fit().unwrap();
+
+        assert_eq!(layout.shapes().len(), 2);
+        assert_eq!(layout.requested().len(), 3); // A, B, A&B
+        println!("Ellipse layout loss: {}", layout.loss());
+        assert!(layout.loss() < 10.0); // Should converge to reasonable solution
+    }
+
+    #[test]
+    fn test_fitter_with_ellipses_three_sets() {
+        use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 15.0)
+            .set("B", 12.0)
+            .set("C", 10.0)
+            .intersection(&["A", "B"], 3.0)
+            .intersection(&["B", "C"], 2.5)
+            .intersection(&["A", "C"], 2.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).seed(123).fit().unwrap();
+
+        assert_eq!(layout.shapes().len(), 3);
+        println!("Three-ellipse layout loss: {}", layout.loss());
+        assert!(layout.loss() < 20.0); // Should converge
+    }
 }

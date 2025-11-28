@@ -99,15 +99,13 @@ impl Ellipse {
     /// # Arguments
     ///
     /// * `center` - The center point of the ellipse
-    /// * `semi_major` - The semi-major axis length (must be ≥ semi_minor)
+    /// * `semi_major` - The semi-major axis length (must be > 0)
     /// * `semi_minor` - The semi-minor axis length (must be > 0)
     /// * `rotation` - Rotation angle in radians (counterclockwise from x-axis)
     ///
     /// # Panics
     ///
-    /// Panics in debug builds if:
-    /// - `semi_major < semi_minor`
-    /// - `semi_minor <= 0`
+    /// Panics in debug builds if either axis length is <= 0.
     ///
     /// # Examples
     ///
@@ -120,10 +118,7 @@ impl Ellipse {
     /// assert_eq!(ellipse.semi_minor(), 3.0);
     /// ```
     pub fn new(center: Point, semi_major: f64, semi_minor: f64, rotation: f64) -> Self {
-        debug_assert!(
-            semi_major >= semi_minor,
-            "Semi-major axis must be >= semi-minor axis"
-        );
+        debug_assert!(semi_major > 0.0, "Semi-major axis must be > 0");
         debug_assert!(semi_minor > 0.0, "Semi-minor axis must be > 0");
         Self {
             center,
@@ -131,6 +126,50 @@ impl Ellipse {
             semi_minor,
             rotation,
         }
+    }
+
+    /// Creates a new ellipse from radius and aspect ratio parameterization.
+    ///
+    /// This parameterization is more stable for optimization:
+    /// - `radius` controls the overall size (geometric mean of axes)
+    /// - `aspect_ratio` controls elongation (semi_minor / semi_major, range 0 to 1)
+    /// - `aspect_ratio = 1.0` gives a circle
+    /// - Lower values give more elongated ellipses
+    ///
+    /// # Arguments
+    ///
+    /// * `center` - The center point of the ellipse
+    /// * `radius` - Geometric mean radius: sqrt(semi_major * semi_minor)
+    /// * `aspect_ratio` - Ratio semi_minor / semi_major (clamped to 0.001..1.0)
+    /// * `rotation` - Rotation angle in radians
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Ellipse;
+    /// use eunoia::geometry::primitives::Point;
+    ///
+    /// // Circle: aspect_ratio = 1.0
+    /// let circle = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, 1.0, 0.0);
+    /// assert!((circle.semi_major() - 2.0).abs() < 1e-10);
+    /// assert!((circle.semi_minor() - 2.0).abs() < 1e-10);
+    ///
+    /// // Elongated ellipse: aspect_ratio = 0.5
+    /// let ellipse = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, 0.5, 0.0);
+    /// // radius = sqrt(a * b) = 2.0
+    /// // aspect = b/a = 0.5
+    /// // => a = 2.828, b = 1.414
+    /// ```
+    pub fn from_radius_ratio(center: Point, radius: f64, aspect_ratio: f64, rotation: f64) -> Self {
+        let radius = radius.abs();
+        let aspect_ratio = aspect_ratio.abs().clamp(0.001, 1.0);
+
+        // Given: r = sqrt(a * b) and aspect = b/a
+        // Solving: a = r / sqrt(aspect), b = r * sqrt(aspect)
+        let semi_major = radius / aspect_ratio.sqrt();
+        let semi_minor = radius * aspect_ratio.sqrt();
+
+        Self::new(center, semi_major, semi_minor, rotation)
     }
 
     pub fn from_conic(conic: Conic) -> Option<Self> {
@@ -867,21 +906,23 @@ impl DiagramShape for Ellipse {
     }
 
     fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
-        // Convert circle to ellipse: semi_major = semi_minor = radius, rotation = 0
-        vec![x, y, radius, radius, 0.0]
+        // Convert circle to ellipse using radius+ratio parameterization:
+        // radius = r (geometric mean), aspect_ratio = 1.0 (circle), rotation = 0
+        vec![x, y, radius, 1.0, 0.0]
     }
 
     fn n_params() -> usize {
-        5 // x, y, semi_major, semi_minor, rotation
+        5 // x, y, radius, aspect_ratio, rotation
     }
 
     fn from_params(params: &[f64]) -> Self {
-        debug_assert_eq!(
+        assert_eq!(
             params.len(),
             5,
-            "Ellipse requires 5 parameters: x, y, semi_major, semi_minor, rotation"
+            "Ellipse requires 5 parameters: x, y, radius, aspect_ratio, rotation"
         );
-        Ellipse::new(
+
+        Ellipse::from_radius_ratio(
             Point::new(params[0], params[1]),
             params[2],
             params[3],
@@ -1700,6 +1741,84 @@ mod tests {
             mc_estimate,
             error * 100.0
         );
+    }
+
+    // ------------------------
+    // Radius+ratio parameterization tests
+    // ------------------------
+
+    #[test]
+    fn test_from_radius_ratio_circle() {
+        // aspect_ratio = 1.0 should give a circle
+        let e = Ellipse::from_radius_ratio(Point::new(1.0, 2.0), 3.0, 1.0, 0.5);
+        assert!((e.semi_major() - 3.0).abs() < 1e-10);
+        assert!((e.semi_minor() - 3.0).abs() < 1e-10);
+        assert_eq!(e.center(), Point::new(1.0, 2.0));
+        assert_eq!(e.rotation(), 0.5);
+    }
+
+    #[test]
+    fn test_from_radius_ratio_elongated() {
+        // aspect_ratio = 0.5 means semi_minor = 0.5 * semi_major
+        let radius = 2.0;
+        let aspect = 0.5;
+        let e = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), radius, aspect, 0.0);
+
+        // radius = sqrt(a * b), aspect = b/a
+        // => a = radius / sqrt(aspect), b = radius * sqrt(aspect)
+        let expected_a = radius / aspect.sqrt();
+        let expected_b = radius * aspect.sqrt();
+
+        assert!((e.semi_major() - expected_a).abs() < 1e-10);
+        assert!((e.semi_minor() - expected_b).abs() < 1e-10);
+
+        // Verify geometric mean
+        let geom_mean = (e.semi_major() * e.semi_minor()).sqrt();
+        assert!((geom_mean - radius).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_from_radius_ratio_preserves_area() {
+        // For fixed radius, changing aspect_ratio changes shape but preserves area
+        let radius = 3.0;
+        let expected_area = PI * radius * radius;
+
+        for aspect in [0.2, 0.5, 0.8, 1.0] {
+            let e = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), radius, aspect, 0.0);
+            assert!((e.area() - expected_area).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_from_radius_ratio_clamping() {
+        // aspect_ratio should be clamped to [0.001, 1.0]
+        let e_low = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, -0.5, 0.0);
+        let e_high = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, 2.0, 0.0);
+
+        // Both should be valid ellipses
+        assert!(e_low.semi_major() > 0.0);
+        assert!(e_low.semi_minor() > 0.0);
+        assert!(e_high.semi_major() > 0.0);
+        assert!(e_high.semi_minor() > 0.0);
+    }
+
+    #[test]
+    fn test_diagram_shape_params_from_circle() {
+        use crate::geometry::traits::DiagramShape;
+
+        // params_from_circle should give radius+ratio parameterization
+        let params = Ellipse::params_from_circle(1.0, 2.0, 3.0);
+        assert_eq!(params.len(), 5);
+        assert_eq!(params[0], 1.0); // x
+        assert_eq!(params[1], 2.0); // y
+        assert_eq!(params[2], 3.0); // radius
+        assert_eq!(params[3], 1.0); // aspect_ratio (circle)
+        assert_eq!(params[4], 0.0); // rotation
+
+        // from_params should reconstruct a circle
+        let e = Ellipse::from_params(&params);
+        assert!((e.semi_major() - 3.0).abs() < 1e-10);
+        assert!((e.semi_minor() - 3.0).abs() < 1e-10);
     }
 
     // ------------------------
