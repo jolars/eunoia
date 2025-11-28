@@ -9,8 +9,10 @@
 
 pub mod circle;
 pub mod ellipse;
+pub mod polygon;
 pub mod rectangle;
 
 pub use circle::Circle;
 pub use ellipse::Ellipse;
+pub use polygon::Polygon;
 pub use rectangle::Rectangle;

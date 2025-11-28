@@ -119,6 +119,31 @@ pub trait DiagramShape: Closed {
         Self: Sized;
 }
 
+/// Trait for converting shapes to polygons for visualization.
+///
+/// This trait allows analytical shapes (circles, ellipses) to be converted
+/// to discrete polygon representations for plotting and export.
+pub trait Polygonize {
+    /// Convert the shape to a polygon with the specified number of vertices.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_vertices` - Number of vertices in the resulting polygon (minimum 3)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Circle;
+    /// use eunoia::geometry::primitives::Point;
+    /// use eunoia::geometry::traits::Polygonize;
+    ///
+    /// let circle = Circle::new(Point::new(0.0, 0.0), 5.0);
+    /// let polygon = circle.polygonize(64);
+    /// assert_eq!(polygon.vertices().len(), 64);
+    /// ```
+    fn polygonize(&self, n_vertices: usize) -> crate::geometry::shapes::Polygon;
+}
+
 /// Compute the bounding box for a collection of shapes.
 pub fn bounding_box<S: BoundingBox>(shapes: &[S]) -> Rectangle {
     let mut min_x = f64::INFINITY;

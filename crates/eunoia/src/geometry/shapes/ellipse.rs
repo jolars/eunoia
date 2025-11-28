@@ -45,8 +45,10 @@ use nalgebra::Matrix2;
 use crate::geometry::diagram::RegionMask;
 use crate::geometry::primitives::Point;
 use crate::geometry::projective::Conic;
-use crate::geometry::shapes::Rectangle;
-use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, DiagramShape, Perimeter};
+use crate::geometry::shapes::{Polygon, Rectangle};
+use crate::geometry::traits::{
+    Area, BoundingBox, Centroid, Closed, DiagramShape, Perimeter, Polygonize,
+};
 
 /// An ellipse defined by center, semi-major and semi-minor axes, and rotation.
 ///
@@ -928,6 +930,34 @@ impl DiagramShape for Ellipse {
             params[3],
             params[4],
         )
+    }
+}
+
+impl Polygonize for Ellipse {
+    fn polygonize(&self, n_vertices: usize) -> Polygon {
+        use std::f64::consts::PI;
+
+        let n_vertices = n_vertices.max(3);
+        let mut vertices = Vec::with_capacity(n_vertices);
+
+        let cos_rot = self.rotation.cos();
+        let sin_rot = self.rotation.sin();
+
+        for i in 0..n_vertices {
+            let angle = 2.0 * PI * (i as f64) / (n_vertices as f64);
+
+            // Point in local ellipse frame
+            let local_x = self.semi_major * angle.cos();
+            let local_y = self.semi_minor * angle.sin();
+
+            // Rotate and translate to world frame
+            let x = self.center.x() + local_x * cos_rot - local_y * sin_rot;
+            let y = self.center.y() + local_x * sin_rot + local_y * cos_rot;
+
+            vertices.push(Point::new(x, y));
+        }
+
+        Polygon::new(vertices)
     }
 }
 

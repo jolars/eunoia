@@ -397,4 +397,42 @@ mod tests {
         println!("Three-ellipse layout loss: {}", layout.loss());
         assert!(layout.loss() < 20.0); // Should converge
     }
+
+    #[test]
+    fn test_ellipse_to_polygon_workflow() {
+        use crate::geometry::shapes::{Ellipse, Polygon};
+        use crate::geometry::traits::Polygonize;
+
+        // Fit a diagram with ellipses
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .intersection(&["A", "B"], 2.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).seed(42).fit().unwrap();
+
+        // Convert to polygons for plotting
+        let polygons: Vec<Polygon> = layout
+            .shapes()
+            .iter()
+            .map(|ellipse| ellipse.polygonize(64))
+            .collect();
+
+        assert_eq!(polygons.len(), 2);
+        assert_eq!(polygons[0].vertices().len(), 64);
+        assert_eq!(polygons[1].vertices().len(), 64);
+
+        // Polygons should have areas close to ellipse areas
+        use crate::geometry::traits::Area;
+        for (ellipse, polygon) in layout.shapes().iter().zip(polygons.iter()) {
+            let error = (ellipse.area() - polygon.area()).abs() / ellipse.area();
+            assert!(
+                error < 0.01,
+                "Polygon area error too large: {:.2}%",
+                error * 100.0
+            ); // < 1% error with 64 vertices
+        }
+    }
 }

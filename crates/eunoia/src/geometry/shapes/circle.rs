@@ -5,9 +5,9 @@ use std::f64::consts::PI;
 use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::primitives::point;
 use crate::geometry::primitives::Point;
-use crate::geometry::shapes::Rectangle;
+use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{
-    Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter,
+    Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter, Polygonize,
 };
 use argmin::core::{CostFunction, Error, Executor, State};
 use argmin::solver::brent::BrentOpt;
@@ -188,6 +188,24 @@ impl DiagramShape for Circle {
             "Circle requires 3 parameters: x, y, radius"
         );
         Circle::new(Point::new(params[0], params[1]), params[2])
+    }
+}
+
+impl Polygonize for Circle {
+    fn polygonize(&self, n_vertices: usize) -> Polygon {
+        use std::f64::consts::PI;
+
+        let n_vertices = n_vertices.max(3);
+        let mut vertices = Vec::with_capacity(n_vertices);
+
+        for i in 0..n_vertices {
+            let angle = 2.0 * PI * (i as f64) / (n_vertices as f64);
+            let x = self.center.x() + self.radius * angle.cos();
+            let y = self.center.y() + self.radius * angle.sin();
+            vertices.push(Point::new(x, y));
+        }
+
+        Polygon::new(vertices)
     }
 }
 
