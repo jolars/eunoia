@@ -42,6 +42,7 @@ use std::f64::consts::PI;
 
 use nalgebra::Matrix2;
 
+use crate::geometry::diagram::RegionMask;
 use crate::geometry::primitives::Point;
 use crate::geometry::projective::Conic;
 use crate::geometry::shapes::Rectangle;
@@ -720,10 +721,149 @@ impl Closed for Ellipse {
 }
 
 impl DiagramShape for Ellipse {
-    fn compute_exclusive_regions(
-        _shapes: &[Self],
-    ) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64> {
-        unimplemented!("Exclusive region computation for ellipses is not yet implemented.")
+    fn compute_exclusive_regions(shapes: &[Self]) -> std::collections::HashMap<RegionMask, f64> {
+        use crate::geometry::diagram::{adopters_to_mask, to_exclusive_areas, IntersectionPoint};
+        use std::collections::{HashMap, HashSet};
+
+        let n_sets = shapes.len();
+
+        // 1) Collect intersections for all ellipse pairs, annotate adopters
+        let mut intersections: Vec<IntersectionPoint> = Vec::new();
+        for i in 0..n_sets {
+            for j in (i + 1)..n_sets {
+                let pts = shapes[i].intersection_points(&shapes[j]);
+                for p in pts {
+                    // adopters: all shapes that contain this intersection point
+                    // Note: Use small tolerance for boundary points
+                    let adopters: Vec<usize> = (0..n_sets)
+                        .filter(|&k| {
+                            let local = p.to_ellipse_frame(&shapes[k]);
+                            let val = (local.x() / shapes[k].semi_major).powi(2)
+                                + (local.y() / shapes[k].semi_minor).powi(2);
+                            val <= 1.0 + 1e-10 // Tolerance for boundary points
+                        })
+                        .collect();
+                    intersections.push(IntersectionPoint::new(p, (i, j), adopters));
+                }
+            }
+        }
+
+        // 2) Discover regions (bit masks) that exist
+        let mut regions: HashSet<crate::geometry::diagram::RegionMask> = HashSet::new();
+        // Singles always exist
+        for i in 0..n_sets {
+            regions.insert(1 << i);
+        }
+        // From intersection adopters
+        for info in &intersections {
+            regions.insert(adopters_to_mask(info.adopters()));
+        }
+        // From pairwise relations (intersect or containment)
+        for i in 0..n_sets {
+            for j in (i + 1)..n_sets {
+                let has_edge = intersections
+                    .iter()
+                    .any(|ip| ip.parents() == (i, j) || ip.parents() == (j, i));
+                if has_edge || shapes[i].contains(&shapes[j]) || shapes[j].contains(&shapes[i]) {
+                    regions.insert((1 << i) | (1 << j));
+                }
+            }
+        }
+
+        // 3) Compute overlapping areas for each discovered region
+        let mut overlapping_areas: HashMap<crate::geometry::diagram::RegionMask, f64> =
+            HashMap::new();
+        for &mask in &regions {
+            // Collect intersection point indices for this region
+            let mut region_points: Vec<usize> = Vec::new();
+            for (idx, ip) in intersections.iter().enumerate() {
+                let (p1, p2) = ip.parents();
+                let parents_in_mask = ((mask & (1 << p1)) != 0) && ((mask & (1 << p2)) != 0);
+                let adopters_mask = adopters_to_mask(ip.adopters());
+                let mask_subset = (mask & adopters_mask) == mask;
+                if parents_in_mask && mask_subset {
+                    region_points.push(idx);
+                }
+            }
+
+            if region_points.is_empty() {
+                // No intersection points: check if disjoint or one contains another
+                let bits: Vec<usize> = (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect();
+                if bits.len() == 1 {
+                    overlapping_areas.insert(mask, shapes[bits[0]].area());
+                } else {
+                    // Check containment
+                    let mut min_area = f64::INFINITY;
+                    let mut contained = false;
+                    for &i in &bits {
+                        for &j in &bits {
+                            if i != j && shapes[i].contains(&shapes[j]) {
+                                contained = true;
+                                min_area = min_area.min(shapes[j].area());
+                            }
+                        }
+                    }
+                    overlapping_areas.insert(mask, if contained { min_area } else { 0.0 });
+                }
+                continue;
+            }
+
+            // Sort points by angle around centroid (same as circles)
+            let points_vec: Vec<Point> = region_points
+                .iter()
+                .map(|&idx| *intersections[idx].point())
+                .collect();
+            let cx = points_vec.iter().map(|p| p.x()).sum::<f64>() / points_vec.len() as f64;
+            let cy = points_vec.iter().map(|p| p.y()).sum::<f64>() / points_vec.len() as f64;
+
+            region_points.sort_by(|&a, &b| {
+                let angle_a =
+                    (intersections[a].point().y() - cy).atan2(intersections[a].point().x() - cx);
+                let angle_b =
+                    (intersections[b].point().y() - cy).atan2(intersections[b].point().x() - cx);
+                angle_a.partial_cmp(&angle_b).unwrap()
+            });
+
+            // Compute area using shoelace + segments (like circles)
+            let mut area = 0.0;
+            let n_points = region_points.len();
+
+            for k in 0..n_points {
+                let curr_idx = region_points[k];
+                let prev_idx = region_points[if k == 0 { n_points - 1 } else { k - 1 }];
+
+                let p1 = intersections[prev_idx].point();
+                let p2 = intersections[curr_idx].point();
+
+                // Find common parent ellipses
+                let parents1 = intersections[prev_idx].parents();
+                let parents2 = intersections[curr_idx].parents();
+                let common: Vec<usize> = vec![parents1.0, parents1.1]
+                    .into_iter()
+                    .filter(|p| *p == parents2.0 || *p == parents2.1)
+                    .filter(|p| (mask & (1 << *p)) != 0)
+                    .collect();
+
+                // Triangle contribution (shoelace)
+                let triangle = 0.5 * ((p1.x() + p2.x()) * (p1.y() - p2.y()));
+                area += triangle;
+
+                // Segment contribution (minimum of all common parents)
+                if !common.is_empty() {
+                    let mut min_seg = f64::INFINITY;
+                    for &ellipse_idx in &common {
+                        let seg = shapes[ellipse_idx].ellipse_segment(*p1, *p2);
+                        min_seg = min_seg.min(seg);
+                    }
+                    area += min_seg;
+                }
+            }
+
+            overlapping_areas.insert(mask, area.abs());
+        }
+
+        // 4) Convert overlapping to exclusive via diagram helper
+        to_exclusive_areas(&overlapping_areas)
     }
 
     fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
@@ -1560,5 +1700,83 @@ mod tests {
             mc_estimate,
             error * 100.0
         );
+    }
+
+    // ------------------------
+    // Exclusive region tests
+    // ------------------------
+
+    #[test]
+    fn test_exclusive_regions_two_ellipses_partial_overlap() {
+        use crate::geometry::traits::DiagramShape;
+
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 4.0, 2.5, 0.0);
+        let e2 = Ellipse::new(Point::new(3.0, 1.0), 3.5, 2.0, PI / 6.0);
+
+        let areas = Ellipse::compute_exclusive_regions(&[e1, e2]);
+        let a_only = areas.get(&(1usize << 0)).copied().unwrap_or(0.0);
+        let b_only = areas.get(&(1usize << 1)).copied().unwrap_or(0.0);
+        let both = areas
+            .get(&((1usize << 0) | (1usize << 1)))
+            .copied()
+            .unwrap_or(0.0);
+
+        // Basic sanity: non-negative and sums to union
+        assert!(a_only >= 0.0 && b_only >= 0.0 && both >= 0.0);
+        let union = a_only + b_only + both;
+        // Union must be <= sum of individual ellipse areas
+        assert!(union <= e1.area() + e2.area() + 1e-6);
+
+        // Intersection area should be close to direct computation
+        let exact = e1.intersection_area(&e2);
+        let error = (both - exact).abs() / exact.max(1e-6);
+        assert!(
+            error < 0.1,
+            "Error too large: both={}, exact={}, error={:.2}%",
+            both,
+            exact,
+            error * 100.0
+        );
+    }
+
+    #[test]
+    fn test_exclusive_regions_two_ellipses_contained() {
+        use crate::geometry::traits::DiagramShape;
+
+        let outer = Ellipse::new(Point::new(0.0, 0.0), 6.0, 4.0, 0.2);
+        let inner = Ellipse::new(Point::new(0.5, 0.3), 2.0, 1.5, -0.3);
+
+        let areas = Ellipse::compute_exclusive_regions(&[outer, inner]);
+        let inner_only = areas.get(&(1usize << 1)).copied().unwrap_or(0.0);
+        let both = areas
+            .get(&((1usize << 0) | (1usize << 1)))
+            .copied()
+            .unwrap_or(0.0);
+
+        // When contained, exclusive intersection should equal inner area
+        assert!((both - inner.area()).abs() < 1e-3);
+        // Inner exclusive should be ~0
+        assert!(inner_only < 1e-6);
+    }
+
+    #[test]
+    fn test_exclusive_regions_three_ellipses_basic() {
+        use crate::geometry::traits::DiagramShape;
+
+        let e1 = Ellipse::new(Point::new(-2.0, 0.0), 3.0, 2.0, 0.2);
+        let e2 = Ellipse::new(Point::new(2.0, 0.5), 3.2, 2.1, -0.1);
+        let e3 = Ellipse::new(Point::new(0.0, 1.5), 2.8, 1.8, 0.5);
+
+        let areas = Ellipse::compute_exclusive_regions(&[e1, e2, e3]);
+        let mask_all = (1usize << 0) | (1usize << 1) | (1usize << 2);
+        let all = areas.get(&mask_all).copied().unwrap_or(0.0);
+
+        // Non-negative and bounded by smallest ellipse area
+        let min_area = e1.area().min(e2.area()).min(e3.area());
+        assert!(all >= 0.0 && all <= min_area + 1e-6);
+
+        // Union should not exceed sum of individuals
+        let union: f64 = areas.values().sum();
+        assert!(union <= e1.area() + e2.area() + e3.area() + 1e-3);
     }
 }
