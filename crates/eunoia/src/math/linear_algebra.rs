@@ -33,7 +33,7 @@ use num_complex::Complex64;
 pub trait Matrix3Ext {
     /// Computes the cofactor matrix.
     ///
-    /// Each element C[i,j] = (-1)^(i+j) × minor(i,j), where the minor is the
+    /// Each element `C[i,j]` = (-1)^(i+j) × minor(i,j), where the minor is the
     /// determinant of the 2×2 submatrix formed by removing row i and column j.
     ///
     /// # Examples
