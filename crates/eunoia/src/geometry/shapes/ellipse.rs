@@ -45,7 +45,7 @@ use nalgebra::Matrix2;
 use crate::geometry::primitives::Point;
 use crate::geometry::projective::Conic;
 use crate::geometry::shapes::Rectangle;
-use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, Distance, Perimeter};
+use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, Perimeter};
 
 /// An ellipse defined by center, semi-major and semi-minor axes, and rotation.
 ///
@@ -480,13 +480,6 @@ impl BoundingBox for Ellipse {
                 .sqrt();
 
         Rectangle::new(self.center, width, height)
-    }
-}
-
-impl Distance for Ellipse {
-    fn distance(&self, _other: &Self) -> f64 {
-        // Placeholder implementation
-        unimplemented!()
     }
 }
 
