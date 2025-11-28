@@ -497,59 +497,13 @@ impl Closed for Ellipse {
             return false;
         }
 
-        // If other is larger than self (by area), it can't be contained
-        if other.area() > self.area() {
-            return false;
-        }
-
         // Convert both ellipses to conics and check for intersections
         let c1 = Conic::from_ellipse(*self);
         let c2 = Conic::from_ellipse(*other);
 
         let intersection_points = c1.intersect_conic(&c2);
 
-        // If there are intersection points, check if any point on other's boundary
-        // is actually outside self (which would mean they intersect, not contain)
-        if !intersection_points.is_empty() {
-            // Sample a few points on other's boundary to verify containment
-            // Check the extreme points (end of major/minor axes)
-            let phi = other.rotation;
-            let cos_phi = phi.cos();
-            let sin_phi = phi.sin();
-
-            // Check points at the ends of the semi-major axis
-            let major_offset_x = other.semi_major * cos_phi;
-            let major_offset_y = other.semi_major * sin_phi;
-            let p1 = Point::new(
-                other.center.x() + major_offset_x,
-                other.center.y() + major_offset_y,
-            );
-            let p2 = Point::new(
-                other.center.x() - major_offset_x,
-                other.center.y() - major_offset_y,
-            );
-
-            // Check points at the ends of the semi-minor axis
-            let minor_offset_x = other.semi_minor * -sin_phi;
-            let minor_offset_y = other.semi_minor * cos_phi;
-            let p3 = Point::new(
-                other.center.x() + minor_offset_x,
-                other.center.y() + minor_offset_y,
-            );
-            let p4 = Point::new(
-                other.center.x() - minor_offset_x,
-                other.center.y() - minor_offset_y,
-            );
-
-            // All extreme points must be inside self
-            self.contains_point(&p1)
-                && self.contains_point(&p2)
-                && self.contains_point(&p3)
-                && self.contains_point(&p4)
-        } else {
-            // No intersections and center is inside, so other is fully contained
-            true
-        }
+        intersection_points.is_empty()
     }
 
     fn contains_point(&self, point: &Point) -> bool {
