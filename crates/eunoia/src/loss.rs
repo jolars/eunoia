@@ -5,10 +5,8 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Aggregation {
     /// Sum of squared errors (default)
-    SumSquared,
-    /// Sum of absolute errors
     #[default]
-    SumAbsolute,
+    Sum,
     /// Maximum absolute error
     MaxAbsolute,
     /// Maximum relative error
@@ -49,7 +47,7 @@ impl LossType {
     pub fn region_error() -> Self {
         Self {
             metric: ErrorMetric::Squared,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         }
     }
 
@@ -57,7 +55,7 @@ impl LossType {
     pub fn stress() -> Self {
         Self {
             metric: ErrorMetric::RelativeSquared,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         }
     }
 
@@ -65,7 +63,7 @@ impl LossType {
     pub fn diag_error() -> Self {
         Self {
             metric: ErrorMetric::Relative,
-            aggregation: Aggregation::SumAbsolute,
+            aggregation: Aggregation::Sum,
         }
     }
 
@@ -157,8 +155,7 @@ impl ConfigurableLoss {
         }
 
         match self.aggregation {
-            Aggregation::SumSquared => errors.iter().sum(),
-            Aggregation::SumAbsolute => errors.iter().sum(),
+            Aggregation::Sum => errors.iter().sum(),
             Aggregation::MaxAbsolute => errors.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             Aggregation::MaxRelative => errors.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             Aggregation::RootMeanSquared => {
@@ -188,9 +185,9 @@ impl LossFunction for ConfigurableLoss {
 
     fn name(&self) -> &str {
         match (self.metric, self.aggregation) {
-            (ErrorMetric::Squared, Aggregation::SumSquared) => "region_error",
-            (ErrorMetric::RelativeSquared, Aggregation::SumSquared) => "stress",
-            (ErrorMetric::Relative, Aggregation::SumAbsolute) => "diag_error",
+            (ErrorMetric::Squared, Aggregation::Sum) => "region_error",
+            (ErrorMetric::RelativeSquared, Aggregation::Sum) => "stress",
+            (ErrorMetric::Relative, Aggregation::Sum) => "diag_error",
             (ErrorMetric::Absolute, Aggregation::MaxAbsolute) => "minimax",
             (ErrorMetric::Relative, Aggregation::MaxRelative) => "minimax_relative",
             _ => "custom",
@@ -204,13 +201,7 @@ mod tests {
 
     #[test]
     fn test_aggregation_default() {
-        assert_eq!(Aggregation::default(), Aggregation::SumAbsolute);
-    }
-
-    #[test]
-    fn test_aggregation_equality() {
-        assert_eq!(Aggregation::SumSquared, Aggregation::SumSquared);
-        assert_ne!(Aggregation::SumSquared, Aggregation::SumAbsolute);
+        assert_eq!(Aggregation::default(), Aggregation::Sum);
     }
 
     #[test]
@@ -235,28 +226,28 @@ mod tests {
     fn test_loss_type_default() {
         let loss = LossType::default();
         assert_eq!(loss.metric, ErrorMetric::Squared);
-        assert_eq!(loss.aggregation, Aggregation::SumSquared);
+        assert_eq!(loss.aggregation, Aggregation::Sum);
     }
 
     #[test]
     fn test_loss_type_region_error() {
         let loss = LossType::region_error();
         assert_eq!(loss.metric, ErrorMetric::Squared);
-        assert_eq!(loss.aggregation, Aggregation::SumSquared);
+        assert_eq!(loss.aggregation, Aggregation::Sum);
     }
 
     #[test]
     fn test_loss_type_stress() {
         let loss = LossType::stress();
         assert_eq!(loss.metric, ErrorMetric::RelativeSquared);
-        assert_eq!(loss.aggregation, Aggregation::SumSquared);
+        assert_eq!(loss.aggregation, Aggregation::Sum);
     }
 
     #[test]
     fn test_loss_type_diag_error() {
         let loss = LossType::diag_error();
         assert_eq!(loss.metric, ErrorMetric::Relative);
-        assert_eq!(loss.aggregation, Aggregation::SumAbsolute);
+        assert_eq!(loss.aggregation, Aggregation::Sum);
     }
 
     #[test]
@@ -300,7 +291,7 @@ mod tests {
     fn test_compute_error_absolute() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::SumAbsolute,
+            aggregation: Aggregation::Sum,
         };
         assert_eq!(loss.compute_error(5.0, 3.0), 2.0);
         assert_eq!(loss.compute_error(3.0, 5.0), 2.0);
@@ -311,7 +302,7 @@ mod tests {
     fn test_compute_error_squared() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Squared,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         };
         assert_eq!(loss.compute_error(5.0, 3.0), 4.0);
         assert_eq!(loss.compute_error(3.0, 5.0), 4.0);
@@ -322,7 +313,7 @@ mod tests {
     fn test_compute_error_relative() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Relative,
-            aggregation: Aggregation::SumAbsolute,
+            aggregation: Aggregation::Sum,
         };
         assert_eq!(loss.compute_error(10.0, 5.0), 1.0);
         assert_eq!(loss.compute_error(5.0, 10.0), 0.5);
@@ -333,7 +324,7 @@ mod tests {
     fn test_compute_error_relative_zero_target() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Relative,
-            aggregation: Aggregation::SumAbsolute,
+            aggregation: Aggregation::Sum,
         };
         // Both zero: no error
         assert_eq!(loss.compute_error(0.0, 0.0), 0.0);
@@ -346,7 +337,7 @@ mod tests {
     fn test_compute_error_relative_squared() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::RelativeSquared,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         };
         assert_eq!(loss.compute_error(10.0, 5.0), 1.0);
         assert_eq!(loss.compute_error(5.0, 10.0), 0.25);
@@ -357,7 +348,7 @@ mod tests {
     fn test_compute_error_relative_squared_zero_target() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::RelativeSquared,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         };
         assert_eq!(loss.compute_error(0.0, 0.0), 0.0);
         assert_eq!(loss.compute_error(3.0, 0.0), 9.0);
@@ -367,7 +358,7 @@ mod tests {
     fn test_aggregate_sum_squared() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         };
         assert_eq!(loss.aggregate(vec![1.0, 2.0, 3.0]), 6.0);
         assert_eq!(loss.aggregate(vec![]), 0.0);
@@ -377,7 +368,7 @@ mod tests {
     fn test_aggregate_sum_absolute() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::SumAbsolute,
+            aggregation: Aggregation::Sum,
         };
         assert_eq!(loss.aggregate(vec![1.0, 2.0, 3.0]), 6.0);
         assert_eq!(loss.aggregate(vec![]), 0.0);
@@ -417,7 +408,7 @@ mod tests {
     fn test_loss_function_evaluate() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Squared,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         };
 
         let mut fitted_areas = HashMap::new();
@@ -436,7 +427,7 @@ mod tests {
     fn test_loss_function_evaluate_missing_fitted() {
         let loss = ConfigurableLoss {
             metric: ErrorMetric::Squared,
-            aggregation: Aggregation::SumSquared,
+            aggregation: Aggregation::Sum,
         };
 
         let fitted_areas = HashMap::new();
@@ -450,21 +441,9 @@ mod tests {
     #[test]
     fn test_loss_function_name() {
         let tests = vec![
-            (
-                ErrorMetric::Squared,
-                Aggregation::SumSquared,
-                "region_error",
-            ),
-            (
-                ErrorMetric::RelativeSquared,
-                Aggregation::SumSquared,
-                "stress",
-            ),
-            (
-                ErrorMetric::Relative,
-                Aggregation::SumAbsolute,
-                "diag_error",
-            ),
+            (ErrorMetric::Squared, Aggregation::Sum, "region_error"),
+            (ErrorMetric::RelativeSquared, Aggregation::Sum, "stress"),
+            (ErrorMetric::Relative, Aggregation::Sum, "diag_error"),
             (ErrorMetric::Absolute, Aggregation::MaxAbsolute, "minimax"),
             (
                 ErrorMetric::Relative,
@@ -505,9 +484,9 @@ mod tests {
 
     #[test]
     fn test_debug_implementations() {
-        let agg = Aggregation::SumSquared;
+        let agg = Aggregation::Sum;
         let debug = format!("{:?}", agg);
-        assert!(debug.contains("SumSquared"));
+        assert!(debug.contains("Sum"));
 
         let metric = ErrorMetric::Relative;
         let debug = format!("{:?}", metric);
