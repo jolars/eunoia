@@ -26,7 +26,7 @@ pub(crate) struct FinalLayoutConfig {
 impl Default for FinalLayoutConfig {
     fn default() -> Self {
         Self {
-            max_iterations: 500,
+            max_iterations: 5000,
             loss_type: crate::loss::LossType::region_error(),
             tolerance: 1e-6,
         }
@@ -72,17 +72,35 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     // NelderMead Takes a vector of parameter vectors. The number of parameter vectors must be n +
     // 1 where n is the number of optimization parameters.
     // We need to provide n + 1 initial points for the simplex.
-
+    // Use x_i = x_0 + delta * e_i where e_i is the ith unit vector.
+    // delta = 0.05 * |x_0,i| for x_0,i != 0, and 0.00025 otherwise.
+    // Special cases:
+    // - For ellipses (5 params), the 4th parameter is log_aspect (can be 0), use delta = -0.2
+    // - For ellipses, the 5th parameter is rotation (radians), use delta = 0.2 (~11.5°)
     let initial_simplex = {
         let n_params = initial_param.len();
         let mut simplex = Vec::with_capacity(n_params + 1);
         simplex.push(initial_param.clone());
 
-        let step_size = 0.1; // 10% perturbation
-
         for i in 0..n_params {
             let mut perturbed = initial_param.clone();
-            perturbed[i] *= 1.0 + step_size;
+            let x0_i = initial_param[i];
+
+            // Check parameter type for ellipses (5 params per shape)
+            let param_idx = i % params_per_shape;
+            let is_log_aspect = params_per_shape == 5 && param_idx == 3;
+            let is_rotation = params_per_shape == 5 && param_idx == 4;
+
+            let delta = if x0_i.abs() > 1e-10 {
+                0.05 * x0_i.abs()
+            } else if is_log_aspect {
+                -0.2 // Perturb toward more elongated (negative log_aspect)
+            } else if is_rotation {
+                0.2 // ~11.5 degrees for rotation parameters
+            } else {
+                0.00025
+            };
+            perturbed[i] += delta;
             simplex.push(perturbed);
         }
 

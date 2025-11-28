@@ -130,19 +130,21 @@ impl Ellipse {
         }
     }
 
-    /// Creates a new ellipse from radius and aspect ratio parameterization.
+    /// Creates a new ellipse from radius and log-aspect ratio parameterization.
     ///
-    /// This parameterization is more stable for optimization:
+    /// This parameterization is optimized for numerical optimization:
     /// - `radius` controls the overall size (geometric mean of axes)
-    /// - `aspect_ratio` controls elongation (semi_minor / semi_major, range 0 to 1)
-    /// - `aspect_ratio = 1.0` gives a circle
-    /// - Lower values give more elongated ellipses
+    /// - `log_aspect` controls elongation on a log scale (more uniform landscape)
+    /// - `log_aspect = 0.0` gives a circle (aspect_ratio = 1.0)
+    /// - `log_aspect < 0` gives elongated ellipses
+    /// - `log_aspect = -0.693` gives aspect_ratio ≈ 0.5 (2:1 elongation)
     ///
     /// # Arguments
     ///
     /// * `center` - The center point of the ellipse
     /// * `radius` - Geometric mean radius: sqrt(semi_major * semi_minor)
-    /// * `aspect_ratio` - Ratio semi_minor / semi_major (clamped to 0.001..1.0)
+    /// * `log_aspect` - Log of aspect ratio (semi_minor/semi_major), clamped to [-1.609, 0]
+    ///   which corresponds to aspect_ratio in [0.2, 1.0]
     /// * `rotation` - Rotation angle in radians
     ///
     /// # Examples
@@ -151,20 +153,27 @@ impl Ellipse {
     /// use eunoia::geometry::shapes::Ellipse;
     /// use eunoia::geometry::primitives::Point;
     ///
-    /// // Circle: aspect_ratio = 1.0
-    /// let circle = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, 1.0, 0.0);
+    /// // Circle: log_aspect = 0.0
+    /// let circle = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, 0.0, 0.0);
     /// assert!((circle.semi_major() - 2.0).abs() < 1e-10);
     /// assert!((circle.semi_minor() - 2.0).abs() < 1e-10);
     ///
-    /// // Elongated ellipse: aspect_ratio = 0.5
-    /// let ellipse = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, 0.5, 0.0);
-    /// // radius = sqrt(a * b) = 2.0
-    /// // aspect = b/a = 0.5
+    /// // Elongated ellipse: log_aspect = -0.693 (aspect ≈ 0.5)
+    /// let ellipse = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, -0.693147, 0.0);
+    /// // radius = sqrt(a * b) = 2.0, aspect = 0.5
     /// // => a = 2.828, b = 1.414
+    /// assert!((ellipse.semi_major() - 2.828).abs() < 0.01);
+    /// assert!((ellipse.semi_minor() - 1.414).abs() < 0.01);
     /// ```
-    pub fn from_radius_ratio(center: Point, radius: f64, aspect_ratio: f64, rotation: f64) -> Self {
+    pub fn from_radius_ratio(center: Point, radius: f64, log_aspect: f64, rotation: f64) -> Self {
         let radius = radius.abs();
-        let aspect_ratio = aspect_ratio.abs().clamp(0.2, 2.0);
+
+        // Clamp log_aspect to [-ln(5), 0] which gives aspect_ratio in [0.2, 1.0]
+        let log_aspect = log_aspect.clamp(-1.6094379124341003, 0.0); // -ln(5) to 0
+        let aspect_ratio = log_aspect.exp();
+
+        // Normalize rotation to [0, π) since ellipse has 180° rotational symmetry
+        let rotation = rotation.rem_euclid(PI);
 
         // Given: r = sqrt(a * b) and aspect = b/a
         // Solving: a = r / sqrt(aspect), b = r * sqrt(aspect)
@@ -908,20 +917,20 @@ impl DiagramShape for Ellipse {
     }
 
     fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
-        // Convert circle to ellipse using radius+ratio parameterization:
-        // radius = r (geometric mean), aspect_ratio = 1.0 (circle), rotation = 0
-        vec![x, y, radius, 1.0, 0.0]
+        // Convert circle to ellipse using radius+log_aspect parameterization:
+        // radius = r (geometric mean), log_aspect = 0.0 (circle, aspect_ratio = 1.0), rotation = 0
+        vec![x, y, radius, 0.0, 0.0]
     }
 
     fn n_params() -> usize {
-        5 // x, y, radius, aspect_ratio, rotation
+        5 // x, y, radius, log_aspect, rotation
     }
 
     fn from_params(params: &[f64]) -> Self {
         assert_eq!(
             params.len(),
             5,
-            "Ellipse requires 5 parameters: x, y, radius, aspect_ratio, rotation"
+            "Ellipse requires 5 parameters: x, y, radius, log_aspect, rotation"
         );
 
         Ellipse::from_radius_ratio(
@@ -1789,13 +1798,14 @@ mod tests {
 
     #[test]
     fn test_from_radius_ratio_elongated() {
-        // aspect_ratio = 0.5 means semi_minor = 0.5 * semi_major
+        // log_aspect = ln(0.5) ≈ -0.693 means aspect_ratio = 0.5
         let radius = 2.0;
-        let aspect = 0.5;
-        let e = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), radius, aspect, 0.0);
+        let log_aspect = -0.693147180559945309; // ln(0.5)
+        let e = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), radius, log_aspect, 0.0);
 
-        // radius = sqrt(a * b), aspect = b/a
+        // radius = sqrt(a * b), aspect = exp(log_aspect) = 0.5
         // => a = radius / sqrt(aspect), b = radius * sqrt(aspect)
+        let aspect = log_aspect.exp();
         let expected_a = radius / aspect.sqrt();
         let expected_b = radius * aspect.sqrt();
 
@@ -1809,40 +1819,47 @@ mod tests {
 
     #[test]
     fn test_from_radius_ratio_preserves_area() {
-        // For fixed radius, changing aspect_ratio changes shape but preserves area
+        // For fixed radius, changing log_aspect changes shape but preserves area
         let radius = 3.0;
         let expected_area = PI * radius * radius;
 
-        for aspect in [0.2, 0.5, 0.8, 1.0] {
-            let e = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), radius, aspect, 0.0);
+        for log_aspect in [-1.6, -0.693, -0.223, 0.0] {
+            let e = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), radius, log_aspect, 0.0);
             assert!((e.area() - expected_area).abs() < 1e-9);
         }
     }
 
     #[test]
     fn test_from_radius_ratio_clamping() {
-        // aspect_ratio should be clamped to [0.001, 1.0]
-        let e_low = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, -0.5, 0.0);
+        // log_aspect should be clamped to [-ln(5), 0] which is [-1.609, 0]
+        let e_low = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, -5.0, 0.0);
         let e_high = Ellipse::from_radius_ratio(Point::new(0.0, 0.0), 2.0, 2.0, 0.0);
 
-        // Both should be valid ellipses
+        // Both should be valid ellipses (clamped to valid range)
         assert!(e_low.semi_major() > 0.0);
         assert!(e_low.semi_minor() > 0.0);
         assert!(e_high.semi_major() > 0.0);
         assert!(e_high.semi_minor() > 0.0);
+
+        // e_low should be at minimum aspect (most elongated)
+        // log_aspect = -1.609 => aspect = 0.2
+        assert!((e_low.semi_minor() / e_low.semi_major() - 0.2).abs() < 0.01);
+
+        // e_high should be clamped to 0 (circle)
+        assert!((e_high.semi_minor() / e_high.semi_major() - 1.0).abs() < 1e-10);
     }
 
     #[test]
     fn test_diagram_shape_params_from_circle() {
         use crate::geometry::traits::DiagramShape;
 
-        // params_from_circle should give radius+ratio parameterization
+        // params_from_circle should give radius+log_aspect parameterization
         let params = Ellipse::params_from_circle(1.0, 2.0, 3.0);
         assert_eq!(params.len(), 5);
         assert_eq!(params[0], 1.0); // x
         assert_eq!(params[1], 2.0); // y
         assert_eq!(params[2], 3.0); // radius
-        assert_eq!(params[3], 1.0); // aspect_ratio (circle)
+        assert_eq!(params[3], 0.0); // log_aspect (circle: ln(1) = 0)
         assert_eq!(params[4], 0.0); // rotation
 
         // from_params should reconstruct a circle
