@@ -995,14 +995,6 @@ mod tests {
         }
     }
 
-    // TODO: 4+ circle area calculations have accuracy issues that need to be investigated.
-    // The errors are larger than expected (>10% for some regions), suggesting potential
-    // issues with the polygon-based area calculation in multiple_overlap_areas or with
-    // the region discovery algorithm for higher-order intersections.
-    //
-    // For now, these tests are commented out. They can be used to verify improvements
-    // to the 4+ circle support.
-
     #[test]
     fn test_eulerr_comparison_four_circles_square() {
         let c1 = Circle::new(Point::new(0.0000000000, 0.0000000000), 1.5000000000); // A
