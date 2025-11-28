@@ -114,7 +114,8 @@ pub fn solve_cubic(alpha: f64, beta: f64, gamma: f64, delta: f64) -> [Complex64;
 
 /// Extracts real roots from complex roots.
 ///
-/// Returns only roots with imaginary parts smaller than the given tolerance.
+/// A root is considered real if its imaginary part is exactly zero.
+/// This strict check matches RConics behavior.
 ///
 /// # Examples
 ///
@@ -122,16 +123,12 @@ pub fn solve_cubic(alpha: f64, beta: f64, gamma: f64, delta: f64) -> [Complex64;
 /// use eunoia::math::polynomial::{solve_cubic, extract_real_roots};
 ///
 /// let roots = solve_cubic(1.0, -6.0, 11.0, -6.0);
-/// let real_roots = extract_real_roots(&roots, 1e-10);
+/// let real_roots = extract_real_roots(&roots);
 ///
 /// assert_eq!(real_roots.len(), 3);
 /// ```
-pub fn extract_real_roots(roots: &[Complex64], tolerance: f64) -> Vec<f64> {
-    roots
-        .iter()
-        .filter(|r| r.im.abs() < tolerance)
-        .map(|r| r.re)
-        .collect()
+pub fn extract_real_roots(roots: &[Complex64]) -> Vec<f64> {
+    roots.iter().filter(|r| r.im == 0.0).map(|r| r.re).collect()
 }
 
 /// Solves a homogeneous cubic equation αλ³ + βλ²μ + γλμ² + δμ³ = 0.
@@ -260,7 +257,7 @@ mod tests {
         // x³ - 1 = 0 has roots: 1, -1/2 ± i√3/2
         let roots = solve_cubic(1.0, 0.0, 0.0, -1.0);
 
-        let real_roots = extract_real_roots(&roots, 1e-10);
+        let real_roots = extract_real_roots(&roots);
         assert_eq!(real_roots.len(), 1);
         assert!(approx_eq(real_roots[0], 1.0, 1e-10));
 
@@ -288,7 +285,7 @@ mod tests {
     #[test]
     fn test_extract_real_roots() {
         let roots = solve_cubic(1.0, -6.0, 11.0, -6.0);
-        let real_roots = extract_real_roots(&roots, 1e-10);
+        let real_roots = extract_real_roots(&roots);
 
         assert_eq!(real_roots.len(), 3);
 

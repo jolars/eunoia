@@ -189,14 +189,14 @@ impl Conic {
             + Matrix3::from_columns(&[m.column(0), m.column(1), a.column(2)]).determinant();
 
         let roots = polynomial::solve_cubic(alpha, beta, gamma, delta);
-        let real_roots = extract_real_roots(&roots, EPSILON);
+        let real_roots = extract_real_roots(&roots);
 
         // If no real roots, no intersection
         if real_roots.is_empty() {
             return Vec::new();
         }
 
-        let lambda = real_roots.into_iter().fold(f64::NEG_INFINITY, f64::max);
+        let lambda = real_roots[0];
 
         // Create the degenerate conic matrix
         let c = Conic::new((lambda * a + m).map(math::zap_small));
@@ -398,6 +398,29 @@ mod tests {
     }
 
     #[test]
+    fn test_intersect_conic_concentric_ellipses() {
+        // Concentric ellipses where outer contains inner
+        // Should return NO intersection points
+        let outer = Conic::new(Matrix3::new(
+            0.04, 0.00, 0.00, 0.00, 0.1111111, 0.00, 0.00, 0.00, -1.00,
+        ));
+        let inner = Conic::new(Matrix3::new(
+            0.1111111, 0.00, 0.00, 0.00, 0.25, 0.00, 0.00, 0.00, -1.00,
+        ));
+
+        let points = outer.intersect_conic(&inner);
+
+        println!("Intersection points: {:?}", points);
+
+        // This should pass when the bug is fixed
+        assert_eq!(
+            points.len(),
+            0,
+            "Concentric ellipses should have no intersection points (outer contains inner)"
+        );
+    }
+
+    #[test]
     fn test_intersect_conic() {
         let c1 = Conic::new(Matrix3::new(
             0.1914062, 0.10148735, 0.0, 0.1014874, 0.07421875, 0.0, 0.0000000, 0.00000000, -1.0,
@@ -423,10 +446,10 @@ mod tests {
             HomogeneousPoint::new(-1.461847, -1.459128, 1.000000),
         ];
 
-        assert_approx_eq!(points[0].coords(), points_exp[3].coords(), 1e-5);
+        assert_approx_eq!(points[0].coords(), points_exp[0].coords(), 1e-5);
         assert_approx_eq!(points[1].coords(), points_exp[1].coords(), 1e-5);
-        assert_approx_eq!(points[2].coords(), points_exp[2].coords(), 1e-5);
-        assert_approx_eq!(points[3].coords(), points_exp[0].coords(), 1e-5);
+        assert_approx_eq!(points[2].coords(), points_exp[3].coords(), 1e-5);
+        assert_approx_eq!(points[3].coords(), points_exp[2].coords(), 1e-5);
     }
 
     #[test]
