@@ -35,6 +35,7 @@
             polylabelr
             Rcpp
             RcppArmadillo
+            RConics
             devtools
             languageserver
             SLOPE
