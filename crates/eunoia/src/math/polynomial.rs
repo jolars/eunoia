@@ -3,8 +3,6 @@
 //! This module provides solvers for polynomial equations, primarily for use in
 //! geometric computations involving conic sections.
 
-use nalgebra::Matrix3;
-use nalgebra::Vector3;
 use num_complex::Complex64;
 
 /// Solves a cubic equation of the form αx³ + βx² + γx + δ = 0.
