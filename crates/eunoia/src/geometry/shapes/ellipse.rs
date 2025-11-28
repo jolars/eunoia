@@ -164,7 +164,7 @@ impl Ellipse {
     /// ```
     pub fn from_radius_ratio(center: Point, radius: f64, aspect_ratio: f64, rotation: f64) -> Self {
         let radius = radius.abs();
-        let aspect_ratio = aspect_ratio.abs().clamp(0.001, 1.0);
+        let aspect_ratio = aspect_ratio.abs().clamp(0.2, 2.0);
 
         // Given: r = sqrt(a * b) and aspect = b/a
         // Solving: a = r / sqrt(aspect), b = r * sqrt(aspect)
