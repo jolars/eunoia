@@ -4,7 +4,7 @@
 //! layout by minimizing the difference between target exclusive areas and actual
 //! fitted areas in the diagram.
 
-use argmin::core::{CostFunction, Error, Executor, Gradient, State};
+use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
 use argmin::solver::conjugategradient::beta::PolakRibiere;
 use argmin::solver::conjugategradient::NonlinearConjugateGradient;
 use argmin::solver::linesearch::{
@@ -12,6 +12,7 @@ use argmin::solver::linesearch::{
 };
 use argmin::solver::neldermead::NelderMead;
 use argmin::solver::quasinewton::LBFGS;
+use argmin::solver::trustregion::{CauchyPoint, TrustRegion};
 use finitediff::vec;
 use nalgebra::DVector;
 
@@ -28,6 +29,8 @@ pub enum Optimizer {
     Lbfgs,
     /// Nonlinear Conjugate Gradient with numerical gradients
     ConjugateGradient,
+    /// Trust Region method
+    TrustRegion,
 }
 
 /// Configuration for final layout optimization.
@@ -83,6 +86,67 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
 
     // Choose optimizer and run based on configuration
     let (final_params, loss) = match config.optimizer {
+        Optimizer::TrustRegion => {
+            // TrustRegion requires Vec<f64> parameters, not DVector
+            // Create a wrapper cost function that works with Vec<f64>
+            struct VecCostFunction<'a, S: DiagramShape + Copy + 'static> {
+                inner: DiagramCost<'a, S>,
+            }
+
+            impl<'a, S: DiagramShape + Copy + 'static> CostFunction for VecCostFunction<'a, S> {
+                type Param = Vec<f64>;
+                type Output = f64;
+
+                fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
+                    let dvec = DVector::from_vec(param.clone());
+                    self.inner.cost(&dvec)
+                }
+            }
+
+            impl<'a, S: DiagramShape + Copy + 'static> Gradient for VecCostFunction<'a, S> {
+                type Param = Vec<f64>;
+                type Gradient = Vec<f64>;
+
+                fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, Error> {
+                    let dvec = DVector::from_vec(param.clone());
+                    let grad = self.inner.gradient(&dvec)?;
+                    Ok(grad.as_slice().to_vec())
+                }
+            }
+
+            impl<'a, S: DiagramShape + Copy + 'static> Hessian for VecCostFunction<'a, S> {
+                type Param = Vec<f64>;
+                type Hessian = Vec<Vec<f64>>;
+
+                fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
+                    let dvec = DVector::from_vec(param.clone());
+                    self.inner.hessian(&dvec)
+                }
+            }
+
+            let loss_fn = config.loss_type.create();
+            let inner_cost = DiagramCost::<S> {
+                spec,
+                loss_fn,
+                params_per_shape,
+                _shape: std::marker::PhantomData,
+            };
+            let cost_function = VecCostFunction { inner: inner_cost };
+
+            let solver = TrustRegion::new(CauchyPoint::new());
+            let initial_param_vec = initial_param.as_slice().to_vec();
+            let result = Executor::new(cost_function, solver)
+                .configure(|state| {
+                    state
+                        .param(initial_param_vec)
+                        .max_iters(config.max_iterations as u64)
+                })
+                .run()?;
+            (
+                DVector::from_vec(result.state().get_best_param().unwrap().clone()),
+                result.state().get_best_cost(),
+            )
+        }
         Optimizer::NelderMead => {
             // NelderMead needs initial simplex
             let initial_simplex = {
@@ -238,6 +302,27 @@ impl<'a, S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'a, S> {
         let g_central = vec::central_diff(&f);
         let grad_vec = g_central(&param_vec)?;
         Ok(DVector::from_vec(grad_vec))
+    }
+}
+
+impl<'a, S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'a, S> {
+    type Param = DVector<f64>;
+    type Hessian = Vec<Vec<f64>>;
+
+    fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
+        // Use central finite differences for numerical Hessian
+        // central_hessian expects a gradient function and returns a closure
+        let param_vec = param.as_slice().to_vec();
+
+        let grad_fn = |x: &Vec<f64>| -> Result<Vec<f64>, argmin::core::Error> {
+            let p = DVector::from_vec(x.to_vec());
+            let grad = self.gradient(&p)?;
+            Ok(grad.as_slice().to_vec())
+        };
+
+        let h_central = finitediff::vec::central_hessian(&grad_fn);
+        let hessian = h_central(&param_vec)?;
+        Ok(hessian)
     }
 }
 

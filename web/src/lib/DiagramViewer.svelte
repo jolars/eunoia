@@ -55,7 +55,7 @@
   let shapeType = $state<"circle" | "ellipse">("circle");
   let usePolygons = $state(true);
   let polygonVertices = $state(64);
-  let optimizer = $state<"NelderMead" | "Lbfgs" | "ConjugateGradient">("NelderMead");
+  let optimizer = $state<"NelderMead" | "Lbfgs" | "ConjugateGradient" | "TrustRegion">("NelderMead");
   let seed = $state<number | undefined>(undefined);
   let useSeed = $state(false);
 
@@ -163,7 +163,8 @@
         // Map optimizer string to WasmOptimizer enum value
         const optimizerValue = optimizer === "NelderMead" ? wasmModule.WasmOptimizer.NelderMead
                              : optimizer === "Lbfgs" ? wasmModule.WasmOptimizer.Lbfgs
-                             : wasmModule.WasmOptimizer.ConjugateGradient;
+                             : optimizer === "ConjugateGradient" ? wasmModule.WasmOptimizer.ConjugateGradient
+                             : wasmModule.WasmOptimizer.TrustRegion;
         
         console.log("Using optimizer:", optimizer, "enum value:", optimizerValue);
         
@@ -439,6 +440,7 @@
                 <option value="NelderMead">Nelder-Mead (default, robust)</option>
                 <option value="Lbfgs">L-BFGS (gradient-based)</option>
                 <option value="ConjugateGradient">Conjugate Gradient</option>
+                <option value="TrustRegion">Trust Region (Cauchy Point)</option>
               </select>
               <p class="mt-1 text-xs text-gray-500">
                 Optimization method for fitting shapes

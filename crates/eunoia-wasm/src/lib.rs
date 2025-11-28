@@ -19,6 +19,7 @@ pub enum WasmOptimizer {
     NelderMead,
     Lbfgs,
     ConjugateGradient,
+    TrustRegion,
 }
 
 impl From<WasmOptimizer> for Optimizer {
@@ -27,6 +28,7 @@ impl From<WasmOptimizer> for Optimizer {
             WasmOptimizer::NelderMead => Optimizer::NelderMead,
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
             WasmOptimizer::ConjugateGradient => Optimizer::ConjugateGradient,
+            WasmOptimizer::TrustRegion => Optimizer::TrustRegion,
         }
     }
 }
