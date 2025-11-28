@@ -35,6 +35,8 @@ pub mod loss;
 pub mod math;
 pub mod spec;
 
+pub mod constants;
+
 // Internal test utilities
 #[cfg(test)]
 pub mod test_utils;

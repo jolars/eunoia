@@ -40,7 +40,10 @@
 
 use std::f64::consts::PI;
 
+use nalgebra::Matrix2;
+
 use crate::geometry::primitives::Point;
+use crate::geometry::projective::Conic;
 use crate::geometry::shapes::Rectangle;
 use crate::geometry::traits::{Area, BoundingBox, Centroid, Closed, Distance, Perimeter};
 
@@ -127,6 +130,85 @@ impl Ellipse {
             semi_minor,
             rotation,
         }
+    }
+
+    pub fn from_conic(conic: Conic) -> Option<Self> {
+        let c = conic.matrix();
+
+        // Extract algebraic coefficients from the symmetric matrix
+        // Q = [ A   B/2  D/2 ]
+        //     [ B/2 C    E/2 ]
+        //     [ D/2 E/2  F   ]
+        let m1 = c[(0, 0)];
+        let m2 = 2.0 * c[(0, 1)];
+        let m3 = c[(1, 1)];
+        let m4 = 2.0 * c[(0, 2)];
+        let m5 = 2.0 * c[(1, 2)];
+        let m6 = c[(2, 2)];
+
+        // Check ellipse condition (negative discriminant required)
+        if m2 * m2 - 4.0 * m1 * m3 >= 0.0 {
+            return None;
+        }
+
+        // Quadratic form matrix
+        let m = Matrix2::new(m1, m2 / 2.0, m2 / 2.0, m3);
+
+        // Solve for center:
+        // M * [xc, yc]^T = -1/2 * [D, E]^T
+        let rhs = nalgebra::Vector2::new(-m4 / 2.0, -m5 / 2.0);
+        let center_vec = m.lu().solve(&rhs)?;
+        let xc = center_vec[0];
+        let yc = center_vec[1];
+
+        // Compute translated constant term F̄
+        let f_bar = m6 + m1 * xc * xc + m2 * xc * yc + m3 * yc * yc + m4 * xc + m5 * yc;
+
+        if f_bar >= 0.0 {
+            return None; // Not an ellipse
+        }
+
+        // Eigen-decompose the quadratic part
+        let eig = m.symmetric_eigen();
+        let lambda1 = eig.eigenvalues[0];
+        let lambda2 = eig.eigenvalues[1];
+        let v = eig.eigenvectors;
+
+        // Identify major/minor axes:
+        // smaller eigenvalue ⇒ bigger radius
+        let (lambda_major, lambda_minor, vec_major) = if lambda1 < lambda2 {
+            (lambda1, lambda2, v.column(0))
+        } else {
+            (lambda2, lambda1, v.column(1))
+        };
+
+        // Radii from: a² = -F̄ / λ
+        let a2 = -f_bar / lambda_major;
+        let b2 = -f_bar / lambda_minor;
+
+        if a2 <= 0.0 || b2 <= 0.0 {
+            return None;
+        }
+
+        let a = a2.sqrt();
+        let b = b2.sqrt();
+
+        // Rotation angle from the major-axis eigenvector
+        let vx = vec_major[0];
+        let vy = vec_major[1];
+        let mut phi = vy.atan2(vx);
+
+        // Normalize angle into [0, π)
+        if phi < 0.0 {
+            phi += std::f64::consts::PI;
+        }
+
+        Some(Ellipse {
+            center: Point::new(xc, yc),
+            semi_major: a,
+            semi_minor: b,
+            rotation: phi,
+        })
     }
 
     /// Returns the center point of the ellipse.
