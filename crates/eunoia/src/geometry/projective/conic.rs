@@ -191,20 +191,30 @@ impl Conic {
         let roots = polynomial::solve_cubic(alpha, beta, gamma, delta);
         let real_roots = extract_real_roots(&roots, EPSILON);
 
-        // Select the largest real root
-        let lambda = real_roots.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        // If no real roots, no intersection
+        if real_roots.is_empty() {
+            return Vec::new();
+        }
+
+        let lambda = real_roots.into_iter().fold(f64::NEG_INFINITY, f64::max);
 
         // Create the degenerate conic matrix
         let c = Conic::new((lambda * a + m).map(math::zap_small));
 
-        // Split the degenerate conic into two lines
-        let (line1, line2) = c.split_degenerate();
+        let lines = c.split_degenerate();
 
-        // Intersect each line with one of the conics to get intersection points
-        let points1 = self.intersect_line(&line1);
-        let points2 = self.intersect_line(&line2);
+        match lines {
+            Some((line1, line2)) => {
+                // Intersect each line with one of the conics to get intersection points
+                let points1 = self.intersect_line(&line1);
+                let points2 = self.intersect_line(&line2);
 
-        points1.into_iter().chain(points2).collect()
+                points1.into_iter().chain(points2).collect()
+            }
+
+            // No valid split, return empty
+            None => Vec::new(),
+        }
     }
 
     /// Intersects this conic with a line to return 0 to 2 intersection points.
@@ -219,47 +229,54 @@ impl Conic {
     pub fn intersect_line(&self, line: &HomogeneousLine) -> Vec<HomogeneousPoint> {
         let mut points = Vec::new();
 
-        let m = line.coeffs().skew_symmetric_matrix();
-
-        let b = m.transpose() * self.matrix * m;
-
         let l_abs = line.coeffs().abs();
 
         if l_abs.max() < EPSILON {
             return points; // Line is degenerate
         }
 
-        // Find index of maximum absolute value in line coefficients
+        let m = line.coeffs().skew_symmetric_matrix();
+        let b = m.transpose() * self.matrix * m;
+
+        // Find index of first non-zero element in line coefficients
         let i = l_abs.iamax();
 
+        // Get the 2x2 submatrix by removing row and column i
         let b_sub = b.remove_row(i).remove_column(i);
-        let det_sub = b_sub.determinant();
-        let alpha = (-det_sub).sqrt() / line.coeffs()[i];
+        let det_b = b_sub.determinant();
 
-        let c = b + alpha * m;
-
-        let (i0, i1) = c.iamax_full();
-
-        if c[(i0, i1)].abs() <= EPSILON {
-            return points; // No intersection
+        // Check if det(B_sub) is negative (required for real intersections)
+        // When det_b is close to 0, the circles/ellipses are tangent
+        if det_b > EPSILON {
+            return points; // No real intersection points
         }
 
-        // Extract row i0, normalize by element (i0, 2) to get first point
-        if c[(i0, 2)].abs() > EPSILON {
-            let p0 = HomogeneousPoint::new(c[(i0, 0)] / c[(i0, 2)], c[(i0, 1)] / c[(i0, 2)], 1.0);
+        let alpha = (-det_b).sqrt() / line.coeffs()[i];
+        let a = b + alpha * m;
+
+        // Find a non-zero element in A
+        let (i0, i1) = a.iamax_full();
+
+        if a[(i0, i1)].abs() <= EPSILON {
+            return points; // Matrix A is all zeros
+        }
+
+        // Extract first point from row i0, normalize by element (i0, 2)
+        if a[(i0, 2)].abs() > EPSILON {
+            let p0 = HomogeneousPoint::new(a[(i0, 0)] / a[(i0, 2)], a[(i0, 1)] / a[(i0, 2)], 1.0);
             points.push(p0);
         }
 
-        // Extract column i1, normalize by element (2, i1) to get second point
-        if c[(2, i1)].abs() > EPSILON {
-            let p1 = HomogeneousPoint::new(c[(0, i1)] / c[(2, i1)], c[(1, i1)] / c[(2, i1)], 1.0);
+        // Extract second point from column i1, normalize by element (2, i1)
+        if a[(2, i1)].abs() > EPSILON {
+            let p1 = HomogeneousPoint::new(a[(0, i1)] / a[(2, i1)], a[(1, i1)] / a[(2, i1)], 1.0);
             points.push(p1);
         }
 
         points
     }
 
-    fn split_degenerate(&self) -> (HomogeneousLine, HomogeneousLine) {
+    fn split_degenerate(&self) -> Option<(HomogeneousLine, HomogeneousLine)> {
         let b = -self.matrix.adjugate();
 
         let b_diagonal = b.diagonal();
@@ -269,10 +286,16 @@ impl Conic {
             .max_by(|a, b| a.1.abs().partial_cmp(&b.1.abs()).unwrap_or(Ordering::Equal))
             .unwrap(); // safe here because diagonal is non-empty
 
-        let b_ii = Complex64::from(*max_val).sqrt();
+        // Check if maximum diagonal element is significant
+        if max_val.abs() < EPSILON {
+            return None;
+        }
 
+        let b_ii = Complex64::from(max_val).sqrt();
+
+        // Check if b_ii has negative real part
         if b_ii.real() < 0.0 {
-            panic!("Cannot split degenerate conic: Bii has negative real part.");
+            return None;
         }
 
         let b_i = b.column(i).map(Complex64::from).map(|x| x / b_ii);
@@ -284,12 +307,17 @@ impl Conic {
         // Find the maximum absolute value element in C
         let (max_row, max_col) = c.map(|x| x.re()).iamax_full();
 
+        // Check if there are any significant non-zero elements
+        if c[(max_row, max_col)].norm() < EPSILON {
+            return None;
+        }
+
         let line1 =
             HomogeneousLine::new(c[(max_row, 0)].re, c[(max_row, 1)].re, c[(max_row, 2)].re);
         let line2 =
             HomogeneousLine::new(c[(0, max_col)].re, c[(1, max_col)].re, c[(2, max_col)].re);
 
-        (line1, line2)
+        Some((line1, line2))
     }
 }
 
@@ -395,10 +423,10 @@ mod tests {
             HomogeneousPoint::new(-1.461847, -1.459128, 1.000000),
         ];
 
-        assert!(approx_eq(points[0].coords(), points_exp[3].coords(), 1e-5));
-        assert!(approx_eq(points[1].coords(), points_exp[1].coords(), 1e-5));
-        assert!(approx_eq(points[2].coords(), points_exp[2].coords(), 1e-5));
-        assert!(approx_eq(points[3].coords(), points_exp[0].coords(), 1e-5));
+        assert_approx_eq!(points[0].coords(), points_exp[3].coords(), 1e-5);
+        assert_approx_eq!(points[1].coords(), points_exp[1].coords(), 1e-5);
+        assert_approx_eq!(points[2].coords(), points_exp[2].coords(), 1e-5);
+        assert_approx_eq!(points[3].coords(), points_exp[0].coords(), 1e-5);
     }
 
     #[test]
