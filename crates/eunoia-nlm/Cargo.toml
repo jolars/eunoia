@@ -1,0 +1,11 @@
+[package]
+name = "eunoia-nlm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+nalgebra = "0.33"
+thiserror = "2.0"
