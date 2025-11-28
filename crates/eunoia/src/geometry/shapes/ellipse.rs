@@ -496,9 +496,22 @@ impl Closed for Ellipse {
         unimplemented!()
     }
 
-    fn contains_point(&self, _point: &Point) -> bool {
-        // Placeholder implementation
-        unimplemented!()
+    fn contains_point(&self, point: &Point) -> bool {
+        // Transform point to ellipse's local coordinate system
+        let dx = point.x() - self.center.x();
+        let dy = point.y() - self.center.y();
+
+        let cos_phi = self.rotation.cos();
+        let sin_phi = self.rotation.sin();
+
+        // Rotate point to align with ellipse axes
+        let x_local = dx * cos_phi + dy * sin_phi;
+        let y_local = dx * sin_phi - dy * cos_phi;
+
+        // Check if point is inside using the ellipse equation
+        (x_local * x_local) / (self.semi_major * self.semi_major)
+            + (y_local * y_local) / (self.semi_minor * self.semi_minor)
+            <= 1.0
     }
 
     fn intersects(&self, _other: &Self) -> bool {
@@ -836,5 +849,45 @@ mod tests {
         let complementary = ellipse.area() - segment_270deg;
         assert!(complementary > 0.0);
         assert!(complementary < ellipse.area() / 4.0);
+    }
+
+    #[test]
+    fn test_contains_point_center_and_boundary() {
+        let ellipse = Ellipse::new(Point::new(2.0, 3.0), 5.0, 3.0, 0.0);
+
+        // Center should be inside
+        assert!(ellipse.contains_point(&Point::new(2.0, 3.0)));
+
+        // Points on the semi-major axis (horizontal)
+        assert!(ellipse.contains_point(&Point::new(7.0, 3.0))); // right edge
+        assert!(ellipse.contains_point(&Point::new(-3.0, 3.0))); // left edge
+
+        // Points on the semi-minor axis (vertical)
+        assert!(ellipse.contains_point(&Point::new(2.0, 6.0))); // top edge
+        assert!(ellipse.contains_point(&Point::new(2.0, 0.0))); // bottom edge
+
+        // Point clearly outside
+        assert!(!ellipse.contains_point(&Point::new(10.0, 10.0)));
+    }
+
+    #[test]
+    fn test_contains_point_rotated_ellipse() {
+        // Create an ellipse rotated 45 degrees
+        let ellipse = Ellipse::new(Point::new(0.0, 0.0), 4.0, 2.0, PI / 4.0);
+
+        // Center should be inside
+        assert!(ellipse.contains_point(&Point::new(0.0, 0.0)));
+
+        // Point on the rotated semi-major axis
+        let dist = 4.0 / (2.0_f64).sqrt(); // 4 * cos(45°) = 4 * sin(45°)
+        assert!(ellipse.contains_point(&Point::new(dist, dist)));
+        assert!(ellipse.contains_point(&Point::new(-dist, -dist)));
+
+        // Point clearly outside
+        assert!(!ellipse.contains_point(&Point::new(5.0, 0.0)));
+        assert!(!ellipse.contains_point(&Point::new(0.0, 5.0)));
+
+        // Point inside but not on axis
+        assert!(ellipse.contains_point(&Point::new(0.5, 0.5)));
     }
 }
