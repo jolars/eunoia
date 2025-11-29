@@ -28,9 +28,11 @@
 //! ```
 
 pub mod differentiation;
+pub mod driver;
 pub mod initialization;
 pub mod linalg;
 pub mod methods;
+pub mod stopping;
 pub mod types;
 pub mod updates;
 
