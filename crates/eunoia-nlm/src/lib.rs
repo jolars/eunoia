@@ -27,6 +27,7 @@
 //! let result = optimize(&x0, &rosenbrock, None, None, &config)?;
 //! ```
 
+pub mod differentiation;
 pub mod linalg;
 pub mod types;
 
