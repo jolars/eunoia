@@ -128,9 +128,23 @@ pub fn optdrv(
     }
 
     let epsm = f64::EPSILON;
-    let rnf = 10.0_f64.powf(-(config.ndigit as f64)).max(epsm);
 
-    // Compute default maximum step size if not provided (from optchk in nlm.c)
+    // optchk logic (subset) – enforce defaults (nlm.c:1964-2067)
+    let mut method = config.method;
+    if (method as i32) < 1 || (method as i32) > 3 {
+        method = Method::LineSearch;
+    }
+
+    // Decide expensive flag like R: expensive unless analytic hessian supplied
+    let mut expensive = if config.has_hessian {
+        false
+    } else {
+        config.expensive
+    };
+
+    // Typical sizes already converted to sx above.
+
+    // stepmx default
     let mut stepmx = config.stepmx;
     if stepmx <= 0.0 {
         let mut stpsiz = 0.0;
@@ -139,6 +153,42 @@ pub fn optdrv(
         }
         stepmx = 1000.0 * stpsiz.sqrt().max(1.0);
     }
+
+    // fscale default
+    let mut fscale = if config.fscale == 0.0 {
+        1.0
+    } else {
+        config.fscale.abs()
+    };
+
+    // ndigit default
+    let mut ndigit = if config.ndigit == -1 {
+        (-f64::EPSILON.log10()) as i32
+    } else {
+        config.ndigit
+    }; // optchk ndigit default
+
+    // grad tolerance check
+    let mut gradtl = if config.gradtl < 0.0 {
+        f64::EPSILON.powf(1.0 / 3.0)
+    } else {
+        config.gradtl
+    };
+
+    // trust region radius
+    let mut dlt = if config.dlt <= 0.0 {
+        -1.0
+    } else {
+        config.dlt.min(stepmx)
+    };
+
+    // Replace in local variables used below
+    let config_method = method;
+    let config_expensive = expensive;
+    let config_gradtl = gradtl;
+    let config_fscale = fscale;
+    let config_ndigit = ndigit;
+    let rnf = 10.0_f64.powf(-(config_ndigit as f64)).max(epsm);
 
     // Evaluate initial function value
     let mut f = func(&x);
@@ -182,9 +232,9 @@ pub fn optdrv(
     }
 
     // Initialize Hessian
-    let mut dlt = config.dlt;
-    if config.expensive {
-        a = hsnint(n, &sx, config.method);
+    let mut dlt = dlt; // from optchk logic above
+    if config_expensive {
+        a = hsnint(n, &sx, config_method);
     } else if let Some(hess) = hess_func {
         a = hess(&x);
         // Copy upper triangle to lower for Cholesky
@@ -211,12 +261,13 @@ pub fn optdrv(
     let mut fpls = 0.0;
     let has_gradient = config.has_gradient;
     let mut iagflg_working = if has_gradient { 1 } else { 0 };
+    let mut noupdt = true; // Track if first secant update
 
     loop {
         itncnt += 1;
 
         // Compute Cholesky decomposition and Newton step
-        if config.expensive && config.method != Method::MoreHebdon {
+        if config_expensive && config_method != Method::MoreHebdon {
             // Cholesky already obtained from secant update
         } else {
             chlhsn(&mut a, epsm, &sx, &mut udiag);
@@ -227,7 +278,7 @@ pub fn optdrv(
         p = lltslv(&a, &neg_g);
 
         // Choose step by global strategy
-        match config.method {
+        match config_method {
             Method::LineSearch => {
                 let lnsrch_params = LnsrchParams {
                     x: &x,
@@ -319,7 +370,7 @@ pub fn optdrv(
             x: &x,
             itncnt,
             icscmx,
-            gradtl: config.gradtl,
+            gradtl: config_gradtl,
             steptl: config.steptl,
             sx: &sx,
             fscale: config.fscale,
@@ -341,7 +392,7 @@ pub fn optdrv(
         }
 
         // Update Hessian
-        if config.expensive {
+        if config_expensive {
             let secant_params = SecantParams {
                 x: &x,
                 g: &g,
@@ -353,11 +404,9 @@ pub fn optdrv(
                 has_gradient: iagflg_working >= 0,
             };
 
-            if config.method == Method::MoreHebdon {
-                let mut noupdt = false;
+            if config_method == Method::MoreHebdon {
                 secunf(&mut a, &udiag, &secant_params, &mut noupdt);
             } else {
-                let mut noupdt = false;
                 secfac(&mut a, &secant_params, &mut noupdt);
             }
         } else if let Some(hess) = hess_func {
