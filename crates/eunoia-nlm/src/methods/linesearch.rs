@@ -129,15 +129,31 @@ pub fn lnsrch(params: &LnsrchParams) -> LnsrchResult {
         }
 
         // Calculate new lambda (backtracking)
-        if fpls >= f64::MAX {
+        if !fpls.is_finite() {
             // Non-finite value: reduce dramatically
             lambda *= 0.1;
             firstback = true;
         } else if firstback {
             // First backtrack: quadratic interpolation
-            let tlmbda = -lambda * slp / ((fpls - params.f - slp) * 2.0);
+            let denom = (fpls - params.f - slp) * 2.0;
+            let tlmbda = if denom.abs() < 1e-300 {
+                // Denominator too small, just reduce lambda
+                lambda * 0.1
+            } else {
+                -lambda * slp / denom
+            };
             firstback = false;
-            lambda = tlmbda.max(lambda * 0.1);
+
+            // Update plmbda and pfpls for next iteration (if any)
+            plmbda = lambda;
+            pfpls = fpls;
+
+            // Clamp lambda
+            lambda = if tlmbda < lambda * 0.1 {
+                lambda * 0.1
+            } else {
+                tlmbda
+            };
         } else {
             // Subsequent backtracks: cubic interpolation
             let t1 = fpls - params.f - lambda * slp;
@@ -156,6 +172,11 @@ pub fn lnsrch(params: &LnsrchParams) -> LnsrchResult {
                 let sign = if a3 < 0.0 { 1.0 } else { -1.0 };
                 (-b + sign * disc.sqrt()) / a3
             };
+
+            // Safeguard against NaN or invalid values
+            if !tlmbda.is_finite() || tlmbda <= 0.0 {
+                tlmbda = lambda * 0.1;
+            }
 
             if tlmbda > lambda * 0.5 {
                 tlmbda = lambda * 0.5;
