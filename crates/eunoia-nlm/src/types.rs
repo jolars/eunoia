@@ -87,6 +87,21 @@ pub enum TerminationCode {
     NoSatisfactoryStep = 6,
 }
 
+impl TerminationCode {
+    /// Check if the optimization converged successfully
+    ///
+    /// Returns true for gradient convergence, X convergence, or both.
+    /// Returns false for iteration limit, max step exceeded, or no satisfactory step.
+    pub fn is_converged(&self) -> bool {
+        matches!(
+            self,
+            TerminationCode::GradientConvergence
+                | TerminationCode::XConvergence
+                | TerminationCode::BothConvergence
+        )
+    }
+}
+
 /// Configuration for NLM optimization
 ///
 /// Corresponds to parameters in optif9 (nlm.c:2550-2614)

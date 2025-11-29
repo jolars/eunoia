@@ -21,6 +21,19 @@ pub enum TerminationCode {
     TooManyMaxSteps = 5,
 }
 
+impl TerminationCode {
+    /// Check if the optimization converged successfully
+    ///
+    /// Returns true for gradient convergence or step convergence.
+    /// Returns false for iteration limit, global step failure, or too many max steps.
+    pub fn is_converged(&self) -> bool {
+        matches!(
+            self,
+            TerminationCode::GradientConverged | TerminationCode::StepConverged
+        )
+    }
+}
+
 /// Parameters for stopping criteria check
 pub struct StopParams<'a> {
     pub xpls: &'a DVector<f64>,

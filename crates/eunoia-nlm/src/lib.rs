@@ -36,10 +36,58 @@ pub mod stopping;
 pub mod types;
 pub mod updates;
 
+use nalgebra::DVector;
+
+pub use driver::{optdrv, OptimizationConfig, OptimizationResult};
 pub use types::{
     GradientFn, HessianFn, Method, NlmConfig, NlmError, NlmResult, ObjectiveFn, Result,
     TerminationCode,
 };
+
+/// Convenience function for optimization with gradient
+///
+/// This is a simplified wrapper around the full `optdrv` function that assumes
+/// you have an analytic gradient.
+///
+/// # Arguments
+/// * `x0` - Initial parameter values
+/// * `func` - Objective function to minimize
+/// * `grad` - Gradient function
+/// * `config` - Optimization configuration (use NlmConfig, which will be converted)
+///
+/// # Returns
+/// Optimization result with final values and convergence status
+pub fn optimize(
+    x0: DVector<f64>,
+    func: impl Fn(&DVector<f64>) -> f64 + 'static,
+    grad: impl Fn(&DVector<f64>) -> DVector<f64> + 'static,
+    config: NlmConfig,
+) -> OptimizationResult {
+    let n = x0.len();
+
+    // Convert NlmConfig to OptimizationConfig
+    let opt_config = OptimizationConfig {
+        typsiz: config
+            .typsize
+            .unwrap_or_else(|| DVector::from_element(n, 1.0)),
+        fscale: config.fscale,
+        method: config.method,
+        expensive: config.expensive,
+        ndigit: config.ndigit.unwrap_or(-1),
+        itnlim: config.max_iter,
+        has_gradient: true,
+        has_hessian: false,
+        dlt: config.delta.unwrap_or(-1.0),
+        gradtl: config.grad_tol,
+        stepmx: config.max_step,
+        steptl: config.step_tol,
+    };
+
+    let func_boxed: Box<ObjectiveFn> = Box::new(func);
+    let grad_boxed: Box<GradientFn> = Box::new(grad);
+
+    optdrv(&x0, &*func_boxed, Some(&*grad_boxed), None, &opt_config)
+}
 
 #[cfg(test)]
 mod tests {

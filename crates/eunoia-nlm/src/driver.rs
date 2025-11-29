@@ -368,6 +368,16 @@ pub fn optdrv(
         x = xpls.clone();
         g = gpls.clone();
     }
+
+    // Return final result (unreachable, but for completeness)
+    OptimizationResult {
+        xpls: x,
+        fpls: f,
+        gpls: g,
+        termination,
+        iterations: itncnt,
+        hessian: a,
+    }
 }
 
 #[cfg(test)]
@@ -391,11 +401,13 @@ mod tests {
         let grad = |x: &DVector<f64>| dvector![2.0 * (x[0] - 2.0)];
 
         let x0 = dvector![0.0];
-        let mut config = OptimizationConfig::default();
-        config.typsiz = dvector![1.0];
-        config.itnlim = 50;
-        config.has_gradient = true;
-        config.expensive = false;
+        let config = OptimizationConfig {
+            typsiz: dvector![1.0],
+            itnlim: 50,
+            has_gradient: true,
+            expensive: false,
+            ..Default::default()
+        };
 
         let result = optdrv(&x0, &func, Some(&grad), None, &config);
 
