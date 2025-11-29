@@ -130,6 +130,16 @@ pub fn optdrv(
     let epsm = f64::EPSILON;
     let rnf = 10.0_f64.powf(-(config.ndigit as f64)).max(epsm);
 
+    // Compute default maximum step size if not provided (from optchk in nlm.c)
+    let mut stepmx = config.stepmx;
+    if stepmx <= 0.0 {
+        let mut stpsiz = 0.0;
+        for i in 0..n {
+            stpsiz += x[i] * x[i] * sx[i] * sx[i];
+        }
+        stepmx = 1000.0 * stpsiz.sqrt().max(1.0);
+    }
+
     // Evaluate initial function value
     let mut f = func(&x);
 
@@ -225,7 +235,7 @@ pub fn optdrv(
                     g: &g,
                     p: &p,
                     func,
-                    stepmx: config.stepmx,
+                    stepmx,
                     steptl: config.steptl,
                     sx: &sx,
                 };
@@ -245,7 +255,7 @@ pub fn optdrv(
                     &p,
                     func,
                     &sx,
-                    config.stepmx,
+                    stepmx,
                     config.steptl,
                     &mut dlt,
                     &mut dogleg_state,
@@ -266,7 +276,7 @@ pub fn optdrv(
                     &p,
                     func,
                     &sx,
-                    config.stepmx,
+                    stepmx,
                     config.steptl,
                     &mut dlt,
                     &mut hook_state,
@@ -394,7 +404,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix - driver not fully working yet
     fn test_simple_quadratic() {
         // Minimize f(x) = (x-2)^2
         let func = |x: &DVector<f64>| (x[0] - 2.0).powi(2);
