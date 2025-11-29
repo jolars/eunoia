@@ -30,6 +30,7 @@
 pub mod differentiation;
 pub mod initialization;
 pub mod linalg;
+pub mod methods;
 pub mod types;
 pub mod updates;
 

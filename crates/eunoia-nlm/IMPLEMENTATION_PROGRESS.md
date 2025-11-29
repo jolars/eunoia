@@ -66,20 +66,22 @@
 
 ---
 
-## Phase 4: Optimization Methods
+## Phase 4: Optimization Methods ✅ COMPLETE
 
-- [ ] `src/methods/mod.rs` - Module organization
-- [ ] `src/methods/line_search.rs`
-  - [ ] `lnsrch` (C lines 611-835) - Line search with backtracking
-  - [ ] Unit tests with simple functions
-- [ ] `src/methods/dogleg.rs`
-  - [ ] `dogdrv` (C lines 837-1041) - Double dogleg driver
-  - [ ] Unit tests
-- [ ] `src/methods/hook.rs`
-  - [ ] `hookdrv` (C lines 1043-1141) - More-Hebdon method
-  - [ ] Unit tests
+- [x] `src/methods/mod.rs` - Module organization
+- [x] `src/methods/linesearch.rs`
+  - [x] `lnsrch` (C lines 611-835) - Line search with backtracking
+  - [x] Unit tests with simple functions (3 tests)
+- [x] `src/methods/dogleg.rs`
+  - [x] `dog_1step` - Single dogleg step computation
+  - [x] `dogdrv` (C lines 837-1041) - Double dogleg driver  
+  - [x] Unit tests (3 tests)
+- [x] `src/methods/hookstep.rs`
+  - [x] `hook_1step` - Single hookstep computation
+  - [x] `hookdrv` (C lines 1043-1141) - More-Hebdon method
+  - [x] Unit tests (4 tests)
 
-**Phase 4 Status**: ⬜ Not Started
+**Phase 4 Status**: ✅ Complete (59 tests passing, 0 warnings, clippy clean, 993 lines)
 
 ---
 
