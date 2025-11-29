@@ -19,8 +19,20 @@ The original C code is 2,614 lines and contains approximately 30+ functions impl
 
 ## Reference Implementation
 
-**Source**: `nlm/nlm.c` (2,614 lines)
+**Source Files**:
+- `nlm/nlm.c` (2,614 lines) - Core Dennis-Schnabel algorithm implementation
+- `nlm/optimize.c` (904 lines) - R interface wrapper (see `do_nlm` function at lines 708-903)
+- `nlm/nlm.R` - R user interface (see `nlm` function at lines 19-57)
+
 **Algorithm**: Dennis & Schnabel (1983) "Numerical Methods for Unconstrained Optimization and Nonlinear Equations"
+
+**Key R Interface Details** (from `optimize.c:708-903`):
+- Line 811: `method = 1` (always uses Line Search method)
+- Line 812: `iexp = iahflg ? 0 : 1` (expensive flag: 0 if analytic Hessian provided, 1 otherwise)
+- Line 813: `dlt = 1.0` (initial trust region radius)
+- Lines 840-843: Call to `optif9` which wraps `optdrv`
+
+**Note**: R's `nlm()` does not expose the `iexp` or `method` parameters to users - they are set automatically based on whether an analytic Hessian is provided.
 
 ## Rust Crate Structure
 
