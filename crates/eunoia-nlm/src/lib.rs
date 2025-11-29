@@ -28,8 +28,10 @@
 //! ```
 
 pub mod differentiation;
+pub mod initialization;
 pub mod linalg;
 pub mod types;
+pub mod updates;
 
 pub use types::{
     GradientFn, HessianFn, Method, NlmConfig, NlmError, NlmResult, ObjectiveFn, Result,
