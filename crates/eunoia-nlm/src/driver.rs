@@ -117,72 +117,20 @@ pub fn optdrv(
     let mut wrk2: DVector<f64> = DVector::zeros(n);
     let mut wrk3: DVector<f64> = DVector::zeros(n);
 
-    // Set up scaling
-    for i in 0..n {
-        let typsize = if i < config.typsiz.len() {
-            config.typsiz[i]
-        } else {
-            1.0
-        };
-        sx[i] = 1.0 / typsize.abs().max(1.0);
-    }
-
+    // Use optchk for validation and defaults
+    use crate::validation::optchk;
     let epsm = f64::EPSILON;
+    let opt = optchk(&x, config);
+    sx = opt.sx.clone();
+    let mut dlt = opt.dlt;
+    let stepmx = opt.stepmx;
+    let fscale = opt.fscale;
+    let ndigit = opt.ndigit;
+    let gradtl = opt.gradtl;
+    let steptl = opt.steptl;
+    let method = opt.method;
+    let expensive = opt.expensive;
 
-    // optchk logic (subset) – enforce defaults (nlm.c:1964-2067)
-    let mut method = config.method;
-    if (method as i32) < 1 || (method as i32) > 3 {
-        method = Method::LineSearch;
-    }
-
-    // Decide expensive flag like R: expensive unless analytic hessian supplied
-    let mut expensive = if config.has_hessian {
-        false
-    } else {
-        config.expensive
-    };
-
-    // Typical sizes already converted to sx above.
-
-    // stepmx default
-    let mut stepmx = config.stepmx;
-    if stepmx <= 0.0 {
-        let mut stpsiz = 0.0;
-        for i in 0..n {
-            stpsiz += x[i] * x[i] * sx[i] * sx[i];
-        }
-        stepmx = 1000.0 * stpsiz.sqrt().max(1.0);
-    }
-
-    // fscale default
-    let mut fscale = if config.fscale == 0.0 {
-        1.0
-    } else {
-        config.fscale.abs()
-    };
-
-    // ndigit default
-    let mut ndigit = if config.ndigit == -1 {
-        (-f64::EPSILON.log10()) as i32
-    } else {
-        config.ndigit
-    }; // optchk ndigit default
-
-    // grad tolerance check
-    let mut gradtl = if config.gradtl < 0.0 {
-        f64::EPSILON.powf(1.0 / 3.0)
-    } else {
-        config.gradtl
-    };
-
-    // trust region radius
-    let mut dlt = if config.dlt <= 0.0 {
-        -1.0
-    } else {
-        config.dlt.min(stepmx)
-    };
-
-    // Replace in local variables used below
     let config_method = method;
     let config_expensive = expensive;
     let config_gradtl = gradtl;
