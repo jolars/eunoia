@@ -57,6 +57,11 @@ pub struct LnsrchResult {
 ///    - Cubic fit on subsequent backtracks
 /// 4. Accept if sufficient decrease (Armijo condition)
 pub fn lnsrch(params: &LnsrchParams) -> LnsrchResult {
+    const ALPHA: f64 = 1e-4; // Armijo parameter
+    const LAMBDA_MIN_FACTOR: f64 = 0.1;
+    const LAMBDA_MAX_FACTOR: f64 = 0.5;
+    const SMALL_DENOM: f64 = 1e-12;
+    const MAX_BACKTRACK: usize = 25;
     let n = params.x.len();
     let mut p = params.p.clone();
 
