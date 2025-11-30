@@ -47,14 +47,14 @@ impl Default for OptimizationConfig {
             fscale: 1.0,
             method: Method::LineSearch,
             expensive: true,
-            ndigit: -1,
+            ndigit: 12,
             itnlim: 100,
             has_gradient: false,
             has_hessian: false,
             dlt: -1.0,
-            gradtl: epsm.powf(1.0 / 3.0),
+            gradtl: 1e-6,
             stepmx: 0.0,
-            steptl: epsm.sqrt(),
+            steptl: 1e-6,
         }
     }
 }
@@ -136,7 +136,7 @@ pub fn optdrv(
     let config_gradtl = gradtl;
     let config_fscale = fscale;
     let config_ndigit = ndigit;
-    let rnf = 10.0_f64.powf(-(config_ndigit as f64)).max(epsm);
+    let rnf = 10.0_f64.powf(-(config_ndigit as f64) / 3.0).max(epsm);
 
     // Evaluate initial function value
     let mut f = func(&x);
@@ -158,10 +158,10 @@ pub fn optdrv(
         x: &wrk1,
         itncnt: 0,
         icscmx: 0,
-        gradtl: config.gradtl,
-        steptl: config.steptl,
+        gradtl: config_gradtl,
+        steptl: steptl,
         sx: &sx,
-        fscale: config.fscale,
+        fscale: config_fscale,
         itnlim: config.itnlim,
         iretcd: -1,
         mxtake: false,
@@ -213,6 +213,10 @@ pub fn optdrv(
 
     loop {
         itncnt += 1;
+        if std::env::var("EUNOIA_NLM_TRACE").ok().as_deref() == Some("1") {
+            let gnorm = g.norm();
+            eprintln!("iter={} f={} gnorm={}", itncnt, f, gnorm);
+        }
 
         // Compute Cholesky decomposition and Newton step
         if config_expensive && config_method != Method::MoreHebdon {
@@ -289,11 +293,70 @@ pub fn optdrv(
             }
         }
 
-        // If step failed and using finite differences, try central differences
+        // If step failed and using finite differences, try central differences and RETRY
         if iretcd == 1 && iagflg_working == 0 {
             iagflg_working = -1;
             g = fstocd(&x, func, &sx, rnf);
-            // Retry with central differences (simplified - in real code would retry method)
+            // Retry the chosen method with updated gradient
+            if config_method == Method::LineSearch {
+                let params = LnsrchParams {
+                    x: &x,
+                    f,
+                    g: &g,
+                    p: &p,
+                    func,
+                    stepmx,
+                    steptl: config.steptl,
+                    sx: &sx,
+                };
+                let res = lnsrch(&params);
+                xpls = res.xpls;
+                fpls = res.fpls;
+                iretcd = res.iretcd as i32;
+                mxtake = res.mxtake;
+            } else if config_method == Method::DoubleDogleg {
+                let mut dog_state = DoglegState::new(n);
+                let (xpls_result, fpls_result, iretcd_result, mxtake_result) = dogdrv(
+                    &x,
+                    f,
+                    &g,
+                    &a,
+                    &p,
+                    func,
+                    &sx,
+                    stepmx,
+                    config.steptl,
+                    &mut dlt,
+                    &mut dog_state,
+                    itncnt,
+                );
+                xpls = xpls_result;
+                fpls = fpls_result;
+                iretcd = iretcd_result;
+                mxtake = mxtake_result;
+            } else {
+                let mut hook_state = HookState::default();
+                let (xpls_result, fpls_result, iretcd_result, mxtake_result) = hookdrv(
+                    &x,
+                    f,
+                    &g,
+                    &mut a,
+                    &udiag,
+                    &p,
+                    func,
+                    &sx,
+                    stepmx,
+                    config.steptl,
+                    &mut dlt,
+                    &mut hook_state,
+                    epsm,
+                    itncnt,
+                );
+                xpls = xpls_result;
+                fpls = fpls_result;
+                iretcd = iretcd_result;
+                mxtake = mxtake_result;
+            }
         }
 
         // Calculate step for output
@@ -319,9 +382,9 @@ pub fn optdrv(
             itncnt,
             icscmx,
             gradtl: config_gradtl,
-            steptl: config.steptl,
+            steptl: steptl,
             sx: &sx,
-            fscale: config.fscale,
+            fscale: config_fscale,
             itnlim: config.itnlim,
             iretcd,
             mxtake,

@@ -46,8 +46,12 @@ pub fn optchk(x0: &DVector<f64>, config: &OptimizationConfig) -> OptchkResult {
         } else {
             1.0
         };
-        // Original code uses abs(typsize) with lower bound 1.0
-        sx[i] = 1.0 / typsize.abs().max(1.0);
+        // Match R's nlm: sx[i] = max(|typsiz[i]|, 1.0) if typsiz provided; else sx[i] = max(|x0[i]|, 1.0)
+        sx[i] = if i < config.typsiz.len() {
+            typsize.abs().max(1.0)
+        } else {
+            x0[i].abs().max(1.0)
+        };
     }
 
     // fscale default (must be positive)
@@ -90,9 +94,9 @@ pub fn optchk(x0: &DVector<f64>, config: &OptimizationConfig) -> OptchkResult {
         config.stepmx
     };
 
-    // trust region radius dlt (auto if <=0, later limited by stepmx)
+    // trust region radius dlt: default 1.0 (R's nlm optimize.c line 813 sets dlt=1.0)
     let mut dlt = if config.dlt <= 0.0 {
-        -1.0
+        1.0
     } else {
         config.dlt.min(stepmx)
     };
@@ -131,9 +135,10 @@ mod tests {
         let res = optchk(&x0, &cfg);
         assert_eq!(res.method, Method::LineSearch);
         assert!(res.stepmx > 0.0);
-        assert_eq!(res.dlt, -1.0);
+        assert_eq!(res.dlt, 1.0);
         assert!(res.gradtl > 0.0);
-        assert!(res.sx.iter().all(|v| *v == 1.0));
+        assert_eq!(res.sx[0], 2.0);
+        assert_eq!(res.sx[1], 1.0);
     }
 
     #[test]

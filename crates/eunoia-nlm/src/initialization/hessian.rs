@@ -32,8 +32,8 @@ pub fn hsnint(n: usize, sx: &DVector<f64>, method: Method) -> DMatrix<f64> {
     for i in 0..n {
         // Set diagonal based on method
         a[(i, i)] = match method {
-            Method::MoreHebdon => sx[i] * sx[i], // Method 3: unfactored
-            _ => sx[i],                          // Methods 1,2: factored
+            Method::MoreHebdon => sx[i] * sx[i], // Method 3: unfactored (H diag = sx^2)
+            _ => sx[i],                          // Methods 1,2: factored (L diag = sx)
         };
 
         // Off-diagonal elements are zero (lower triangle)
@@ -55,7 +55,7 @@ mod tests {
         let sx = dvector![2.0, 3.0, 4.0];
         let a = hsnint(3, &sx, Method::LineSearch);
 
-        // For methods 1 and 2, diagonal should be sx
+        // For methods 1 and 2, diagonal should be sx (factored L diag)
         assert_eq!(a[(0, 0)], 2.0);
         assert_eq!(a[(1, 1)], 3.0);
         assert_eq!(a[(2, 2)], 4.0);
@@ -71,7 +71,7 @@ mod tests {
         let sx = dvector![2.0, 3.0];
         let a = hsnint(2, &sx, Method::DoubleDogleg);
 
-        // For method 2, diagonal should be sx
+        // For method 2, diagonal should be sx (factored L diag)
         assert_eq!(a[(0, 0)], 2.0);
         assert_eq!(a[(1, 1)], 3.0);
 
@@ -112,7 +112,7 @@ mod tests {
 
         let a = hsnint(3, &sx, Method::LineSearch);
 
-        // With unit scaling, should get identity-like diagonal
+        // With unit scaling, L diag should be 1.0
         assert_eq!(a[(0, 0)], 1.0);
         assert_eq!(a[(1, 1)], 1.0);
         assert_eq!(a[(2, 2)], 1.0);
