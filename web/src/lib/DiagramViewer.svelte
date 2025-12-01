@@ -590,7 +590,7 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-4 text-sm">
+              <div class="grid grid-cols-2 gap-8 text-sm">
                 <div>
                   <h3 class="font-semibold text-gray-700 mb-2">Target</h3>
                   <div class="space-y-1 font-mono text-xs">
