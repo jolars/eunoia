@@ -592,9 +592,7 @@
 
               <div class="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <h3 class="font-semibold text-gray-700 mb-2">
-                    Target (Disjoint)
-                  </h3>
+                  <h3 class="font-semibold text-gray-700 mb-2">Target</h3>
                   <div class="space-y-1 font-mono text-xs">
                     {#if Object.keys(targetAreas).length === 0}
                       <div class="text-gray-400">No data</div>
@@ -610,9 +608,7 @@
                 </div>
 
                 <div>
-                  <h3 class="font-semibold text-gray-700 mb-2">
-                    Fitted (Disjoint)
-                  </h3>
+                  <h3 class="font-semibold text-gray-700 mb-2">Fitted</h3>
                   <div class="space-y-1 font-mono text-xs">
                     {#if Object.keys(fittedAreas).length === 0}
                       <div class="text-gray-400">No data</div>
