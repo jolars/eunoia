@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/eunoia", "crates/eunoia-nlm", "crates/eunoia-wasm"]
+members = ["crates/eunoia", "crates/eunoia-wasm"]
 default-members = ["crates/eunoia"]
 
 [workspace.package]

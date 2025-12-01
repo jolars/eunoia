@@ -56,7 +56,7 @@
   let usePolygons = $state(true);
   let polygonVertices = $state(64);
   let optimizer = $state<
-    "NelderMead" | "Lbfgs" | "ConjugateGradient" | "TrustRegion" | "Nlm"
+    "NelderMead" | "Lbfgs" | "ConjugateGradient" | "TrustRegion"
   >("NelderMead");
   let seed = $state<number | undefined>(undefined);
   let useSeed = $state(false);
@@ -135,9 +135,7 @@
               ? wasmModule.WasmOptimizer.ConjugateGradient
               : optimizer === "TrustRegion"
                 ? wasmModule.WasmOptimizer.TrustRegion
-                : optimizer === "Nlm"
-                  ? wasmModule.WasmOptimizer.Nlm
-                  : wasmModule.WasmOptimizer.NelderMead; // default fallback
+                : wasmModule.WasmOptimizer.NelderMead; // default fallback
 
       // Generate diagram based on shape type and polygon preference
       if (usePolygons) {
@@ -465,7 +463,6 @@
                 <option value="Lbfgs">L-BFGS (gradient-based)</option>
                 <option value="ConjugateGradient">Conjugate Gradient</option>
                 <option value="TrustRegion">Trust Region (Cauchy Point)</option>
-                <option value="Nlm">NLM (Dennis-Schnabel)</option>
               </select>
               <p class="mt-1 text-xs text-gray-500">
                 Optimization method for fitting shapes

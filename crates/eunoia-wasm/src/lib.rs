@@ -19,7 +19,6 @@ pub enum WasmOptimizer {
     Lbfgs,
     ConjugateGradient,
     TrustRegion,
-    Nlm,
 }
 
 impl From<WasmOptimizer> for Optimizer {
@@ -29,7 +28,6 @@ impl From<WasmOptimizer> for Optimizer {
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
             WasmOptimizer::ConjugateGradient => Optimizer::ConjugateGradient,
             WasmOptimizer::TrustRegion => Optimizer::TrustRegion,
-            WasmOptimizer::Nlm => Optimizer::Nlm,
         }
     }
 }
