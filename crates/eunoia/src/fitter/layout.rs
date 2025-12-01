@@ -113,7 +113,7 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         exclusive_combos
     }
 
-    /// Compute region error loss.
+    /// Compute the loss between requested and fitted areas.
     fn compute_loss(
         requested: &HashMap<Combination, f64>,
         fitted: &HashMap<Combination, f64>,
