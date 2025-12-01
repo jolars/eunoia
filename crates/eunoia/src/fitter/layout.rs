@@ -87,14 +87,6 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
             .map(|&idx| &self.shapes[idx])
     }
 
-    /// Get the area difference for a specific combination.
-    pub fn error_for_combination(&self, combo: &Combination) -> Option<f64> {
-        match (self.requested.get(combo), self.fitted.get(combo)) {
-            (Some(&req), Some(&fit)) => Some((req - fit).abs()),
-            _ => None,
-        }
-    }
-
     /// Compute all combination areas from current shapes.
     fn compute_fitted_areas(shapes: &[S], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();
