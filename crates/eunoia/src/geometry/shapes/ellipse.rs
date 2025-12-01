@@ -871,8 +871,6 @@ fn compute_polysegments(
     intersections: &[crate::geometry::diagram::IntersectionPoint],
     region_points: &[usize],
 ) -> f64 {
-    use crate::geometry::diagram::IntersectionPoint;
-
     let n = region_points.len();
     if n == 0 {
         return 0.0;
