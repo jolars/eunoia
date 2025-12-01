@@ -117,6 +117,12 @@ pub trait DiagramShape: Closed {
     fn from_params(params: &[f64]) -> Self
     where
         Self: Sized;
+
+    /// Convert the shape back to its parameter representation.
+    ///
+    /// This is the inverse of `from_params`. Returns the parameters that can
+    /// reconstruct this shape.
+    fn to_params(&self) -> Vec<f64>;
 }
 
 /// Trait for converting shapes to polygons for visualization.

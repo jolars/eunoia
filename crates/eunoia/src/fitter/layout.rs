@@ -87,6 +87,41 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
             .map(|&idx| &self.shapes[idx])
     }
 
+    /// Normalize the layout by rotating, centering, and packing disjoint clusters.
+    ///
+    /// This modifies the layout in-place to:
+    /// 1. Rotate each cluster to a canonical orientation (first two shapes horizontal)
+    /// 2. Mirror clusters so the first shape is in the bottom-left
+    /// 3. Pack disjoint clusters together compactly
+    /// 4. Center the entire layout around the origin
+    ///
+    /// # Arguments
+    ///
+    /// * `padding_factor` - Padding between clusters as a fraction of total width
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .intersection(&["A", "B"], 2.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let mut layout = Fitter::<Circle>::new(&spec).fit().unwrap();
+    /// layout.normalize(0.015);
+    /// ```
+    pub fn normalize(&mut self, padding_factor: f64)
+    where
+        S: Clone,
+    {
+        crate::fitter::normalize::normalize_layout(&mut self.shapes, padding_factor);
+    }
+
     /// Compute all combination areas from current shapes.
     fn compute_fitted_areas(shapes: &[S], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();

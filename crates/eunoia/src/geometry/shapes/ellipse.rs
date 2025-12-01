@@ -849,6 +849,16 @@ impl DiagramShape for Ellipse {
             params[4],
         )
     }
+
+    fn to_params(&self) -> Vec<f64> {
+        vec![
+            self.center.x(),
+            self.center.y(),
+            self.semi_major,
+            self.semi_minor,
+            self.rotation,
+        ]
+    }
 }
 
 /// Check if region is disjoint or one ellipse contains another (eulerr's disjoint_or_subset)

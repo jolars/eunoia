@@ -192,6 +192,10 @@ impl DiagramShape for Circle {
         );
         Circle::new(Point::new(params[0], params[1]), params[2])
     }
+
+    fn to_params(&self) -> Vec<f64> {
+        vec![self.center.x(), self.center.y(), self.radius]
+    }
 }
 
 impl Polygonize for Circle {

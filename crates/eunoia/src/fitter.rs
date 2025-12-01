@@ -1,8 +1,11 @@
 //! Fitter for creating diagram layouts from specifications.
 
+mod clustering;
 pub mod final_layout;
 mod initial_layout;
 mod layout;
+pub mod normalize;
+mod packing;
 
 pub use final_layout::Optimizer;
 pub use layout::Layout;
@@ -249,7 +252,10 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         }
 
         // Create and return the layout
-        let layout = Layout::new(shapes, set_to_shape, self.spec, self.max_iterations);
+        let mut layout = Layout::new(shapes, set_to_shape, self.spec, self.max_iterations);
+
+        // Normalize the layout (rotate, center, and pack clusters)
+        layout.normalize(0.05);
 
         Ok(layout)
     }
