@@ -16,6 +16,7 @@ finitediff = "0.2.0"
 nalgebra = "0.34.1"
 num-complex = "0.4"
 rand = "0.9"
+eunoia-nlm = { path = "../eunoia-nlm" }
 
 [features]
 wasm = ["argmin/wasm-bindgen"]

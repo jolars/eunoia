@@ -312,6 +312,8 @@ impl DiagramSpec {
 /// This is created by filtering out empty sets from a DiagramSpec and
 /// computing additional metadata needed for optimization.
 #[allow(dead_code)] // Some fields reserved for future use
+/// Preprocessed specification for diagram fitting (internal).
+#[derive(Clone)]
 pub(crate) struct PreprocessedSpec {
     /// Non-empty set names in canonical order
     pub(crate) set_names: Vec<String>,
@@ -336,6 +338,7 @@ pub(crate) struct PreprocessedSpec {
 }
 
 /// Pairwise relationships between sets (internal).
+#[derive(Clone)]
 pub(crate) struct PairwiseRelations {
     /// Number of sets
     #[allow(dead_code)]

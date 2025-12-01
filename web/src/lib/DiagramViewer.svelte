@@ -55,7 +55,9 @@
   let shapeType = $state<"circle" | "ellipse">("circle");
   let usePolygons = $state(true);
   let polygonVertices = $state(64);
-  let optimizer = $state<"NelderMead" | "Lbfgs" | "ConjugateGradient" | "TrustRegion">("NelderMead");
+  let optimizer = $state<
+    "NelderMead" | "Lbfgs" | "ConjugateGradient" | "TrustRegion" | "Nlm"
+  >("NelderMead");
   let seed = $state<number | undefined>(undefined);
   let useSeed = $state(false);
 
@@ -120,7 +122,22 @@
       }
 
       // Determine seed value - convert to BigInt for WASM
-      const seedValue = useSeed && seed !== undefined ? BigInt(seed) : undefined;
+      const seedValue =
+        useSeed && seed !== undefined ? BigInt(seed) : undefined;
+
+      // Map optimizer string to WasmOptimizer enum value
+      const optimizerValue =
+        optimizer === "NelderMead"
+          ? wasmModule.WasmOptimizer.NelderMead
+          : optimizer === "Lbfgs"
+            ? wasmModule.WasmOptimizer.Lbfgs
+            : optimizer === "ConjugateGradient"
+              ? wasmModule.WasmOptimizer.ConjugateGradient
+              : optimizer === "TrustRegion"
+                ? wasmModule.WasmOptimizer.TrustRegion
+                : optimizer === "Nlm"
+                  ? wasmModule.WasmOptimizer.Nlm
+                  : wasmModule.WasmOptimizer.NelderMead; // default fallback
 
       // Generate diagram based on shape type and polygon preference
       if (usePolygons) {
@@ -131,11 +148,12 @@
             inputType,
             polygonVertices,
             seedValue,
+            optimizerValue,
           );
           polygons = Array.from(result.polygons);
           circles = [];
           ellipses = [];
-          
+
           // Extract areas from the result (no need to refit!)
           loss = result.loss;
           targetAreas = JSON.parse(result.target_areas_json);
@@ -146,11 +164,12 @@
             inputType,
             polygonVertices,
             seedValue,
+            optimizerValue,
           );
           polygons = Array.from(result.polygons);
           circles = [];
           ellipses = [];
-          
+
           // Extract areas from the result (no need to refit!)
           loss = result.loss;
           targetAreas = JSON.parse(result.target_areas_json);
@@ -159,23 +178,27 @@
       } else {
         // Generate as analytical shapes
         polygons = [];
-        
-        // Map optimizer string to WasmOptimizer enum value
-        const optimizerValue = optimizer === "NelderMead" ? wasmModule.WasmOptimizer.NelderMead
-                             : optimizer === "Lbfgs" ? wasmModule.WasmOptimizer.Lbfgs
-                             : optimizer === "ConjugateGradient" ? wasmModule.WasmOptimizer.ConjugateGradient
-                             : wasmModule.WasmOptimizer.TrustRegion;
-        
-        console.log("Using optimizer:", optimizer, "enum value:", optimizerValue);
-        
+
+        console.log(
+          "Using optimizer:",
+          optimizer,
+          "enum value:",
+          optimizerValue,
+        );
+
         if (shapeType === "circle") {
           const generateFn = useInitialOnly
             ? wasmModule.generate_from_spec_initial
             : wasmModule.generate_from_spec;
-          const result = generateFn(specs, inputType, seedValue, optimizerValue);
+          const result = generateFn(
+            specs,
+            inputType,
+            seedValue,
+            optimizerValue,
+          );
           circles = Array.from(result.circles);
           ellipses = [];
-          
+
           // Extract areas from the result (no need to refit!)
           loss = result.loss;
           targetAreas = JSON.parse(result.target_areas_json);
@@ -189,7 +212,7 @@
           );
           ellipses = Array.from(result.ellipses);
           circles = [];
-          
+
           // Extract areas from the result (no need to refit!)
           loss = result.loss;
           targetAreas = JSON.parse(result.target_areas_json);
@@ -437,10 +460,12 @@
                 bind:value={optimizer}
                 class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="NelderMead">Nelder-Mead (default, robust)</option>
+                <option value="NelderMead">Nelder-Mead (default, robust)</option
+                >
                 <option value="Lbfgs">L-BFGS (gradient-based)</option>
                 <option value="ConjugateGradient">Conjugate Gradient</option>
                 <option value="TrustRegion">Trust Region (Cauchy Point)</option>
+                <option value="Nlm">NLM (Dennis-Schnabel)</option>
               </select>
               <p class="mt-1 text-xs text-gray-500">
                 Optimization method for fitting shapes
@@ -482,11 +507,7 @@
             <!-- Random Seed Option -->
             <div class="mb-4">
               <label class="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  bind:checked={useSeed}
-                  class="mr-2"
-                />
+                <input type="checkbox" bind:checked={useSeed} class="mr-2" />
                 <span class="text-sm font-medium text-gray-700"
                   >Use random seed</span
                 >
@@ -650,9 +671,15 @@
                             {circle.label}:
                           </div>
                           <div class="pl-4 text-xs">
-                            <div>center: ({circle.x.toFixed(6)}, {circle.y.toFixed(6)})</div>
+                            <div>
+                              center: ({circle.x.toFixed(6)}, {circle.y.toFixed(
+                                6,
+                              )})
+                            </div>
                             <div>radius: {circle.radius.toFixed(6)}</div>
-                            <div>area: {(Math.PI * circle.radius ** 2).toFixed(6)}</div>
+                            <div>
+                              area: {(Math.PI * circle.radius ** 2).toFixed(6)}
+                            </div>
                           </div>
                         </div>
                       {/each}
@@ -664,12 +691,35 @@
                             {ellipse.label}:
                           </div>
                           <div class="pl-4 text-xs">
-                            <div>center: ({ellipse.x.toFixed(6)}, {ellipse.y.toFixed(6)})</div>
-                            <div>semi_major: {ellipse.semi_major.toFixed(6)}</div>
-                            <div>semi_minor: {ellipse.semi_minor.toFixed(6)}</div>
-                            <div>rotation: {ellipse.rotation.toFixed(6)} rad ({(ellipse.rotation * 180 / Math.PI).toFixed(2)}°)</div>
-                            <div>aspect: {(ellipse.semi_minor / ellipse.semi_major).toFixed(6)}</div>
-                            <div>area: {(Math.PI * ellipse.semi_major * ellipse.semi_minor).toFixed(6)}</div>
+                            <div>
+                              center: ({ellipse.x.toFixed(6)}, {ellipse.y.toFixed(
+                                6,
+                              )})
+                            </div>
+                            <div>
+                              semi_major: {ellipse.semi_major.toFixed(6)}
+                            </div>
+                            <div>
+                              semi_minor: {ellipse.semi_minor.toFixed(6)}
+                            </div>
+                            <div>
+                              rotation: {ellipse.rotation.toFixed(6)} rad ({(
+                                (ellipse.rotation * 180) /
+                                Math.PI
+                              ).toFixed(2)}°)
+                            </div>
+                            <div>
+                              aspect: {(
+                                ellipse.semi_minor / ellipse.semi_major
+                              ).toFixed(6)}
+                            </div>
+                            <div>
+                              area: {(
+                                Math.PI *
+                                ellipse.semi_major *
+                                ellipse.semi_minor
+                              ).toFixed(6)}
+                            </div>
                           </div>
                         </div>
                       {/each}
@@ -681,9 +731,18 @@
                       readonly
                       class="w-full h-32 p-2 bg-white border border-gray-300 rounded font-mono text-xs"
                       value={circles.length > 0
-                        ? circles.map(c => `Circle::new(Point::new(${c.x.toFixed(6)}, ${c.y.toFixed(6)}), ${c.radius.toFixed(6)}) // ${c.label}`).join('\n')
-                        : ellipses.map(e => `Ellipse::new(Point::new(${e.x.toFixed(6)}, ${e.y.toFixed(6)}), ${e.semi_major.toFixed(6)}, ${e.semi_minor.toFixed(6)}, ${e.rotation.toFixed(6)}) // ${e.label}`).join('\n')
-                      }
+                        ? circles
+                            .map(
+                              (c) =>
+                                `Circle::new(Point::new(${c.x.toFixed(6)}, ${c.y.toFixed(6)}), ${c.radius.toFixed(6)}) // ${c.label}`,
+                            )
+                            .join("\n")
+                        : ellipses
+                            .map(
+                              (e) =>
+                                `Ellipse::new(Point::new(${e.x.toFixed(6)}, ${e.y.toFixed(6)}), ${e.semi_major.toFixed(6)}, ${e.semi_minor.toFixed(6)}, ${e.rotation.toFixed(6)}) // ${e.label}`,
+                            )
+                            .join("\n")}
                     ></textarea>
                   </div>
                 {/if}

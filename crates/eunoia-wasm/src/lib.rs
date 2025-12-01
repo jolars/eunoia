@@ -20,6 +20,7 @@ pub enum WasmOptimizer {
     Lbfgs,
     ConjugateGradient,
     TrustRegion,
+    Nlm,
 }
 
 impl From<WasmOptimizer> for Optimizer {
@@ -29,6 +30,7 @@ impl From<WasmOptimizer> for Optimizer {
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
             WasmOptimizer::ConjugateGradient => Optimizer::ConjugateGradient,
             WasmOptimizer::TrustRegion => Optimizer::TrustRegion,
+            WasmOptimizer::Nlm => Optimizer::Nlm,
         }
     }
 }
@@ -297,6 +299,7 @@ pub fn generate_from_spec(
     specs: Vec<DiagramSpec>,
     input_type: String,
     seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
 ) -> Result<DiagramResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -345,6 +348,9 @@ pub fn generate_from_spec(
     let mut fitter = Fitter::<Circle>::new(&diagram_spec);
     if let Some(s) = seed {
         fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
     }
     let layout = fitter
         .fit()
@@ -883,9 +889,9 @@ pub fn generate_ellipses_from_spec(
     let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
     if let Some(s) = seed {
         fitter = fitter.seed(s);
-        if let Some(opt) = optimizer {
-            fitter = fitter.optimizer(opt.into());
-        }
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
     }
     let layout = fitter
         .fit()
@@ -938,6 +944,7 @@ pub fn generate_circles_as_polygons(
     input_type: String,
     n_vertices: usize,
     seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -971,6 +978,9 @@ pub fn generate_circles_as_polygons(
     let mut fitter = Fitter::<Circle>::new(&diagram_spec);
     if let Some(s) = seed {
         fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
     }
     let layout = fitter
         .fit()
@@ -1025,6 +1035,7 @@ pub fn generate_ellipses_as_polygons(
     input_type: String,
     n_vertices: usize,
     seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1058,6 +1069,9 @@ pub fn generate_ellipses_as_polygons(
     let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
     if let Some(s) = seed {
         fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
     }
     let layout = fitter
         .fit()

@@ -31,6 +31,8 @@ pub enum Optimizer {
     ConjugateGradient,
     /// Trust Region method
     TrustRegion,
+    /// NLM (Dennis-Schnabel) optimizer - faithful port of R's nlm()
+    Nlm,
 }
 
 /// Configuration for final layout optimization.
@@ -238,6 +240,59 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
                 result.state().get_best_param().unwrap().clone(),
                 result.state().get_cost(),
             )
+        }
+        Optimizer::Nlm => {
+            // NLM (Dennis-Schnabel) optimizer - handles numerical gradients internally
+            let loss_fn = config.loss_type.create();
+
+            // Clone spec data for 'static closure
+            use std::sync::Arc;
+            let spec_arc = Arc::new(spec.clone());
+            let loss_fn_arc = Arc::new(loss_fn);
+
+            // Create objective function
+            let spec_clone = Arc::clone(&spec_arc);
+            let loss_fn_clone = Arc::clone(&loss_fn_arc);
+            let objective: Box<dyn Fn(&DVector<f64>) -> f64> =
+                Box::new(move |params: &DVector<f64>| {
+                    let shapes: Vec<S> = (0..spec_clone.n_sets)
+                        .map(|i| {
+                            let start = i * params_per_shape;
+                            let end = start + params_per_shape;
+                            S::from_params(&params.as_slice()[start..end])
+                        })
+                        .collect();
+
+                    let exclusive_areas = S::compute_exclusive_regions(&shapes);
+                    loss_fn_clone.evaluate(&exclusive_areas, &spec_clone.exclusive_areas)
+                });
+
+            // Configure NLM optimizer
+            let nlm_config = eunoia_nlm::driver::OptimizationConfig {
+                typsiz: DVector::from_element(initial_param.len(), 1.0_f64),
+                fscale: 1.0,
+                method: eunoia_nlm::types::Method::LineSearch,
+                expensive: true,
+                ndigit: -1,
+                itnlim: config.max_iterations,
+                has_gradient: false, // Use numerical gradients
+                has_hessian: false,
+                dlt: -1.0,
+                gradtl: 1e-6,
+                stepmx: 0.0,
+                steptl: 1e-6,
+            };
+
+            // Run optimization
+            let result = eunoia_nlm::driver::optdrv(
+                &initial_param,
+                &*objective,
+                None, // No analytic gradient - NLM will compute numerically
+                None, // No analytic Hessian
+                &nlm_config,
+            );
+
+            (result.xpls.clone(), result.fpls)
         }
     };
 
