@@ -195,10 +195,20 @@ impl LossFunction for ConfigurableLoss {
         fitted_areas: &HashMap<RegionMask, f64>,
         target_areas: &HashMap<RegionMask, f64>,
     ) -> f64 {
-        let errors: Vec<f64> = target_areas
-            .iter()
-            .map(|(&mask, &target_area)| {
+        // Iterate over union of masks so extra fitted regions are penalized.
+        let mut masks: Vec<RegionMask> = fitted_areas
+            .keys()
+            .chain(target_areas.keys())
+            .copied()
+            .collect();
+        masks.sort_unstable();
+        masks.dedup();
+
+        let errors: Vec<f64> = masks
+            .into_iter()
+            .map(|mask| {
                 let fitted_area = fitted_areas.get(&mask).copied().unwrap_or(0.0);
+                let target_area = target_areas.get(&mask).copied().unwrap_or(0.0);
                 self.compute_error(fitted_area, target_area, fitted_areas, target_areas)
             })
             .collect();
