@@ -38,13 +38,13 @@ pub struct LossType {
 
 impl Default for LossType {
     fn default() -> Self {
-        Self::region_error()
+        Self::sse()
     }
 }
 
 impl LossType {
-    /// Classic region error: sum of squared errors (eulerr default)
-    pub fn region_error() -> Self {
+    /// Sum of squared errors
+    pub fn sse() -> Self {
         Self {
             metric: ErrorMetric::Squared,
             aggregation: Aggregation::Sum,
@@ -59,8 +59,8 @@ impl LossType {
         }
     }
 
-    /// DiagError: sum of absolute relative errors
-    pub fn diag_error() -> Self {
+    /// Sum of absolute relative errors
+    pub fn sse_relative() -> Self {
         Self {
             metric: ErrorMetric::Relative,
             aggregation: Aggregation::Sum,
@@ -185,9 +185,9 @@ impl LossFunction for ConfigurableLoss {
 
     fn name(&self) -> &str {
         match (self.metric, self.aggregation) {
-            (ErrorMetric::Squared, Aggregation::Sum) => "region_error",
+            (ErrorMetric::Squared, Aggregation::Sum) => "sse",
             (ErrorMetric::RelativeSquared, Aggregation::Sum) => "stress",
-            (ErrorMetric::Relative, Aggregation::Sum) => "diag_error",
+            (ErrorMetric::Relative, Aggregation::Sum) => "sse_relative",
             (ErrorMetric::Absolute, Aggregation::MaxAbsolute) => "minimax",
             (ErrorMetric::Relative, Aggregation::MaxRelative) => "minimax_relative",
             _ => "custom",
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_loss_type_region_error() {
-        let loss = LossType::region_error();
+        let loss = LossType::sse();
         assert_eq!(loss.metric, ErrorMetric::Squared);
         assert_eq!(loss.aggregation, Aggregation::Sum);
     }
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_loss_type_diag_error() {
-        let loss = LossType::diag_error();
+        let loss = LossType::sse_relative();
         assert_eq!(loss.metric, ErrorMetric::Relative);
         assert_eq!(loss.aggregation, Aggregation::Sum);
     }
@@ -273,8 +273,8 @@ mod tests {
 
     #[test]
     fn test_loss_type_equality() {
-        let loss1 = LossType::region_error();
-        let loss2 = LossType::region_error();
+        let loss1 = LossType::sse();
+        let loss2 = LossType::sse();
         let loss3 = LossType::stress();
         assert_eq!(loss1, loss2);
         assert_ne!(loss1, loss3);
@@ -441,9 +441,9 @@ mod tests {
     #[test]
     fn test_loss_function_name() {
         let tests = vec![
-            (ErrorMetric::Squared, Aggregation::Sum, "region_error"),
+            (ErrorMetric::Squared, Aggregation::Sum, "sse"),
             (ErrorMetric::RelativeSquared, Aggregation::Sum, "stress"),
-            (ErrorMetric::Relative, Aggregation::Sum, "diag_error"),
+            (ErrorMetric::Relative, Aggregation::Sum, "sse_relative"),
             (ErrorMetric::Absolute, Aggregation::MaxAbsolute, "minimax"),
             (
                 ErrorMetric::Relative,
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn test_loss_type_create() {
-        let loss_type = LossType::region_error();
+        let loss_type = LossType::sse();
         let loss_fn = loss_type.create();
 
         let mut fitted_areas = HashMap::new();
@@ -479,7 +479,7 @@ mod tests {
 
         // (10-8)^2 = 4
         assert_eq!(loss_fn.evaluate(&fitted_areas, &target_areas), 4.0);
-        assert_eq!(loss_fn.name(), "region_error");
+        assert_eq!(loss_fn.name(), "sse");
     }
 
     #[test]

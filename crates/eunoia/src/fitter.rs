@@ -68,7 +68,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             spec,
             max_iterations: 100,
             seed: None,
-            loss_type: LossType::region_error(),
+            loss_type: LossType::sse(),
             optimizer: Optimizer::default(),
             _shape: std::marker::PhantomData,
         }

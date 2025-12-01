@@ -51,7 +51,7 @@ impl Default for FinalLayoutConfig {
     fn default() -> Self {
         Self {
             max_iterations: 50000,
-            loss_type: crate::loss::LossType::region_error(),
+            loss_type: crate::loss::LossType::sse(),
             optimizer: Optimizer::NelderMead, // Nelder-Mead is more robust for now
             tolerance: 1e-6,
         }
@@ -426,7 +426,7 @@ mod tests {
 
         let config = FinalLayoutConfig {
             optimizer: Optimizer::NelderMead,
-            loss_type: crate::loss::LossType::region_error(),
+            loss_type: crate::loss::LossType::sse(),
             max_iterations: 50,
             tolerance: 1e-4,
         };
@@ -455,7 +455,7 @@ mod tests {
 
         let preprocessed = spec.preprocess().unwrap();
 
-        let loss_fn = crate::loss::LossType::region_error().create();
+        let loss_fn = crate::loss::LossType::sse().create();
         let cost_fn = DiagramCost::<Circle> {
             spec: &preprocessed,
             loss_fn,
@@ -513,7 +513,7 @@ mod tests {
 
         let config = FinalLayoutConfig {
             optimizer: Optimizer::NelderMead,
-            loss_type: crate::loss::LossType::region_error(),
+            loss_type: crate::loss::LossType::sse(),
             max_iterations: 100,
             tolerance: 1e-6,
         };
@@ -573,7 +573,7 @@ mod tests {
 
         let config = FinalLayoutConfig {
             optimizer: Optimizer::NelderMead,
-            loss_type: crate::loss::LossType::region_error(),
+            loss_type: crate::loss::LossType::sse(),
             max_iterations: 200,
             tolerance: 1e-6,
         };
@@ -634,7 +634,7 @@ mod tests {
 
             let config = FinalLayoutConfig {
                 optimizer: Optimizer::NelderMead,
-                loss_type: crate::loss::LossType::region_error(),
+                loss_type: crate::loss::LossType::sse(),
                 max_iterations: 200,
                 tolerance: 1e-6,
             };
