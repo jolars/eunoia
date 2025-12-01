@@ -92,6 +92,88 @@
     diagramRows = diagramRows.filter((_, i) => i !== index);
   }
 
+  function normalizeCoordinates(shapes: {
+    polygons: any[];
+    circles: any[];
+    ellipses: any[];
+  }) {
+    const { polygons, circles, ellipses } = shapes;
+
+    // Find bounding box of all shapes
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+
+    if (polygons.length > 0) {
+      for (const polygon of polygons) {
+        for (const vertex of polygon.vertices) {
+          minX = Math.min(minX, vertex.x);
+          minY = Math.min(minY, vertex.y);
+          maxX = Math.max(maxX, vertex.x);
+          maxY = Math.max(maxY, vertex.y);
+        }
+      }
+    } else if (circles.length > 0) {
+      for (const circle of circles) {
+        minX = Math.min(minX, circle.x - circle.radius);
+        minY = Math.min(minY, circle.y - circle.radius);
+        maxX = Math.max(maxX, circle.x + circle.radius);
+        maxY = Math.max(maxY, circle.y + circle.radius);
+      }
+    } else if (ellipses.length > 0) {
+      for (const ellipse of ellipses) {
+        const a = ellipse.semi_major;
+        const b = ellipse.semi_minor;
+        minX = Math.min(minX, ellipse.x - a);
+        minY = Math.min(minY, ellipse.y - b);
+        maxX = Math.max(maxX, ellipse.x + a);
+        maxY = Math.max(maxY, ellipse.y + b);
+      }
+    }
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const maxDim = Math.max(width, height);
+
+    // Target size: scale so largest dimension is 100 units
+    const targetSize = 100;
+    const scale = targetSize / maxDim;
+
+    // Return normalized shapes (don't modify in place)
+    const result = {
+      polygons: polygons.map((polygon) => ({
+        label: polygon.label, // Explicitly copy label from WASM object
+        vertices: polygon.vertices.map((v) => ({
+          x: (v.x - minX) * scale,
+          y: (v.y - minY) * scale,
+        })),
+      })),
+      circles: circles.map((circle) => ({
+        label: circle.label, // Explicitly copy label from WASM object
+        x: (circle.x - minX) * scale,
+        y: (circle.y - minY) * scale,
+        radius: circle.radius * scale,
+      })),
+      ellipses: ellipses.map((ellipse) => ({
+        label: ellipse.label, // Explicitly copy label from WASM object
+        x: (ellipse.x - minX) * scale,
+        y: (ellipse.y - minY) * scale,
+        semi_major: ellipse.semi_major * scale,
+        semi_minor: ellipse.semi_minor * scale,
+        rotation: ellipse.rotation,
+      })),
+    };
+
+    console.log("Normalized output:", {
+      firstPolygon: result.polygons[0],
+      firstCircle: result.circles[0],
+      firstEllipse: result.ellipses[0],
+    });
+
+    return result;
+  }
+
   function generateFromSpec() {
     if (!wasmModule || diagramRows.length === 0) return;
 
@@ -145,9 +227,17 @@
           seedValue,
           optimizerValue,
         );
-        polygons = Array.from(result.polygons);
-        circles = Array.from(result.circles);
-        ellipses = [];
+
+        // Normalize coordinates before assigning to state
+        const normalized = normalizeCoordinates({
+          polygons: Array.from(result.polygons),
+          circles: Array.from(result.circles),
+          ellipses: [],
+        });
+
+        polygons = normalized.polygons;
+        circles = normalized.circles;
+        ellipses = normalized.ellipses;
 
         // Extract areas from the result
         loss = result.loss;
@@ -161,9 +251,17 @@
           seedValue,
           optimizerValue,
         );
-        polygons = Array.from(result.polygons);
-        circles = [];
-        ellipses = Array.from(result.ellipses);
+
+        // Normalize coordinates before assigning to state
+        const normalized = normalizeCoordinates({
+          polygons: Array.from(result.polygons),
+          circles: [],
+          ellipses: Array.from(result.ellipses),
+        });
+
+        polygons = normalized.polygons;
+        circles = normalized.circles;
+        ellipses = normalized.ellipses;
 
         // Extract areas from the result
         loss = result.loss;
@@ -208,8 +306,8 @@
 
   // Calculate SVG viewBox and sizes
   let viewBox = $state("0 0 400 400");
-  let strokeWidth = $state(2);
-  let fontSize = $state(16);
+  let strokeWidth = $state(1.5);
+  let fontSize = $state(8);
   let svgAspectRatio = $state(1); // width / height
 
   // Compute viewBox for SVG - fits all shapes with padding
@@ -260,8 +358,6 @@
       }
     } else {
       viewBox = "0 0 200 200";
-      strokeWidth = 2;
-      fontSize = 16;
       return;
     }
 
@@ -276,24 +372,11 @@
     viewBox = `${minX - padding} ${minY - padding} ${width} ${height}`;
     svgAspectRatio = width / height;
 
-    console.log("ViewBox Debug:", {
-      minX,
-      maxX,
-      minY,
-      maxY,
-      width,
-      height,
-      aspectRatio: svgAspectRatio,
-      viewBox,
-      numShapes: circles.length || ellipses.length || polygons.length,
-    });
+    // Use fixed sizes since coordinates are normalized to ~100 units
+    strokeWidth = 1; // Fixed stroke width
+    fontSize = 6; // Fixed font size (8 units in a 100-unit space)
 
-    // Scale stroke and font based on the coordinate space
-    const dimension = Math.max(width, height);
-    strokeWidth = dimension * 0.01; // 1% of diagram
-    fontSize = dimension * 0.06; // 6% of diagram
-
-    console.log("Sizes:", { strokeWidth, fontSize, dimension });
+    console.log("Sizes:", { strokeWidth, fontSize });
   });
 </script>
 
