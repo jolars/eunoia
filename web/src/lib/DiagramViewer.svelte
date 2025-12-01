@@ -422,10 +422,10 @@
               </p>
             </div>
 
-            <!-- Shape Type Selection -->
+            <!-- Shape Selection -->
             <div class="mb-4">
               <div class="block text-sm font-medium text-gray-700 mb-2">
-                Shape Type
+                Shapes
               </div>
               <div class="flex gap-4">
                 <label class="flex items-center cursor-pointer">
