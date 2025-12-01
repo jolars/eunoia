@@ -54,7 +54,8 @@
   let useInitialOnly = $state(false);
   let shapeType = $state<"circle" | "ellipse">("circle");
   let usePolygons = $state(true);
-  let polygonVertices = $state(64);
+  // Fixed polygon vertex count (removed user option)
+  const POLYGON_VERTICES = 256;
   let optimizer = $state<
     "NelderMead" | "Lbfgs" | "ConjugateGradient" | "TrustRegion"
   >("NelderMead");
@@ -144,7 +145,7 @@
           const result = wasmModule.generate_circles_as_polygons(
             specs,
             inputType,
-            polygonVertices,
+            POLYGON_VERTICES,
             seedValue,
             optimizerValue,
           );
@@ -160,7 +161,7 @@
           const result = wasmModule.generate_ellipses_as_polygons(
             specs,
             inputType,
-            polygonVertices,
+            POLYGON_VERTICES,
             seedValue,
             optimizerValue,
           );
@@ -245,7 +246,7 @@
         inputType,
         shapeType,
         usePolygons,
-        polygonVertices,
+        POLYGON_VERTICES,
         "initial-only:",
         useInitialOnly,
         "seed:",
@@ -488,17 +489,7 @@
               </p>
               {#if usePolygons}
                 <div class="mt-2 ml-6">
-                  <label class="flex items-center gap-2">
-                    <span class="text-xs text-gray-600">Vertices:</span>
-                    <input
-                      type="number"
-                      bind:value={polygonVertices}
-                      min="8"
-                      max="256"
-                      step="8"
-                      class="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </label>
+                  <label class="flex items-center gap-2"> </label>
                 </div>
               {/if}
             </div>
