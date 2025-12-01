@@ -451,7 +451,10 @@
 
             <!-- Optimizer Selection -->
             <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                for="optimizer"
+                class="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Optimizer
               </label>
               <select
