@@ -348,8 +348,8 @@
 <div class="bg-gray-50 p-8">
   <div class="max-w-6xl mx-auto">
     <header class="mb-8">
-      <h1 class="text-4xl font-bold text-gray-900 mb-2">Eunoia Debug Viewer</h1>
-      <p class="text-gray-600">Visualize Euler diagram layouts</p>
+      <h1 class="text-4xl font-bold text-gray-900 mb-2">Eunoia</h1>
+      <p class="text-gray-600">Area-proportional Euler and Venn diagrams</p>
     </header>
 
     {#if loading}
