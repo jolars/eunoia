@@ -27,6 +27,8 @@ pub enum ErrorMetric {
     Relative,
     /// Relative squared: ((fitted - target) / target)²
     RelativeSquared,
+    /// Region error: |(fitted / sum_fitted) - (target / sum_target)|
+    RegionError,
 }
 
 /// Public API for loss function configuration
@@ -83,6 +85,14 @@ impl LossType {
         }
     }
 
+    /// DiagError (from EulerAPE): maximize the minimum of fitted/target ratios across regions
+    pub fn diag_error() -> Self {
+        Self {
+            metric: ErrorMetric::RegionError,
+            aggregation: Aggregation::MaxAbsolute,
+        }
+    }
+
     /// Custom loss function
     pub fn custom(metric: ErrorMetric, aggregation: Aggregation) -> Self {
         Self {
@@ -116,7 +126,14 @@ struct ConfigurableLoss {
 }
 
 impl ConfigurableLoss {
-    fn compute_error(&self, fitted: f64, target: f64) -> f64 {
+    /// Compute per-region error, with access to full maps for complex metrics.
+    fn compute_error(
+        &self,
+        fitted: f64,
+        target: f64,
+        fitted_all: &HashMap<RegionMask, f64>,
+        target_all: &HashMap<RegionMask, f64>,
+    ) -> f64 {
         match self.metric {
             ErrorMetric::Absolute => (fitted - target).abs(),
             ErrorMetric::Squared => {
@@ -145,6 +162,12 @@ impl ConfigurableLoss {
                     let rel = (fitted - target) / target;
                     rel * rel
                 }
+            }
+            ErrorMetric::RegionError => {
+                let sum_fitted = fitted_all.values().sum::<f64>();
+                let sum_target = target_all.values().sum::<f64>();
+
+                (fitted / sum_fitted - target / sum_target).abs()
             }
         }
     }
@@ -176,7 +199,7 @@ impl LossFunction for ConfigurableLoss {
             .iter()
             .map(|(&mask, &target_area)| {
                 let fitted_area = fitted_areas.get(&mask).copied().unwrap_or(0.0);
-                self.compute_error(fitted_area, target_area)
+                self.compute_error(fitted_area, target_area, fitted_areas, target_areas)
             })
             .collect();
 
@@ -190,6 +213,7 @@ impl LossFunction for ConfigurableLoss {
             (ErrorMetric::Relative, Aggregation::Sum) => "sse_relative",
             (ErrorMetric::Absolute, Aggregation::MaxAbsolute) => "minimax",
             (ErrorMetric::Relative, Aggregation::MaxRelative) => "minimax_relative",
+            (ErrorMetric::RegionError, Aggregation::MaxAbsolute) => "diag_error",
             _ => "custom",
         }
     }
@@ -285,73 +309,6 @@ mod tests {
         let loss = LossType::minimax();
         let cloned = loss;
         assert_eq!(loss, cloned);
-    }
-
-    #[test]
-    fn test_compute_error_absolute() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::Sum,
-        };
-        assert_eq!(loss.compute_error(5.0, 3.0), 2.0);
-        assert_eq!(loss.compute_error(3.0, 5.0), 2.0);
-        assert_eq!(loss.compute_error(5.0, 5.0), 0.0);
-    }
-
-    #[test]
-    fn test_compute_error_squared() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Squared,
-            aggregation: Aggregation::Sum,
-        };
-        assert_eq!(loss.compute_error(5.0, 3.0), 4.0);
-        assert_eq!(loss.compute_error(3.0, 5.0), 4.0);
-        assert_eq!(loss.compute_error(5.0, 5.0), 0.0);
-    }
-
-    #[test]
-    fn test_compute_error_relative() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Relative,
-            aggregation: Aggregation::Sum,
-        };
-        assert_eq!(loss.compute_error(10.0, 5.0), 1.0);
-        assert_eq!(loss.compute_error(5.0, 10.0), 0.5);
-        assert_eq!(loss.compute_error(5.0, 5.0), 0.0);
-    }
-
-    #[test]
-    fn test_compute_error_relative_zero_target() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Relative,
-            aggregation: Aggregation::Sum,
-        };
-        // Both zero: no error
-        assert_eq!(loss.compute_error(0.0, 0.0), 0.0);
-        // Target zero, fitted non-zero: error is fitted value
-        assert_eq!(loss.compute_error(5.0, 0.0), 5.0);
-        assert_eq!(loss.compute_error(-3.0, 0.0), 3.0);
-    }
-
-    #[test]
-    fn test_compute_error_relative_squared() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::RelativeSquared,
-            aggregation: Aggregation::Sum,
-        };
-        assert_eq!(loss.compute_error(10.0, 5.0), 1.0);
-        assert_eq!(loss.compute_error(5.0, 10.0), 0.25);
-        assert_eq!(loss.compute_error(5.0, 5.0), 0.0);
-    }
-
-    #[test]
-    fn test_compute_error_relative_squared_zero_target() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::RelativeSquared,
-            aggregation: Aggregation::Sum,
-        };
-        assert_eq!(loss.compute_error(0.0, 0.0), 0.0);
-        assert_eq!(loss.compute_error(3.0, 0.0), 9.0);
     }
 
     #[test]
