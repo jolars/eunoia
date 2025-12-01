@@ -56,7 +56,7 @@
   const POLYGON_VERTICES = 256;
   let optimizer = $state<
     "NelderMead" | "Lbfgs" | "ConjugateGradient" | "TrustRegion"
-  >("NelderMead");
+  >("Lbfgs");
   let seed = $state<number | undefined>(undefined);
   let useSeed = $state(false);
 
