@@ -443,39 +443,29 @@ impl Ellipse {
 
     /// Computes the lens-shaped intersection area between two ellipses with exactly two intersection points.
     ///
-    /// For a lens, we need the segment from each ellipse that lies within the intersection region.
-    /// We determine this by testing which side of the chord connecting the intersection points
-    /// is inside both ellipses.
+    /// Follows eulerr's polysegments: processes both arcs around the intersection perimeter.
     fn compute_lens_area(&self, other: &Self, p0: &Point, p1: &Point) -> f64 {
-        // Get the raw segment (between p0 and p1) for each ellipse
-        let raw_seg1 = self.ellipse_segment(*p0, *p1);
-        let raw_seg2 = other.ellipse_segment(*p0, *p1);
+        // Two arcs: p1→p0 and p0→p1
+        // For each arc, compute triangle + min(segment for common parents)
 
-        // For a lens intersection, the sum of the two minor segments gives us the lens area.
-        // The key insight: each ellipse contributes its minor segment to the lens.
-        // We need to ensure both are minor segments.
+        // Arc 1: p1 → p0
+        let seg1_10 = self.ellipse_segment(*p1, *p0);
+        let seg2_10 = other.ellipse_segment(*p1, *p0);
+        let triangle_10 = 0.5 * ((p0.x() + p1.x()) * (p0.y() - p1.y()));
+        let arc1 = triangle_10 + seg1_10.min(seg2_10);
 
-        // A segment is minor if it's less than half the ellipse area
-        let seg1 = if raw_seg1 <= self.area() / 2.0 {
-            raw_seg1
-        } else {
-            self.area() - raw_seg1
-        };
+        // Arc 2: p0 → p1
+        let seg1_01 = self.ellipse_segment(*p0, *p1);
+        let seg2_01 = other.ellipse_segment(*p0, *p1);
+        let triangle_01 = 0.5 * ((p1.x() + p0.x()) * (p1.y() - p0.y()));
+        let arc2 = triangle_01 + seg1_01.min(seg2_01);
 
-        let seg2 = if raw_seg2 <= other.area() / 2.0 {
-            raw_seg2
-        } else {
-            other.area() - raw_seg2
-        };
-
-        seg1 + seg2
+        arc1 + arc2
     }
 
     /// Computes intersection area for cases with 3 or 4 intersection points.
     ///
-    /// This handles more complex intersection patterns by:
-    /// 1. Sorting points by angle around a reference center
-    /// 2. Computing segments alternating between the two ellipses
+    /// This follows eulerr's polysegments algorithm.
     fn compute_multi_point_intersection_area(&self, other: &Self, points: &[Point]) -> f64 {
         if points.len() < 3 {
             return 0.0;
@@ -484,45 +474,34 @@ impl Ellipse {
         // Use the centroid of intersection points as a reference center
         let cx = points.iter().map(|p| p.x()).sum::<f64>() / points.len() as f64;
         let cy = points.iter().map(|p| p.y()).sum::<f64>() / points.len() as f64;
-        let center = Point::new(cx, cy);
 
-        // Sort points by angle around the centroid
+        // Sort points by angle around the centroid (match eulerr's atan2(x-cx, y-cy) order)
         let mut sorted_points: Vec<Point> = points.to_vec();
         sorted_points.sort_by(|a, b| {
-            let angle_a = (a.y() - center.y()).atan2(a.x() - center.x());
-            let angle_b = (b.y() - center.y()).atan2(b.x() - center.x());
+            let angle_a = (a.x() - cx).atan2(a.y() - cy);
+            let angle_b = (b.x() - cx).atan2(b.y() - cy);
             angle_a.partial_cmp(&angle_b).unwrap()
         });
 
-        // Compute area by summing alternating segments
+        // Compute area using polysegments algorithm
         let mut total_area = 0.0;
         let n = sorted_points.len();
 
-        for i in 0..n {
-            let p0 = sorted_points[i];
-            let p1 = sorted_points[(i + 1) % n];
+        for k in 0..n {
+            let l = if k == 0 { n - 1 } else { k - 1 };
 
-            // Determine which ellipse the segment belongs to by checking
-            // the midpoint of the chord
-            let mid_x = (p0.x() + p1.x()) / 2.0;
-            let mid_y = (p0.y() + p1.y()) / 2.0;
-            let midpoint = Point::new(mid_x, mid_y);
+            let pi = sorted_points[k]; // current point (matches eulerr's i)
+            let pj = sorted_points[l]; // previous point (matches eulerr's j)
 
-            // The segment belongs to the ellipse that contains the midpoint
-            // slightly inside the intersection region
-            let in_self = self.contains_point(&midpoint);
-            let in_other = other.contains_point(&midpoint);
+            // Triangle contribution (shoelace formula) - matches eulerr line 90
+            let triangle = 0.5 * ((pj.x() + pi.x()) * (pj.y() - pi.y()));
 
-            if in_self && in_other {
-                // Midpoint is in both - use the ellipse with the smaller segment
-                let seg_self = self.ellipse_segment(p0, p1);
-                let seg_other = other.ellipse_segment(p0, p1);
-                total_area += seg_self.min(seg_other);
-            } else if in_self {
-                total_area += self.ellipse_segment(p0, p1);
-            } else if in_other {
-                total_area += other.ellipse_segment(p0, p1);
-            }
+            // Segments from i to j (matches eulerr line 86: ellipse_segment(..., points[i], points[j]))
+            let seg1 = self.ellipse_segment(pi, pj);
+            let seg2 = other.ellipse_segment(pi, pj);
+
+            // Add triangle + min(segment) as in eulerr line 89-91
+            total_area += triangle + seg1.min(seg2);
         }
 
         total_area
@@ -692,7 +671,8 @@ impl Closed for Ellipse {
 
         // Rotate point to align with ellipse axes
         let x_local = dx * cos_phi + dy * sin_phi;
-        let y_local = dx * sin_phi - dy * cos_phi;
+        // Correct inverse rotation for y': y_local = -dx*sin(phi) + dy*cos(phi)
+        let y_local = -dx * sin_phi + dy * cos_phi;
 
         // Check if point is inside using the ellipse equation
         (x_local * x_local) / (self.semi_major * self.semi_major)
@@ -773,24 +753,24 @@ impl Closed for Ellipse {
 impl DiagramShape for Ellipse {
     fn compute_exclusive_regions(shapes: &[Self]) -> std::collections::HashMap<RegionMask, f64> {
         use crate::geometry::diagram::{adopters_to_mask, to_exclusive_areas, IntersectionPoint};
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashMap;
 
         let n_sets = shapes.len();
 
-        // 1) Collect intersections for all ellipse pairs, annotate adopters
+        // 1) Collect ALL intersection points from ALL pairs (matches eulerr lines 52-63)
         let mut intersections: Vec<IntersectionPoint> = Vec::new();
         for i in 0..n_sets {
             for j in (i + 1)..n_sets {
                 let pts = shapes[i].intersection_points(&shapes[j]);
                 for p in pts {
                     // adopters: all shapes that contain this intersection point
-                    // Note: Use small tolerance for boundary points
+                    // Use a small tolerance when checking containment to include boundary points
                     let adopters: Vec<usize> = (0..n_sets)
                         .filter(|&k| {
                             let local = p.to_ellipse_frame(&shapes[k]);
                             let val = (local.x() / shapes[k].semi_major).powi(2)
                                 + (local.y() / shapes[k].semi_minor).powi(2);
-                            val <= 1.0 + 1e-10 // Tolerance for boundary points
+                            val <= 1.0 + 1e-9
                         })
                         .collect();
                     intersections.push(IntersectionPoint::new(p, (i, j), adopters));
@@ -798,125 +778,50 @@ impl DiagramShape for Ellipse {
             }
         }
 
-        // 2) Discover regions (bit masks) that exist
-        let mut regions: std::collections::HashSet<crate::geometry::diagram::RegionMask> =
-            std::collections::HashSet::new();
-        // Singles always exist
-        for i in 0..n_sets {
-            regions.insert(1 << i);
-        }
-        // From intersection adopters
-        for info in &intersections {
-            regions.insert(adopters_to_mask(info.adopters()));
-        }
-        // From pairwise relations (intersect or containment)
-        for i in 0..n_sets {
-            for j in (i + 1)..n_sets {
-                let has_edge = intersections
+        // 2) Generate all region masks (matches eulerr's id = set_index(n))
+        let n_overlaps = (1 << n_sets) - 1;
+        let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
+
+        for mask in 1..=n_overlaps {
+            let bits: Vec<usize> = (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect();
+
+            if bits.len() == 1 {
+                // Single set - just return its area
+                overlapping_areas.insert(mask, shapes[bits[0]].area());
+            } else {
+                // Two or more sets - find intersection points for this region (lines 75-79)
+                let region_points: Vec<usize> = intersections
                     .iter()
-                    .any(|ip| ip.parents() == (i, j) || ip.parents() == (j, i));
-                if has_edge || shapes[i].contains(&shapes[j]) || shapes[j].contains(&shapes[i]) {
-                    regions.insert((1 << i) | (1 << j));
-                }
-            }
-        }
+                    .enumerate()
+                    .filter_map(|(idx, ip)| {
+                        let (p1, p2) = ip.parents();
+                        // Check if both parents are in the mask
+                        let parents_in_mask = bits.contains(&p1) && bits.contains(&p2);
+                        // Check if mask is a subset of adopters
+                        let adopters_mask = adopters_to_mask(ip.adopters());
+                        let mask_subset = (mask & adopters_mask) == mask;
 
-        // 3) Convert to Vec for deterministic iteration (same as circles)
-        let regions: Vec<crate::geometry::diagram::RegionMask> = regions.into_iter().collect();
-
-        // 4) Compute overlapping areas for each discovered region
-        let mut overlapping_areas: HashMap<crate::geometry::diagram::RegionMask, f64> =
-            HashMap::new();
-        for &mask in &regions {
-            // Collect intersection point indices for this region
-            let mut region_points: Vec<usize> = Vec::new();
-            for (idx, ip) in intersections.iter().enumerate() {
-                let (p1, p2) = ip.parents();
-                let parents_in_mask = ((mask & (1 << p1)) != 0) && ((mask & (1 << p2)) != 0);
-                let adopters_mask = adopters_to_mask(ip.adopters());
-                let mask_subset = (mask & adopters_mask) == mask;
-                if parents_in_mask && mask_subset {
-                    region_points.push(idx);
-                }
-            }
-
-            if region_points.is_empty() {
-                // No intersection points: check if disjoint or one contains another
-                let bits: Vec<usize> = (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect();
-                if bits.len() == 1 {
-                    overlapping_areas.insert(mask, shapes[bits[0]].area());
-                } else {
-                    // Check containment
-                    let mut min_area = f64::INFINITY;
-                    let mut contained = false;
-                    for &i in &bits {
-                        for &j in &bits {
-                            if i != j && shapes[i].contains(&shapes[j]) {
-                                contained = true;
-                                min_area = min_area.min(shapes[j].area());
-                            }
+                        if parents_in_mask && mask_subset {
+                            Some(idx)
+                        } else {
+                            None
                         }
-                    }
-                    overlapping_areas.insert(mask, if contained { min_area } else { 0.0 });
-                }
-                continue;
-            }
-
-            // Sort points by angle around centroid (same as circles)
-            let points_vec: Vec<Point> = region_points
-                .iter()
-                .map(|&idx| *intersections[idx].point())
-                .collect();
-            let cx = points_vec.iter().map(|p| p.x()).sum::<f64>() / points_vec.len() as f64;
-            let cy = points_vec.iter().map(|p| p.y()).sum::<f64>() / points_vec.len() as f64;
-
-            region_points.sort_by(|&a, &b| {
-                let angle_a =
-                    (intersections[a].point().y() - cy).atan2(intersections[a].point().x() - cx);
-                let angle_b =
-                    (intersections[b].point().y() - cy).atan2(intersections[b].point().x() - cx);
-                angle_a.partial_cmp(&angle_b).unwrap()
-            });
-
-            // Compute area using shoelace + segments (like circles)
-            let mut area = 0.0;
-            let n_points = region_points.len();
-
-            for k in 0..n_points {
-                let curr_idx = region_points[k];
-                let prev_idx = region_points[if k == 0 { n_points - 1 } else { k - 1 }];
-
-                let p1 = intersections[prev_idx].point();
-                let p2 = intersections[curr_idx].point();
-
-                // Find common parent ellipses
-                let parents1 = intersections[prev_idx].parents();
-                let parents2 = intersections[curr_idx].parents();
-                let common: Vec<usize> = vec![parents1.0, parents1.1]
-                    .into_iter()
-                    .filter(|p| *p == parents2.0 || *p == parents2.1)
-                    .filter(|p| (mask & (1 << *p)) != 0)
+                    })
                     .collect();
 
-                // Triangle contribution (shoelace)
-                let triangle = 0.5 * ((p1.x() + p2.x()) * (p1.y() - p2.y()));
-                area += triangle;
-
-                // Segment contribution (minimum of all common parents)
-                if !common.is_empty() {
-                    let mut min_seg = f64::INFINITY;
-                    for &ellipse_idx in &common {
-                        let seg = shapes[ellipse_idx].ellipse_segment(*p1, *p2);
-                        min_seg = min_seg.min(seg);
-                    }
-                    area += min_seg;
+                if region_points.is_empty() {
+                    // No intersections: either disjoint or subset (line 83)
+                    let area = disjoint_or_subset(shapes, &bits);
+                    overlapping_areas.insert(mask, area);
+                } else {
+                    // Use polysegments algorithm (line 88)
+                    let area = compute_polysegments(shapes, &intersections, &region_points);
+                    overlapping_areas.insert(mask, area);
                 }
             }
-
-            overlapping_areas.insert(mask, area.abs());
         }
 
-        // 5) Convert overlapping to exclusive via diagram helper
+        // 5) Convert overlapping to exclusive (lines 104-109)
         to_exclusive_areas(&overlapping_areas)
     }
 
@@ -944,6 +849,102 @@ impl DiagramShape for Ellipse {
             params[4],
         )
     }
+}
+
+/// Check if region is disjoint or one ellipse contains another (eulerr's disjoint_or_subset)
+fn disjoint_or_subset(shapes: &[Ellipse], indices: &[usize]) -> f64 {
+    // Check containment
+    for &i in indices {
+        for &j in indices {
+            if i != j && shapes[i].contains(&shapes[j]) {
+                return shapes[j].area();
+            }
+        }
+    }
+    // Disjoint
+    0.0
+}
+
+/// Compute area using polysegments algorithm (eulerr's polysegments function)
+fn compute_polysegments(
+    shapes: &[Ellipse],
+    intersections: &[crate::geometry::diagram::IntersectionPoint],
+    region_points: &[usize],
+) -> f64 {
+    use crate::geometry::diagram::IntersectionPoint;
+
+    let n = region_points.len();
+    if n == 0 {
+        return 0.0;
+    }
+
+    // Compute centroid of the intersection points (lines 44-50)
+    let cx = region_points
+        .iter()
+        .map(|&idx| intersections[idx].point().x())
+        .sum::<f64>()
+        / n as f64;
+    let cy = region_points
+        .iter()
+        .map(|&idx| intersections[idx].point().y())
+        .sum::<f64>()
+        / n as f64;
+
+    // Sort points by angle around centroid (lines 52-62)
+    let mut sorted_indices: Vec<usize> = (0..n).collect();
+    sorted_indices.sort_by(|&a, &b| {
+        let pa = intersections[region_points[a]].point();
+        let pb = intersections[region_points[b]].point();
+        let angle_a = (pa.x() - cx).atan2(pa.y() - cy);
+        let angle_b = (pb.x() - cx).atan2(pb.y() - cy);
+        angle_a.partial_cmp(&angle_b).unwrap()
+    });
+
+    // Compute area by walking around the boundary (lines 65-100)
+    let mut area = 0.0;
+
+    for k in 0..n {
+        let l = if k == 0 { n - 1 } else { k - 1 };
+
+        let i_idx = region_points[sorted_indices[k]];
+        let j_idx = region_points[sorted_indices[l]];
+
+        let pi = intersections[i_idx].point();
+        let pj = intersections[j_idx].point();
+
+        // Find common parents (lines 72-78)
+        let parents_i = intersections[i_idx].parents();
+        let parents_j = intersections[j_idx].parents();
+
+        let mut common_parents = Vec::new();
+        for &p in &[parents_i.0, parents_i.1] {
+            if p == parents_j.0 || p == parents_j.1 {
+                common_parents.push(p);
+            }
+        }
+
+        if common_parents.is_empty() {
+            // Failure case - should not happen with valid input
+            return 0.0;
+        }
+
+        // Triangle contribution (line 90)
+        let triangle = 0.5 * ((pj.x() + pi.x()) * (pj.y() - pi.y()));
+
+        // Compute segments from common parent ellipses (lines 85-86)
+        let mut segments = Vec::new();
+        for &ellipse_idx in &common_parents {
+            let seg = shapes[ellipse_idx].ellipse_segment(*pi, *pj);
+            segments.push(seg);
+        }
+
+        // Add triangle + min(segments) (line 89-91)
+        if let Some(&min_seg) = segments.iter().min_by(|a, b| a.partial_cmp(b).unwrap()) {
+            area += triangle + min_seg;
+        }
+    }
+
+    area
 }
 
 impl Polygonize for Ellipse {
@@ -1948,5 +1949,242 @@ mod tests {
         // Union should not exceed sum of individuals
         let union: f64 = areas.values().sum();
         assert!(union <= e1.area() + e2.area() + e3.area() + 1e-3);
+    }
+
+    // Helper function for Monte Carlo validation of pairwise intersection
+    fn monte_carlo_pairwise_intersection(
+        e1: &Ellipse,
+        e2: &Ellipse,
+        n_samples: usize,
+        seed: u64,
+    ) -> f64 {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut in_both = 0;
+
+        // Bounding box for sampling - intersection of both ellipse bounding boxes
+        let bbox1 = e1.bounding_box();
+        let bbox2 = e2.bounding_box();
+        let (min1, max1) = bbox1.to_points();
+        let (min2, max2) = bbox2.to_points();
+
+        let x_min = min1.x().max(min2.x());
+        let x_max = max1.x().min(max2.x());
+        let y_min = min1.y().max(min2.y());
+        let y_max = max1.y().min(max2.y());
+
+        if x_min >= x_max || y_min >= y_max {
+            return 0.0; // No bounding box overlap
+        }
+
+        let bbox_area = (x_max - x_min) * (y_max - y_min);
+
+        for _ in 0..n_samples {
+            let x = x_min + (x_max - x_min) * rng.random::<f64>();
+            let y = y_min + (y_max - y_min) * rng.random::<f64>();
+            let p = Point::new(x, y);
+
+            if e1.contains_point(&p) && e2.contains_point(&p) {
+                in_both += 1;
+            }
+        }
+
+        (in_both as f64 / n_samples as f64) * bbox_area
+    }
+
+    #[test]
+    fn test_random_ellipse_intersections_monte_carlo() {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        const N_TESTS: usize = 100;
+        const MC_SAMPLES: usize = 50_000;
+        const MAX_RELATIVE_ERROR: f64 = 0.10; // 10% tolerance
+
+        let mut failures = Vec::new();
+
+        for seed in 0..N_TESTS {
+            let mut rng = StdRng::seed_from_u64(seed as u64);
+
+            // Random ellipse 1
+            let x1 = rng.random_range(-5.0..5.0);
+            let y1 = rng.random_range(-5.0..5.0);
+            let a1 = rng.random_range(0.5..3.0);
+            let b1 = rng.random_range(0.5..3.0);
+            let rot1 = rng.random_range(0.0..PI);
+
+            // Random ellipse 2 (overlapping region)
+            let x2 = x1 + rng.random_range(-2.0..2.0);
+            let y2 = y1 + rng.random_range(-2.0..2.0);
+            let a2 = rng.random_range(0.5..3.0);
+            let b2 = rng.random_range(0.5..3.0);
+            let rot2 = rng.random_range(0.0..PI);
+
+            let e1 = Ellipse::new(Point::new(x1, y1), a1, b1, rot1);
+            let e2 = Ellipse::new(Point::new(x2, y2), a2, b2, rot2);
+
+            // Compute exact intersection area
+            let exact = e1.intersection_area(&e2);
+
+            // Compute Monte Carlo estimate
+            let mc_estimate = monte_carlo_pairwise_intersection(&e1, &e2, MC_SAMPLES, seed as u64);
+
+            // Skip cases with very small intersection (harder to validate)
+            if exact < 0.01 && mc_estimate < 0.01 {
+                continue;
+            }
+
+            // Compute relative error
+            let max_val = exact.max(mc_estimate);
+            let error = (exact - mc_estimate).abs() / max_val;
+
+            if error > MAX_RELATIVE_ERROR {
+                let n_points = e1.intersection_points(&e2).len();
+                failures.push((seed, exact, mc_estimate, error, n_points));
+            }
+        }
+
+        if !failures.is_empty() {
+            println!("\n❌ {} failures out of {} tests:", failures.len(), N_TESTS);
+            for (seed, exact, mc, err, n_pts) in failures.iter().take(10) {
+                println!(
+                    "  Seed {}: exact={:.6}, mc={:.6}, error={:.1}%, n_points={}",
+                    seed,
+                    exact,
+                    mc,
+                    err * 100.0,
+                    n_pts
+                );
+            }
+            panic!(
+                "Monte Carlo validation failed for {} test cases",
+                failures.len()
+            );
+        }
+    }
+
+    #[test]
+    fn test_three_ellipse_complete_overlap() {
+        use crate::geometry::traits::DiagramShape;
+
+        // Test case: A=B=C=1, A&B&C=1 (all three completely overlap)
+        // Three identical circles
+        let e1 = Ellipse::new(Point::new(0.0, 0.0), 0.564, 0.564, 0.0); // area ≈ 1.0
+        let e2 = Ellipse::new(Point::new(0.0, 0.0), 0.564, 0.564, 0.0);
+        let e3 = Ellipse::new(Point::new(0.0, 0.0), 0.564, 0.564, 0.0);
+
+        let areas = Ellipse::compute_exclusive_regions(&[e1, e2, e3]);
+
+        let mask_all = (1usize << 0) | (1usize << 1) | (1usize << 2);
+        let all_three = areas.get(&mask_all).copied().unwrap_or(0.0);
+
+        // When all three are identical and overlapping, the 3-way intersection should be ~1.0
+        println!("Three identical ellipses:");
+        println!("  A&B&C area: {:.6}", all_three);
+        println!("  Expected: ~1.0");
+
+        assert!(
+            (all_three - 1.0).abs() < 0.01,
+            "Complete overlap should give area ~1.0, got {}",
+            all_three
+        );
+    }
+
+    #[test]
+    fn test_three_ellipse_partial_overlap_monte_carlo() {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        // Test a specific 3-ellipse configuration with Monte Carlo
+        let seed = 42u64;
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let x1 = 0.0;
+        let y1 = 0.0;
+        let a1 = 1.5;
+        let b1 = 1.0;
+        let rot1 = 0.0;
+
+        let x2 = 1.0;
+        let y2 = 0.0;
+        let a2 = 1.5;
+        let b2 = 1.0;
+        let rot2 = PI / 6.0;
+
+        let x3 = 0.5;
+        let y3 = 1.0;
+        let a3 = 1.5;
+        let b3 = 1.0;
+        let rot3 = -PI / 6.0;
+
+        let e1 = Ellipse::new(Point::new(x1, y1), a1, b1, rot1);
+        let e2 = Ellipse::new(Point::new(x2, y2), a2, b2, rot2);
+        let e3 = Ellipse::new(Point::new(x3, y3), a3, b3, rot3);
+
+        // Monte Carlo estimate for 3-way intersection
+        let n_samples = 100_000;
+        let mut in_all_three = 0;
+
+        // Find bounding box
+        let bbox1 = e1.bounding_box();
+        let bbox2 = e2.bounding_box();
+        let bbox3 = e3.bounding_box();
+
+        let (min1, max1) = bbox1.to_points();
+        let (min2, max2) = bbox2.to_points();
+        let (min3, max3) = bbox3.to_points();
+
+        let x_min = min1.x().max(min2.x()).max(min3.x());
+        let x_max = max1.x().min(max2.x()).min(max3.x());
+        let y_min = min1.y().max(min2.y()).max(min3.y());
+        let y_max = max1.y().min(max2.y()).min(max3.y());
+
+        if x_min >= x_max || y_min >= y_max {
+            println!("No bounding box overlap for 3 ellipses - skipping test");
+            return;
+        }
+
+        let bbox_area = (x_max - x_min) * (y_max - y_min);
+
+        for _ in 0..n_samples {
+            let x = x_min + (x_max - x_min) * rng.random::<f64>();
+            let y = y_min + (y_max - y_min) * rng.random::<f64>();
+            let p = Point::new(x, y);
+
+            if e1.contains_point(&p) && e2.contains_point(&p) && e3.contains_point(&p) {
+                in_all_three += 1;
+            }
+        }
+
+        let mc_area = (in_all_three as f64 / n_samples as f64) * bbox_area;
+
+        // Compute using compute_exclusive_regions
+        use crate::geometry::traits::DiagramShape;
+        let areas = Ellipse::compute_exclusive_regions(&[e1, e2, e3]);
+        let mask_all = (1usize << 0) | (1usize << 1) | (1usize << 2);
+        let exact_area = areas.get(&mask_all).copied().unwrap_or(0.0);
+
+        println!("\nThree-ellipse intersection (seed=42):");
+        println!(
+            "  Exact area (compute_exclusive_regions): {:.6}",
+            exact_area
+        );
+        println!("  Monte Carlo estimate: {:.6}", mc_area);
+
+        if mc_area < 0.01 && exact_area < 0.01 {
+            println!("  Both areas are very small - test passed");
+            return;
+        }
+
+        let error = (exact_area - mc_area).abs() / mc_area.max(exact_area);
+        println!("  Relative error: {:.1}%", error * 100.0);
+
+        assert!(
+            error < 0.15,
+            "Three-ellipse Monte Carlo error too large: {:.1}%",
+            error * 100.0
+        );
     }
 }
