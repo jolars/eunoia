@@ -146,7 +146,7 @@
           optimizerValue,
         );
         polygons = Array.from(result.polygons);
-        circles = [];
+        circles = Array.from(result.circles);
         ellipses = [];
 
         // Extract areas from the result
@@ -163,7 +163,7 @@
         );
         polygons = Array.from(result.polygons);
         circles = [];
-        ellipses = [];
+        ellipses = Array.from(result.ellipses);
 
         // Extract areas from the result
         loss = result.loss;
@@ -352,6 +352,55 @@
               </div>
             </div>
 
+            <!-- Shape Selection -->
+            <div class="mb-4">
+              <div class="block text-sm font-medium text-gray-700 mb-2">
+                Shapes
+              </div>
+              <div class="flex gap-4">
+                <label class="flex items-center cursor-pointer">
+                  <input
+                    type="radio"
+                    bind:group={shapeType}
+                    value="circle"
+                    class="mr-2"
+                  />
+                  <span class="text-sm">Circles</span>
+                </label>
+                <label class="flex items-center cursor-pointer">
+                  <input
+                    type="radio"
+                    bind:group={shapeType}
+                    value="ellipse"
+                    class="mr-2"
+                  />
+                  <span class="text-sm">Ellipses</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Optimizer Selection -->
+            <div class="mb-4">
+              <label
+                for="optimizer"
+                class="block text-sm font-medium text-gray-700 mb-2"
+              >
+                Optimizer
+              </label>
+              <select
+                bind:value={optimizer}
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="Lbfgs">L-BFGS</option>
+                <option value="NelderMead">Nelder-Mead</option>
+                <option value="ConjugateGradient">Conjugate Gradient</option>
+                <option value="TrustRegion">Trust Region (Cauchy Point)</option>
+              </select>
+              <p class="mt-1 text-xs text-gray-500">
+                Optimization method for fitting shapes
+              </p>
+            </div>
+
             <!-- Random Seed Option -->
             <div class="mb-4">
               <label class="flex items-center cursor-pointer">
@@ -491,9 +540,94 @@
             </button>
             {#if showShapeParams}
               <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <div class="text-sm text-gray-600 italic">
-                  Shape parameters not available in polygon rendering mode.
-                </div>
+                {#if circles.length === 0 && ellipses.length === 0}
+                  <div class="text-sm text-gray-600 italic">
+                    No shapes generated yet. Add diagram specifications above.
+                  </div>
+                {:else}
+                  <div class="space-y-2 text-sm font-mono">
+                    {#if circles.length > 0}
+                      {#each circles as circle}
+                        <div class="border-b border-gray-300 pb-2">
+                          <div class="font-semibold text-gray-700">
+                            {circle.label}:
+                          </div>
+                          <div class="pl-4 text-xs">
+                            <div>
+                              center: ({circle.x.toFixed(6)}, {circle.y.toFixed(
+                                6,
+                              )})
+                            </div>
+                            <div>radius: {circle.radius.toFixed(6)}</div>
+                            <div>
+                              area: {(Math.PI * circle.radius ** 2).toFixed(6)}
+                            </div>
+                          </div>
+                        </div>
+                      {/each}
+                    {/if}
+                    {#if ellipses.length > 0}
+                      {#each ellipses as ellipse}
+                        <div class="border-b border-gray-300 pb-2">
+                          <div class="font-semibold text-gray-700">
+                            {ellipse.label}:
+                          </div>
+                          <div class="pl-4 text-xs">
+                            <div>
+                              center: ({ellipse.x.toFixed(6)}, {ellipse.y.toFixed(
+                                6,
+                              )})
+                            </div>
+                            <div>
+                              semi_major: {ellipse.semi_major.toFixed(6)}
+                            </div>
+                            <div>
+                              semi_minor: {ellipse.semi_minor.toFixed(6)}
+                            </div>
+                            <div>
+                              rotation: {ellipse.rotation.toFixed(6)} rad ({(
+                                (ellipse.rotation * 180) /
+                                Math.PI
+                              ).toFixed(2)}°)
+                            </div>
+                            <div>
+                              aspect: {(
+                                ellipse.semi_minor / ellipse.semi_major
+                              ).toFixed(6)}
+                            </div>
+                            <div>
+                              area: {(
+                                Math.PI *
+                                ellipse.semi_major *
+                                ellipse.semi_minor
+                              ).toFixed(6)}
+                            </div>
+                          </div>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
+                  <div class="mt-4 text-xs text-gray-600">
+                    <div class="font-semibold mb-1">Copy for unit test:</div>
+                    <textarea
+                      readonly
+                      class="w-full h-32 p-2 bg-white border border-gray-300 rounded font-mono text-xs"
+                      value={circles.length > 0
+                        ? circles
+                            .map(
+                              (c) =>
+                                `Circle::new(Point::new(${c.x.toFixed(6)}, ${c.y.toFixed(6)}), ${c.radius.toFixed(6)}) // ${c.label}`,
+                            )
+                            .join("\n")
+                        : ellipses
+                            .map(
+                              (e) =>
+                                `Ellipse::new(Point::new(${e.x.toFixed(6)}, ${e.y.toFixed(6)}), ${e.semi_major.toFixed(6)}, ${e.semi_minor.toFixed(6)}, ${e.rotation.toFixed(6)}) // ${e.label}`,
+                            )
+                            .join("\n")}
+                    ></textarea>
+                  </div>
+                {/if}
               </div>
             {/if}
           </div>

@@ -237,6 +237,8 @@ impl EllipseResult {
 #[wasm_bindgen]
 pub struct PolygonResult {
     polygons: Vec<WasmPolygon>,
+    circles: Vec<WasmCircle>,
+    ellipses: Vec<WasmEllipse>,
     loss: f64,
     target_areas_json: String,
     fitted_areas_json: String,
@@ -247,6 +249,16 @@ impl PolygonResult {
     #[wasm_bindgen(getter)]
     pub fn polygons(&self) -> Vec<WasmPolygon> {
         self.polygons.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn circles(&self) -> Vec<WasmCircle> {
+        self.circles.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn ellipses(&self) -> Vec<WasmEllipse> {
+        self.ellipses.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -983,6 +995,21 @@ pub fn generate_circles_as_polygons(
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
+    let wasm_circles: Vec<WasmCircle> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|circle: &Circle| {
+                WasmCircle::new(
+                    circle.center().x(),
+                    circle.center().y(),
+                    circle.radius(),
+                    name.to_string(),
+                )
+            })
+        })
+        .collect();
+
     let wasm_polygons: Vec<WasmPolygon> = diagram_spec
         .set_names()
         .iter()
@@ -1017,6 +1044,8 @@ pub fn generate_circles_as_polygons(
 
     Ok(PolygonResult {
         polygons: wasm_polygons,
+        circles: wasm_circles,
+        ellipses: vec![],
         loss: layout.loss(),
         target_areas_json: serde_json::to_string(&target_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
@@ -1074,6 +1103,23 @@ pub fn generate_ellipses_as_polygons(
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
 
+    let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|ellipse: &Ellipse| {
+                WasmEllipse::new(
+                    ellipse.center().x(),
+                    ellipse.center().y(),
+                    ellipse.semi_major(),
+                    ellipse.semi_minor(),
+                    ellipse.rotation(),
+                    name.to_string(),
+                )
+            })
+        })
+        .collect();
+
     let wasm_polygons: Vec<WasmPolygon> = diagram_spec
         .set_names()
         .iter()
@@ -1108,6 +1154,8 @@ pub fn generate_ellipses_as_polygons(
 
     Ok(PolygonResult {
         polygons: wasm_polygons,
+        circles: vec![],
+        ellipses: wasm_ellipses,
         loss: layout.loss(),
         target_areas_json: serde_json::to_string(&target_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
