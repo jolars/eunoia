@@ -574,10 +574,10 @@
             </div>
           </div>
 
-          <!-- Debug Information -->
+          <!-- Fit -->
           {#if circles.length > 0 || ellipses.length > 0 || polygons.length > 0}
             <div class="bg-white rounded-lg shadow p-6 mt-6">
-              <h2 class="text-xl font-semibold mb-4">Debug Information</h2>
+              <h2 class="text-xl font-semibold mb-4">Goodness of Fit</h2>
 
               <div class="mb-4">
                 <div class="text-sm font-medium text-gray-700 mb-1">
