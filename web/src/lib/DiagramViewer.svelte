@@ -210,6 +210,7 @@
   let viewBox = $state("0 0 400 400");
   let strokeWidth = $state(2);
   let fontSize = $state(16);
+  let svgAspectRatio = $state(1); // width / height
 
   // Compute viewBox for SVG - fits all shapes with padding
   $effect(() => {
@@ -273,6 +274,7 @@
     const height = rawHeight + 2 * padding;
 
     viewBox = `${minX - padding} ${minY - padding} ${width} ${height}`;
+    svgAspectRatio = width / height;
 
     console.log("ViewBox Debug:", {
       minX,
@@ -281,6 +283,7 @@
       maxY,
       width,
       height,
+      aspectRatio: svgAspectRatio,
       viewBox,
       numShapes: circles.length || ellipses.length || polygons.length,
     });
@@ -288,7 +291,7 @@
     // Scale stroke and font based on the coordinate space
     const dimension = Math.max(width, height);
     strokeWidth = dimension * 0.01; // 1% of diagram
-    fontSize = dimension * 0.06; // 8% of diagram
+    fontSize = dimension * 0.06; // 6% of diagram
 
     console.log("Sizes:", { strokeWidth, fontSize, dimension });
   });
@@ -504,7 +507,7 @@
             <svg
               {viewBox}
               class="w-full border border-gray-200 rounded"
-              style="height: 600px; max-height: 80vh;"
+              style="aspect-ratio: {svgAspectRatio}; max-height: 70vh;"
               preserveAspectRatio="xMidYMid meet"
             >
               <!-- Polygons -->
