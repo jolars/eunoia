@@ -122,6 +122,52 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         crate::fitter::normalize::normalize_layout(&mut self.shapes, padding_factor);
     }
 
+    /// Decomposes the fitted shapes into polygons for each exclusive region.
+    ///
+    /// This is useful for visualization where you want to fill each region
+    /// with a different color or pattern.
+    ///
+    /// **Requires the `plotting` feature to be enabled.**
+    ///
+    /// # Arguments
+    ///
+    /// * `spec` - The diagram specification
+    /// * `n_vertices` - Number of vertices to use when converting shapes to polygons (e.g., 64)
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .intersection(&["A", "B"], 2.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
+    /// let regions = layout.region_polygons(&spec, 64);
+    ///
+    /// // Iterate over regions
+    /// for (combination, polygons) in regions.iter() {
+    ///     println!("{}: {} polygons", combination, polygons.len());
+    /// }
+    /// ```
+    #[cfg(feature = "plotting")]
+    pub fn region_polygons(
+        &self,
+        spec: &DiagramSpec,
+        n_vertices: usize,
+    ) -> crate::plotting::RegionPolygons
+    where
+        S: crate::geometry::traits::Polygonize,
+    {
+        let set_names = spec.set_names();
+        crate::plotting::decompose_regions(&self.shapes, set_names, spec, n_vertices)
+    }
+
     /// Compute all combination areas from current shapes.
     fn compute_fitted_areas(shapes: &[S], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();

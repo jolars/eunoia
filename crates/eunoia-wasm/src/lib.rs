@@ -141,6 +141,25 @@ impl WasmPolygon {
     pub fn label(&self) -> String {
         self.label.clone()
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn area(&self) -> f64 {
+        // Calculate using shoelace formula
+        if self.vertices.len() < 3 {
+            return 0.0;
+        }
+
+        let mut area = 0.0;
+        let n = self.vertices.len();
+
+        for i in 0..n {
+            let j = (i + 1) % n;
+            area += self.vertices[i].x * self.vertices[j].y;
+            area -= self.vertices[j].x * self.vertices[i].y;
+        }
+
+        (area / 2.0).abs()
+    }
 }
 
 /// A diagram specification entry (set combination and size)
@@ -274,6 +293,51 @@ impl PolygonResult {
     #[wasm_bindgen(getter)]
     pub fn fitted_areas_json(&self) -> String {
         self.fitted_areas_json.clone()
+    }
+}
+
+/// A single region with its polygons
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmRegion {
+    combination: String,
+    polygons: Vec<WasmPolygon>,
+}
+
+#[wasm_bindgen]
+impl WasmRegion {
+    #[wasm_bindgen(getter)]
+    pub fn combination(&self) -> String {
+        self.combination.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn polygons(&self) -> Vec<WasmPolygon> {
+        self.polygons.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn total_area(&self) -> f64 {
+        self.polygons.iter().map(|p| p.area()).sum()
+    }
+}
+
+/// Collection of region polygons for visualization
+#[wasm_bindgen]
+pub struct WasmRegionPolygons {
+    regions: Vec<WasmRegion>,
+}
+
+#[wasm_bindgen]
+impl WasmRegionPolygons {
+    #[wasm_bindgen(getter)]
+    pub fn regions(&self) -> Vec<WasmRegion> {
+        self.regions.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn count(&self) -> usize {
+        self.regions.len()
     }
 }
 
@@ -1161,5 +1225,167 @@ pub fn generate_ellipses_as_polygons(
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
+}
+
+/// Generate region polygons from circles (for filled diagram visualization)
+#[wasm_bindgen]
+pub fn generate_region_polygons_circles(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        if sets.len() == 1 {
+            builder = builder.set(sets[0], size);
+        } else if sets.len() > 1 {
+            builder = builder.intersection(&sets, size);
+        }
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let mut fitter = Fitter::<Circle>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    // Get region polygons using the plotting feature
+    let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
+
+    // Convert to WASM types
+    let mut wasm_regions = Vec::new();
+    for (combination, polygons) in region_polygons.iter() {
+        let wasm_polygons: Vec<WasmPolygon> = polygons
+            .iter()
+            .map(|poly| {
+                let vertices: Vec<WasmPoint> = poly
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: combination.to_string(),
+                }
+            })
+            .collect();
+
+        wasm_regions.push(WasmRegion {
+            combination: combination.to_string(),
+            polygons: wasm_polygons,
+        });
+    }
+
+    Ok(WasmRegionPolygons {
+        regions: wasm_regions,
+    })
+}
+
+/// Generate region polygons from ellipses (for filled diagram visualization)
+#[wasm_bindgen]
+pub fn generate_region_polygons_ellipses(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        if sets.len() == 1 {
+            builder = builder.set(sets[0], size);
+        } else if sets.len() > 1 {
+            builder = builder.intersection(&sets, size);
+        }
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    // Get region polygons using the plotting feature
+    let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
+
+    // Convert to WASM types
+    let mut wasm_regions = Vec::new();
+    for (combination, polygons) in region_polygons.iter() {
+        let wasm_polygons: Vec<WasmPolygon> = polygons
+            .iter()
+            .map(|poly| {
+                let vertices: Vec<WasmPoint> = poly
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: combination.to_string(),
+                }
+            })
+            .collect();
+
+        wasm_regions.push(WasmRegion {
+            combination: combination.to_string(),
+            polygons: wasm_polygons,
+        });
+    }
+
+    Ok(WasmRegionPolygons {
+        regions: wasm_regions,
     })
 }

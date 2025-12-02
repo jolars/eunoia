@@ -27,6 +27,12 @@
     label: string;
   }
 
+  interface RegionPolygon {
+    combination: string;
+    polygons: Polygon[];
+    totalArea: number;
+  }
+
   interface DiagramRow {
     input: string;
     size: number;
@@ -35,6 +41,7 @@
   let circles = $state<Circle[]>([]);
   let ellipses = $state<Ellipse[]>([]);
   let polygons = $state<Polygon[]>([]);
+  let regionPolygons = $state<RegionPolygon[]>([]);
   let wasmModule = $state<any>(null);
   let loading = $state(true);
   let error = $state("");
@@ -42,6 +49,7 @@
   let targetAreas = $state<Record<string, number>>({});
   let fittedAreas = $state<Record<string, number>>({});
   let showShapeParams = $state(false);
+  let showRegions = $state(false);
 
   // Diagram specification
   let diagramRows = $state<DiagramRow[]>([
@@ -90,6 +98,74 @@
 
   function removeRow(index: number) {
     diagramRows = diagramRows.filter((_, i) => i !== index);
+  }
+
+  function polygonToPath(polygon: Polygon): string {
+    if (polygon.vertices.length === 0) return "";
+
+    const first = polygon.vertices[0];
+    let path = `M ${first.x},${first.y}`;
+
+    for (let i = 1; i < polygon.vertices.length; i++) {
+      const v = polygon.vertices[i];
+      path += ` L ${v.x},${v.y}`;
+    }
+
+    path += " Z"; // Close path
+    return path;
+  }
+
+  function calculateCentroid(polygon: Polygon): Point {
+    const n = polygon.vertices.length;
+    let cx = 0,
+      cy = 0;
+
+    for (const v of polygon.vertices) {
+      cx += v.x;
+      cy += v.y;
+    }
+
+    return { x: cx / n, y: cy / n };
+  }
+
+  function normalizeRegionPolygons(regions: RegionPolygon[]): RegionPolygon[] {
+    // Find bounding box of all region polygons
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+
+    for (const region of regions) {
+      for (const polygon of region.polygons) {
+        for (const vertex of polygon.vertices) {
+          minX = Math.min(minX, vertex.x);
+          minY = Math.min(minY, vertex.y);
+          maxX = Math.max(maxX, vertex.x);
+          maxY = Math.max(maxY, vertex.y);
+        }
+      }
+    }
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const maxDim = Math.max(width, height);
+
+    // Target size: scale so largest dimension is 100 units
+    const targetSize = 100;
+    const scale = targetSize / maxDim;
+
+    // Return normalized regions
+    return regions.map((region) => ({
+      combination: region.combination,
+      totalArea: region.totalArea,
+      polygons: region.polygons.map((polygon) => ({
+        label: polygon.label,
+        vertices: polygon.vertices.map((v) => ({
+          x: (v.x - minX) * scale,
+          y: (v.y - minY) * scale,
+        })),
+      })),
+    }));
   }
 
   function normalizeCoordinates(shapes: {
@@ -218,55 +294,120 @@
                 ? wasmModule.WasmOptimizer.TrustRegion
                 : wasmModule.WasmOptimizer.NelderMead; // default fallback
 
-      // Generate diagram - always as polygons
-      if (shapeType === "circle") {
-        const result = wasmModule.generate_circles_as_polygons(
-          specs,
-          inputType,
-          POLYGON_VERTICES,
-          seedValue,
-          optimizerValue,
-        );
+      // Generate diagram - either as regions or shape outlines
+      if (showRegions) {
+        // Generate region polygons for filled visualization
+        if (shapeType === "circle") {
+          const result = wasmModule.generate_region_polygons_circles(
+            specs,
+            inputType,
+            POLYGON_VERTICES,
+            seedValue,
+            optimizerValue,
+          );
 
-        // Normalize coordinates before assigning to state
-        const normalized = normalizeCoordinates({
-          polygons: Array.from(result.polygons),
-          circles: Array.from(result.circles),
-          ellipses: [],
-        });
+          const rawRegions = Array.from(result.regions).map((region: any) => ({
+            combination: region.combination,
+            polygons: Array.from(region.polygons).map((poly: any) => ({
+              vertices: Array.from(poly.vertices),
+              label: poly.label,
+            })),
+            totalArea: region.total_area,
+          }));
 
-        polygons = normalized.polygons;
-        circles = normalized.circles;
-        ellipses = normalized.ellipses;
+          // Normalize the region polygons
+          regionPolygons = normalizeRegionPolygons(rawRegions);
 
-        // Extract areas from the result
-        loss = result.loss;
-        targetAreas = JSON.parse(result.target_areas_json);
-        fittedAreas = JSON.parse(result.fitted_areas_json);
+          // Clear shape outlines
+          polygons = [];
+          circles = [];
+          ellipses = [];
+        } else {
+          const result = wasmModule.generate_region_polygons_ellipses(
+            specs,
+            inputType,
+            POLYGON_VERTICES,
+            seedValue,
+            optimizerValue,
+          );
+
+          const rawRegions = Array.from(result.regions).map((region: any) => ({
+            combination: region.combination,
+            polygons: Array.from(region.polygons).map((poly: any) => ({
+              vertices: Array.from(poly.vertices),
+              label: poly.label,
+            })),
+            totalArea: region.total_area,
+          }));
+
+          // Normalize the region polygons
+          regionPolygons = normalizeRegionPolygons(rawRegions);
+
+          // Clear shape outlines
+          polygons = [];
+          circles = [];
+          ellipses = [];
+        }
+
+        // For regions, we don't have loss/areas in the same format
+        // We could compute them but for now just clear them
+        loss = 0;
+        targetAreas = {};
+        fittedAreas = {};
       } else {
-        const result = wasmModule.generate_ellipses_as_polygons(
-          specs,
-          inputType,
-          POLYGON_VERTICES,
-          seedValue,
-          optimizerValue,
-        );
+        // Generate shape outlines (existing code)
+        if (shapeType === "circle") {
+          const result = wasmModule.generate_circles_as_polygons(
+            specs,
+            inputType,
+            POLYGON_VERTICES,
+            seedValue,
+            optimizerValue,
+          );
 
-        // Normalize coordinates before assigning to state
-        const normalized = normalizeCoordinates({
-          polygons: Array.from(result.polygons),
-          circles: [],
-          ellipses: Array.from(result.ellipses),
-        });
+          // Normalize coordinates before assigning to state
+          const normalized = normalizeCoordinates({
+            polygons: Array.from(result.polygons),
+            circles: Array.from(result.circles),
+            ellipses: [],
+          });
 
-        polygons = normalized.polygons;
-        circles = normalized.circles;
-        ellipses = normalized.ellipses;
+          polygons = normalized.polygons;
+          circles = normalized.circles;
+          ellipses = normalized.ellipses;
 
-        // Extract areas from the result
-        loss = result.loss;
-        targetAreas = JSON.parse(result.target_areas_json);
-        fittedAreas = JSON.parse(result.fitted_areas_json);
+          // Extract areas from the result
+          loss = result.loss;
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
+        } else {
+          const result = wasmModule.generate_ellipses_as_polygons(
+            specs,
+            inputType,
+            POLYGON_VERTICES,
+            seedValue,
+            optimizerValue,
+          );
+
+          // Normalize coordinates before assigning to state
+          const normalized = normalizeCoordinates({
+            polygons: Array.from(result.polygons),
+            circles: [],
+            ellipses: Array.from(result.ellipses),
+          });
+
+          polygons = normalized.polygons;
+          circles = normalized.circles;
+          ellipses = normalized.ellipses;
+
+          // Extract areas from the result
+          loss = result.loss;
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
+        }
+
+        // Clear region data
+        regionPolygons = [];
       }
       error = "";
 
@@ -290,6 +431,7 @@
       const sizeSignature = diagramRows.map((row) => row.size).join(",");
       const effectiveSeed = useSeed && seed !== undefined ? seed : "none";
       const currentOptimizer = optimizer; // Explicitly track optimizer
+      const visualizationMode = showRegions ? "regions" : "shapes"; // Track visualization mode
       console.log(
         "Generating diagram:",
         sizeSignature,
@@ -299,6 +441,8 @@
         effectiveSeed,
         "optimizer:",
         currentOptimizer,
+        "mode:",
+        visualizationMode,
       );
       generateFromSpec();
     }
@@ -317,7 +461,19 @@
     let maxX = -Infinity;
     let maxY = -Infinity;
 
-    if (polygons.length > 0) {
+    if (showRegions && regionPolygons.length > 0) {
+      // Calculate bounds from region polygons
+      for (const region of regionPolygons) {
+        for (const polygon of region.polygons) {
+          for (const vertex of polygon.vertices) {
+            minX = Math.min(minX, vertex.x);
+            minY = Math.min(minY, vertex.y);
+            maxX = Math.max(maxX, vertex.x);
+            maxY = Math.max(maxY, vertex.y);
+          }
+        }
+      }
+    } else if (polygons.length > 0) {
       for (const polygon of polygons) {
         for (const vertex of polygon.vertices) {
           minX = Math.min(minX, vertex.x);
@@ -378,6 +534,47 @@
 
     console.log("Sizes:", { strokeWidth, fontSize });
   });
+
+  function renderRegions(
+    layout: WasmLayout,
+    spec: WasmDiagramSpec,
+    svg: d3.Selection<SVGGElement, unknown, null, undefined>,
+  ) {
+    // Get region polygons
+    const regions = layout.regionPolygons(spec, 64);
+    const regionData = regions.getRegions();
+
+    // Define color scale
+    const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+    // Render each region
+    Object.entries(regionData).forEach(([combination, polygons], i) => {
+      polygons.forEach((polygon: Polygon) => {
+        // Create SVG path from polygon vertices
+        const pathData = createPathFromPolygon(polygon);
+
+        svg
+          .append("path")
+          .attr("d", pathData)
+          .attr("fill", colorScale(i))
+          .attr("fill-opacity", 0.5)
+          .attr("stroke", colorScale(i))
+          .attr("stroke-width", 1.5);
+      });
+
+      // Add label at centroid
+      const firstPolygon = polygons[0];
+      const centroid = calculateCentroid(firstPolygon);
+
+      svg
+        .append("text")
+        .attr("x", centroid.x)
+        .attr("y", centroid.y)
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "middle")
+        .text(combination);
+    });
+  }
 </script>
 
 <div class="bg-gray-50 p-8">
@@ -460,6 +657,19 @@
                   <span class="text-sm">Ellipses</span>
                 </label>
               </div>
+            </div>
+
+            <!-- Visualization Mode -->
+            <div class="mb-4">
+              <label class="flex items-center cursor-pointer">
+                <input type="checkbox" bind:checked={showRegions} class="mr-2" />
+                <span class="text-sm font-medium text-gray-700"
+                  >Show filled regions</span
+                >
+              </label>
+              <p class="mt-1 text-xs text-gray-500">
+                Display exclusive regions with colors instead of shape outlines
+              </p>
             </div>
 
             <!-- Optimizer Selection -->
@@ -727,85 +937,118 @@
               style="aspect-ratio: {svgAspectRatio}; max-height: 70vh;"
               preserveAspectRatio="xMidYMid meet"
             >
-              <!-- Polygons -->
-              {#if polygons.length > 0}
-                {#each polygons as polygon, i}
-                  <polygon
-                    points={polygon.vertices
-                      .map((v) => `${v.x},${v.y}`)
-                      .join(" ")}
-                    fill={colors[i % colors.length]}
-                    stroke={colors[i % colors.length].replace("0.3", "1")}
-                    stroke-width={strokeWidth}
-                  />
-                  {@const centroidX =
-                    polygon.vertices.reduce((sum, v) => sum + v.x, 0) /
-                    polygon.vertices.length}
-                  {@const centroidY =
-                    polygon.vertices.reduce((sum, v) => sum + v.y, 0) /
-                    polygon.vertices.length}
-                  <text
-                    x={centroidX}
-                    y={centroidY}
-                    text-anchor="middle"
-                    dominant-baseline="middle"
-                    font-size={fontSize}
-                    class="font-semibold"
-                  >
-                    {polygon.label}
-                  </text>
+              {#if showRegions && regionPolygons.length > 0}
+                <!-- Render filled regions -->
+                {#each regionPolygons as region, idx}
+                  {#each region.polygons as polygon}
+                    <path
+                      d={polygonToPath(polygon)}
+                      fill={colors[idx % colors.length]}
+                      stroke="black"
+                      stroke-width={strokeWidth}
+                      opacity="0.7"
+                    />
+                  {/each}
                 {/each}
-              {/if}
 
-              <!-- Circles -->
-              {#if circles.length > 0}
-                {#each circles as circle, i}
-                  <circle
-                    cx={circle.x}
-                    cy={circle.y}
-                    r={circle.radius}
-                    fill={colors[i % colors.length]}
-                    stroke={colors[i % colors.length].replace("0.3", "1")}
-                    stroke-width={strokeWidth}
-                  />
-                  <text
-                    x={circle.x}
-                    y={circle.y}
-                    text-anchor="middle"
-                    dominant-baseline="middle"
-                    font-size={fontSize}
-                    class="font-semibold"
-                  >
-                    {circle.label}
-                  </text>
+                <!-- Labels at region centroids -->
+                {#each regionPolygons as region}
+                  {#each region.polygons as polygon}
+                    {@const centroid = calculateCentroid(polygon)}
+                    <text
+                      x={centroid.x}
+                      y={centroid.y}
+                      text-anchor="middle"
+                      dominant-baseline="middle"
+                      fill="black"
+                      font-size={fontSize}
+                      font-weight="bold"
+                    >
+                      {region.combination}
+                    </text>
+                  {/each}
                 {/each}
-              {/if}
+              {:else}
+                <!-- Polygons -->
+                {#if polygons.length > 0}
+                  {#each polygons as polygon, i}
+                    <polygon
+                      points={polygon.vertices
+                        .map((v) => `${v.x},${v.y}`)
+                        .join(" ")}
+                      fill={colors[i % colors.length]}
+                      stroke={colors[i % colors.length].replace("0.3", "1")}
+                      stroke-width={strokeWidth}
+                    />
+                    {@const centroidX =
+                      polygon.vertices.reduce((sum, v) => sum + v.x, 0) /
+                      polygon.vertices.length}
+                    {@const centroidY =
+                      polygon.vertices.reduce((sum, v) => sum + v.y, 0) /
+                      polygon.vertices.length}
+                    <text
+                      x={centroidX}
+                      y={centroidY}
+                      text-anchor="middle"
+                      dominant-baseline="middle"
+                      font-size={fontSize}
+                      class="font-semibold"
+                    >
+                      {polygon.label}
+                    </text>
+                  {/each}
+                {/if}
 
-              <!-- Ellipses -->
-              {#if ellipses.length > 0}
-                {#each ellipses as ellipse, i}
-                  <ellipse
-                    cx={ellipse.x}
-                    cy={ellipse.y}
-                    rx={ellipse.semi_major}
-                    ry={ellipse.semi_minor}
-                    transform="rotate({(ellipse.rotation * 180) /
-                      Math.PI} {ellipse.x} {ellipse.y})"
-                    fill={colors[i % colors.length]}
-                    stroke={colors[i % colors.length].replace("0.3", "1")}
-                    stroke-width={strokeWidth}
-                  />
-                  <text
-                    x={ellipse.x}
-                    y={ellipse.y}
-                    text-anchor="middle"
-                    dominant-baseline="middle"
-                    font-size={fontSize}
-                    class="font-semibold"
-                  >
-                    {ellipse.label}
-                  </text>
-                {/each}
+                <!-- Circles -->
+                {#if circles.length > 0}
+                  {#each circles as circle, i}
+                    <circle
+                      cx={circle.x}
+                      cy={circle.y}
+                      r={circle.radius}
+                      fill={colors[i % colors.length]}
+                      stroke={colors[i % colors.length].replace("0.3", "1")}
+                      stroke-width={strokeWidth}
+                    />
+                    <text
+                      x={circle.x}
+                      y={circle.y}
+                      text-anchor="middle"
+                      dominant-baseline="middle"
+                      font-size={fontSize}
+                      class="font-semibold"
+                    >
+                      {circle.label}
+                    </text>
+                  {/each}
+                {/if}
+
+                <!-- Ellipses -->
+                {#if ellipses.length > 0}
+                  {#each ellipses as ellipse, i}
+                    <ellipse
+                      cx={ellipse.x}
+                      cy={ellipse.y}
+                      rx={ellipse.semi_major}
+                      ry={ellipse.semi_minor}
+                      transform="rotate({(ellipse.rotation * 180) /
+                        Math.PI} {ellipse.x} {ellipse.y})"
+                      fill={colors[i % colors.length]}
+                      stroke={colors[i % colors.length].replace("0.3", "1")}
+                      stroke-width={strokeWidth}
+                    />
+                    <text
+                      x={ellipse.x}
+                      y={ellipse.y}
+                      text-anchor="middle"
+                      dominant-baseline="middle"
+                      font-size={fontSize}
+                      class="font-semibold"
+                    >
+                      {ellipse.label}
+                    </text>
+                  {/each}
+                {/if}
               {/if}
             </svg>
           </div>

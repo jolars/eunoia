@@ -37,6 +37,9 @@ pub mod spec;
 
 pub mod constants;
 
+#[cfg(feature = "plotting")]
+pub mod plotting;
+
 // Internal test utilities
 #[cfg(test)]
 pub mod test_utils;

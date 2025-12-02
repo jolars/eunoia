@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eunoia = { path = "../eunoia", features = ["wasm"] }
+eunoia = { path = "../eunoia", features = ["wasm", "plotting"] }
 wasm-bindgen = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

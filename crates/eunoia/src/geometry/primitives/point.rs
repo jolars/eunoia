@@ -4,6 +4,9 @@ use crate::geometry::projective::HomogeneousPoint;
 use crate::geometry::shapes::Ellipse;
 use crate::geometry::traits::Distance;
 
+#[cfg(feature = "plotting")]
+use i_overlay::i_float::float::compatible::FloatPointCompatible;
+
 /// A point in 2D Cartesian space.
 ///
 /// `Point` represents a location using x and y coordinates. It is used as the
@@ -171,6 +174,21 @@ impl Point {
 impl Distance for Point {
     fn distance(&self, other: &Self) -> f64 {
         (self.x - other.x).hypot(self.y - other.y)
+    }
+}
+
+#[cfg(feature = "plotting")]
+impl FloatPointCompatible<f64> for Point {
+    fn from_xy(x: f64, y: f64) -> Self {
+        Point::new(x, y)
+    }
+
+    fn x(&self) -> f64 {
+        self.x
+    }
+
+    fn y(&self) -> f64 {
+        self.y
     }
 }
 

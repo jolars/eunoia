@@ -26,8 +26,24 @@ Generate area-proportional Euler and Venn diagrams by:
 
 ## Supported Shapes
 
-- **Current**: Circles
-- **Planned**: Ellipses, rectangles, triangles
+- **Current**: Circles, Ellipses
+- **Planned**: Rectangles, triangles
+
+## Features
+
+### Core Features (always available)
+- Diagram specification and building
+- Layout optimization with multiple shape types
+- Loss function computation
+- Normalization and packing
+
+### Plotting Feature (optional, behind `plotting` feature flag)
+- Polygon clipping operations (intersection, union, difference, xor)
+- Region decomposition into exclusive polygons for visualization
+- Integration with i_overlay library for robust boolean operations
+- Support for all shape types (circles, ellipses, etc.)
+
+To enable: Add `features = ["plotting"]` to your Cargo.toml or use `--features plotting`
 
 ## Target Bindings (Future)
 
@@ -73,6 +89,9 @@ Pure Rust library with no platform-specific dependencies.
   - `initial_layout.rs`: Initial layout computation
   - `final_layout.rs`: Final layout computation with region discovery and area
     computation
+- **`plotting/`** (optional, behind `plotting` feature): Polygon-based visualization utilities
+  - `clip.rs`: Polygon clipping operations using i_overlay
+  - `regions.rs`: Region decomposition into exclusive polygons
 - **`error.rs`**: Error types
 - **`math.rs`**: Mathematical utilities
 
