@@ -30,7 +30,7 @@ fn main() {
         Point::new(0.0, 10.0),
     ]);
     let centroid = square.centroid();
-    let pole = square.pole_of_inaccessibility(0.1);
+    let pole = square.pole_of_inaccessibility(0.01);
     println!("   Centroid: ({:.2}, {:.2})", centroid.x(), centroid.y());
     println!("   Pole:     ({:.2}, {:.2})", pole.x(), pole.y());
     println!("   → Similar positions (symmetric shape)\n");

@@ -178,8 +178,12 @@
       combination: region.combination,
       totalArea: region.totalArea,
       polygons: region.polygons.map((polygon: any) => {
+        // Calculate precision relative to polygon size
+        // Use ~0.1% of the maximum dimension for good accuracy
+        const precision = maxDim * 0.001;
+        
         // Compute pole of inaccessibility on original coordinates
-        const pole = polygon.pole_of_inaccessibility(1.0);
+        const pole = polygon.pole_of_inaccessibility(precision);
         
         // Normalize vertices and label position
         return {
