@@ -25,6 +25,7 @@
   interface Polygon {
     vertices: Point[];
     label: string;
+    labelPosition?: Point; // Pre-computed optimal label position
   }
 
   interface RegionPolygon {
@@ -116,20 +117,19 @@
   }
 
   function calculateLabelPosition(polygon: Polygon, usePole: boolean = true): Point {
-    if (!usePole) {
-      // Simple centroid (average of vertices)
-      const n = polygon.vertices.length;
-      let cx = 0, cy = 0;
-      for (const v of polygon.vertices) {
-        cx += v.x;
-        cy += v.y;
-      }
-      return { x: cx / n, y: cy / n };
+    // Use pre-computed label position if available
+    if (polygon.labelPosition) {
+      return polygon.labelPosition;
     }
 
-    // Use pole of inaccessibility for better label placement
-    // Precision: 1.0 is good balance between speed and accuracy
-    return polygon.pole_of_inaccessibility(1.0);
+    // Fallback to simple centroid (average of vertices)
+    const n = polygon.vertices.length;
+    let cx = 0, cy = 0;
+    for (const v of polygon.vertices) {
+      cx += v.x;
+      cy += v.y;
+    }
+    return { x: cx / n, y: cy / n };
   }
 
   function calculateCentroid(polygon: Polygon): Point {
@@ -172,17 +172,28 @@
     const targetSize = 100;
     const scale = targetSize / maxDim;
 
-    // Return normalized regions
+    // Compute label positions BEFORE normalization (using WASM pole_of_inaccessibility)
+    // Then normalize both vertices and label positions
     return regions.map((region) => ({
       combination: region.combination,
       totalArea: region.totalArea,
-      polygons: region.polygons.map((polygon) => ({
-        label: polygon.label,
-        vertices: polygon.vertices.map((v) => ({
-          x: (v.x - minX) * scale,
-          y: (v.y - minY) * scale,
-        })),
-      })),
+      polygons: region.polygons.map((polygon: any) => {
+        // Compute pole of inaccessibility on original coordinates
+        const pole = polygon.pole_of_inaccessibility(1.0);
+        
+        // Normalize vertices and label position
+        return {
+          label: polygon.label,
+          vertices: polygon.vertices.map((v: Point) => ({
+            x: (v.x - minX) * scale,
+            y: (v.y - minY) * scale,
+          })),
+          labelPosition: {
+            x: (pole.x - minX) * scale,
+            y: (pole.y - minY) * scale,
+          },
+        };
+      }),
     }));
   }
 
@@ -324,12 +335,10 @@
             optimizerValue,
           );
 
+          // Keep WASM polygon objects to retain their methods (pole_of_inaccessibility, etc.)
           const rawRegions = Array.from(result.regions).map((region: any) => ({
             combination: region.combination,
-            polygons: Array.from(region.polygons).map((poly: any) => ({
-              vertices: Array.from(poly.vertices),
-              label: poly.label,
-            })),
+            polygons: Array.from(region.polygons), // Keep WASM polygons
             totalArea: region.total_area,
           }));
 
@@ -349,12 +358,10 @@
             optimizerValue,
           );
 
+          // Keep WASM polygon objects to retain their methods (pole_of_inaccessibility, etc.)
           const rawRegions = Array.from(result.regions).map((region: any) => ({
             combination: region.combination,
-            polygons: Array.from(region.polygons).map((poly: any) => ({
-              vertices: Array.from(poly.vertices),
-              label: poly.label,
-            })),
+            polygons: Array.from(region.polygons), // Keep WASM polygons
             totalArea: region.total_area,
           }));
 
