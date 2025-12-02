@@ -1,7 +1,8 @@
 # Plotting Feature - Next Steps
 
-**Status**: All phases complete ✅ (Core Rust + WASM bindings + Web app)  
-**Date**: 2024-12-02
+**Status**: Phase 1-4 complete ✅ (Core Rust + WASM + Web app + Label Placement)  
+**Date**: 2024-12-02  
+**Latest**: Phase 4 completed - Intelligent label placement using pole of inaccessibility
 
 ## Phase 1 Summary (COMPLETED)
 
@@ -152,55 +153,108 @@ for (const region of regionPolygons.regions) {
 
 ---
 
-## Phase 4: Label Placement (FUTURE)
+## Phase 4: Label Placement (COMPLETED ✅)
+
+**Date**: 2024-12-02
 
 ### Goal
 
 Add intelligent label placement for regions (poles of inaccessibility).
 
-### Tasks
+### What Was Built
 
-#### 4.1: Implement Pole of Inaccessibility
+- ✅ Implemented `pole_of_inaccessibility()` method in `Polygon` struct
+- ✅ Integration with polylabel-mini crate
+- ✅ Added comprehensive tests (5 test cases)
+- ✅ Exposed method in WASM bindings (`WasmPolygon`)
+- ✅ Added `centroid()` method to `WasmPolygon` for comparison
+- ✅ Updated web app to use pole of inaccessibility for all labels
+- ✅ Replaced simple centroid calculations with visual center
 
-Use the polylabel-mini rust crate, which features a polylabel() function, that
-finds the pole of inaccessibility for a polygon.
+### Implementation Details
 
-Add it to our Polygon struct:
+#### Rust Library
 
+Added to `geometry/shapes/polygon.rs`:
 ```rust
-impl Polygon {
-    /// Find the pole of inaccessibility (visual center)
-    pub fn pole_of_inaccessibility(&self, precision: f64) -> Point {
-        // Implementation
-    }
-}
+pub fn pole_of_inaccessibility(&self, precision: f64) -> Point
 ```
 
-It might require converting our Polygon struct into the format expected by
-polylabel-mini.
+Uses polylabel-mini algorithm to find the most distant internal point from the polygon outline. This is especially important for:
+- L-shaped or concave regions
+- Complex multi-region intersections
+- Better visual balance for labels
 
-#### 4.3: Implement for both set labels and region labels
+#### WASM Bindings
 
-Set labels are the labels for each individual set (A, B, C, etc). Region labels
-are mapped to an exclusive region (A&B, A only, etc), and a size (area)
-associated with that region.
+Added to `WasmPolygon`:
+```typescript
+polygon.pole_of_inaccessibility(precision: number): Point
+polygon.centroid(): Point  // Also added for comparison
+```
 
-Each shape needs a label. And we need to handle many edge cases where for
-instance that set is inside another set.
+#### Web Application
 
-And if two shapes are completely overlapping, we need to label both of them at
-the same point. For our library, we only need to provide the location of that
-label and the labels for the sets that should be placed there.
+Updated `DiagramViewer.svelte`:
+- New `calculateLabelPosition()` function that uses pole of inaccessibility
+- Updated all label placement code (region labels and set labels)
+- Precision set to 1.0 for good balance of speed/accuracy
 
-We might also need to handle cases where the polygon region is very small. When
-that's the case for a set label, then we can pick another region that it belongs
-to to place the label. But for the region label, we might eventually need to
-place the label outside the shape with a line pointing to it. But that can be a
-future enhancement.
+### Testing
 
-#### 4.4: Use in Web App
+All tests passing:
+- ✅ Square polygon (pole near center)
+- ✅ L-shaped polygon (pole better than centroid)
+- ✅ Circle polygon (pole at center)
+- ✅ Triangle (degenerate case)
+- ✅ Integration tests with actual diagrams
 
-Replace simple centroid with pole of inaccessibility for better label placement.
+### Files Modified
+
+1. **`crates/eunoia/src/geometry/shapes/polygon.rs`**
+   - Added `pole_of_inaccessibility()` method (lines 111-177)
+   - Added 5 comprehensive tests (lines 205-270)
+
+2. **`crates/eunoia-wasm/src/lib.rs`**
+   - Added `pole_of_inaccessibility()` to WasmPolygon (lines 164-182)
+   - Added `centroid()` to WasmPolygon (lines 146-162)
+
+3. **`web/src/lib/DiagramViewer.svelte`**
+   - Added `calculateLabelPosition()` helper (lines 118-135)
+   - Updated region label placement
+   - Updated set label placement
+
+---
+
+## Phase 5: Advanced Label Placement (FUTURE)
+
+### Goal
+
+Handle complex label placement scenarios that the basic pole of inaccessibility doesn't cover.
+
+### Tasks
+
+#### 5.1: Set Labels for Contained Shapes
+
+When a set is completely contained within another set, we need to:
+- Detect containment relationships
+- Choose appropriate regions for label placement
+- Handle multiple overlapping sets
+
+#### 5.2: Small Region Handling
+
+For very small regions:
+- Set labels: Place in a larger region that contains the set
+- Region labels: Consider external labels with leader lines
+
+#### 5.3: Overlapping Shape Labels
+
+When shapes are nearly identical:
+- Group labels at the same position
+- Stack or offset labels to avoid overlap
+- Indicate which sets share the position
+
+This phase requires additional region analysis and spatial reasoning beyond the current pole of inaccessibility implementation.
 
 ---
 
@@ -224,6 +278,15 @@ Replace simple centroid with pole of inaccessibility for better label placement.
 - ✅ Works with different optimizers
 - ✅ Performance is acceptable
 
+### Phase 4 (Label Placement) ✅
+
+- ✅ Pole of inaccessibility implemented in Rust
+- ✅ All unit tests pass (5 test cases)
+- ✅ WASM bindings expose the method
+- ✅ Web app uses improved label placement
+- ✅ Labels are better positioned for complex shapes
+- ✅ Build succeeds without errors
+
 ### To Test Manually
 
 1. Start dev server: `cd web && npm run dev`
@@ -233,6 +296,7 @@ Replace simple centroid with pole of inaccessibility for better label placement.
 5. Change shape type (circles ↔ ellipses)
 6. Add more sets and intersections
 7. Verify colors are distinct and regions don't have gaps
+8. **NEW**: Check that labels are well-positioned in complex regions (not at geometric edges)
 
 ---
 

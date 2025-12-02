@@ -115,7 +115,25 @@
     return path;
   }
 
+  function calculateLabelPosition(polygon: Polygon, usePole: boolean = true): Point {
+    if (!usePole) {
+      // Simple centroid (average of vertices)
+      const n = polygon.vertices.length;
+      let cx = 0, cy = 0;
+      for (const v of polygon.vertices) {
+        cx += v.x;
+        cy += v.y;
+      }
+      return { x: cx / n, y: cy / n };
+    }
+
+    // Use pole of inaccessibility for better label placement
+    // Precision: 1.0 is good balance between speed and accuracy
+    return polygon.pole_of_inaccessibility(1.0);
+  }
+
   function calculateCentroid(polygon: Polygon): Point {
+    // Keep for backward compatibility, but prefer calculateLabelPosition
     const n = polygon.vertices.length;
     let cx = 0,
       cy = 0;
@@ -562,14 +580,14 @@
           .attr("stroke-width", 1.5);
       });
 
-      // Add label at centroid
+      // Add label at pole of inaccessibility (better than centroid)
       const firstPolygon = polygons[0];
-      const centroid = calculateCentroid(firstPolygon);
+      const labelPos = calculateLabelPosition(firstPolygon);
 
       svg
         .append("text")
-        .attr("x", centroid.x)
-        .attr("y", centroid.y)
+        .attr("x", labelPos.x)
+        .attr("y", labelPos.y)
         .attr("text-anchor", "middle")
         .attr("dominant-baseline", "middle")
         .text(combination);
@@ -951,13 +969,13 @@
                   {/each}
                 {/each}
 
-                <!-- Labels at region centroids -->
+                <!-- Labels at region poles of inaccessibility -->
                 {#each regionPolygons as region}
                   {#each region.polygons as polygon}
-                    {@const centroid = calculateCentroid(polygon)}
+                    {@const labelPos = calculateLabelPosition(polygon)}
                     <text
-                      x={centroid.x}
-                      y={centroid.y}
+                      x={labelPos.x}
+                      y={labelPos.y}
                       text-anchor="middle"
                       dominant-baseline="middle"
                       fill="black"
@@ -980,15 +998,10 @@
                       stroke={colors[i % colors.length].replace("0.3", "1")}
                       stroke-width={strokeWidth}
                     />
-                    {@const centroidX =
-                      polygon.vertices.reduce((sum, v) => sum + v.x, 0) /
-                      polygon.vertices.length}
-                    {@const centroidY =
-                      polygon.vertices.reduce((sum, v) => sum + v.y, 0) /
-                      polygon.vertices.length}
+                    {@const labelPos = calculateLabelPosition(polygon)}
                     <text
-                      x={centroidX}
-                      y={centroidY}
+                      x={labelPos.x}
+                      y={labelPos.y}
                       text-anchor="middle"
                       dominant-baseline="middle"
                       font-size={fontSize}

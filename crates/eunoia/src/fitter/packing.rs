@@ -49,8 +49,8 @@ pub fn skyline_pack(rectangles: &[Rectangle], padding: f64) -> Vec<Rectangle> {
         let row = i / cols;
         let col = i % cols;
         if row < rows {
-            col_widths[col] = f64::max(col_widths[col], (rect.width() + padding));
-            row_heights[row] = f64::max(row_heights[row], (rect.height() + padding));
+            col_widths[col] = f64::max(col_widths[col], rect.width() + padding);
+            row_heights[row] = f64::max(row_heights[row], rect.height() + padding);
         }
     }
 
@@ -98,12 +98,6 @@ pub fn skyline_pack(rectangles: &[Rectangle], padding: f64) -> Vec<Rectangle> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const TEST_EPSILON: f64 = 1e-6;
-
-    fn approx_eq(a: f64, b: f64) -> bool {
-        (a - b).abs() < TEST_EPSILON
-    }
 
     #[test]
     fn test_pack_empty() {

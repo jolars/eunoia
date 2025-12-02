@@ -160,6 +160,64 @@ impl WasmPolygon {
 
         (area / 2.0).abs()
     }
+
+    /// Calculate the centroid (geometric center) of the polygon.
+    #[wasm_bindgen]
+    pub fn centroid(&self) -> WasmPoint {
+        if self.vertices.is_empty() {
+            return WasmPoint { x: 0.0, y: 0.0 };
+        }
+
+        let mut cx = 0.0;
+        let mut cy = 0.0;
+        let mut area = 0.0;
+        let n = self.vertices.len();
+
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let cross =
+                self.vertices[i].x * self.vertices[j].y - self.vertices[j].x * self.vertices[i].y;
+            area += cross;
+            cx += (self.vertices[i].x + self.vertices[j].x) * cross;
+            cy += (self.vertices[i].y + self.vertices[j].y) * cross;
+        }
+
+        area *= 0.5;
+        if area.abs() < 1e-10 {
+            cx = self.vertices.iter().map(|p| p.x).sum::<f64>() / n as f64;
+            cy = self.vertices.iter().map(|p| p.y).sum::<f64>() / n as f64;
+        } else {
+            cx /= 6.0 * area;
+            cy /= 6.0 * area;
+        }
+
+        WasmPoint { x: cx, y: cy }
+    }
+
+    /// Find the pole of inaccessibility (visual center) of the polygon.
+    ///
+    /// This is the most distant internal point from the polygon outline,
+    /// which is better for label placement than the centroid for complex shapes.
+    ///
+    /// # Arguments
+    ///
+    /// * `precision` - Tolerance (smaller = more accurate but slower). Default: 1.0
+    #[wasm_bindgen]
+    pub fn pole_of_inaccessibility(&self, precision: f64) -> WasmPoint {
+        use eunoia::geometry::primitives::Point;
+        use eunoia::geometry::shapes::Polygon;
+
+        // Convert to eunoia Polygon
+        let points: Vec<Point> = self.vertices.iter().map(|p| Point::new(p.x, p.y)).collect();
+
+        let polygon = Polygon::new(points);
+        let pole = polygon.pole_of_inaccessibility(precision);
+
+        WasmPoint {
+            x: pole.x(),
+            y: pole.y(),
+        }
+    }
 }
 
 /// A diagram specification entry (set combination and size)
