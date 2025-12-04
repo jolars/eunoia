@@ -120,8 +120,8 @@ impl Polygon {
     ///
     /// # Arguments
     ///
-    /// * `precision` - The tolerance for the algorithm (smaller = more accurate but slower).
-    ///                 Typical values: 0.1 to 1.0. Default: 1.0.
+    /// * `precision` - The tolerance for the algorithm (smaller = more accurate but
+    ///   slower).
     ///
     /// # Returns
     ///
