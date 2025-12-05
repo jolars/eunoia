@@ -1,230 +1,99 @@
-use crate::geometry::diagram::RegionMask;
-use std::collections::HashMap;
+//! Loss function implementations for diagram fitting.
+//!
+//! This module provides simple loss functions that measure the difference
+//! between fitted and target region areas.
 
-/// How to aggregate errors across regions
+/// Loss function type
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum Aggregation {
-    /// Sum of squared errors (default)
+pub enum LossType {
+    /// Sum of squared errors: Σ(fitted - target)²
     #[default]
-    Sum,
-    /// Maximum absolute error
+    Sse,
+    /// Root mean squared error: sqrt(mean((fitted - target)²))
+    Rmse,
+    /// Stress (venneuler-style): Σ((fitted - target) / target)²
+    Stress,
+    /// Maximum absolute error: max(|fitted - target|)
     MaxAbsolute,
-    /// Maximum relative error
-    MaxRelative,
-    /// Root mean squared error
-    RootMeanSquared,
-}
-
-/// What to measure for each region
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum ErrorMetric {
-    /// Absolute difference: |fitted - target|
-    Absolute,
-    /// Squared difference: (fitted - target)²
-    #[default]
-    Squared,
-    /// Relative difference: |fitted - target| / target
-    Relative,
-    /// Relative squared: ((fitted - target) / target)²
-    RelativeSquared,
-    /// Region error: |(fitted / sum_fitted) - (target / sum_target)|
-    RegionError,
-}
-
-/// Public API for loss function configuration
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LossType {
-    pub metric: ErrorMetric,
-    pub aggregation: Aggregation,
-}
-
-impl Default for LossType {
-    fn default() -> Self {
-        Self::sse()
-    }
 }
 
 impl LossType {
     /// Sum of squared errors
     pub fn sse() -> Self {
-        Self {
-            metric: ErrorMetric::Squared,
-            aggregation: Aggregation::Sum,
-        }
+        Self::Sse
     }
 
-    /// Stress loss: sum of squared relative errors (venneuler-style)
+    /// Root mean squared error
+    pub fn rmse() -> Self {
+        Self::Rmse
+    }
+
+    /// Stress loss (venneuler-style)
     pub fn stress() -> Self {
-        Self {
-            metric: ErrorMetric::RelativeSquared,
-            aggregation: Aggregation::Sum,
-        }
+        Self::Stress
     }
 
-    /// Sum of absolute relative errors
-    pub fn sse_relative() -> Self {
-        Self {
-            metric: ErrorMetric::Relative,
-            aggregation: Aggregation::Sum,
-        }
+    /// Maximum absolute error
+    pub fn max_absolute() -> Self {
+        Self::MaxAbsolute
     }
 
-    /// Minimize maximum absolute error
-    pub fn minimax() -> Self {
-        Self {
-            metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::MaxAbsolute,
-        }
-    }
+    /// Compute loss between fitted and target values
+    pub fn compute(&self, fitted: &[f64], target: &[f64]) -> f64 {
+        assert_eq!(
+            fitted.len(),
+            target.len(),
+            "Fitted and target vectors must have the same length"
+        );
 
-    /// Minimize maximum relative error
-    pub fn minimax_relative() -> Self {
-        Self {
-            metric: ErrorMetric::Relative,
-            aggregation: Aggregation::MaxRelative,
-        }
-    }
-
-    /// DiagError (from EulerAPE): maximize the minimum of fitted/target ratios across regions
-    pub fn diag_error() -> Self {
-        Self {
-            metric: ErrorMetric::RegionError,
-            aggregation: Aggregation::MaxAbsolute,
-        }
-    }
-
-    /// Custom loss function
-    pub fn custom(metric: ErrorMetric, aggregation: Aggregation) -> Self {
-        Self {
-            metric,
-            aggregation,
-        }
-    }
-
-    pub(crate) fn create(&self) -> Box<dyn LossFunction> {
-        Box::new(ConfigurableLoss {
-            metric: self.metric,
-            aggregation: self.aggregation,
-        })
-    }
-}
-
-pub(crate) trait LossFunction {
-    fn evaluate(
-        &self,
-        fitted_areas: &HashMap<RegionMask, f64>,
-        target_areas: &HashMap<RegionMask, f64>,
-    ) -> f64;
-
-    #[allow(dead_code)]
-    fn name(&self) -> &str;
-}
-
-struct ConfigurableLoss {
-    metric: ErrorMetric,
-    aggregation: Aggregation,
-}
-
-impl ConfigurableLoss {
-    /// Compute per-region error, with access to full maps for complex metrics.
-    fn compute_error(
-        &self,
-        fitted: f64,
-        target: f64,
-        fitted_all: &HashMap<RegionMask, f64>,
-        target_all: &HashMap<RegionMask, f64>,
-    ) -> f64 {
-        match self.metric {
-            ErrorMetric::Absolute => (fitted - target).abs(),
-            ErrorMetric::Squared => {
-                let diff = fitted - target;
-                diff * diff
-            }
-            ErrorMetric::Relative => {
-                if target.abs() < 1e-10 {
-                    if fitted.abs() < 1e-10 {
-                        0.0 // Both zero, no error
-                    } else {
-                        fitted.abs() // Target is zero, error is the fitted value
-                    }
-                } else {
-                    ((fitted - target) / target).abs()
-                }
-            }
-            ErrorMetric::RelativeSquared => {
-                if target.abs() < 1e-10 {
-                    if fitted.abs() < 1e-10 {
-                        0.0
-                    } else {
-                        fitted * fitted
-                    }
-                } else {
-                    let rel = (fitted - target) / target;
-                    rel * rel
-                }
-            }
-            ErrorMetric::RegionError => {
-                let sum_fitted = fitted_all.values().sum::<f64>();
-                let sum_target = target_all.values().sum::<f64>();
-
-                (fitted / sum_fitted - target / sum_target).abs()
-            }
-        }
-    }
-
-    fn aggregate(&self, errors: Vec<f64>) -> f64 {
-        if errors.is_empty() {
+        if fitted.is_empty() {
             return 0.0;
         }
 
-        match self.aggregation {
-            Aggregation::Sum => errors.iter().sum(),
-            Aggregation::MaxAbsolute => errors.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            Aggregation::MaxRelative => errors.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            Aggregation::RootMeanSquared => {
-                let sum: f64 = errors.iter().sum();
-                (sum / errors.len() as f64).sqrt()
+        match self {
+            LossType::Sse => {
+                // Sum of squared errors
+                fitted
+                    .iter()
+                    .zip(target.iter())
+                    .map(|(f, t)| (f - t).powi(2))
+                    .sum()
             }
-        }
-    }
-}
-
-impl LossFunction for ConfigurableLoss {
-    fn evaluate(
-        &self,
-        fitted_areas: &HashMap<RegionMask, f64>,
-        target_areas: &HashMap<RegionMask, f64>,
-    ) -> f64 {
-        // Iterate over union of masks so extra fitted regions are penalized.
-        let mut masks: Vec<RegionMask> = fitted_areas
-            .keys()
-            .chain(target_areas.keys())
-            .copied()
-            .collect();
-        masks.sort_unstable();
-        masks.dedup();
-
-        let errors: Vec<f64> = masks
-            .into_iter()
-            .map(|mask| {
-                let fitted_area = fitted_areas.get(&mask).copied().unwrap_or(0.0);
-                let target_area = target_areas.get(&mask).copied().unwrap_or(0.0);
-                self.compute_error(fitted_area, target_area, fitted_areas, target_areas)
-            })
-            .collect();
-
-        self.aggregate(errors)
-    }
-
-    fn name(&self) -> &str {
-        match (self.metric, self.aggregation) {
-            (ErrorMetric::Squared, Aggregation::Sum) => "sse",
-            (ErrorMetric::RelativeSquared, Aggregation::Sum) => "stress",
-            (ErrorMetric::Relative, Aggregation::Sum) => "sse_relative",
-            (ErrorMetric::Absolute, Aggregation::MaxAbsolute) => "minimax",
-            (ErrorMetric::Relative, Aggregation::MaxRelative) => "minimax_relative",
-            (ErrorMetric::RegionError, Aggregation::MaxAbsolute) => "diag_error",
-            _ => "custom",
+            LossType::Rmse => {
+                // Root mean squared error
+                let sum_squared: f64 = fitted
+                    .iter()
+                    .zip(target.iter())
+                    .map(|(f, t)| (f - t).powi(2))
+                    .sum();
+                (sum_squared / fitted.len() as f64).sqrt()
+            }
+            LossType::Stress => {
+                // Stress: sum of squared relative errors
+                fitted
+                    .iter()
+                    .zip(target.iter())
+                    .map(|(f, t)| {
+                        if t.abs() < 1e-10 {
+                            if f.abs() < 1e-10 {
+                                0.0
+                            } else {
+                                f.powi(2) // Target is zero, penalize any fitted value
+                            }
+                        } else {
+                            ((f - t) / t).powi(2)
+                        }
+                    })
+                    .sum()
+            }
+            LossType::MaxAbsolute => {
+                // Maximum absolute error
+                fitted
+                    .iter()
+                    .zip(target.iter())
+                    .map(|(f, t)| (f - t).abs())
+                    .fold(0.0, f64::max)
+            }
         }
     }
 }
@@ -234,233 +103,83 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_aggregation_default() {
-        assert_eq!(Aggregation::default(), Aggregation::Sum);
-    }
-
-    #[test]
-    fn test_aggregation_clone() {
-        let agg = Aggregation::MaxAbsolute;
-        let cloned = agg;
-        assert_eq!(agg, cloned);
-    }
-
-    #[test]
-    fn test_error_metric_default() {
-        assert_eq!(ErrorMetric::default(), ErrorMetric::Squared);
-    }
-
-    #[test]
-    fn test_error_metric_equality() {
-        assert_eq!(ErrorMetric::Absolute, ErrorMetric::Absolute);
-        assert_ne!(ErrorMetric::Absolute, ErrorMetric::Squared);
-    }
-
-    #[test]
-    fn test_loss_type_default() {
-        let loss = LossType::default();
-        assert_eq!(loss.metric, ErrorMetric::Squared);
-        assert_eq!(loss.aggregation, Aggregation::Sum);
-    }
-
-    #[test]
-    fn test_loss_type_region_error() {
+    fn test_sse() {
         let loss = LossType::sse();
-        assert_eq!(loss.metric, ErrorMetric::Squared);
-        assert_eq!(loss.aggregation, Aggregation::Sum);
+        let fitted = vec![10.0, 20.0, 30.0];
+        let target = vec![12.0, 18.0, 28.0];
+
+        // (10-12)² + (20-18)² + (30-28)² = 4 + 4 + 4 = 12
+        assert_eq!(loss.compute(&fitted, &target), 12.0);
     }
 
     #[test]
-    fn test_loss_type_stress() {
+    fn test_rmse() {
+        let loss = LossType::rmse();
+        let fitted = vec![10.0, 20.0, 30.0];
+        let target = vec![12.0, 18.0, 28.0];
+
+        // sqrt((4 + 4 + 4) / 3) = sqrt(4) = 2.0
+        assert_eq!(loss.compute(&fitted, &target), 2.0);
+    }
+
+    #[test]
+    fn test_stress() {
         let loss = LossType::stress();
-        assert_eq!(loss.metric, ErrorMetric::RelativeSquared);
-        assert_eq!(loss.aggregation, Aggregation::Sum);
+        let fitted = vec![10.0, 20.0];
+        let target = vec![12.0, 18.0];
+
+        // ((10-12)/12)² + ((20-18)/18)² = (1/6)² + (1/9)² = 0.02778 + 0.01235 ≈ 0.04013
+        let result = loss.compute(&fitted, &target);
+        assert!((result - 0.04013).abs() < 0.001);
     }
 
     #[test]
-    fn test_loss_type_diag_error() {
-        let loss = LossType::sse_relative();
-        assert_eq!(loss.metric, ErrorMetric::Relative);
-        assert_eq!(loss.aggregation, Aggregation::Sum);
+    fn test_max_absolute() {
+        let loss = LossType::max_absolute();
+        let fitted = vec![10.0, 20.0, 30.0];
+        let target = vec![8.0, 25.0, 28.0];
+
+        // max(|10-8|, |20-25|, |30-28|) = max(2, 5, 2) = 5
+        assert_eq!(loss.compute(&fitted, &target), 5.0);
     }
 
     #[test]
-    fn test_loss_type_minimax() {
-        let loss = LossType::minimax();
-        assert_eq!(loss.metric, ErrorMetric::Absolute);
-        assert_eq!(loss.aggregation, Aggregation::MaxAbsolute);
+    fn test_empty_vectors() {
+        let loss = LossType::sse();
+        assert_eq!(loss.compute(&[], &[]), 0.0);
     }
 
     #[test]
-    fn test_loss_type_minimax_relative() {
-        let loss = LossType::minimax_relative();
-        assert_eq!(loss.metric, ErrorMetric::Relative);
-        assert_eq!(loss.aggregation, Aggregation::MaxRelative);
+    fn test_stress_with_zero_target() {
+        let loss = LossType::stress();
+        let fitted = vec![5.0, 0.0, 3.0];
+        let target = vec![0.0, 0.0, 3.0];
+
+        // First: target=0, fitted=5: 5² = 25
+        // Second: target=0, fitted=0: 0
+        // Third: target=3, fitted=3: 0
+        let result = loss.compute(&fitted, &target);
+        assert_eq!(result, 25.0);
     }
 
     #[test]
-    fn test_loss_type_custom() {
-        let loss = LossType::custom(ErrorMetric::Absolute, Aggregation::RootMeanSquared);
-        assert_eq!(loss.metric, ErrorMetric::Absolute);
-        assert_eq!(loss.aggregation, Aggregation::RootMeanSquared);
+    fn test_equality() {
+        assert_eq!(LossType::sse(), LossType::Sse);
+        assert_eq!(LossType::stress(), LossType::Stress);
+        assert_ne!(LossType::sse(), LossType::rmse());
     }
 
     #[test]
-    fn test_loss_type_equality() {
-        let loss1 = LossType::sse();
-        let loss2 = LossType::sse();
-        let loss3 = LossType::stress();
-        assert_eq!(loss1, loss2);
-        assert_ne!(loss1, loss3);
-    }
-
-    #[test]
-    fn test_loss_type_clone() {
-        let loss = LossType::minimax();
+    fn test_clone() {
+        let loss = LossType::sse();
         let cloned = loss;
         assert_eq!(loss, cloned);
     }
 
     #[test]
-    fn test_aggregate_sum_squared() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::Sum,
-        };
-        assert_eq!(loss.aggregate(vec![1.0, 2.0, 3.0]), 6.0);
-        assert_eq!(loss.aggregate(vec![]), 0.0);
-    }
-
-    #[test]
-    fn test_aggregate_sum_absolute() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::Sum,
-        };
-        assert_eq!(loss.aggregate(vec![1.0, 2.0, 3.0]), 6.0);
-        assert_eq!(loss.aggregate(vec![]), 0.0);
-    }
-
-    #[test]
-    fn test_aggregate_max_absolute() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Absolute,
-            aggregation: Aggregation::MaxAbsolute,
-        };
-        assert_eq!(loss.aggregate(vec![1.0, 5.0, 3.0]), 5.0);
-        assert_eq!(loss.aggregate(vec![7.0]), 7.0);
-    }
-
-    #[test]
-    fn test_aggregate_max_relative() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Relative,
-            aggregation: Aggregation::MaxRelative,
-        };
-        assert_eq!(loss.aggregate(vec![0.1, 0.5, 0.3]), 0.5);
-    }
-
-    #[test]
-    fn test_aggregate_root_mean_squared() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Squared,
-            aggregation: Aggregation::RootMeanSquared,
-        };
-        let result = loss.aggregate(vec![4.0, 9.0, 16.0]);
-        assert!((result - 3.1091).abs() < 0.001);
-        assert_eq!(loss.aggregate(vec![16.0]), 4.0);
-    }
-
-    #[test]
-    fn test_loss_function_evaluate() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Squared,
-            aggregation: Aggregation::Sum,
-        };
-
-        let mut fitted_areas = HashMap::new();
-        fitted_areas.insert(0b001, 10.0);
-        fitted_areas.insert(0b010, 20.0);
-
-        let mut target_areas = HashMap::new();
-        target_areas.insert(0b001, 12.0);
-        target_areas.insert(0b010, 18.0);
-
-        // (10-12)^2 + (20-18)^2 = 4 + 4 = 8
-        assert_eq!(loss.evaluate(&fitted_areas, &target_areas), 8.0);
-    }
-
-    #[test]
-    fn test_loss_function_evaluate_missing_fitted() {
-        let loss = ConfigurableLoss {
-            metric: ErrorMetric::Squared,
-            aggregation: Aggregation::Sum,
-        };
-
-        let fitted_areas = HashMap::new();
-        let mut target_areas = HashMap::new();
-        target_areas.insert(0b001, 5.0);
-
-        // fitted=0, target=5: (0-5)^2 = 25
-        assert_eq!(loss.evaluate(&fitted_areas, &target_areas), 25.0);
-    }
-
-    #[test]
-    fn test_loss_function_name() {
-        let tests = vec![
-            (ErrorMetric::Squared, Aggregation::Sum, "sse"),
-            (ErrorMetric::RelativeSquared, Aggregation::Sum, "stress"),
-            (ErrorMetric::Relative, Aggregation::Sum, "sse_relative"),
-            (ErrorMetric::Absolute, Aggregation::MaxAbsolute, "minimax"),
-            (
-                ErrorMetric::Relative,
-                Aggregation::MaxRelative,
-                "minimax_relative",
-            ),
-            (
-                ErrorMetric::Absolute,
-                Aggregation::RootMeanSquared,
-                "custom",
-            ),
-        ];
-
-        for (metric, aggregation, expected_name) in tests {
-            let loss = ConfigurableLoss {
-                metric,
-                aggregation,
-            };
-            assert_eq!(loss.name(), expected_name);
-        }
-    }
-
-    #[test]
-    fn test_loss_type_create() {
-        let loss_type = LossType::sse();
-        let loss_fn = loss_type.create();
-
-        let mut fitted_areas = HashMap::new();
-        fitted_areas.insert(0b001, 10.0);
-
-        let mut target_areas = HashMap::new();
-        target_areas.insert(0b001, 8.0);
-
-        // (10-8)^2 = 4
-        assert_eq!(loss_fn.evaluate(&fitted_areas, &target_areas), 4.0);
-        assert_eq!(loss_fn.name(), "sse");
-    }
-
-    #[test]
-    fn test_debug_implementations() {
-        let agg = Aggregation::Sum;
-        let debug = format!("{:?}", agg);
-        assert!(debug.contains("Sum"));
-
-        let metric = ErrorMetric::Relative;
-        let debug = format!("{:?}", metric);
-        assert!(debug.contains("Relative"));
-
-        let loss = LossType::stress();
-        let debug = format!("{:?}", loss);
-        assert!(debug.contains("RelativeSquared"));
+    #[should_panic(expected = "Fitted and target vectors must have the same length")]
+    fn test_mismatched_lengths() {
+        let loss = LossType::sse();
+        loss.compute(&[1.0, 2.0], &[1.0]);
     }
 }

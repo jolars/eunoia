@@ -116,7 +116,10 @@
     return path;
   }
 
-  function calculateLabelPosition(polygon: Polygon, usePole: boolean = true): Point {
+  function calculateLabelPosition(
+    polygon: Polygon,
+    usePole: boolean = true,
+  ): Point {
     // Use pre-computed label position if available
     if (polygon.labelPosition) {
       return polygon.labelPosition;
@@ -124,7 +127,8 @@
 
     // Fallback to simple centroid (average of vertices)
     const n = polygon.vertices.length;
-    let cx = 0, cy = 0;
+    let cx = 0,
+      cy = 0;
     for (const v of polygon.vertices) {
       cx += v.x;
       cy += v.y;
@@ -181,10 +185,10 @@
         // Calculate precision relative to polygon size
         // Use ~0.1% of the maximum dimension for good accuracy
         const precision = maxDim * 0.001;
-        
+
         // Compute pole of inaccessibility on original coordinates
         const pole = polygon.pole_of_inaccessibility(precision);
-        
+
         // Normalize vertices and label position
         return {
           label: polygon.label,
@@ -339,6 +343,13 @@
             optimizerValue,
           );
 
+          // Extract loss
+          loss = result.loss;
+
+          // Extract target and fitted areas
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
+
           // Keep WASM polygon objects to retain their methods (pole_of_inaccessibility, etc.)
           const rawRegions = Array.from(result.regions).map((region: any) => ({
             combination: region.combination,
@@ -361,6 +372,13 @@
             seedValue,
             optimizerValue,
           );
+
+          // Extract loss
+          loss = result.loss;
+
+          // Extract target and fitted areas
+          targetAreas = JSON.parse(result.target_areas_json);
+          fittedAreas = JSON.parse(result.fitted_areas_json);
 
           // Keep WASM polygon objects to retain their methods (pole_of_inaccessibility, etc.)
           const rawRegions = Array.from(result.regions).map((region: any) => ({
@@ -691,7 +709,11 @@
             <!-- Visualization Mode -->
             <div class="mb-4">
               <label class="flex items-center cursor-pointer">
-                <input type="checkbox" bind:checked={showRegions} class="mr-2" />
+                <input
+                  type="checkbox"
+                  bind:checked={showRegions}
+                  class="mr-2"
+                />
                 <span class="text-sm font-medium text-gray-700"
                   >Show filled regions</span
                 >
@@ -795,7 +817,7 @@
           </div>
 
           <!-- Fit -->
-          {#if circles.length > 0 || ellipses.length > 0 || polygons.length > 0}
+          {#if circles.length > 0 || ellipses.length > 0 || polygons.length > 0 || regionPolygons.length > 0}
             <div class="bg-white rounded-lg shadow p-6 mt-6">
               <h2 class="text-xl font-semibold mb-4">Goodness of Fit</h2>
 

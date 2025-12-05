@@ -124,10 +124,9 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
                 }
             }
 
-            let loss_fn = config.loss_type.create();
             let inner_cost = DiagramCost::<S> {
                 spec,
-                loss_fn,
+                loss_type: config.loss_type,
                 params_per_shape,
                 _shape: std::marker::PhantomData,
             };
@@ -176,10 +175,9 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
                 simplex
             };
 
-            let loss_fn = config.loss_type.create();
             let cost_function = DiagramCost::<S> {
                 spec,
-                loss_fn,
+                loss_type: config.loss_type,
                 params_per_shape,
                 _shape: std::marker::PhantomData,
             };
@@ -194,10 +192,9 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
         }
         Optimizer::Lbfgs => {
             // L-BFGS with numerical gradients
-            let loss_fn = config.loss_type.create();
             let cost_function_lbfgs = DiagramCost::<S> {
                 spec,
-                loss_fn,
+                loss_type: config.loss_type,
                 params_per_shape,
                 _shape: std::marker::PhantomData,
             };
@@ -217,10 +214,9 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
         }
         Optimizer::ConjugateGradient => {
             // Conjugate Gradient with numerical gradients
-            let loss_fn = config.loss_type.create();
             let cost_function_cg = DiagramCost::<S> {
                 spec,
-                loss_fn,
+                loss_type: config.loss_type,
                 params_per_shape,
                 _shape: std::marker::PhantomData,
             };
@@ -249,7 +245,7 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
 /// Computes the discrepancy between target exclusive areas and actual fitted areas.
 struct DiagramCost<'a, S: DiagramShape + Copy + 'static> {
     spec: &'a PreprocessedSpec,
-    loss_fn: Box<dyn crate::loss::LossFunction>,
+    loss_type: crate::loss::LossType,
     params_per_shape: usize,
     _shape: std::marker::PhantomData<S>,
 }
@@ -279,10 +275,18 @@ impl<'a, S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
         // Compute exclusive regions using shape-specific exact computation
         let exclusive_areas = S::compute_exclusive_regions(&shapes);
 
+        // Convert to vectors for loss computation
+        let mut fitted_vec = Vec::new();
+        let mut target_vec = Vec::new();
+
+        for (mask, &target_area) in &self.spec.exclusive_areas {
+            let fitted_area = exclusive_areas.get(mask).copied().unwrap_or(0.0);
+            fitted_vec.push(fitted_area);
+            target_vec.push(target_area);
+        }
+
         // Use the configured loss function
-        let error = self
-            .loss_fn
-            .evaluate(&exclusive_areas, &self.spec.exclusive_areas);
+        let error = self.loss_type.compute(&fitted_vec, &target_vec);
 
         Ok(error)
     }
@@ -455,10 +459,9 @@ mod tests {
 
         let preprocessed = spec.preprocess().unwrap();
 
-        let loss_fn = crate::loss::LossType::sse().create();
         let cost_fn = DiagramCost::<Circle> {
             spec: &preprocessed,
-            loss_fn,
+            loss_type: crate::loss::LossType::sse(),
             params_per_shape: Circle::n_params(),
             _shape: std::marker::PhantomData,
         };

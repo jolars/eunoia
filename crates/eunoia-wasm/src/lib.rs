@@ -384,6 +384,9 @@ impl WasmRegion {
 #[wasm_bindgen]
 pub struct WasmRegionPolygons {
     regions: Vec<WasmRegion>,
+    pub loss: f64,
+    target_areas_json: String,
+    fitted_areas_json: String,
 }
 
 #[wasm_bindgen]
@@ -391,6 +394,16 @@ impl WasmRegionPolygons {
     #[wasm_bindgen(getter)]
     pub fn regions(&self) -> Vec<WasmRegion> {
         self.regions.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target_areas_json(&self) -> String {
+        self.target_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fitted_areas_json(&self) -> String {
+        self.fitted_areas_json.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -1362,8 +1375,25 @@ pub fn generate_region_polygons_circles(
         });
     }
 
+    // Get target and fitted areas, converting Combination keys to strings
+    let target_areas: std::collections::HashMap<String, f64> = layout
+        .requested()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
     })
 }
 
@@ -1443,7 +1473,24 @@ pub fn generate_region_polygons_ellipses(
         });
     }
 
+    // Get target and fitted areas, converting Combination keys to strings
+    let target_areas: std::collections::HashMap<String, f64> = layout
+        .requested()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
     })
 }
