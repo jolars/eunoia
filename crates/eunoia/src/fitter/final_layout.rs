@@ -275,18 +275,10 @@ impl<'a, S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
         // Compute exclusive regions using shape-specific exact computation
         let exclusive_areas = S::compute_exclusive_regions(&shapes);
 
-        // Convert to vectors for loss computation
-        let mut fitted_vec = Vec::new();
-        let mut target_vec = Vec::new();
-
-        for (mask, &target_area) in &self.spec.exclusive_areas {
-            let fitted_area = exclusive_areas.get(mask).copied().unwrap_or(0.0);
-            fitted_vec.push(fitted_area);
-            target_vec.push(target_area);
-        }
-
-        // Use the configured loss function
-        let error = self.loss_type.compute(&fitted_vec, &target_vec);
+        // Use the configured loss function directly on HashMaps
+        let error = self
+            .loss_type
+            .compute(&exclusive_areas, &self.spec.exclusive_areas);
 
         Ok(error)
     }
