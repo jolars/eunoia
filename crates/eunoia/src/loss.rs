@@ -11,26 +11,34 @@ use std::collections::HashMap;
 pub enum LossType {
     /// Sum of squared errors: Σ(fitted - target)²
     #[default]
-    Sse,
-    /// Root mean squared error: sqrt(mean((fitted - target)²))
-    Rmse,
-    /// Stress (venneuler-style)
-    Stress,
+    SumSquared,
+    /// Sums of absolute errors: Σ|fitted - target|
+    SumAbsoute,
+    /// SumRegionError sum(|fitted / sum(fitted) - target / sum(target)|)
+    SumAbsoluteRegionError,
+    /// SumSquaredRegionError sum((fitted / sum(fitted) - target / sum(target))²)
+    SumSquaredRegionError,
     /// Maximum absolute error: max(|fitted - target|)
     MaxAbsolute,
-    /// DiagError max(|fit / sum(fit) - target / sum(target)|)
+    /// Maximum squared error: max((fitted - target)²)
+    MaxSquared,
+    /// Root mean squared error: sqrt(mean((fitted - target)²))
+    RootMeanSquared,
+    /// Stress (venneuler-style)
+    Stress,
+    /// DiagError max(|fit / sum(fit) - target / sum(target)|), EulerAPE style
     DiagError,
 }
 
 impl LossType {
     /// Sum of squared errors
     pub fn sse() -> Self {
-        Self::Sse
+        Self::SumSquared
     }
 
     /// Root mean squared error
     pub fn rmse() -> Self {
-        Self::Rmse
+        Self::RootMeanSquared
     }
 
     /// Stress loss (venneuler-style)
@@ -41,6 +49,31 @@ impl LossType {
     /// Maximum absolute error
     pub fn max_absolute() -> Self {
         Self::MaxAbsolute
+    }
+
+    /// Maximum squared error
+    pub fn max_squared() -> Self {
+        Self::MaxSquared
+    }
+
+    /// Sum of absolute errors
+    pub fn sum_absolute() -> Self {
+        Self::SumAbsoute
+    }
+
+    /// Sum of absolute region errors
+    pub fn sum_absolute_region_error() -> Self {
+        Self::SumAbsoluteRegionError
+    }
+
+    /// Sum of squared region errors
+    pub fn sum_squared_region_error() -> Self {
+        Self::SumSquaredRegionError
+    }
+
+    /// Diagonal error (EulerAPE style)
+    pub fn diag_error() -> Self {
+        Self::DiagError
     }
 
     /// Compute loss between fitted and target region areas
@@ -58,7 +91,7 @@ impl LossType {
         }
 
         match self {
-            LossType::Sse => all_masks
+            LossType::SumSquared => all_masks
                 .iter()
                 .map(|&mask| {
                     let f = fitted.get(&mask).copied().unwrap_or(0.0);
@@ -66,7 +99,7 @@ impl LossType {
                     (f - t).powi(2)
                 })
                 .sum(),
-            LossType::Rmse => {
+            LossType::RootMeanSquared => {
                 let sum_squared: f64 = all_masks
                     .iter()
                     .map(|&mask| {
@@ -114,6 +147,14 @@ impl LossType {
                     (f - t).abs()
                 })
                 .fold(0.0, f64::max),
+            LossType::MaxSquared => all_masks
+                .iter()
+                .map(|&mask| {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    (f - t).powi(2)
+                })
+                .fold(0.0, f64::max),
             LossType::DiagError => {
                 let ssf = fitted.values().map(|&v| v.powi(2)).sum::<f64>();
                 let sst = target.values().map(|&v| v.powi(2)).sum::<f64>();
@@ -130,6 +171,44 @@ impl LossType {
                         (f / ssf - t / sst).abs()
                     })
                     .fold(0.0, f64::max)
+            }
+            LossType::SumAbsoute => all_masks
+                .iter()
+                .map(|&mask| {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    (f - t).abs()
+                })
+                .sum(),
+            LossType::SumAbsoluteRegionError => {
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return f64::MAX;
+                }
+                all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f / ssf - t / sst).abs()
+                    })
+                    .sum()
+            }
+            LossType::SumSquaredRegionError => {
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return f64::MAX;
+                }
+                all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f / ssf - t / sst).powi(2)
+                    })
+                    .sum()
             }
         }
     }
@@ -273,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        assert_eq!(LossType::sse(), LossType::Sse);
+        assert_eq!(LossType::sse(), LossType::SumSquared);
         assert_eq!(LossType::stress(), LossType::Stress);
         assert_ne!(LossType::sse(), LossType::rmse());
     }
