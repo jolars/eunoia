@@ -14,10 +14,12 @@ pub enum LossType {
     Sse,
     /// Root mean squared error: sqrt(mean((fitted - target)²))
     Rmse,
-    /// Stress (venneuler-style): Σ((fitted - target) / target)²
+    /// Stress (venneuler-style)
     Stress,
     /// Maximum absolute error: max(|fitted - target|)
     MaxAbsolute,
+    /// DiagError max(|fit / sum(fit) - target / sum(target)|)
+    DiagError,
 }
 
 impl LossType {
@@ -56,19 +58,15 @@ impl LossType {
         }
 
         match self {
-            LossType::Sse => {
-                // Sum of squared errors
-                all_masks
-                    .iter()
-                    .map(|&mask| {
-                        let fitted_area = fitted.get(&mask).copied().unwrap_or(0.0);
-                        let target_area = target.get(&mask).copied().unwrap_or(0.0);
-                        (fitted_area - target_area).powi(2)
-                    })
-                    .sum()
-            }
+            LossType::Sse => all_masks
+                .iter()
+                .map(|&mask| {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    (f - t).powi(2)
+                })
+                .sum(),
             LossType::Rmse => {
-                // Root mean squared error
                 let sum_squared: f64 = all_masks
                     .iter()
                     .map(|&mask| {
@@ -80,32 +78,56 @@ impl LossType {
                 (sum_squared / all_masks.len() as f64).sqrt()
             }
             LossType::Stress => {
-                // Stress: sum of squared relative errors
-                all_masks
+                let ssf = fitted.values().map(|&v| v.powi(2)).sum::<f64>();
+                let sst = target.values().map(|&v| v.powi(2)).sum::<f64>();
+
+                if ssf.abs() < 1e-10 {
+                    return f64::MAX;
+                }
+
+                let slope = all_masks
                     .iter()
                     .map(|&mask| {
                         let f = fitted.get(&mask).copied().unwrap_or(0.0);
                         let t = target.get(&mask).copied().unwrap_or(0.0);
-                        if t.abs() < 1e-10 {
-                            if f.abs() < 1e-10 {
-                                0.0
-                            } else {
-                                f.powi(2) // Target is zero, penalize any fitted value
-                            }
-                        } else {
-                            ((f - t) / t).powi(2)
-                        }
+                        f * t
                     })
-                    .sum()
+                    .sum::<f64>()
+                    / sst;
+
+                let sse = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f - t * slope).powi(2)
+                    })
+                    .sum::<f64>();
+
+                sse / ssf
             }
-            LossType::MaxAbsolute => {
-                // Maximum absolute error
+            LossType::MaxAbsolute => all_masks
+                .iter()
+                .map(|&mask| {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    (f - t).abs()
+                })
+                .fold(0.0, f64::max),
+            LossType::DiagError => {
+                let ssf = fitted.values().map(|&v| v.powi(2)).sum::<f64>();
+                let sst = target.values().map(|&v| v.powi(2)).sum::<f64>();
+
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return f64::MAX;
+                }
+
                 all_masks
                     .iter()
                     .map(|&mask| {
                         let f = fitted.get(&mask).copied().unwrap_or(0.0);
                         let t = target.get(&mask).copied().unwrap_or(0.0);
-                        (f - t).abs()
+                        (f / ssf - t / sst).abs()
                     })
                     .fold(0.0, f64::max)
             }
