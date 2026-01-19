@@ -233,9 +233,9 @@ checksum = "bd47b05dddf0005d850e5644cae7f2b14ac3df487979dbfff3b56f20b1a6ae46"
 
 [[package]]
 name = "i_float"
-version = "1.15.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "010025c2c532c8d82e42d0b8bb5184afa449fa6f06c709ea9adcb16c49ae405b"
+checksum = "813145bb0ad5b60f55cbbf3c74cdceda1c0a9d253b35c4cc36ae0df7887cb78f"
 dependencies = [
  "libm",
 ]
@@ -248,9 +248,9 @@ checksum = "3c4d36ff9fb73dc62e163e25a07523ca5c2126660fb2485cdecf063e59b58f29"
 
 [[package]]
 name = "i_overlay"
-version = "4.1.1"
+version = "4.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e9761a998d0954125b9788c3dcdf3dd9bc0308655948158fcc4da9dbe75f385"
+checksum = "1f93a0e1451720f6a1d07d610db42848cadf3d35b3fc6dc9c68f16cd24b0c65b"
 dependencies = [
  "i_float",
  "i_key_sort",
@@ -260,9 +260,9 @@ dependencies = [
 
 [[package]]
 name = "i_shape"
-version = "1.14.0"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ea154b742f7d43dae2897fcd5ead86bc7b5eefcedd305a7ebf9f69d44d61082"
+checksum = "9eb54da8cde38afb11278c80a3483a3f54527298c6e9eae4e9085feaee4fde46"
 dependencies = [
  "i_float",
 ]
