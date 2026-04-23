@@ -110,35 +110,18 @@ impl LossType {
                     .sum();
                 (sum_squared / all_masks.len() as f64).sqrt()
             }
-            LossType::Stress => {
-                let ssf = fitted.values().map(|&v| v.powi(2)).sum::<f64>();
-                let sst = target.values().map(|&v| v.powi(2)).sum::<f64>();
-
-                if ssf.abs() < 1e-10 {
-                    return f64::MAX;
-                }
-
-                let slope = all_masks
-                    .iter()
-                    .map(|&mask| {
-                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                        let t = target.get(&mask).copied().unwrap_or(0.0);
-                        f * t
-                    })
-                    .sum::<f64>()
-                    / sst;
-
-                let sse = all_masks
-                    .iter()
-                    .map(|&mask| {
-                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                        let t = target.get(&mask).copied().unwrap_or(0.0);
-                        (f - t * slope).powi(2)
-                    })
-                    .sum::<f64>();
-
-                sse / ssf
-            }
+            LossType::Stress => all_masks
+                .iter()
+                .map(|&mask| {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    if t > 0.0 {
+                        ((f - t) / t).powi(2)
+                    } else {
+                        f.powi(2)
+                    }
+                })
+                .sum(),
             LossType::MaxAbsolute => all_masks
                 .iter()
                 .map(|&mask| {
