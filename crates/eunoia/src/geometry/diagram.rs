@@ -132,54 +132,95 @@ pub fn discover_regions(
         }
     }
 
-    // 4. Build higher-order combinations from pairwise compatibility
-    // Key insight: A∩B∩C can only exist if A∩B, A∩C, and B∩C all exist
-    let pairwise_regions: Vec<RegionMask> = regions
+    // 4. Ensure sub-masks of higher-order adopter regions are present.
+    // Phase 2 already discovered the real higher-order regions from intersection
+    // point adopters. If A∩B∩C exists (witnessed by an intersection point adopted
+    // by all three), then A∩B, A∩C, and B∩C must also exist.
+    let higher_order: Vec<RegionMask> = regions
+        .iter()
+        .filter(|&&m| (m as RegionMask).count_ones() >= 3)
+        .copied()
+        .collect();
+
+    for mask in higher_order {
+        // Insert all sub-masks with 2+ bits set
+        let indices = mask_to_indices(mask, n_sets);
+        for bit in &indices {
+            let sub = mask & !(1 << bit);
+            if sub.count_ones() >= 2 {
+                regions.insert(sub);
+            }
+        }
+    }
+
+    // 5. Handle containment-based regions where no intersection points witness
+    // the higher-order region. A k-way region exists if all pairwise sub-regions
+    // exist AND at least one circle is fully contained in every other circle in
+    // the group (guaranteeing a non-empty common intersection).
+    //
+    // Pre-compute directed containment: contains_mat[i][j] = circle i contains circle j
+    let mut contains_mat = vec![vec![false; n_sets]; n_sets];
+    for i in 0..n_sets {
+        for j in 0..n_sets {
+            if i != j && circles[i].contains(&circles[j]) {
+                contains_mat[i][j] = true;
+            }
+        }
+    }
+
+    // Build pairwise overlap adjacency from discovered regions
+    let mut pairwise_overlap = vec![vec![false; n_sets]; n_sets];
+    for &mask in &regions {
+        if (mask as RegionMask).count_ones() == 2 {
+            let indices = mask_to_indices(mask, n_sets);
+            pairwise_overlap[indices[0]][indices[1]] = true;
+            pairwise_overlap[indices[1]][indices[0]] = true;
+        }
+    }
+
+    // Level-wise expansion: try to build 3-way, 4-way, etc. regions
+    // from pairs where all sub-pairs overlap and at least one circle is
+    // contained in all others.
+    let pairwise_masks: Vec<RegionMask> = regions
         .iter()
         .filter(|&&m| (m as RegionMask).count_ones() == 2)
         .copied()
         .collect();
 
-    // Build compatibility matrix from pairwise regions
-    let mut compatible = vec![vec![false; n_sets]; n_sets];
-    (0..n_sets).for_each(|i| {
-        compatible[i][i] = true;
-    });
-    for &mask in &pairwise_regions {
-        let indices = mask_to_indices(mask, n_sets);
-        if indices.len() == 2 {
-            compatible[indices[0]][indices[1]] = true;
-            compatible[indices[1]][indices[0]] = true;
-        }
-    }
-
-    // Extend to 3-way, 4-way, etc. combinations
-    let mut current_level = pairwise_regions;
+    let mut current_level = pairwise_masks;
     for _level in 3..=n_sets {
         let mut next_level = Vec::new();
-
         for &base_mask in &current_level {
             let base_indices = mask_to_indices(base_mask, n_sets);
-
             #[allow(clippy::needless_range_loop)]
             for new_idx in 0..n_sets {
                 if (base_mask & (1 << new_idx)) != 0 {
                     continue;
                 }
-
-                // Check if new_idx is compatible with ALL in base_mask
-                if base_indices
+                // All pairs involving new_idx must overlap
+                if !base_indices
                     .iter()
-                    .all(|&existing| compatible[new_idx][existing])
+                    .all(|&existing| pairwise_overlap[new_idx][existing])
                 {
-                    let new_mask = base_mask | (1 << new_idx);
-                    if regions.insert(new_mask) {
-                        next_level.push(new_mask);
-                    }
+                    continue;
+                }
+                let new_mask = base_mask | (1 << new_idx);
+                if regions.contains(&new_mask) {
+                    continue;
+                }
+                // At least one circle must be contained in all others
+                let all_indices = mask_to_indices(new_mask, n_sets);
+                let has_contained = all_indices.iter().any(|&k| {
+                    all_indices
+                        .iter()
+                        .all(|&other| other == k || contains_mat[other][k])
+                });
+                if has_contained {
+                    regions.insert(new_mask);
+                    next_level.push(new_mask);
                 }
             }
         }
-
         if next_level.is_empty() {
             break;
         }
@@ -1400,5 +1441,66 @@ mod tests {
         );
 
         assert!((exact - mc).abs() < 0.05, "MC and exact should be close");
+    }
+
+    #[test]
+    fn test_pairwise_overlap_no_triple_intersection() {
+        // Three circles where all pairs overlap but the triple intersection is empty.
+        // Place them in a triangle far enough apart that pairwise lenses don't share a common point.
+        let r = 1.0;
+        let d = 1.8; // distance between centers > r but < 2r (so pairs overlap)
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), r),
+            Circle::new(Point::new(d, 0.0), r),
+            Circle::new(Point::new(d / 2.0, d * 0.866), r), // equilateral triangle
+        ];
+        let intersections = collect_intersections(&circles, 3);
+        let regions = discover_regions(&circles, &intersections, 3);
+
+        // All 3 pairwise regions should exist
+        assert!(regions.contains(&0b011), "A∩B should exist");
+        assert!(regions.contains(&0b101), "A∩C should exist");
+        assert!(regions.contains(&0b110), "B∩C should exist");
+
+        // The triple intersection should NOT exist (circles are too spread out)
+        assert!(
+            !regions.contains(&0b111),
+            "A∩B∩C should NOT exist — pairwise lenses don't share a common point"
+        );
+    }
+
+    #[test]
+    fn test_concentric_circles_triple_region() {
+        // Three concentric circles — all containment, no boundary intersections.
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), 3.0),
+            Circle::new(Point::new(0.0, 0.0), 2.0),
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+        ];
+        let intersections = collect_intersections(&circles, 3);
+        let regions = discover_regions(&circles, &intersections, 3);
+
+        assert!(
+            regions.contains(&0b111),
+            "A∩B∩C should exist for concentric circles"
+        );
+    }
+
+    #[test]
+    fn test_small_circle_contained_in_two_overlapping() {
+        // The nested configuration case: A and B are large overlapping circles,
+        // C is small and contained in both. A∩B∩C should exist.
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), 3.0), // A
+            Circle::new(Point::new(2.0, 0.0), 3.0), // B
+            Circle::new(Point::new(1.0, 0.0), 0.5), // C (inside both A and B)
+        ];
+        let intersections = collect_intersections(&circles, 3);
+        let regions = discover_regions(&circles, &intersections, 3);
+
+        assert!(
+            regions.contains(&0b111),
+            "A∩B∩C should exist — C is contained in both A and B"
+        );
     }
 }
