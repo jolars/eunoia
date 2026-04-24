@@ -8,3 +8,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Pinned below latest to preserve MSRV 1.81 / edition 2021.
+      # Revisit when the MSRV floor is raised.
+      - dependency-name: "argmin"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "argmin-math"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "nalgebra"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "i_overlay"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "rand"
+        update-types: ["version-update:semver-major"]
