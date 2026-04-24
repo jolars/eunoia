@@ -473,13 +473,11 @@ pub fn generate_from_spec(
         // Parse the input - it can be "A", "B", or "A&B"
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
 
-        if sets.len() == 1 {
-            // Single set
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            // Intersection
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     // Build the specification
@@ -574,13 +572,11 @@ pub fn generate_from_spec_with_debug(
         // Parse the input - it can be "A", "B", or "A&B"
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
 
-        if sets.len() == 1 {
-            // Single set
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            // Intersection
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     // Build the specification
@@ -669,11 +665,11 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     web_sys::console::log_1(&"[Rust] Building diagram spec...".into());
@@ -742,11 +738,11 @@ pub fn get_debug_info_simple(
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], *size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, *size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], *size),
+            _ => builder.intersection(&sets, *size),
+        };
     }
 
     let diagram_spec = builder
@@ -847,11 +843,11 @@ pub fn generate_from_spec_initial(
 
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
 
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     let diagram_spec = builder
@@ -932,11 +928,11 @@ pub fn get_debug_info_initial(
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], *size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, *size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], *size),
+            _ => builder.intersection(&sets, *size),
+        };
     }
 
     let diagram_spec = builder
@@ -1018,11 +1014,11 @@ pub fn generate_ellipses_from_spec(
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     let diagram_spec = builder
@@ -1107,11 +1103,11 @@ pub fn generate_circles_as_polygons(
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     let diagram_spec = builder
@@ -1215,11 +1211,11 @@ pub fn generate_ellipses_as_polygons(
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     let diagram_spec = builder
@@ -1325,11 +1321,11 @@ pub fn generate_region_polygons_circles(
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     let diagram_spec = builder
@@ -1423,11 +1419,11 @@ pub fn generate_region_polygons_ellipses(
             continue;
         }
         let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        if sets.len() == 1 {
-            builder = builder.set(sets[0], size);
-        } else if sets.len() > 1 {
-            builder = builder.intersection(&sets, size);
-        }
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
     }
 
     let diagram_spec = builder
