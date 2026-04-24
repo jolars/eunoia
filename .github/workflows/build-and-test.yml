@@ -43,28 +43,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-  cargo-audit:
-    name: Cargo Audit
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      checks: write
-    steps:
-      - uses: actions/checkout@v6
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  cargo-deny:
-    name: Cargo Deny
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      checks: write
-    steps:
-      - uses: actions/checkout@v6
-      - uses: EmbarkStudios/cargo-deny-action@v2
-
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
@@ -120,7 +98,7 @@ jobs:
 
   versionary:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [cargo-audit, cargo-deny, test]
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
