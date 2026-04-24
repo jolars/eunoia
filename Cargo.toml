@@ -7,6 +7,10 @@ default-members = ["crates/eunoia"]
 readme = "README.md"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.81"
 authors = ["Johan Larsson"]
 license = "MIT"
 repository = "https://github.com/jolars/eunoia"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(test)"] }

@@ -2,11 +2,15 @@
 name = "eunoia-wasm"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "WebAssembly bindings for the eunoia library"
 publish = false
+
+[lints]
+workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

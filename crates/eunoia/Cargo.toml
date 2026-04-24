@@ -2,6 +2,7 @@
 name = "eunoia"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -10,12 +11,15 @@ description = "A library for creating area-proportional Euler and Venn diagrams"
 keywords = ["euler", "venn", "diagram", "visualization"]
 categories = ["graphics", "visualization", "mathematics"]
 
+[lints]
+workspace = true
+
 [dependencies]
-argmin = "0.11.0"
-argmin-math = { version = "0.5.1", features = ["nalgebra_latest"] }
+argmin = "0.10"
+argmin-math = { version = "0.4", features = ["nalgebra_v0_32"] }
 finitediff = "0.2.0"
-i_overlay = "5.0.0"
-nalgebra = "0.34.1"
+i_overlay = { version = "~2.0", optional = true }
+nalgebra = "0.32"
 num-complex = "0.4"
 polylabel-mini = "0.1.0"
 rand = "0.9"
@@ -23,4 +27,4 @@ rand = "0.9"
 [features]
 default = []
 wasm = ["argmin/wasm-bindgen"]
-plotting = []
+plotting = ["dep:i_overlay"]
