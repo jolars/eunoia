@@ -630,7 +630,7 @@ pub fn compute_region_area_generic<S: DiagramShape + Copy>(
     mask: RegionMask,
     shapes: &[S],
     n_sets: usize,
-    rng: &mut dyn rand::RngCore,
+    rng: &mut dyn rand::Rng,
 ) -> f64 {
     let shape_count = mask.count_ones();
 
