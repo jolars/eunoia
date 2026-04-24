@@ -3,6 +3,7 @@
 //! This module provides utilities for decomposing fitted shapes into
 //! exclusive regions (one per set combination) for plotting.
 
+use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Polygon;
 use crate::geometry::traits::{DiagramShape, Polygonize};
 use crate::plotting::clip::{polygon_clip_many, ClipOperation};
@@ -59,6 +60,61 @@ impl RegionPolygons {
             .map(|(combo, polys)| {
                 let area = polys.iter().map(|p| p.area()).sum();
                 (combo.clone(), area)
+            })
+            .collect()
+    }
+
+    /// Computes a label anchor point for every non-empty region.
+    ///
+    /// For each region, this returns the *pole of inaccessibility* (the
+    /// interior point farthest from the polygon boundary — the Polylabel
+    /// algorithm) of the region's largest polygon. This is a good default
+    /// anchor for region-level quantity labels in Euler diagrams because it
+    /// maximizes breathing room between the label and any edge.
+    ///
+    /// Regions whose polygons all have zero area (or where the region has no
+    /// polygons at all) are omitted from the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `precision` - Polylabel precision, in the same units as the polygon
+    ///   coordinates. Smaller values yield more accurate anchors at higher
+    ///   cost. A value of roughly 1% of the diagram's extent is typical
+    ///   (e.g. `0.01` when coordinates are normalized to `[0, 1]`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 5.0)
+    ///     .set("B", 3.0)
+    ///     .intersection(&["A", "B"], 1.0)
+    ///     .input_type(InputType::Exclusive)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+    /// let regions = layout.region_polygons(&spec, 64);
+    /// let labels = regions.label_points(0.01);
+    ///
+    /// // One label point per non-empty region.
+    /// for (combo, point) in &labels {
+    ///     println!("{}: ({:.2}, {:.2})", combo, point.x(), point.y());
+    /// }
+    /// ```
+    pub fn label_points(&self, precision: f64) -> HashMap<Combination, Point> {
+        self.regions
+            .iter()
+            .filter_map(|(combo, polys)| {
+                let largest = polys.iter().filter(|p| p.area() > 0.0).max_by(|a, b| {
+                    a.area()
+                        .partial_cmp(&b.area())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+                Some((combo.clone(), largest.pole_of_inaccessibility(precision)))
             })
             .collect()
     }
@@ -260,6 +316,73 @@ mod tests {
 
         // Should have multiple regions
         assert!(regions.len() >= 3);
+    }
+
+    #[test]
+    fn test_label_points_two_circles() {
+        // Two overlapping circles should yield 3 non-empty regions: A-only,
+        // B-only, A&B. Each should get a label point inside the region itself.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|name| *layout.shape_for_set(name).unwrap())
+            .collect();
+
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+        let labels = regions.label_points(0.01);
+
+        // Every non-empty region in `regions` should appear in `labels`.
+        for combo in regions.iter().map(|(c, _)| c) {
+            assert!(
+                labels.contains_key(combo),
+                "Missing label point for region {:?}",
+                combo
+            );
+        }
+
+        // Each label point must be finite. (A tighter geometric check — that
+        // the point lies inside the region's largest polygon — is a quality
+        // property of `Polygon::pole_of_inaccessibility`, which this method
+        // merely delegates to. See its unit tests for geometric guarantees.)
+        for (combo, point) in &labels {
+            assert!(
+                point.x().is_finite() && point.y().is_finite(),
+                "Label for {:?} has non-finite coordinates: ({:?}, {:?})",
+                combo,
+                point.x(),
+                point.y()
+            );
+        }
+    }
+
+    #[test]
+    fn test_label_points_empty() {
+        let empty = RegionPolygons::new();
+        assert!(empty.label_points(0.01).is_empty());
+    }
+
+    #[test]
+    fn test_label_points_skips_zero_area_regions() {
+        // A region composed only of degenerate (zero-area) polygons should be
+        // omitted from the label map.
+        let mut regions = RegionPolygons::new();
+        let degenerate = Polygon::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(1.0, 0.0),
+            Point::new(0.5, 0.0), // collinear → zero area
+        ]);
+        regions.insert(Combination::new(&["X"]), vec![degenerate]);
+
+        assert!(regions.label_points(0.01).is_empty());
     }
 
     #[test]
