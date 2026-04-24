@@ -14,7 +14,7 @@ tasks:
   lint:
     desc: Run linter
     cmds:
-      - cargo clippy --all-targets --all-features -- -D warnings
+      - cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   build-release:
     desc: Build release version
@@ -46,9 +46,9 @@ tasks:
     desc: Development workflow - format, check, test, lint
     cmds:
       - cargo fmt
-      - cargo check
-      - cargo test
-      - cargo clippy --all-targets --all-features -- -D warnings
+      - cargo check --workspace
+      - cargo test --workspace
+      - cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   build-wasm:
     desc: Build WASM bindings with wasm-pack
