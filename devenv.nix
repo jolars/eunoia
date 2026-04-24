@@ -7,9 +7,16 @@
     go-task
     llvmPackages.bintools
     cargo-llvm-cov
-    prettierd
+    cargo-flamegraph
+    cargo-audit
+    cargo-deny
     nodejs
     wasm-pack
+    bashInteractive
+    perf
+    go-task
+    quartoMinimal
+    shfmt
   ];
 
   languages = {
@@ -52,6 +59,7 @@
     hooks = {
       clippy = {
         enable = true;
+
         settings = {
           allFeatures = true;
         };
