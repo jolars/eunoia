@@ -104,14 +104,10 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-    outputs:
-      release_created: ${{ steps.versionary.outputs.release_created }}
-      tag_name: ${{ steps.versionary.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@master
