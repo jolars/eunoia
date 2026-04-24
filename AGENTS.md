@@ -81,19 +81,26 @@ Pure Rust library with no platform-specific dependencies.
     - `DiagramShape`: Trait for shapes usable in diagrams (adds optimization methods)
   - `shapes/`: Shape implementations
     - `circle.rs`: Circle shape implementation
+    - `ellipse.rs`: Ellipse shape implementation (exact conic intersections, incl. 3+)
     - `rectangle.rs`: Rectangle shape implementation (for bounding boxes)
+    - `polygon.rs`: Polygon primitive for visualization output
   - `operations/`: Specialized geometric operations (currently `overlaps.rs`)
+  - `projective.rs`: Projective geometry helpers
   - `diagram.rs`: Diagram-specific logic (region discovery, area computation)
 - **`fitter/`**: Layout optimization
   - `layout.rs`: Layout representation (result of fitting)
-  - `initial_layout.rs`: Initial layout computation
-  - `final_layout.rs`: Final layout computation with region discovery and area
-    computation
+  - `initial_layout.rs`: Initial MDS-based layout computation
+  - `final_layout.rs`: Final shape-specific optimization (with pluggable optimizer)
+  - `clustering.rs`: Disjoint-cluster detection for post-fit normalization
+  - `normalize.rs`: Rotation/centering of fitted layouts
+  - `packing.rs`: Skyline packing of multiple disjoint clusters
 - **`plotting/`** (optional, behind `plotting` feature): Polygon-based visualization utilities
   - `clip.rs`: Polygon clipping operations using i_overlay
   - `regions.rs`: Region decomposition into exclusive polygons
+- **`loss.rs`**: Loss functions (SSE, RMSE, stress, region errors, DiagError, etc.)
 - **`error.rs`**: Error types
-- **`math.rs`**: Mathematical utilities
+- **`math/`**: Mathematical utilities (`linear_algebra.rs`, `polynomial.rs`)
+- **`constants.rs`**: Shared numeric constants
 
 ### WASM Bindings (`crates/eunoia-wasm/`)
 
@@ -127,19 +134,22 @@ Interactive diagram viewer built with Svelte + TypeScript.
 2. **Convert to Shape-Specific Parameters**:
    - Initial circle parameters are converted to target shape parameters via `DiagramShape::params_from_circle()`
    - Circle: `[x, y, r]` → `[x, y, r]` (identity)
-   - Ellipse (future): `[x, y, r]` → `[x, y, r, r, 0.0]` (semi-major=semi-minor=r, angle=0)
+   - Ellipse: `[x, y, r]` → `[x, y, r, r, 0.0]` (semi-major=semi-minor=r, angle=0)
 
 3. **Final Optimization (shape-specific)**:
    - Optimizes actual shape parameters (not circles!)
    - Uses `DiagramShape::compute_exclusive_regions()` for exact area computation
-   - Minimizes loss function (currently region error) using argmin + Nelder-Mead
+     (exact conic/polysegments for circles and ellipses, including 3+ way)
+   - Minimizes a selectable loss function via argmin
+     (Nelder-Mead, L-BFGS, CG, TrustRegion)
    - Constructs final shapes via `DiagramShape::from_params()`
 
 4. **Layout Finalization**:
    - Return fitted shapes with computed areas
-   - TODO: Polygon conversion utilities
+   - Normalize, rotate, center, and skyline-pack disjoint clusters
+   - Polygon conversion available via `Polygonize` trait and `plotting` feature
    - TODO: Label placement (poles of inaccessibility)
-   - TODO: Calculate centroids and other metrics
+   - TODO: Global-search fallback (GenSA-equivalent) for hard 3-ellipse cases
 
 ## Code Standards
 
@@ -305,8 +315,10 @@ To add a new shape type (e.g., Ellipse):
    
    impl DiagramShape for Ellipse {
        fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
-           // Implement exact ellipse intersection geometry
-           // For 3+ ellipses, you may fall back to Monte Carlo
+           // Implement exact intersection geometry for this shape.
+           // Prefer exact conic/polysegments (as done for Circle and Ellipse)
+           // over Monte Carlo — Monte Carlo should only be a last-resort
+           // fallback for numerically pathological cases.
        }
        
        fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
@@ -347,7 +359,8 @@ The entire optimization pipeline is **shape-generic** - no changes needed to fit
 ### Geometric Operations
 
 - All shapes share a common coordinate system (`Point`)
-- All shapes implement the `Shape` trait defined in `shapes.rs`
+- All shapes implement the `DiagramShape` trait (plus component traits like
+  `Area`, `Centroid`, `Closed`, ...) defined in `geometry/traits.rs`
 - Distance calculations should handle edge cases (overlapping, containment)
 - Intersection area formulas should be numerically stable
 - Consider numerical precision issues (use appropriate tolerances)
@@ -356,13 +369,13 @@ The entire optimization pipeline is **shape-generic** - no changes needed to fit
 ### Optimization Code
 
 - Lives in `fitter/` module
-- Uses argmin for optimization
-- Region error loss function implemented in `final_layout.rs`
+- Uses argmin for optimization (Nelder-Mead, L-BFGS, CG, TrustRegion — selectable via `Optimizer`)
+- Loss functions are pluggable via `LossType` in `loss.rs` (SSE, RMSE, stress,
+  sum/max absolute, sum/max squared, region-error variants, DiagError)
+- MDS-based initial layout with patience-based restarts (`initial_layout.rs`)
 - Region discovery uses sparse bit-mask approach for efficiency
 - Final layout computes disjoint areas using inclusion-exclusion principle
-- TODO: Make loss functions pluggable (trait-based)
-- TODO: Implement MDS initialization
-- TODO: Support stress loss function (venneuler-style)
+- TODO: Global-search fallback (e.g. simulated annealing) for hard 3-ellipse cases
 
 ### Web Development
 
@@ -438,15 +451,19 @@ let layout = Fitter::<Circle>::new(&spec)
 - ✅ WASM bindings in separate crate (`crates/eunoia-wasm/`)
 - ✅ Web application (Svelte 5 + TypeScript + Vite + Tailwind v4)
 - ✅ Interactive diagram viewer with real-time updates
-- ✅ Comprehensive unit tests (190 tests passing)
-- ✅ Full documentation with doc tests (24 doc tests passing)
-- ✅ 3-way intersection area computation implemented
+- ✅ Comprehensive unit tests (325 unit tests passing)
+- ✅ Full documentation with doc tests (60 doc tests passing)
+- ✅ N-way intersection area computation implemented (exact for circles and ellipses, via conic/polysegments)
 - ✅ Random seed support for reproducible layouts
-- ✅ Generic area computation (Monte Carlo for 3+ way intersections on non-Circle shapes)
-- ❌ Stress loss function (venneuler-style) not implemented
-- ❌ Ellipse and triangle shapes not implemented
-- ❌ Polygon conversion utilities not implemented
+- ✅ Stress loss function (venneuler-style) implemented, plus many other loss variants
+- ✅ Ellipse shape implemented with exact 3+ way intersections
+- ✅ Polygon conversion via `Polygonize` trait (+ `plotting` feature for clipping/regions)
+- ✅ Post-fit normalization: clustering, rotation, centering, skyline packing
+- ✅ Selectable optimizer (Nelder-Mead, L-BFGS, CG, TrustRegion)
+- ❌ Triangle shape not implemented
 - ❌ Label placement algorithms not implemented (poles of inaccessibility)
+- ❌ Global-search fallback optimizer (GenSA-equivalent) not implemented
+- ❌ C/FFI or extendr bindings for R not yet started
 
 ## Dependencies
 
@@ -602,10 +619,10 @@ The project uses a Cargo workspace with multiple crates:
 
 ## Future Considerations
 
-- **Stress loss function** (venneuler-style) as alternative to region error
-- **Other shapes**: Ellipses, rectangles, triangles
-- **Polygon conversion** utilities for complex visualizations
+- **Other shapes**: Triangles (ellipses and rectangles done)
 - **Label placement** algorithms (poles of inaccessibility, centroids)
+- **Global-search fallback** optimizer (GenSA-equivalent) for hard ellipse cases
+- **R bindings** via extendr in a separate repository
 - Parallel optimization for large diagrams
 - GPU acceleration for polygon operations
 - Enhanced web UI features (export SVG, PNG, customization options)
