@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = ["crates/eunoia", "crates/eunoia-wasm"]
-readme = "README.md"
+default-members = ["crates/eunoia"]
 
 [workspace.package]
-default-members = ["crates/eunoia"]
+readme = "README.md"
 version = "0.1.0"
 edition = "2021"
 authors = ["Johan Larsson"]
