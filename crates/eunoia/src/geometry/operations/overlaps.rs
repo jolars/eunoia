@@ -2,7 +2,7 @@ use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Circle;
 use crate::geometry::traits::{Area, Closed, DiagramShape};
-use rand::RngExt;
+use rand::Rng;
 use std::collections::HashMap;
 
 pub enum OverlapMethod {
@@ -13,7 +13,7 @@ pub enum OverlapMethod {
 pub fn compute_overlaps<S: DiagramShape>(
     shapes: &[S],
     method: OverlapMethod,
-    rng: &mut dyn rand::Rng,
+    rng: &mut dyn rand::RngCore,
 ) -> f64 {
     match method {
         OverlapMethod::MonteCarlo => monte_carlo_overlap(shapes, 100_000, rng),
@@ -94,7 +94,7 @@ pub fn compute_overlaps_circles(circles: &[Circle]) -> f64 {
 fn monte_carlo_overlap<S: DiagramShape>(
     shapes: &[S],
     n_samples: usize,
-    rng: &mut dyn rand::Rng,
+    rng: &mut dyn rand::RngCore,
 ) -> f64 {
     let n_sets = shapes.len();
     let all_shapes_mask = (1 << n_sets) - 1; // All bits set

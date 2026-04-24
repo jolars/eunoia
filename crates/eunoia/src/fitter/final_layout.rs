@@ -17,7 +17,7 @@ use argmin::solver::trustregion::{CauchyPoint, TrustRegion};
 use finitediff::vec;
 use nalgebra::DVector;
 use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
+use rand::{Rng, SeedableRng};
 use std::cell::RefCell;
 
 use crate::geometry::traits::DiagramShape;
@@ -559,7 +559,7 @@ mod tests {
 
         /// Generate a random circle layout for testing
         pub fn random_circle_layout(n_sets: usize, seed: u64) -> (Vec<Circle>, Vec<String>) {
-            use rand::RngExt;
+            use rand::Rng;
             use rand::SeedableRng;
 
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);

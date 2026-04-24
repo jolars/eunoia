@@ -2,7 +2,7 @@ use argmin::core::{CostFunction, Error, Executor, Gradient, State};
 use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::quasinewton::LBFGS;
 use nalgebra::DVector;
-use rand::RngExt;
+use rand::Rng;
 
 use crate::spec::PairwiseRelations;
 
@@ -34,7 +34,7 @@ impl Default for InitialLayoutConfig {
 pub(crate) fn compute_initial_layout(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
-    rng: &mut dyn rand::Rng,
+    rng: &mut dyn rand::RngCore,
 ) -> Result<Vec<f64>, Error> {
     compute_initial_layout_with_config(
         distances,
@@ -52,7 +52,7 @@ pub(crate) fn compute_initial_layout_with_config(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     config: InitialLayoutConfig,
-    rng: &mut dyn rand::Rng,
+    rng: &mut dyn rand::RngCore,
 ) -> Result<Vec<f64>, Error> {
     let n_sets = distances.len();
 

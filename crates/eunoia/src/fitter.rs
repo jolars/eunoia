@@ -216,7 +216,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let n_sets = spec.n_sets;
 
         // Create RNG based on seed
-        let mut rng: Box<dyn rand::Rng> = match self.seed {
+        let mut rng: Box<dyn rand::RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
             None => Box::new(rand::rng()),
         };
