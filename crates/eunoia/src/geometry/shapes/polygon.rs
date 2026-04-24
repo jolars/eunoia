@@ -152,15 +152,33 @@ impl Polygon {
             return self.centroid();
         }
 
+        // polylabel-mini short-circuits and returns (0, 0) when the polygon's
+        // *signed* shoelace area is negative (i.e. clockwise winding). Our
+        // callers (notably i_overlay's boolean-op output for subtracted
+        // regions) can legitimately produce clockwise rings, so we orient the
+        // vertex list counter-clockwise before handing it off.
+        let signed_area_x2: f64 = (0..self.vertices.len())
+            .map(|i| {
+                let j = (i + 1) % self.vertices.len();
+                self.vertices[i].x() * self.vertices[j].y()
+                    - self.vertices[j].x() * self.vertices[i].y()
+            })
+            .sum();
+
+        let oriented: Vec<Point> = if signed_area_x2 < 0.0 {
+            self.vertices.iter().rev().copied().collect()
+        } else {
+            self.vertices.clone()
+        };
+
         // Convert to polylabel-mini types
-        let mut points: Vec<polylabel_mini::Point> = self
-            .vertices
+        let mut points: Vec<polylabel_mini::Point> = oriented
             .iter()
             .map(|p| polylabel_mini::Point { x: p.x(), y: p.y() })
             .collect();
 
         // Ensure the polygon is closed (first == last)
-        if let (Some(first), Some(last)) = (self.vertices.first(), self.vertices.last()) {
+        if let (Some(first), Some(last)) = (oriented.first(), oriented.last()) {
             if (first.x() - last.x()).abs() > 1e-10 || (first.y() - last.y()).abs() > 1e-10 {
                 points.push(polylabel_mini::Point {
                     x: first.x(),

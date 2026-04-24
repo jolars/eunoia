@@ -349,17 +349,35 @@ mod tests {
             );
         }
 
-        // Each label point must be finite. (A tighter geometric check — that
-        // the point lies inside the region's largest polygon — is a quality
-        // property of `Polygon::pole_of_inaccessibility`, which this method
-        // merely delegates to. See its unit tests for geometric guarantees.)
-        for (combo, point) in &labels {
+        // Each label point must sit inside the axis-aligned bounding box of
+        // its region's largest polygon.
+        for (combo, polys) in regions.iter() {
+            let label = labels.get(combo).unwrap();
+            let largest = polys
+                .iter()
+                .max_by(|a, b| a.area().partial_cmp(&b.area()).unwrap())
+                .unwrap();
+            let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
+            let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+            for v in largest.vertices() {
+                min_x = min_x.min(v.x());
+                min_y = min_y.min(v.y());
+                max_x = max_x.max(v.x());
+                max_y = max_y.max(v.y());
+            }
             assert!(
-                point.x().is_finite() && point.y().is_finite(),
-                "Label for {:?} has non-finite coordinates: ({:?}, {:?})",
+                label.x() >= min_x - 1e-9
+                    && label.x() <= max_x + 1e-9
+                    && label.y() >= min_y - 1e-9
+                    && label.y() <= max_y + 1e-9,
+                "Label for {:?} at ({:.3}, {:.3}) is outside its region's bounding box [{:.3}, {:.3}] x [{:.3}, {:.3}]",
                 combo,
-                point.x(),
-                point.y()
+                label.x(),
+                label.y(),
+                min_x,
+                max_x,
+                min_y,
+                max_y
             );
         }
     }
