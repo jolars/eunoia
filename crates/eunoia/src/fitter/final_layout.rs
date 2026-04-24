@@ -587,15 +587,18 @@ mod tests {
         ) -> DiagramSpec {
             let mut builder = DiagramSpecBuilder::new();
 
-            // Add all single sets
-            for (combo, &area) in &exclusive_areas {
-                if combo.sets().len() == 1 {
-                    let set_name = &combo.sets()[0];
-                    builder = builder.set(set_name, area);
-                }
+            // Add single sets in sorted order so set-to-bit index assignment is
+            // deterministic regardless of HashMap iteration order.
+            let mut singles: Vec<_> = exclusive_areas
+                .iter()
+                .filter(|(combo, _)| combo.sets().len() == 1)
+                .collect();
+            singles.sort_by_key(|(combo, _)| combo.sets()[0].clone());
+            for (combo, &area) in &singles {
+                builder = builder.set(combo.sets()[0].as_str(), area);
             }
 
-            // Add all intersections
+            // Add all intersections (order doesn't affect bit assignment)
             for (combo, &area) in &exclusive_areas {
                 if combo.sets().len() > 1 {
                     let sets: Vec<&str> = combo.sets().iter().map(|s| s.as_str()).collect();
@@ -798,21 +801,7 @@ mod tests {
         );
     }
 
-    // FLAKY — disabled by default, run with `cargo test -- --ignored` for
-    // regression inspection.
-    //
-    // Root cause: `DiagramCost::cost` iterates a `HashMap<RegionMask, f64>`
-    // returned by `S::compute_exclusive_regions`, and `LossType::compute`
-    // iterates a `HashSet` of combined keys. Both use `RandomState` by default
-    // so iteration order varies per process. Floating-point `.sum()` is
-    // order-dependent at the ULP level, which is fine until Nelder-Mead flips
-    // an accept/reject decision on a borderline simplex move — after that,
-    // the search trajectory diverges and a 4-circle fit can land anywhere
-    // from 0.000001 to 50+. Seed-swapping only masks this; see the tracking
-    // task for making the cost function order-stable (e.g. by collecting keys
-    // into a sorted `Vec<RegionMask>` once per spec and folding in that order).
     #[test]
-    #[ignore]
     fn test_reproduce_multiple_random_diagrams() {
         use helpers::*;
 

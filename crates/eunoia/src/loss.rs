@@ -82,9 +82,13 @@ impl LossType {
         fitted: &HashMap<RegionMask, f64>,
         target: &HashMap<RegionMask, f64>,
     ) -> f64 {
-        // Collect all unique region masks from both fitted and target
-        let all_masks: std::collections::HashSet<RegionMask> =
-            fitted.keys().chain(target.keys()).copied().collect();
+        // Collect all unique region masks from both fitted and target, sorted
+        // for deterministic iteration order (HashMap/HashSet use RandomState,
+        // and ULP-level floating-point differences from different summation
+        // orders can flip Nelder-Mead accept/reject decisions).
+        let mut all_masks: Vec<RegionMask> = fitted.keys().chain(target.keys()).copied().collect();
+        all_masks.sort_unstable();
+        all_masks.dedup();
 
         if all_masks.is_empty() {
             return 0.0;
