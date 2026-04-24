@@ -116,7 +116,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.94.1
+          toolchain: 1.81.0
 
       - id: versionary
         uses: jolars/versionary@v0
