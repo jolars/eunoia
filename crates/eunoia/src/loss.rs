@@ -110,18 +110,35 @@ impl LossType {
                     .sum();
                 (sum_squared / all_masks.len() as f64).sqrt()
             }
-            LossType::Stress => all_masks
-                .iter()
-                .map(|&mask| {
-                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                    let t = target.get(&mask).copied().unwrap_or(0.0);
-                    if t > 0.0 {
-                        ((f - t) / t).powi(2)
-                    } else {
-                        f.powi(2)
-                    }
-                })
-                .sum(),
+            LossType::Stress => {
+                // venneuler-style stress (matches eulerr):
+                // stress = Σ(f - β·t)² / Σf²  where  β = Σ(f·t) / Σt²
+                let sum_ft: f64 = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        f * t
+                    })
+                    .sum();
+                let sum_t2: f64 = target.values().map(|&v| v * v).sum();
+                let sum_f2: f64 = fitted.values().map(|&v| v * v).sum();
+
+                if sum_t2 < 1e-20 || sum_f2 < 1e-20 {
+                    return 0.0;
+                }
+
+                let beta = sum_ft / sum_t2;
+                let numerator: f64 = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f - beta * t).powi(2)
+                    })
+                    .sum();
+                numerator / sum_f2
+            }
             LossType::MaxAbsolute => all_masks
                 .iter()
                 .map(|&mask| {
@@ -139,8 +156,9 @@ impl LossType {
                 })
                 .fold(0.0, f64::max),
             LossType::DiagError => {
-                let ssf = fitted.values().map(|&v| v.powi(2)).sum::<f64>();
-                let sst = target.values().map(|&v| v.powi(2)).sum::<f64>();
+                // eulerr's diagError: max|f_i/Σf - t_i/Σt| (linear sum normalization)
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
 
                 if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
                     return f64::MAX;
@@ -249,9 +267,17 @@ mod tests {
         target.insert(0b001, 12.0);
         target.insert(0b010, 18.0);
 
-        // ((10-12)/12)² + ((20-18)/18)² = (1/6)² + (1/9)² = 0.02778 + 0.01235 ≈ 0.04013
+        // venneuler/eulerr stress: Σ(f - β·t)² / Σf² where β = Σ(f·t) / Σt²
+        // Σft = 10·12 + 20·18 = 480
+        // Σt² = 144 + 324 = 468  →  β = 480/468 = 40/39
+        // (10 - 40/39·12)² + (20 - 40/39·18)² = (90/39)² + (60/39)² = 11700/1521
+        // Σf² = 100 + 400 = 500  →  stress = 11700/1521/500 ≈ 0.015385
         let result = loss.compute(&fitted, &target);
-        assert!((result - 0.04013).abs() < 0.001);
+        assert!(
+            (result - 0.015385).abs() < 1e-5,
+            "expected 0.015385, got {}",
+            result
+        );
     }
 
     #[test]
@@ -326,11 +352,15 @@ mod tests {
         target.insert(0b010, 0.0);
         target.insert(0b100, 3.0);
 
-        // First: target=0, fitted=5: 5² = 25
-        // Second: target=0, fitted=0: 0
-        // Third: target=3, fitted=3: 0
+        // Σft = 0 + 0 + 9 = 9;  Σt² = 9  →  β = 1
+        // numerator = (5-0)² + (0-0)² + (3-3)² = 25
+        // Σf² = 25 + 0 + 9 = 34  →  stress = 25/34 ≈ 0.735294
         let result = loss.compute(&fitted, &target);
-        assert_eq!(result, 25.0);
+        assert!(
+            (result - 25.0 / 34.0).abs() < 1e-10,
+            "expected 0.735294, got {}",
+            result
+        );
     }
 
     #[test]

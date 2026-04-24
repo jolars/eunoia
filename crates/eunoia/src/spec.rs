@@ -406,6 +406,59 @@ mod tests {
     }
 
     #[test]
+    fn test_inclusive_three_set_decomposition() {
+        // Known 3-set case: A=10, B=8, C=6; A∩B=3, A∩C=2, B∩C=1, A∩B∩C=0
+        // Expected exclusive decomposition via inclusion-exclusion:
+        //   A∩B∩C (exclusive)           = 0
+        //   A∩B only = 3 - 0            = 3
+        //   A∩C only = 2 - 0            = 2
+        //   B∩C only = 1 - 0            = 1
+        //   A only   = 10 - 3 - 2 + 0   = 5
+        //   B only   = 8  - 3 - 1 + 0   = 4
+        //   C only   = 6  - 2 - 1 + 0   = 3
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .set("C", 6.0)
+            .intersection(&["A", "B"], 3.0)
+            .intersection(&["A", "C"], 2.0)
+            .intersection(&["B", "C"], 1.0)
+            .intersection(&["A", "B", "C"], 0.0)
+            .input_type(InputType::Inclusive)
+            .build()
+            .unwrap();
+
+        let g = |names: &[&str]| {
+            spec.get_exclusive(&Combination::new(names))
+                .expect("exclusive area should be defined")
+        };
+        assert!((g(&["A"]) - 5.0).abs() < 1e-10);
+        assert!((g(&["B"]) - 4.0).abs() < 1e-10);
+        assert!((g(&["C"]) - 3.0).abs() < 1e-10);
+        assert!((g(&["A", "B"]) - 3.0).abs() < 1e-10);
+        assert!((g(&["A", "C"]) - 2.0).abs() < 1e-10);
+        assert!((g(&["B", "C"]) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_inclusive_rejects_negative_disjoint_area() {
+        // A∩B is larger than either A or B — impossible set relationships.
+        // The exclusive decomposition would yield a negative A-only area.
+        let result = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 5.0)
+            .intersection(&["A", "B"], 10.0)
+            .input_type(InputType::Inclusive)
+            .build();
+
+        assert!(
+            matches!(result, Err(DiagramError::InvalidValue { .. })),
+            "expected InvalidValue for negative-disjoint inclusive input, got {:?}",
+            result
+        );
+    }
+
+    #[test]
     fn test_exclusive_input() {
         let spec = DiagramSpecBuilder::new()
             .set("A", 5.0) // exclusive A-only

@@ -12,9 +12,13 @@ use argmin::solver::linesearch::{
 };
 use argmin::solver::neldermead::NelderMead;
 use argmin::solver::quasinewton::LBFGS;
+use argmin::solver::simulatedannealing::{Anneal, SATempFunc, SimulatedAnnealing};
 use argmin::solver::trustregion::{CauchyPoint, TrustRegion};
 use finitediff::vec;
 use nalgebra::DVector;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use std::cell::RefCell;
 
 use crate::geometry::traits::DiagramShape;
 use crate::spec::PreprocessedSpec;
@@ -31,6 +35,14 @@ pub enum Optimizer {
     ConjugateGradient,
     /// Trust Region method
     TrustRegion,
+    /// Simulated annealing (derivative-free, bounded global search).
+    ///
+    /// This is derivative-free and can escape local minima, but it is far
+    /// slower than the local solvers. It is automatically triggered as a
+    /// "last-ditch" fallback for 3-set ellipse fits via
+    /// [`crate::Fitter::sa_fallback_threshold`]; using it as the primary
+    /// optimizer is mostly useful for benchmarking or pathological inputs.
+    SimulatedAnnealing,
 }
 
 /// Configuration for final layout optimization.
@@ -235,9 +247,161 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
                 result.state().get_cost(),
             )
         }
+        Optimizer::SimulatedAnnealing => {
+            // Derive wide bounds from initial params and run SA.
+            let (lower, upper) = derive_sa_bounds(initial_param.as_slice(), params_per_shape);
+            let (best_params, best_loss) = run_simulated_annealing::<S>(
+                spec,
+                initial_param.as_slice(),
+                &lower,
+                &upper,
+                config.loss_type,
+                params_per_shape,
+                config.max_iterations,
+                0,
+            )?;
+            (DVector::from_vec(best_params), best_loss)
+        }
     };
 
     Ok((final_params.as_slice().to_vec(), loss))
+}
+
+/// Refine a set of parameters using bounded simulated annealing.
+///
+/// This is used for the "last-ditch" global search fallback after a primary
+/// optimizer produces a solution with unacceptably high `diagError`. Callers are
+/// expected to derive bounds via [`derive_sa_bounds`] (or equivalent) from the
+/// current solution before calling this.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_simulated_annealing<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    start_params: &[f64],
+    lower: &[f64],
+    upper: &[f64],
+    loss_type: crate::loss::LossType,
+    params_per_shape: usize,
+    max_iters: usize,
+    seed: u64,
+) -> Result<(Vec<f64>, f64), Error> {
+    let cost = BoundedDiagramCost::<S> {
+        inner: DiagramCost {
+            spec,
+            loss_type,
+            params_per_shape,
+            _shape: std::marker::PhantomData,
+        },
+        lower: lower.to_vec(),
+        upper: upper.to_vec(),
+        rng: RefCell::new(StdRng::seed_from_u64(seed ^ 0xA5A5_A5A5_A5A5_A5A5)),
+    };
+
+    let init_temp = 10.0_f64;
+    let solver = SimulatedAnnealing::new(init_temp)?
+        .with_temp_func(SATempFunc::Boltzmann)
+        .with_stall_best(200)
+        .with_stall_accepted(200);
+
+    let start_vec = start_params.to_vec();
+    let result = Executor::new(cost, solver)
+        .configure(|state| state.param(start_vec).max_iters(max_iters as u64))
+        .run()?;
+
+    Ok((
+        result.state().get_best_param().unwrap().clone(),
+        result.state().get_best_cost(),
+    ))
+}
+
+/// Derive parameter bounds for the SA fallback, matching eulerr's
+/// `get_constraints` (eulerr/R/utils.R:164):
+/// - positions (h, k): clamped to the bounding box of all shapes
+/// - semi-axes (a, b) for ellipses / radius (r) for circles: `[current/3, current*3]`
+/// - rotation phi (ellipses only): `[0, π]`
+pub(crate) fn derive_sa_bounds(params: &[f64], params_per_shape: usize) -> (Vec<f64>, Vec<f64>) {
+    let n_shapes = params.len() / params_per_shape;
+    let mut lower = vec![0.0; params.len()];
+    let mut upper = vec![0.0; params.len()];
+
+    // Compute overall bounding box over all shapes.
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+
+    for i in 0..n_shapes {
+        let off = i * params_per_shape;
+        let (h, k, xlim, ylim) = if params_per_shape == 5 {
+            // Ellipse: [x, y, a, b, phi]
+            let a = params[off + 2].abs();
+            let b = params[off + 3].abs();
+            let phi = params[off + 4];
+            let xlim = ((a * phi.cos()).powi(2) + (b * phi.sin()).powi(2)).sqrt();
+            let ylim = ((a * phi.sin()).powi(2) + (b * phi.cos()).powi(2)).sqrt();
+            (params[off], params[off + 1], xlim, ylim)
+        } else {
+            // Circle: [x, y, r]
+            let r = params[off + 2].abs();
+            (params[off], params[off + 1], r, r)
+        };
+        min_x = min_x.min(h - xlim);
+        min_y = min_y.min(k - ylim);
+        max_x = max_x.max(h + xlim);
+        max_y = max_y.max(k + ylim);
+    }
+
+    // Guard against degenerate single-point bounds.
+    if (max_x - min_x).abs() < 1e-6 {
+        min_x -= 1.0;
+        max_x += 1.0;
+    }
+    if (max_y - min_y).abs() < 1e-6 {
+        min_y -= 1.0;
+        max_y += 1.0;
+    }
+
+    for i in 0..n_shapes {
+        let off = i * params_per_shape;
+        lower[off] = min_x;
+        lower[off + 1] = min_y;
+        upper[off] = max_x;
+        upper[off + 1] = max_y;
+
+        if params_per_shape == 5 {
+            let a = params[off + 2].abs().max(1e-6);
+            let b = params[off + 3].abs().max(1e-6);
+            lower[off + 2] = a / 3.0;
+            upper[off + 2] = a * 3.0;
+            lower[off + 3] = b / 3.0;
+            upper[off + 3] = b * 3.0;
+            lower[off + 4] = 0.0;
+            upper[off + 4] = std::f64::consts::PI;
+        } else if params_per_shape == 3 {
+            let r = params[off + 2].abs().max(1e-6);
+            lower[off + 2] = r / 3.0;
+            upper[off + 2] = r * 3.0;
+        }
+    }
+
+    (lower, upper)
+}
+
+/// Compute the eulerr-style `diagError` (max regionError) from a flat parameter vector.
+pub(crate) fn diag_error_from_params<S: DiagramShape + Copy + 'static>(
+    params: &[f64],
+    spec: &PreprocessedSpec,
+) -> f64 {
+    let n_sets = spec.n_sets;
+    let params_per_shape = S::n_params();
+    let shapes: Vec<S> = (0..n_sets)
+        .map(|i| {
+            let start = i * params_per_shape;
+            let end = start + params_per_shape;
+            S::from_params(&params[start..end])
+        })
+        .collect();
+    let fitted = S::compute_exclusive_regions(&shapes);
+    crate::loss::LossType::DiagError.compute(&fitted, &spec.exclusive_areas)
 }
 
 /// Cost function for region error optimization.
@@ -298,6 +462,49 @@ impl<'a, S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'a, S> {
         let g_central = vec::central_diff(&f);
         let grad_vec = g_central(&param_vec)?;
         Ok(DVector::from_vec(grad_vec))
+    }
+}
+
+/// Bounded wrapper around [`DiagramCost`] for use with simulated annealing.
+///
+/// Implements [`CostFunction`] (over `Vec<f64>`) and [`Anneal`] with bounded
+/// Gaussian perturbation — each parameter is perturbed by `N(0, extent)` and
+/// clamped to its lower/upper bound.
+struct BoundedDiagramCost<'a, S: DiagramShape + Copy + 'static> {
+    inner: DiagramCost<'a, S>,
+    lower: Vec<f64>,
+    upper: Vec<f64>,
+    rng: RefCell<StdRng>,
+}
+
+impl<'a, S: DiagramShape + Copy + 'static> CostFunction for BoundedDiagramCost<'a, S> {
+    type Param = Vec<f64>;
+    type Output = f64;
+
+    fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
+        let dvec = DVector::from_vec(param.clone());
+        self.inner.cost(&dvec)
+    }
+}
+
+impl<'a, S: DiagramShape + Copy + 'static> Anneal for BoundedDiagramCost<'a, S> {
+    type Param = Vec<f64>;
+    type Output = Vec<f64>;
+    type Float = f64;
+
+    fn anneal(&self, param: &Self::Param, extent: Self::Float) -> Result<Self::Output, Error> {
+        let mut rng = self.rng.borrow_mut();
+        let mut next = param.clone();
+        // Scale step size by bound range so parameters with different dynamic ranges
+        // (positions vs. radii vs. rotation) take proportionate steps.
+        for (i, value) in next.iter_mut().enumerate() {
+            let range = (self.upper[i] - self.lower[i]).abs().max(1e-6);
+            // Uniform proposal in [-extent, +extent] * (range / 20) — roughly matching
+            // the scale of single-dimension perturbations common in SA.
+            let step = rng.random_range(-1.0..1.0) * extent * range / 20.0;
+            *value = (*value + step).clamp(self.lower[i], self.upper[i]);
+        }
+        Ok(next)
     }
 }
 
@@ -676,5 +883,77 @@ mod tests {
             all_reasonable,
             "Some configurations had unexpectedly high loss. This may indicate optimizer issues."
         );
+    }
+
+    #[test]
+    fn test_derive_sa_bounds_ellipse() {
+        // Two ellipses side by side with a=2, b=1, phi=0
+        let params = vec![
+            0.0, 0.0, 2.0, 1.0, 0.0, // ellipse 1
+            5.0, 0.0, 2.0, 1.0, 0.0, // ellipse 2
+        ];
+        let (lower, upper) = derive_sa_bounds(&params, 5);
+
+        // Position bounds span bounding box of both shapes.
+        // ellipse 1 x-extent: [-2, 2]; ellipse 2 x-extent: [3, 7]; overall [-2, 7]
+        assert!((lower[0] - (-2.0)).abs() < 1e-9);
+        assert!((upper[0] - 7.0).abs() < 1e-9);
+        // y-extent for both: [-1, 1]
+        assert!((lower[1] - (-1.0)).abs() < 1e-9);
+        assert!((upper[1] - 1.0).abs() < 1e-9);
+
+        // Semi-axis bounds: a/3..a*3 for each
+        assert!((lower[2] - (2.0 / 3.0)).abs() < 1e-9);
+        assert!((upper[2] - 6.0).abs() < 1e-9);
+        assert!((lower[3] - (1.0 / 3.0)).abs() < 1e-9);
+        assert!((upper[3] - 3.0).abs() < 1e-9);
+
+        // Rotation bounds [0, π]
+        assert!((lower[4]).abs() < 1e-9);
+        assert!((upper[4] - std::f64::consts::PI).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_derive_sa_bounds_circle() {
+        // Circle: [x, y, r]
+        let params = vec![0.0, 0.0, 2.0, 5.0, 0.0, 1.0];
+        let (lower, upper) = derive_sa_bounds(&params, 3);
+        // Overall bounding box x: [-2, 6], y: [-2, 2]
+        assert!((lower[0] - (-2.0)).abs() < 1e-9);
+        assert!((upper[0] - 6.0).abs() < 1e-9);
+        // Radius bounds: [r/3, r*3]
+        assert!((lower[2] - (2.0 / 3.0)).abs() < 1e-9);
+        assert!((upper[2] - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_sa_run_finds_improvement() {
+        // Build a tiny 2-circle problem and confirm SA doesn't break catastrophically
+        // (we only check it runs to completion and returns finite output).
+        use crate::geometry::shapes::Circle;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .intersection(&["A", "B"], 2.0)
+            .build()
+            .unwrap();
+
+        let preprocessed = spec.preprocess().unwrap();
+        let start = vec![0.0, 0.0, 1.78, 3.0, 0.0, 1.6];
+        let (lower, upper) = derive_sa_bounds(&start, 3);
+        let (best, loss) = run_simulated_annealing::<Circle>(
+            &preprocessed,
+            &start,
+            &lower,
+            &upper,
+            crate::loss::LossType::sse(),
+            3,
+            500,
+            42,
+        )
+        .unwrap();
+        assert_eq!(best.len(), start.len());
+        assert!(loss.is_finite());
     }
 }

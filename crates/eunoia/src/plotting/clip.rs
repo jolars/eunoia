@@ -23,7 +23,7 @@ pub enum ClipOperation {
 }
 
 impl ClipOperation {
-    fn to_overlay_rule(&self) -> OverlayRule {
+    fn to_overlay_rule(self) -> OverlayRule {
         match self {
             ClipOperation::Intersection => OverlayRule::Intersect,
             ClipOperation::Union => OverlayRule::Union,
@@ -109,7 +109,7 @@ pub fn polygon_clip(subject: &Polygon, clip: &Polygon, operation: ClipOperation)
     result
         .into_iter()
         .flat_map(|shape| shape.into_iter())
-        .map(|path| Polygon::new(path))
+        .map(Polygon::new)
         .collect()
 }
 
@@ -197,7 +197,7 @@ mod tests {
 
         let result = polygon_clip(&square1, &square2, ClipOperation::Difference);
 
-        assert!(result.len() >= 1);
+        assert!(!result.is_empty());
         let diff_area: f64 = result.iter().map(|p| p.area()).sum();
         // 2x2 square minus 1x1 overlap = 4 - 1 = 3
         assert!((diff_area - 3.0).abs() < 1e-6);

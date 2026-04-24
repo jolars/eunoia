@@ -3,8 +3,9 @@
 use crate::geometry::diagram;
 use crate::geometry::shapes::Circle;
 use crate::geometry::traits::DiagramShape;
+use crate::loss::LossType;
 use crate::spec::{Combination, DiagramSpec};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Result of fitting a diagram specification to shapes.
 ///
@@ -12,7 +13,10 @@ use std::collections::HashMap;
 /// Defaults to `Circle` for backward compatibility.
 #[derive(Debug, Clone)]
 pub struct Layout<S: DiagramShape = Circle> {
-    /// The fitted shapes (one per set).
+    /// The fitted shapes (one per set, in the order of the original spec's set names).
+    ///
+    /// Sets that were pruned during preprocessing (e.g. empty sets) are represented
+    /// by zero-parameter shapes at their original index.
     pub(crate) shapes: Vec<S>,
 
     /// Mapping from set names to shape indices.
@@ -24,7 +28,10 @@ pub struct Layout<S: DiagramShape = Circle> {
     /// Actual fitted combination areas (computed from shapes).
     fitted: HashMap<Combination, f64>,
 
-    /// Final loss value.
+    /// The loss function used during optimization (same objective is reported by `loss()`).
+    loss_type: LossType,
+
+    /// Final loss value (computed using `loss_type`).
     loss: f64,
 
     /// Number of iterations performed.
@@ -34,22 +41,26 @@ pub struct Layout<S: DiagramShape = Circle> {
 impl<S: DiagramShape + Copy + 'static> Layout<S> {
     /// Creates a new layout from shapes and specification.
     ///
-    /// This computes the fitted areas and loss automatically.
+    /// This computes the fitted areas and loss automatically. The `loss_type` determines
+    /// the objective reported by [`Layout::loss`] — it should match the objective the
+    /// fitter minimized so callers see a self-consistent value.
     pub(crate) fn new(
         shapes: Vec<S>,
         set_to_shape: HashMap<String, usize>,
         spec: &DiagramSpec,
         iterations: usize,
+        loss_type: LossType,
     ) -> Self {
         let requested = spec.exclusive_areas().clone();
         let fitted = Self::compute_fitted_areas(&shapes, spec);
-        let loss = Self::compute_loss(&requested, &fitted);
+        let loss = Self::compute_loss(&requested, &fitted, loss_type);
 
         Layout {
             shapes,
             set_to_shape,
             requested,
             fitted,
+            loss_type,
             loss,
             iterations,
         }
@@ -70,9 +81,103 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         &self.fitted
     }
 
-    /// Get the final loss value.
+    /// Get the final loss value, computed using the optimizer's objective ([`Layout::loss_type`]).
     pub fn loss(&self) -> f64 {
         self.loss
+    }
+
+    /// Get the loss function used by the optimizer.
+    pub fn loss_type(&self) -> LossType {
+        self.loss_type
+    }
+
+    /// Residuals per region: `requested - fitted`.
+    ///
+    /// Includes every combination that appears in either requested or fitted areas.
+    pub fn residuals(&self) -> HashMap<Combination, f64> {
+        self.all_combinations()
+            .into_iter()
+            .map(|combo| {
+                let t = self.requested.get(&combo).copied().unwrap_or(0.0);
+                let f = self.fitted.get(&combo).copied().unwrap_or(0.0);
+                (combo, t - f)
+            })
+            .collect()
+    }
+
+    /// Per-region error: `|f_i / Σf - t_i / Σt|` for each combination.
+    ///
+    /// Matches eulerr's `regionError` definition. Returns an empty map if either the
+    /// sum of fitted or the sum of requested areas is effectively zero.
+    pub fn region_error(&self) -> HashMap<Combination, f64> {
+        let sum_f: f64 = self.fitted.values().sum();
+        let sum_t: f64 = self.requested.values().sum();
+
+        if sum_f.abs() < 1e-10 || sum_t.abs() < 1e-10 {
+            return HashMap::new();
+        }
+
+        self.all_combinations()
+            .into_iter()
+            .map(|combo| {
+                let f = self.fitted.get(&combo).copied().unwrap_or(0.0);
+                let t = self.requested.get(&combo).copied().unwrap_or(0.0);
+                (combo, (f / sum_f - t / sum_t).abs())
+            })
+            .collect()
+    }
+
+    /// Diagnostic error: the maximum of [`Layout::region_error`] values.
+    ///
+    /// Matches eulerr's `diagError` scalar (EulerAPE style).
+    pub fn diag_error(&self) -> f64 {
+        self.region_error()
+            .values()
+            .copied()
+            .fold(0.0_f64, f64::max)
+    }
+
+    /// venneuler-style stress metric (matches eulerr's `stress`):
+    /// `Σ(f - β·t)² / Σf²` where `β = Σ(f·t) / Σt²`.
+    ///
+    /// Returns 0.0 if `Σt² < ε` or `Σf² < ε`.
+    pub fn stress(&self) -> f64 {
+        let combos = self.all_combinations();
+        let sum_ft: f64 = combos
+            .iter()
+            .map(|c| {
+                let f = self.fitted.get(c).copied().unwrap_or(0.0);
+                let t = self.requested.get(c).copied().unwrap_or(0.0);
+                f * t
+            })
+            .sum();
+        let sum_t2: f64 = self.requested.values().map(|&v| v * v).sum();
+        let sum_f2: f64 = self.fitted.values().map(|&v| v * v).sum();
+
+        if sum_t2 < 1e-20 || sum_f2 < 1e-20 {
+            return 0.0;
+        }
+
+        let beta = sum_ft / sum_t2;
+        let numerator: f64 = combos
+            .into_iter()
+            .map(|c| {
+                let f = self.fitted.get(&c).copied().unwrap_or(0.0);
+                let t = self.requested.get(&c).copied().unwrap_or(0.0);
+                (f - beta * t).powi(2)
+            })
+            .sum();
+        numerator / sum_f2
+    }
+
+    fn all_combinations(&self) -> Vec<Combination> {
+        let set: HashSet<Combination> = self
+            .requested
+            .keys()
+            .chain(self.fitted.keys())
+            .cloned()
+            .collect();
+        set.into_iter().collect()
     }
 
     /// Get the number of iterations.
@@ -194,19 +299,29 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         exclusive_combos
     }
 
-    /// Compute the loss between requested and fitted areas.
+    /// Compute the loss between requested and fitted areas using the optimizer's loss type.
     fn compute_loss(
         requested: &HashMap<Combination, f64>,
         fitted: &HashMap<Combination, f64>,
+        loss_type: LossType,
     ) -> f64 {
-        requested
+        // LossType operates on RegionMask-keyed maps, but the mask encoding is only
+        // relevant within a single call. Assign each distinct combination to a unique
+        // mask so LossType sees the same pairing of fitted/requested values.
+        let mut combo_to_mask: HashMap<&Combination, diagram::RegionMask> = HashMap::new();
+        for combo in requested.keys().chain(fitted.keys()) {
+            let next = combo_to_mask.len();
+            combo_to_mask.entry(combo).or_insert(next);
+        }
+
+        let fitted_mask: HashMap<diagram::RegionMask, f64> =
+            fitted.iter().map(|(c, &v)| (combo_to_mask[c], v)).collect();
+        let requested_mask: HashMap<diagram::RegionMask, f64> = requested
             .iter()
-            .map(|(combo, &req)| {
-                let fit = fitted.get(combo).copied().unwrap_or(0.0);
-                (req - fit).powi(2)
-            })
-            .sum::<f64>()
-            .sqrt()
+            .map(|(c, &v)| (combo_to_mask[c], v))
+            .collect();
+
+        loss_type.compute(&fitted_mask, &requested_mask)
     }
 }
 
@@ -228,7 +343,7 @@ mod tests {
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0);
+        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse());
 
         assert_eq!(layout.shapes().len(), 1);
         assert!(layout.loss() < 0.001); // Should be very close to π
@@ -244,7 +359,7 @@ mod tests {
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0);
+        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse());
 
         let circle = layout.shape_for_set("A").unwrap();
         assert_eq!(circle.radius(), 3.0);
@@ -280,7 +395,7 @@ mod tests {
         set_to_shape.insert("B".to_string(), 1);
         set_to_shape.insert("C".to_string(), 2);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0);
+        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse());
 
         // Check fitted areas - there should be NO intersection areas
         let ab_combo = Combination::new(&["A", "B"]);
@@ -327,5 +442,98 @@ mod tests {
             "A area should be ~π, got {}",
             a_only
         );
+    }
+
+    #[test]
+    fn test_empty_set_reinsertion() {
+        // A spec with one empty set (C = 0) should still produce a layout with an
+        // entry (zero shape) for C in its original position.
+        use crate::fitter::Fitter;
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .set("C", 0.0)
+            .intersection(&["A", "B"], 2.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+
+        // All 3 original sets should be represented.
+        assert_eq!(layout.shapes().len(), 3);
+
+        // C must be accessible by name and have zero area.
+        let c_shape = layout.shape_for_set("C").expect("C should be present");
+        assert_eq!(c_shape.radius(), 0.0);
+
+        // Surviving sets should have positive-area shapes.
+        let a_shape = layout.shape_for_set("A").expect("A should be present");
+        let b_shape = layout.shape_for_set("B").expect("B should be present");
+        assert!(a_shape.radius() > 0.0);
+        assert!(b_shape.radius() > 0.0);
+    }
+
+    #[test]
+    fn test_named_metric_accessors() {
+        use crate::fitter::Fitter;
+        // A simple 2-set overlap. The fitter should get close to exact for circles.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 2.0)
+            .intersection(&["A", "B"], 1.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+
+        // residuals, region_error should have one entry per combination.
+        assert!(!layout.residuals().is_empty());
+        let region_err = layout.region_error();
+        assert!(!region_err.is_empty());
+
+        // diagError = max(regionError)
+        let max_region_err = region_err.values().copied().fold(0.0_f64, f64::max);
+        assert!((layout.diag_error() - max_region_err).abs() < 1e-12);
+
+        // stress is bounded [0, 1] for sensible inputs and finite.
+        let stress = layout.stress();
+        assert!(stress.is_finite());
+        assert!(stress >= 0.0);
+    }
+
+    #[test]
+    fn test_loss_reflects_loss_type() {
+        // Layout.loss() should match the LossType the optimizer minimized.
+        use crate::fitter::Fitter;
+        use crate::loss::LossType;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 2.0)
+            .intersection(&["A", "B"], 1.0)
+            .build()
+            .unwrap();
+
+        let layout_sse = Fitter::<Circle>::new(&spec)
+            .seed(42)
+            .loss_type(LossType::sse())
+            .fit()
+            .unwrap();
+        let layout_rmse = Fitter::<Circle>::new(&spec)
+            .seed(42)
+            .loss_type(LossType::rmse())
+            .fit()
+            .unwrap();
+
+        assert_eq!(layout_sse.loss_type(), LossType::sse());
+        assert_eq!(layout_rmse.loss_type(), LossType::rmse());
+
+        // Given identical fits, RMSE = sqrt(SSE / n). Since both optimized with the
+        // same seed and the region structure is the same, at least the relationship
+        // sse >= rmse^2 * n_regions / 1 (approximately) should hold. Instead of
+        // asserting a tight relationship (the optimizer may take different paths),
+        // just check each loss is finite and non-negative.
+        assert!(layout_sse.loss().is_finite() && layout_sse.loss() >= 0.0);
+        assert!(layout_rmse.loss().is_finite() && layout_rmse.loss() >= 0.0);
     }
 }

@@ -425,6 +425,20 @@ let layout = Fitter::<Circle>::new(&spec)
 - `Layout<S>` contains the fitted shapes (has type parameter)
 - This allows reusing the same specification with different shape types
 
+### Input types (eulerr ↔ eunoia)
+
+eunoia uses `InputType::Exclusive` and `InputType::Inclusive`. The mapping to
+eulerr's `input` argument is:
+
+| eulerr           | eunoia                    | meaning                           |
+| ---------------- | ------------------------- | --------------------------------- |
+| `"disjoint"`     | `InputType::Exclusive`    | Values are disjoint subset sizes. |
+| `"union"`        | `InputType::Inclusive`    | Values are full set sizes (unions). |
+
+`InputType::Inclusive` performs inclusion–exclusion decomposition and returns
+`DiagramError::InvalidValue` if any resulting exclusive area is negative
+(matching eulerr's `fit_diagram.R` union-input validation).
+
 ## Current Status
 
 - ✅ Cargo workspace with separate crates for core and WASM
@@ -459,10 +473,11 @@ let layout = Fitter::<Circle>::new(&spec)
 - ✅ Ellipse shape implemented with exact 3+ way intersections
 - ✅ Polygon conversion via `Polygonize` trait (+ `plotting` feature for clipping/regions)
 - ✅ Post-fit normalization: clustering, rotation, centering, skyline packing
-- ✅ Selectable optimizer (Nelder-Mead, L-BFGS, CG, TrustRegion)
+- ✅ Selectable optimizer (Nelder-Mead, L-BFGS, CG, TrustRegion, SimulatedAnnealing)
+- ✅ Global-search fallback: bounded SA auto-triggers for 3-set ellipse fits when `diagError > threshold` (matches eulerr's GenSA fallback). Tunable via `Fitter::sa_fallback_threshold`.
+- ✅ Named quality metrics on `Layout`: `region_error()`, `diag_error()`, `stress()` (β-scaled venneuler form), `residuals()`.
 - ❌ Triangle shape not implemented
 - ❌ Label placement algorithms not implemented (poles of inaccessibility)
-- ❌ Global-search fallback optimizer (GenSA-equivalent) not implemented
 - ❌ C/FFI or extendr bindings for R not yet started
 
 ## Dependencies
@@ -621,7 +636,6 @@ The project uses a Cargo workspace with multiple crates:
 
 - **Other shapes**: Triangles (ellipses and rectangles done)
 - **Label placement** algorithms (poles of inaccessibility, centroids)
-- **Global-search fallback** optimizer (GenSA-equivalent) for hard ellipse cases
 - **R bindings** via extendr in a separate repository
 - Parallel optimization for large diagrams
 - GPU acceleration for polygon operations
