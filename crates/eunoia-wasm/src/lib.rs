@@ -3,9 +3,9 @@
 //! This crate provides WebAssembly bindings for the eunoia library,
 //! enabling Euler and Venn diagram generation in web browsers.
 
+use eunoia::Optimizer;
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::geometry::traits::Polygonize;
-use eunoia::Optimizer;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -455,7 +455,7 @@ pub fn generate_from_spec(
         _ => {
             return Err(JsValue::from_str(
                 "Invalid input type. Must be 'exclusive' or 'inclusive'",
-            ))
+            ));
         }
     };
 
@@ -554,7 +554,7 @@ pub fn generate_from_spec_with_debug(
         _ => {
             return Err(JsValue::from_str(
                 "Invalid input type. Must be 'exclusive' or 'inclusive'",
-            ))
+            ));
         }
     };
 
@@ -826,7 +826,7 @@ pub fn generate_from_spec_initial(
         _ => {
             return Err(JsValue::from_str(
                 "Invalid input type. Must be 'exclusive' or 'inclusive'",
-            ))
+            ));
         }
     };
 
