@@ -410,8 +410,6 @@ mod tests {
 
         let points = outer.intersect_conic(&inner);
 
-        println!("Intersection points: {:?}", points);
-
         // This should pass when the bug is fixed
         assert_eq!(
             points.len(),

@@ -363,13 +363,6 @@ pub fn to_exclusive_areas(
         let mask_i = masks[i];
         let mut to_subtract = 0.0;
 
-        // DEBUG: Track if this is A
-        let is_debug = mask_i == 0b000001 && masks.len() > 10;
-        if is_debug {
-            eprintln!("\n=== Processing A (0b000001) at index {} ===", i);
-            eprintln!("A overlapping: {}", overlapping_areas[&mask_i]);
-        }
-
         // Look at masks that were processed BEFORE this one in the reverse iteration
         // Those are indices AFTER i in the sorted array (larger bit counts)
         #[allow(clippy::needless_range_loop)]
@@ -377,20 +370,8 @@ pub fn to_exclusive_areas(
             let mask_j = masks[j];
             // If mask_i is a subset of mask_j, subtract mask_j's already-computed exclusive area
             if is_subset(mask_i, mask_j) {
-                if is_debug && to_subtract < 20.0 {
-                    // Print first few
-                    eprintln!("  Subtracting {:#08b}: {}", mask_j, exclusive[&mask_j]);
-                }
                 to_subtract += exclusive[&mask_j];
             }
-        }
-
-        if is_debug {
-            eprintln!("Total to subtract: {}", to_subtract);
-            eprintln!(
-                "A exclusive will be: {}",
-                overlapping_areas[&mask_i] - to_subtract
-            );
         }
 
         *exclusive.get_mut(&mask_i).unwrap() -= to_subtract;
@@ -695,12 +676,6 @@ mod tests {
             regions.contains(&(1 << 2)),
             "Region for circle 2 should exist"
         );
-
-        println!("Discovered {} regions", regions.len());
-        for &mask in &regions {
-            let count = mask.count_ones();
-            println!("  Region mask {:#b} ({} circles)", mask, count);
-        }
     }
 
     #[test]
@@ -761,8 +736,6 @@ mod tests {
             area < 10.0,
             "Three circle intersection should be smaller than individual circles"
         );
-
-        println!("Three-way intersection area: {}", area);
     }
 
     #[test]
@@ -1302,10 +1275,6 @@ mod tests {
         let intersections = collect_intersections(&circles, 6);
         let regions = discover_regions(&circles, &intersections, 6);
 
-        println!("\n=== Hexagon (sparse overlap) ===");
-        println!("Discovered: {} / 63 regions", regions.len());
-        println!("Pruned: {} unnecessary computations!", 63 - regions.len());
-
         assert!(regions.len() < 63, "Should have pruned some regions");
     }
 
@@ -1318,35 +1287,6 @@ mod tests {
         let c5 = Circle::new(Point::new(-0.7500000000, -1.2990381057), 1.8000000000); // E
         let c6 = Circle::new(Point::new(0.7500000000, -1.2990381057), 1.8000000000); // F
         let circles = vec![c1, c2, c3, c4, c5, c6];
-
-        // Debug: compute overlapping for ABCDEF
-        let intersections = collect_intersections(&circles, 6);
-        eprintln!("Total intersection points: {}", intersections.len());
-
-        // Check how many points qualify for ABCDEF
-        let mask = 0b111111;
-        let count = intersections
-            .iter()
-            .filter(|info| {
-                let (p1, p2) = info.parents();
-                let parents_in_mask = (mask & (1 << p1)) != 0 && (mask & (1 << p2)) != 0;
-                let adopter_mask = adopters_to_mask(info.adopters());
-                let mask_subset_of_adopters = (mask & adopter_mask) == mask;
-                parents_in_mask && mask_subset_of_adopters
-            })
-            .count();
-        eprintln!("Points qualifying for ABCDEF: {}", count);
-
-        let regions = discover_regions(&circles, &intersections, 6);
-        let mut overlapping_areas = std::collections::HashMap::new();
-        for &mask in &regions {
-            let area = compute_region_area(mask, &circles, &intersections, 6);
-            overlapping_areas.insert(mask, area);
-        }
-        eprintln!(
-            "ABCDEF (0b111111) overlapping: {}",
-            overlapping_areas[&0b111111]
-        );
 
         let areas = compute_exclusive_areas_from_layout(
             &circles,
@@ -1426,19 +1366,6 @@ mod tests {
         }
 
         let mc = (in_all as f64 / n_samples as f64) * bbox_area;
-
-        eprintln!("ABCDEF exact: {:.10}", exact);
-        eprintln!(
-            "ABCDEF Monte Carlo ({}k samples): {:.10}",
-            n_samples / 1_000,
-            mc
-        );
-        eprintln!("eulerr expects exclusive: 0.3062166");
-        eprintln!("Difference: {:.10}", (exact - mc).abs());
-        eprintln!(
-            "Relative error: {:.2}%",
-            ((exact - mc).abs() / mc.max(exact)) * 100.0
-        );
 
         assert!((exact - mc).abs() < 0.05, "MC and exact should be close");
     }

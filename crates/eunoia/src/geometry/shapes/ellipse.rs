@@ -2054,23 +2054,13 @@ mod tests {
             }
         }
 
-        if !failures.is_empty() {
-            println!("\n❌ {} failures out of {} tests:", failures.len(), N_TESTS);
-            for (seed, exact, mc, err, n_pts) in failures.iter().take(10) {
-                println!(
-                    "  Seed {}: exact={:.6}, mc={:.6}, error={:.1}%, n_points={}",
-                    seed,
-                    exact,
-                    mc,
-                    err * 100.0,
-                    n_pts
-                );
-            }
-            panic!(
-                "Monte Carlo validation failed for {} test cases",
-                failures.len()
-            );
-        }
+        assert!(
+            failures.is_empty(),
+            "Monte Carlo validation failed for {} of {} cases: {:?}",
+            failures.len(),
+            N_TESTS,
+            failures.iter().take(10).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -2089,10 +2079,6 @@ mod tests {
         let all_three = areas.get(&mask_all).copied().unwrap_or(0.0);
 
         // When all three are identical and overlapping, the 3-way intersection should be ~1.0
-        println!("Three identical ellipses:");
-        println!("  A&B&C area: {:.6}", all_three);
-        println!("  Expected: ~1.0");
-
         assert!(
             (all_three - 1.0).abs() < 0.01,
             "Complete overlap should give area ~1.0, got {}",
@@ -2150,7 +2136,6 @@ mod tests {
         let y_max = max1.y().min(max2.y()).min(max3.y());
 
         if x_min >= x_max || y_min >= y_max {
-            println!("No bounding box overlap for 3 ellipses - skipping test");
             return;
         }
 
@@ -2174,20 +2159,11 @@ mod tests {
         let mask_all = (1usize << 0) | (1usize << 1) | (1usize << 2);
         let exact_area = areas.get(&mask_all).copied().unwrap_or(0.0);
 
-        println!("\nThree-ellipse intersection (seed=42):");
-        println!(
-            "  Exact area (compute_exclusive_regions): {:.6}",
-            exact_area
-        );
-        println!("  Monte Carlo estimate: {:.6}", mc_area);
-
         if mc_area < 0.01 && exact_area < 0.01 {
-            println!("  Both areas are very small - test passed");
             return;
         }
 
         let error = (exact_area - mc_area).abs() / mc_area.max(exact_area);
-        println!("  Relative error: {:.1}%", error * 100.0);
 
         assert!(
             error < 0.15,

@@ -644,10 +644,6 @@ mod tests {
         // For circles, params are [x0, y0, r0, x1, y1, r1, ...]
         assert_eq!(final_params.len(), 2 * Circle::n_params()); // 2 circles * 3 params each
         assert!(loss >= 0.0);
-
-        // Loss should be reasonably small (circles should move closer)
-        println!("Initial loss: compute initial loss");
-        println!("Final loss: {}", loss);
     }
 
     #[test]
@@ -684,8 +680,6 @@ mod tests {
 
         let error = result.unwrap();
         assert!(error >= 0.0, "Error should be non-negative");
-
-        println!("Initial error: {}", error);
     }
 
     // ========== Layout Reproduction Tests ==========
@@ -702,11 +696,6 @@ mod tests {
 
         // Compute exclusive areas from this layout
         let exclusive = diagram::compute_exclusive_areas_from_layout(&circles, &set_names);
-
-        println!("Exclusive areas from layout:");
-        for (combo, area) in &exclusive {
-            println!("  {:?}: {:.4}", combo.sets(), area);
-        }
 
         // Create spec from these areas
         let spec = create_spec_from_exclusive(exclusive);
@@ -727,7 +716,6 @@ mod tests {
         assert!(result.is_ok());
 
         let (_, loss) = result.unwrap();
-        println!("Reproduction loss: {}", loss);
 
         // Should be able to reproduce the layout with very low error
         assert!(
@@ -744,24 +732,8 @@ mod tests {
         // Generate random layout
         let (circles, set_names) = random_circle_layout(3, 42);
 
-        println!("Random circles:");
-        for (i, c) in circles.iter().enumerate() {
-            println!(
-                "  {}: center=({:.2}, {:.2}), radius={:.2}",
-                set_names[i],
-                c.center().x(),
-                c.center().y(),
-                c.radius()
-            );
-        }
-
         // Compute exclusive areas
         let exclusive_areas = diagram::compute_exclusive_areas_from_layout(&circles, &set_names);
-
-        println!("\nExclusive areas:");
-        for (combo, area) in &exclusive_areas {
-            println!("  {:?}: {:.4}", combo.sets(), area);
-        }
 
         // Create spec
         let spec = create_spec_from_exclusive(exclusive_areas);
@@ -786,10 +758,7 @@ mod tests {
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
         assert!(result.is_ok());
 
-        let (final_pos, loss) = result.unwrap();
-        println!("\nReproduction loss: {}", loss);
-        println!("Final params: {:?}", final_pos);
-        println!("Original radii: {:?}", radii);
+        let (_final_pos, loss) = result.unwrap();
 
         // Should be able to reproduce with reasonable error
         // Note: 3-way intersections are harder, and optimizer may converge to local minima
@@ -821,13 +790,6 @@ mod tests {
         let mut results = Vec::new();
 
         for (i, &(n_sets, seed)) in test_configs.iter().enumerate() {
-            println!(
-                "\n=== Test {} ({} circles, seed {}) ===",
-                i + 1,
-                n_sets,
-                seed
-            );
-
             // Generate random diagram
             let (spec, original_circles) = generate_random_diagram(n_sets, seed);
             let preprocessed = spec.preprocess().unwrap();
@@ -852,27 +814,8 @@ mod tests {
             assert!(result.is_ok(), "Optimization failed for config {}", i);
 
             let (_, loss) = result.unwrap();
-            println!("Loss: {:.6}", loss);
 
             results.push((n_sets, seed, loss));
-        }
-
-        println!("\n=== Summary ===");
-        for (i, &(n_sets, seed, loss)) in results.iter().enumerate() {
-            let status = match n_sets {
-                2 if loss < 1.0 => "✅",
-                3 if loss < 2.0 => "✅",
-                4 if loss < 5.0 => "✅",
-                _ => "⚠️",
-            };
-            println!(
-                "{} Test {}: {} circles, seed {}, loss={:.6}",
-                status,
-                i + 1,
-                n_sets,
-                seed,
-                loss
-            );
         }
 
         // Relaxed tolerances - the algorithm should do reasonably well

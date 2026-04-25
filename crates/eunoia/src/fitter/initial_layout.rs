@@ -95,7 +95,7 @@ pub(crate) fn compute_initial_layout_with_config(
 
         let loss = result.state().get_cost();
 
-        println!("Attempt loss: {}", loss);
+        log::debug!("Attempt loss: {}", loss);
 
         // Early stopping if we've achieved perfect fit
         if loss < config.perfect_fit_threshold {

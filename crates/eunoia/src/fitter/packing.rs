@@ -252,10 +252,6 @@ mod tests {
         let height = y_max - y_min;
         let aspect = width / height;
 
-        println!(
-            "9 rectangles: aspect ratio = {:.2} (golden = 1.618)",
-            aspect
-        );
         // Should be reasonable - not too tall or too wide
         assert!(
             aspect > 0.8 && aspect < 2.5,

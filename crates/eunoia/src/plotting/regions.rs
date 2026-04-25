@@ -458,20 +458,9 @@ mod tests {
             "Spec should have zero area for C-only"
         );
 
-        println!("\nSpec exclusive areas:");
-        for (combo, &area) in spec.exclusive_areas() {
-            println!("  {}: {:.3}", combo, area);
-        }
-
         // Fit the layout - this will create a non-zero ellipse for C
         use crate::geometry::shapes::Ellipse;
-        use crate::geometry::traits::Area;
         let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
-
-        println!("\nFitted areas from layout:");
-        for (combo, &area) in layout.fitted() {
-            println!("  {}: {:.3}", combo, area);
-        }
 
         let shapes: Vec<Ellipse> = spec
             .set_names()
@@ -479,24 +468,8 @@ mod tests {
             .map(|name| *layout.shape_for_set(name).unwrap())
             .collect();
 
-        println!("\nActual shape areas:");
-        for (i, shape) in shapes.iter().enumerate() {
-            println!("  {}: {:.3}", spec.set_names()[i], shape.area());
-        }
-
         // Decompose regions
         let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
-
-        println!("\nDecomposed regions:");
-        for (combo, polys) in regions.iter() {
-            let total_area: f64 = polys.iter().map(|p| p.area()).sum();
-            println!(
-                "  {}: {} polygons, area={:.3}",
-                combo,
-                polys.len(),
-                total_area
-            );
-        }
 
         // For this particular configuration, C is fully contained within
         // A&B&C intersection, so there won't be a C-only region. But we
@@ -507,7 +480,6 @@ mod tests {
 
         // Verify total area is reasonable
         let total_area: f64 = regions.areas().values().sum();
-        println!("\nTotal decomposed area: {:.3}", total_area);
 
         // The total should be close to sum of individual shapes minus overlaps
         assert!(
