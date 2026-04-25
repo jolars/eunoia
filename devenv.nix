@@ -22,7 +22,9 @@
   languages = {
     rust = {
       enable = true;
-      toolchainFile = ./rust-toolchain.toml;
+      channel = "stable";
+      version = "1.94.1";
+      targets = [ "wasm32-unknown-unknown" ];
     };
 
     javascript = {

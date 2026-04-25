@@ -178,7 +178,7 @@ Interactive diagram viewer built with Svelte + TypeScript.
 - Prefer explicit types for clarity in geometric code
 - Keep functions focused and single-purpose
 - Use traits for polymorphism over shapes
-- **Use Rust Edition 2021** (for compatibility with rextendr R bindings)
+- **Use Rust Edition 2021** for the core `eunoia` crate (for compatibility with rextendr R bindings). The `eunoia-wasm` crate uses Edition 2024 (MSRV 1.85) since some WASM-side transitive dependencies require it.
 - **Use modern module organization** (Rust 2018+): `module.rs` + `module/`
   instead of `module/mod.rs`
 - **Format code with `cargo fmt`** before committing
@@ -525,9 +525,12 @@ considered for:
 - Maintenance burden
 - License compatibility
 
-**Note**: The project uses **Rust Edition 2021** for compatibility with rextendr
-(R bindings framework). This is specified in `Cargo.toml` and should not be
-changed without consideration for downstream binding compatibility.
+**Note**: The core `eunoia` crate uses **Rust Edition 2021** (MSRV 1.81) for
+compatibility with rextendr (R bindings framework). This is set at the
+workspace level in the root `Cargo.toml` and should not be changed without
+consideration for downstream binding compatibility. The `eunoia-wasm` crate
+overrides this with **Edition 2024** (MSRV 1.85) because some transitive
+WASM-only dependencies (e.g. `wit-bindgen`) require it.
 
 ## Working with This Codebase
 
@@ -646,7 +649,7 @@ The project uses a Cargo workspace with multiple crates:
 - **Uses Cargo workspace** with `crates/eunoia/` (core) and `crates/eunoia-wasm/` (bindings)
 - Core library is platform-independent Rust with no WASM dependencies
 - WASM bindings are a thin wrapper in a separate crate
-- **Uses Rust Edition 2021** for compatibility with rextendr (R bindings)
+- **Core `eunoia` crate uses Rust Edition 2021** (MSRV 1.81) for compatibility with rextendr (R bindings); `eunoia-wasm` uses Edition 2024 (MSRV 1.85)
 - **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0 (alpha)
 - **Breaking changes are acceptable** in pre-1.0.0 versions
 - **Uses Conventional Commits** for clear change history

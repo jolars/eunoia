@@ -25,14 +25,13 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           targets: wasm32-unknown-unknown
-          toolchain: 1.81.0
+          toolchain: 1.94.1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
       - name: Install wasm-pack
-        run:
-          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
         run: |
