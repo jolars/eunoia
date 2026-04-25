@@ -2,7 +2,11 @@ use argmin::core::{CostFunction, Error, Executor, Gradient, State};
 use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::quasinewton::LBFGS;
 use nalgebra::DVector;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
+#[cfg(not(target_arch = "wasm32"))]
+use rayon::prelude::*;
 
 use crate::spec::PairwiseRelations;
 
@@ -73,62 +77,100 @@ pub(crate) fn compute_initial_layout_with_config(
         10.0
     };
 
-    for _attempt in 0..config.max_attempts {
-        // Initialize with random positions in a reasonable range
-        let mut initial_values = vec![0.0; n_sets * 2];
-        for value in &mut initial_values {
-            *value = rng.random_range(-scale..scale);
-        }
-        let initial_param = DVector::from_vec(initial_values);
+    // Pre-derive a per-attempt seed from the parent RNG. This keeps results
+    // deterministic for a given parent seed regardless of how attempts are
+    // scheduled across threads.
+    let attempt_seeds: Vec<u64> = (0..config.max_attempts).map(|_| rng.random()).collect();
 
-        let cost_function = MdsCost {
-            distances,
-            relationships,
-        };
+    // Chunk size controls how much work runs in parallel before we re-check
+    // the patience criterion. Picking the thread count balances parallel
+    // throughput with the early-stop savings of patience.
+    #[cfg(not(target_arch = "wasm32"))]
+    let chunk_size = rayon::current_num_threads().max(1);
+    #[cfg(target_arch = "wasm32")]
+    let chunk_size = 1;
 
-        let line_search = MoreThuenteLineSearch::new();
-        let solver = LBFGS::new(line_search, 10);
+    'outer: for chunk in attempt_seeds.chunks(chunk_size) {
+        #[cfg(not(target_arch = "wasm32"))]
+        let results: Vec<(f64, Vec<f64>)> = chunk
+            .par_iter()
+            .map(|&seed| run_attempt(distances, relationships, n_sets, scale, seed))
+            .collect::<Result<_, _>>()?;
 
-        let result = Executor::new(cost_function, solver)
-            .configure(|state| state.param(initial_param).max_iters(200))
-            .run()?;
+        #[cfg(target_arch = "wasm32")]
+        let results: Vec<(f64, Vec<f64>)> = chunk
+            .iter()
+            .map(|&seed| run_attempt(distances, relationships, n_sets, scale, seed))
+            .collect::<Result<_, _>>()?;
 
-        let loss = result.state().get_cost();
+        for (loss, params) in results {
+            log::debug!("Attempt loss: {}", loss);
 
-        log::debug!("Attempt loss: {}", loss);
+            if loss < config.perfect_fit_threshold {
+                return Ok(params);
+            }
 
-        // Early stopping if we've achieved perfect fit
-        if loss < config.perfect_fit_threshold {
-            return Ok(result.state().get_best_param().unwrap().as_slice().to_vec());
-        }
+            if loss < best_loss {
+                let relative_improvement = if best_loss.is_finite() && best_loss > 0.0 {
+                    (best_loss - loss) / best_loss
+                } else {
+                    f64::INFINITY
+                };
 
-        // Check if this is an improvement
-        if loss < best_loss {
-            let relative_improvement = if best_loss.is_finite() && best_loss > 0.0 {
-                (best_loss - loss) / best_loss
-            } else {
-                f64::INFINITY
-            };
-
-            // Accept first valid result or improvements above threshold
-            if !best_loss.is_finite() || relative_improvement > config.improvement_threshold {
-                best_loss = loss;
-                best_params = result.state().get_best_param().unwrap().as_slice().to_vec();
-                attempts_without_improvement = 0;
+                if !best_loss.is_finite() || relative_improvement > config.improvement_threshold {
+                    best_loss = loss;
+                    best_params = params;
+                    attempts_without_improvement = 0;
+                } else {
+                    attempts_without_improvement += 1;
+                }
             } else {
                 attempts_without_improvement += 1;
             }
-        } else {
-            attempts_without_improvement += 1;
-        }
 
-        // Early stopping if no improvement for patience attempts
-        if attempts_without_improvement >= config.patience {
-            break;
+            if attempts_without_improvement >= config.patience {
+                break 'outer;
+            }
         }
     }
 
     Ok(best_params)
+}
+
+/// Run a single MDS LBFGS attempt from a freshly seeded random initialization.
+///
+/// Returns the final cost and the corresponding best parameter vector.
+fn run_attempt(
+    distances: &Vec<Vec<f64>>,
+    relationships: &PairwiseRelations,
+    n_sets: usize,
+    scale: f64,
+    seed: u64,
+) -> Result<(f64, Vec<f64>), Error> {
+    let mut local_rng = StdRng::seed_from_u64(seed);
+
+    let mut initial_values = vec![0.0; n_sets * 2];
+    for value in &mut initial_values {
+        *value = local_rng.random_range(-scale..scale);
+    }
+    let initial_param = DVector::from_vec(initial_values);
+
+    let cost_function = MdsCost {
+        distances,
+        relationships,
+    };
+
+    let line_search = MoreThuenteLineSearch::new();
+    let solver = LBFGS::new(line_search, 10);
+
+    let result = Executor::new(cost_function, solver)
+        .configure(|state| state.param(initial_param).max_iters(200))
+        .run()?;
+
+    let loss = result.state().get_cost();
+    let params = result.state().get_best_param().unwrap().as_slice().to_vec();
+
+    Ok((loss, params))
 }
 
 struct MdsCost<'a> {

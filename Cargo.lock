@@ -217,6 +217,7 @@ dependencies = [
  "num-complex",
  "polylabel-mini",
  "rand 0.9.4",
+ "rayon",
 ]
 
 [[package]]

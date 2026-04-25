@@ -25,6 +25,9 @@ num-complex = "0.4"
 polylabel-mini = "0.1.0"
 rand = "0.9"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = "1.10"
+
 [features]
 default = []
 wasm = ["argmin/wasm-bindgen"]
