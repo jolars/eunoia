@@ -2,10 +2,14 @@
 
 use crate::geometry::traits::Closed;
 
-/// Identifies disjoint clusters of shapes based on intersection relationships.
+/// Identifies disjoint clusters of shapes based on region overlap.
 ///
-/// Two shapes are in the same cluster if they intersect, or if they both
-/// intersect a common third shape (transitive closure).
+/// Two shapes are in the same cluster if their regions overlap (boundaries
+/// cross OR one contains the other), or if they share an overlap with a common
+/// third shape (transitive closure). Containment counts as overlap here even
+/// though `Closed::intersects` returns `false` for it — that method only
+/// reports boundary crossings, but for clustering purposes a contained shape
+/// is plainly part of the same cluster as its container.
 ///
 /// Returns a vector of clusters, where each cluster is a vector of shape indices.
 pub fn find_clusters<S: Closed>(shapes: &[S]) -> Vec<Vec<usize>> {
@@ -15,13 +19,16 @@ pub fn find_clusters<S: Closed>(shapes: &[S]) -> Vec<Vec<usize>> {
         return vec![];
     }
 
-    // Build adjacency matrix based on intersections
+    // Build adjacency matrix based on region overlap (intersection or containment).
     let mut adjacency = vec![vec![false; n]; n];
 
     for i in 0..n {
         adjacency[i][i] = true; // Each shape is connected to itself
         for j in (i + 1)..n {
-            if shapes[i].intersects(&shapes[j]) {
+            let connected = shapes[i].intersects(&shapes[j])
+                || shapes[i].contains(&shapes[j])
+                || shapes[j].contains(&shapes[i]);
+            if connected {
                 adjacency[i][j] = true;
                 adjacency[j][i] = true;
             }
