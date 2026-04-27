@@ -143,14 +143,10 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
         // degenerate geometry that panics inside the numeric stack
         // (e.g. cubic-equation solver with α≈0). Catch panics so one bad
         // restart doesn't abort the whole fit; a restart that panics or
-        // errors is just skipped. Silence the panic hook for the duration
-        // so caught panics don't spam stderr.
-        let prev_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
+        // errors is just skipped.
         let attempt_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             optimize_from_initial::<S>(spec, &initial_param, &config)
         }));
-        std::panic::set_hook(prev_hook);
 
         match attempt_result {
             Ok(Ok((params, loss))) => {

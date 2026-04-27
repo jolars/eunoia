@@ -18,6 +18,8 @@ use crate::loss::LossType;
 use crate::spec::DiagramSpec;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+#[cfg(not(target_arch = "wasm32"))]
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 /// Fitter for creating diagram layouts from specifications.
@@ -241,6 +243,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     fn fit_with_optimization(self, optimize: bool) -> Result<Layout<S>, DiagramError> {
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
+        let max_iterations = self.max_iterations;
+        let loss_type = self.loss_type;
+        let optimizer = self.optimizer;
 
         // Master RNG: derives a per-attempt seed for each full-pipeline restart.
         let master_seed = self.seed.unwrap_or_else(|| rand::rng().random());
@@ -261,10 +266,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let n_attempts = if optimize { self.n_restarts.max(1) } else { 1 };
         let attempt_seeds: Vec<u64> = (0..n_attempts).map(|_| master_rng.random()).collect();
 
-        let mut best: Option<(Vec<f64>, f64)> = None;
-        let mut last_err: Option<DiagramError> = None;
-
-        for attempt_seed in attempt_seeds {
+        let run_attempt = |attempt_seed: u64| -> Result<(Vec<f64>, f64), DiagramError> {
             let mut attempt_rng = StdRng::seed_from_u64(attempt_seed);
 
             let initial_params = match initial_layout::compute_initial_layout(
@@ -275,11 +277,10 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             ) {
                 Ok(p) => p,
                 Err(e) => {
-                    last_err = Some(DiagramError::InvalidCombination(format!(
+                    return Err(DiagramError::InvalidCombination(format!(
                         "Initial layout failed: {}",
                         e
                     )));
-                    continue;
                 }
             };
 
@@ -300,14 +301,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     let r = initial_radii[i];
                     params.extend(S::params_from_circle(xi, yi, r));
                 }
-                best = Some((params, 0.0));
-                break;
+                return Ok((params, 0.0));
             }
 
             let config = final_layout::FinalLayoutConfig {
-                max_iterations: self.max_iterations,
-                loss_type: self.loss_type,
-                optimizer: self.optimizer,
+                max_iterations,
+                loss_type,
+                optimizer,
                 seed: attempt_seed,
                 // Outer loop already provides full-pipeline diversity via fresh
                 // MDS inits, so each attempt's final stage runs once.
@@ -321,17 +321,45 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                 &initial_radii,
                 config,
             ) {
+                Ok((params, loss)) => Ok((params, loss)),
+                Err(e) => Err(DiagramError::InvalidCombination(format!(
+                    "Optimization failed: {}",
+                    e
+                ))),
+            }
+        };
+
+        let attempt_results: Vec<Result<(Vec<f64>, f64), DiagramError>> = if optimize {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                attempt_seeds
+                    .par_iter()
+                    .map(|&attempt_seed| run_attempt(attempt_seed))
+                    .collect()
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                attempt_seeds
+                    .iter()
+                    .map(|&attempt_seed| run_attempt(attempt_seed))
+                    .collect()
+            }
+        } else {
+            vec![run_attempt(attempt_seeds[0])]
+        };
+
+        let mut best: Option<(Vec<f64>, f64)> = None;
+        let mut last_err: Option<DiagramError> = None;
+
+        for result in attempt_results {
+            match result {
                 Ok((params, loss)) => match &best {
                     None => best = Some((params, loss)),
                     Some((_, best_loss)) if loss < *best_loss => best = Some((params, loss)),
                     _ => {}
                 },
-                Err(e) => {
-                    last_err = Some(DiagramError::InvalidCombination(format!(
-                        "Optimization failed: {}",
-                        e
-                    )));
-                }
+                Err(e) => last_err = Some(e),
             }
         }
 

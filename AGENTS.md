@@ -372,7 +372,8 @@ The entire optimization pipeline is **shape-generic** - no changes needed to fit
 - Uses argmin for optimization (Nelder-Mead, L-BFGS, CG, TrustRegion — selectable via `Optimizer`)
 - Loss functions are pluggable via `LossType` in `loss.rs` (SSE, RMSE, stress,
   sum/max absolute, sum/max squared, region-error variants, DiagError)
-- MDS-based initial layout with patience-based restarts (`initial_layout.rs`)
+- MDS-based initial layout (`initial_layout.rs`) with outer full-pipeline
+  restarts in `fitter.rs` (parallel on native targets, sequential on WASM)
 - Region discovery uses sparse bit-mask approach for efficiency
 - Final layout computes disjoint areas using inclusion-exclusion principle
 - TODO: Global-search fallback (e.g. simulated annealing) for hard 3-ellipse cases
