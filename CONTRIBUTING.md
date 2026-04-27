@@ -71,7 +71,9 @@ All code must pass these checks with no warnings.
 
 - Write unit tests for all functions
 - Write doc tests for public APIs with examples
-- Run tests: `cargo test`
+- Run fast/default tests: `cargo test`
+- Run ignored slow regression/stochastic tests when touching fitting behavior:
+  `cargo test --workspace -- --ignored`
 - Target 100% code coverage
 - Test edge cases, especially for geometric operations
 

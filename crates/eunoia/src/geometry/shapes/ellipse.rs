@@ -2003,6 +2003,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow stochastic validation"]
     fn test_random_ellipse_intersections_monte_carlo() {
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};

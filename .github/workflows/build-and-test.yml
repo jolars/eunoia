@@ -96,6 +96,24 @@ jobs:
       - name: Run doc tests
         run: cargo test --doc
 
+  slow-tests:
+    name: Slow Tests
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run ignored slow tests
+        run: cargo test --workspace -- --ignored
+
   versionary:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test

@@ -31,6 +31,11 @@ tasks:
     cmds:
       - RUST_LOG=off cargo test
 
+  test-slow:
+    desc: Run ignored slow regression and stochastic tests
+    cmds:
+      - cargo test --workspace -- --ignored
+
   coverage:
     desc: Generate code coverage report
     cmds:

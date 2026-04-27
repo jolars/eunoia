@@ -345,6 +345,7 @@ mod tests {
     use super::*;
     use crate::geometry::shapes::Circle;
     use crate::geometry::traits::Centroid;
+    use crate::geometry::traits::DiagramShape;
 
     const EPSILON: f64 = 1e-6;
 
@@ -503,5 +504,32 @@ mod tests {
             "Should be centered in y, got {}",
             bb_center_y
         );
+    }
+
+    #[test]
+    fn test_normalize_preserves_exclusive_regions() {
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 1.0), 3.0),
+            Circle::new(Point::new(2.5, -0.5), 2.5),
+            Circle::new(Point::new(12.0, 8.0), 1.5),
+        ];
+
+        let before = Circle::compute_exclusive_regions(&shapes);
+        normalize_layout(&mut shapes, 0.015);
+        let after = Circle::compute_exclusive_regions(&shapes);
+
+        let mut all_masks: Vec<_> = before.keys().chain(after.keys()).copied().collect();
+        all_masks.sort_unstable();
+        all_masks.dedup();
+
+        for mask in all_masks {
+            let lhs = before.get(&mask).copied().unwrap_or(0.0);
+            let rhs = after.get(&mask).copied().unwrap_or(0.0);
+            let scale = lhs.abs().max(rhs.abs()).max(1.0);
+            assert!(
+                (lhs - rhs).abs() <= 1e-8_f64.max(1e-6 * scale),
+                "mask {mask:b}: before={lhs:e}, after={rhs:e}"
+            );
+        }
     }
 }

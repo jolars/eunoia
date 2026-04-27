@@ -545,6 +545,7 @@ See `Taskfile.yml` for available tasks:
 - `task dev` - Full development workflow (format + check + test + lint)
 - `task test-debug` - Run tests with debug logging
 - `task test-quiet` - Run tests without debug output
+- `task test-slow` - Run ignored slow regression and stochastic tests
 - `task coverage` - Generate code coverage report
 - `task coverage-open` - Generate and open coverage report
 - `task build-release` - Build optimized release binary
@@ -592,6 +593,7 @@ The project uses a Cargo workspace with multiple crates:
 - **Build core library only**: `cargo build -p eunoia` (default)
 - **Build WASM bindings**: `cargo build -p eunoia-wasm`
 - **Test core library**: `cargo test -p eunoia`
+- **Run ignored slow tests**: `cargo test --workspace -- --ignored`
 - **Format all crates**: `cargo fmt` (workspace-level)
 - **Lint all crates**: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
@@ -600,7 +602,8 @@ The project uses a Cargo workspace with multiple crates:
 - Write tests first or alongside implementation (TDD encouraged)
 - Document public APIs immediately
 - **Run `cargo fmt` (or `task fmt`) to format code**
-- Run `cargo test` to ensure tests pass (or `cargo test -p eunoia` for core only)
+- Run `cargo test` to ensure the default fast suite passes (or `cargo test -p eunoia` for core only)
+- Run `cargo test --workspace -- --ignored` when changes touch slow regression or stochastic coverage
 - Run `cargo doc --open` to verify documentation
 - **Run `cargo clippy --workspace --all-targets --all-features -- -D warnings` (or
   `task lint`) for linting (must pass with no warnings)**
