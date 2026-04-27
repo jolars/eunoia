@@ -3,8 +3,9 @@ use argmin::solver::conjugategradient::beta::PolakRibiere;
 use argmin::solver::conjugategradient::NonlinearConjugateGradient;
 use argmin::solver::linesearch::condition::ArmijoCondition;
 use argmin::solver::linesearch::{BacktrackingLineSearch, MoreThuenteLineSearch};
+use argmin::solver::newton::NewtonCG;
 use argmin::solver::quasinewton::LBFGS;
-use argmin::solver::trustregion::{CauchyPoint, TrustRegion};
+use argmin::solver::trustregion::{Steihaug, TrustRegion};
 use nalgebra::DVector;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -18,11 +19,34 @@ use crate::spec::PairwiseRelations;
 /// loss comparison. We deliberately don't pre-select on MDS loss before
 /// downstream evaluation, since MDS-suboptimal layouts can produce perfect
 /// downstream fits while MDS-optimal ones can be downstream-rigid (issue #28).
+/// Run one MDS optimization from a freshly seeded random initialization,
+/// using the default solver.
+#[cfg(test)]
 pub(crate) fn compute_initial_layout(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     set_areas: &[f64],
     rng: &mut dyn rand::RngCore,
+) -> Result<Vec<f64>, Error> {
+    compute_initial_layout_with_solver(
+        distances,
+        relationships,
+        set_areas,
+        rng,
+        MdsSolver::default(),
+    )
+}
+
+/// Run one MDS optimization with the chosen solver from a freshly seeded
+/// random initialization. The production fitter passes [`MdsSolver::default`];
+/// the benchmark harness in `examples/initial_layout_bench.rs` cycles through
+/// the alternatives.
+pub(crate) fn compute_initial_layout_with_solver(
+    distances: &Vec<Vec<f64>>,
+    relationships: &PairwiseRelations,
+    set_areas: &[f64],
+    rng: &mut dyn rand::RngCore,
+    solver: MdsSolver,
 ) -> Result<Vec<f64>, Error> {
     let n_sets = distances.len();
 
@@ -36,30 +60,43 @@ pub(crate) fn compute_initial_layout(
     };
 
     let seed: u64 = rng.random();
-    let solver = MDS_SOLVERS[0];
     let (_loss, params) = run_attempt(distances, relationships, n_sets, scale, seed, solver)?;
     Ok(params)
 }
 
-/// MDS solver choice. Different solvers have different convergence dynamics
-/// on the same MDS objective, so cycling through them across attempts gives
-/// us more diverse local minima than a single-solver pool.
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // kept for the cycling pool below
-enum MdsSolver {
+/// Solver used for the MDS-based initial layout.
+///
+/// Different solvers reach different local minima on the same MDS objective,
+/// which translates to different downstream basins after the final stage.
+/// The default fitter cycles `[Lbfgs, TrustRegion]` across the outer
+/// `n_restarts` loop because empirically that pairing widens basin coverage
+/// on hard ellipse fits without raising wall time (restarts run in parallel).
+///
+/// See [`Fitter::initial_solver`] to pin a single solver, or
+/// [`Fitter::initial_solver_pool`] to specify a custom cycling pool.
+///
+/// [`Fitter::initial_solver`]: crate::Fitter::initial_solver
+/// [`Fitter::initial_solver_pool`]: crate::Fitter::initial_solver_pool
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MdsSolver {
+    /// Limited-memory BFGS with More-Thuente line search. Gradient-only and
+    /// cheap per iteration; the strongest single-solver default by wall time.
+    #[default]
     Lbfgs,
+    /// Polak-Ribière nonlinear CG with Armijo backtracking. Gradient-only.
+    /// Empirically slower than L-BFGS on every spec we tested with no
+    /// quality compensation; kept for completeness.
     ConjugateGradient,
+    /// Trust region with Steihaug-CG subproblem. Uses the analytic Hessian
+    /// and tolerates the indefinite Hessian our MDS objective routinely
+    /// produces. Reaches different local minima than L-BFGS on hard ellipse
+    /// fits, which is why the default pool mixes both.
     TrustRegion,
+    /// Truncated Newton (Newton-CG) with More-Thuente line search. Uses the
+    /// analytic Hessian via inner CG iterations. Comparable quality to
+    /// L-BFGS but ~3× the wall time on small problems.
+    NewtonCg,
 }
-
-// Currently L-BFGS-only. ConjugateGradient and TrustRegion are implemented
-// (and verified vs FD) but not in the active cycle:
-// - CG: not yet shown to materially help on our specs; doubles cost.
-// - TrustRegion: argmin's CauchyPoint subproblem hangs when the Hessian is
-//   indefinite, which our MDS Hessian routinely is (terms `8*xd² + 4*D` go
-//   negative whenever shapes are closer than their target distance).
-// Revive either once they've earned their cost.
-const MDS_SOLVERS: [MdsSolver; 1] = [MdsSolver::Lbfgs];
 
 /// Run a single MDS attempt from a freshly seeded random initialization,
 /// using the given solver. Returns the final cost and the corresponding best
@@ -112,10 +149,33 @@ fn run_attempt(
         }
         MdsSolver::TrustRegion => {
             // TrustRegion needs Vec<f64> params; wrap MdsCost.
+            // Steihaug subproblem (truncated CG) — handles the indefinite
+            // Hessian that our MDS objective produces (8*xd² + 4*D goes
+            // negative whenever shapes are closer than their target distance).
+            // Cauchy point hangs in that regime.
             let vec_cost = VecMdsCost {
                 inner: cost_function,
             };
-            let solver = TrustRegion::new(CauchyPoint::new());
+            let subproblem: Steihaug<Vec<f64>, f64> = Steihaug::new().with_max_iters(200);
+            let solver = TrustRegion::new(subproblem);
+            let initial_param_vec = initial_param.as_slice().to_vec();
+            let result = Executor::new(vec_cost, solver)
+                .configure(|state| state.param(initial_param_vec).max_iters(200))
+                .run()?;
+            Ok((
+                result.state().get_cost(),
+                result.state().get_best_param().unwrap().clone(),
+            ))
+        }
+        MdsSolver::NewtonCg => {
+            // Truncated Newton: solves the Newton equations approximately via
+            // an inner CG, then takes a More-Thuente line search step.
+            // Uses the analytic Hessian. Vec<f64> params via VecMdsCost.
+            let vec_cost = VecMdsCost {
+                inner: cost_function,
+            };
+            let line_search = MoreThuenteLineSearch::new();
+            let solver: NewtonCG<_, f64> = NewtonCG::new(line_search);
             let initial_param_vec = initial_param.as_slice().to_vec();
             let result = Executor::new(vec_cost, solver)
                 .configure(|state| state.param(initial_param_vec).max_iters(200))

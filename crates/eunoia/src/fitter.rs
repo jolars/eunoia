@@ -8,6 +8,7 @@ pub mod normalize;
 mod packing;
 
 pub use final_layout::Optimizer;
+pub use initial_layout::MdsSolver;
 pub use layout::Layout;
 
 use crate::error::DiagramError;
@@ -50,6 +51,11 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     optimizer: Optimizer,
     sa_fallback_threshold: Option<f64>,
     n_restarts: usize,
+    /// Pool of MDS solvers cycled across outer-loop restarts: attempt `i`
+    /// uses `initial_solvers[i % initial_solvers.len()]`. Mixing solvers in
+    /// the pool widens basin coverage (different solvers fall into different
+    /// local minima) without raising wall time, since restarts run in parallel.
+    initial_solvers: Vec<MdsSolver>,
     _shape: std::marker::PhantomData<S>,
 }
 
@@ -91,8 +97,89 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // optimizer per attempt, lowest-loss attempt kept). Matches
             // eulerr's `n_restarts = 10`. Each fit does that much work.
             n_restarts: 10,
+            // Cycle L-BFGS and TrustRegion+Steihaug across restarts. Bench
+            // (`benches/initial_layout.rs`) showed they hit different local
+            // basins on hard ellipse fits (issue #28 6-set), so a 50/50 mix
+            // raises best-of-N quality without raising wall time — restarts
+            // already run in parallel.
+            initial_solvers: vec![MdsSolver::Lbfgs, MdsSolver::TrustRegion],
             _shape: std::marker::PhantomData,
         }
+    }
+
+    /// Pin the initial-layout MDS solver to a single choice.
+    ///
+    /// By default the fitter cycles two solvers (`L-BFGS` and `TrustRegion`)
+    /// across the outer `n_restarts` loop, because that pairing reaches
+    /// different local minima and improves best-of-N quality on hard ellipse
+    /// fits. Use this builder to disable cycling and use a single solver for
+    /// every restart.
+    ///
+    /// To cycle a custom set, see [`initial_solver_pool`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, MdsSolver};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let fitter = Fitter::<Circle>::new(&spec)
+    ///     .initial_solver(MdsSolver::Lbfgs);
+    /// ```
+    ///
+    /// [`initial_solver_pool`]: Self::initial_solver_pool
+    pub fn initial_solver(mut self, solver: MdsSolver) -> Self {
+        self.initial_solvers = vec![solver];
+        self
+    }
+
+    /// Set the pool of MDS solvers to cycle across outer-loop restarts.
+    ///
+    /// Restart `i` uses `pool[i % pool.len()]`. Mixing solvers in the pool
+    /// widens local-minimum coverage on hard fits without raising wall time,
+    /// since restarts already run in parallel. The default pool is
+    /// `[MdsSolver::Lbfgs, MdsSolver::TrustRegion]`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pool` is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, MdsSolver};
+    /// use eunoia::geometry::shapes::Ellipse;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // Bias the cycle 7:3 toward L-BFGS over TrustRegion.
+    /// let fitter = Fitter::<Ellipse>::new(&spec).initial_solver_pool(vec![
+    ///     MdsSolver::Lbfgs,
+    ///     MdsSolver::Lbfgs,
+    ///     MdsSolver::Lbfgs,
+    ///     MdsSolver::Lbfgs,
+    ///     MdsSolver::Lbfgs,
+    ///     MdsSolver::Lbfgs,
+    ///     MdsSolver::Lbfgs,
+    ///     MdsSolver::TrustRegion,
+    ///     MdsSolver::TrustRegion,
+    ///     MdsSolver::TrustRegion,
+    /// ]);
+    /// ```
+    pub fn initial_solver_pool(mut self, pool: Vec<MdsSolver>) -> Self {
+        assert!(!pool.is_empty(), "initial_solver_pool must be non-empty");
+        self.initial_solvers = pool;
+        self
     }
 
     /// Configure the diag-error threshold above which a simulated-annealing
@@ -266,87 +353,97 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let n_attempts = if optimize { self.n_restarts.max(1) } else { 1 };
         let attempt_seeds: Vec<u64> = (0..n_attempts).map(|_| master_rng.random()).collect();
 
-        let run_attempt = |attempt_seed: u64| -> Result<(Vec<f64>, f64), DiagramError> {
-            let mut attempt_rng = StdRng::seed_from_u64(attempt_seed);
+        let initial_solvers = self.initial_solvers.clone();
+        let run_attempt =
+            |(attempt_idx, attempt_seed): (usize, u64)| -> Result<(Vec<f64>, f64), DiagramError> {
+                let mut attempt_rng = StdRng::seed_from_u64(attempt_seed);
 
-            let initial_params = match initial_layout::compute_initial_layout(
-                &optimal_distances,
-                &spec.relationships,
-                &spec.set_areas,
-                &mut attempt_rng,
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    return Err(DiagramError::InvalidCombination(format!(
-                        "Initial layout failed: {}",
+                let initial_solver = initial_solvers[attempt_idx % initial_solvers.len()];
+                let initial_params = match initial_layout::compute_initial_layout_with_solver(
+                    &optimal_distances,
+                    &spec.relationships,
+                    &spec.set_areas,
+                    &mut attempt_rng,
+                    initial_solver,
+                ) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return Err(DiagramError::InvalidCombination(format!(
+                            "Initial layout failed: {}",
+                            e
+                        )));
+                    }
+                };
+
+                let (x, y) = initial_params.split_at(n_sets);
+                let initial_positions: Vec<f64> = x
+                    .iter()
+                    .zip(y.iter())
+                    .flat_map(|(xi, yi)| vec![*xi, *yi])
+                    .collect();
+
+                if !optimize {
+                    // Without final optimization there's nothing to score across
+                    // attempts — just take the first MDS init as-is.
+                    let mut params = Vec::new();
+                    for i in 0..n_sets {
+                        let xi = initial_positions[i * 2];
+                        let yi = initial_positions[i * 2 + 1];
+                        let r = initial_radii[i];
+                        params.extend(S::params_from_circle(xi, yi, r));
+                    }
+                    return Ok((params, 0.0));
+                }
+
+                let config = final_layout::FinalLayoutConfig {
+                    max_iterations,
+                    loss_type,
+                    optimizer,
+                    seed: attempt_seed,
+                    // Outer loop already provides full-pipeline diversity via fresh
+                    // MDS inits, so each attempt's final stage runs once.
+                    n_restarts: 1,
+                    ..Default::default()
+                };
+
+                match final_layout::optimize_layout::<S>(
+                    &spec,
+                    &initial_positions,
+                    &initial_radii,
+                    config,
+                ) {
+                    Ok((params, loss)) => Ok((params, loss)),
+                    Err(e) => Err(DiagramError::InvalidCombination(format!(
+                        "Optimization failed: {}",
                         e
-                    )));
+                    ))),
                 }
             };
 
-            let (x, y) = initial_params.split_at(n_sets);
-            let initial_positions: Vec<f64> = x
-                .iter()
-                .zip(y.iter())
-                .flat_map(|(xi, yi)| vec![*xi, *yi])
-                .collect();
-
-            if !optimize {
-                // Without final optimization there's nothing to score across
-                // attempts — just take the first MDS init as-is.
-                let mut params = Vec::new();
-                for i in 0..n_sets {
-                    let xi = initial_positions[i * 2];
-                    let yi = initial_positions[i * 2 + 1];
-                    let r = initial_radii[i];
-                    params.extend(S::params_from_circle(xi, yi, r));
-                }
-                return Ok((params, 0.0));
-            }
-
-            let config = final_layout::FinalLayoutConfig {
-                max_iterations,
-                loss_type,
-                optimizer,
-                seed: attempt_seed,
-                // Outer loop already provides full-pipeline diversity via fresh
-                // MDS inits, so each attempt's final stage runs once.
-                n_restarts: 1,
-                ..Default::default()
-            };
-
-            match final_layout::optimize_layout::<S>(
-                &spec,
-                &initial_positions,
-                &initial_radii,
-                config,
-            ) {
-                Ok((params, loss)) => Ok((params, loss)),
-                Err(e) => Err(DiagramError::InvalidCombination(format!(
-                    "Optimization failed: {}",
-                    e
-                ))),
-            }
-        };
+        let indexed_seeds: Vec<(usize, u64)> = attempt_seeds
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| (i, s))
+            .collect();
 
         let attempt_results: Vec<Result<(Vec<f64>, f64), DiagramError>> = if optimize {
             #[cfg(not(target_arch = "wasm32"))]
             {
-                attempt_seeds
+                indexed_seeds
                     .par_iter()
-                    .map(|&attempt_seed| run_attempt(attempt_seed))
+                    .map(|&pair| run_attempt(pair))
                     .collect()
             }
 
             #[cfg(target_arch = "wasm32")]
             {
-                attempt_seeds
+                indexed_seeds
                     .iter()
-                    .map(|&attempt_seed| run_attempt(attempt_seed))
+                    .map(|&pair| run_attempt(pair))
                     .collect()
             }
         } else {
-            vec![run_attempt(attempt_seeds[0])]
+            vec![run_attempt(indexed_seeds[0])]
         };
 
         let mut best: Option<(Vec<f64>, f64)> = None;
