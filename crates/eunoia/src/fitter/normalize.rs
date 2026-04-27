@@ -153,10 +153,15 @@ where
         new_params[0] = new_x;
         new_params[1] = new_y;
 
-        // Update rotation parameter if it exists (last parameter)
+        // Update rotation parameter if it exists (last parameter). When the
+        // cluster rotates by `theta` (CCW), an ellipse's semi-major axis,
+        // previously at angle `phi` from world x-axis, now points at
+        // `phi + theta`. The orientation parameter must follow the cluster
+        // rotation, not oppose it — using `-theta` here was a bug that
+        // de-synced ellipse orientations from their (correctly-rotated)
+        // centers and silently destroyed near-perfect fits during normalize.
         if n >= 5 {
-            // Assuming last param is rotation (for ellipses)
-            new_params[n - 1] = params[n - 1] - theta;
+            new_params[n - 1] = params[n - 1] + theta;
         }
 
         S::from_params(&new_params)
