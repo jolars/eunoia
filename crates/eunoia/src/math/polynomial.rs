@@ -5,20 +5,38 @@
 
 use num_complex::Complex64;
 
+/// Tolerance below which a polynomial coefficient is treated as zero,
+/// triggering a fallback to the next-lower-degree solver.
+///
+/// Conic-intersection callers in `geometry::projective::conic` pass
+/// coefficients computed as 3×3 determinants that can suffer catastrophic
+/// floating-point cancellation down to roughly `1e-14`, so the threshold is
+/// set safely above that.
+const DEGENERATE_COEFF_EPS: f64 = 1e-12;
+
+/// Sentinel placeholder for "missing" root slots when the input equation
+/// degenerates to a lower degree. Both components are NaN, so consumers like
+/// [`extract_real_roots`] and [`extract_real_pairs`] reject it via their
+/// imaginary-part checks (`NaN == 0.0` and `NaN.abs() < tol` are both false).
+const MISSING_ROOT: Complex64 = Complex64::new(f64::NAN, f64::NAN);
+
 /// Solves a cubic equation of the form αx³ + βx² + γx + δ = 0.
 ///
 /// Returns up to three complex roots. Real roots have imaginary parts close to zero.
 ///
 /// # Arguments
 ///
-/// * `alpha` - Coefficient of x³ (must be non-zero)
+/// * `alpha` - Coefficient of x³
 /// * `beta` - Coefficient of x²
 /// * `gamma` - Coefficient of x
 /// * `delta` - Constant term
 ///
-/// # Panics
+/// # Degenerate inputs
 ///
-/// Panics if `alpha` is zero (not a cubic equation).
+/// If `|alpha|` is below an internal tolerance the equation is treated as a
+/// quadratic in β, γ, δ; if `|beta|` is then also below tolerance it is
+/// treated as linear. Slots without a root are filled with a NaN sentinel
+/// that [`extract_real_roots`] / [`extract_real_pairs`] discard.
 ///
 /// # Algorithm
 ///
@@ -48,12 +66,9 @@ use num_complex::Complex64;
 pub fn solve_cubic(alpha: f64, beta: f64, gamma: f64, delta: f64) -> [Complex64; 3] {
     use std::f64::consts::PI;
 
-    // Check for degenerate case
-    assert!(
-        alpha.abs() > 1e-14,
-        "alpha must be non-zero for a cubic equation (got {})",
-        alpha
-    );
+    if alpha.abs() < DEGENERATE_COEFF_EPS {
+        return solve_quadratic_padded(beta, gamma, delta);
+    }
 
     // Normalize to x³ + ax² + bx + c = 0
     let a = beta / alpha;
@@ -106,6 +121,44 @@ pub fn solve_cubic(alpha: f64, beta: f64, gamma: f64, delta: f64) -> [Complex64;
             Complex64::new(a_val + b_val - a / 3.0, 0.0),
             Complex64::new(real_part, imag_part),
             Complex64::new(real_part, -imag_part),
+        ]
+    }
+}
+
+/// Solves βx² + γx + δ = 0 and returns the result padded to three slots so
+/// it can stand in for a degenerate cubic. Empty slots hold [`MISSING_ROOT`].
+///
+/// Falls back to the linear case when `|beta|` is below tolerance.
+fn solve_quadratic_padded(beta: f64, gamma: f64, delta: f64) -> [Complex64; 3] {
+    if beta.abs() < DEGENERATE_COEFF_EPS {
+        if gamma.abs() < DEGENERATE_COEFF_EPS {
+            return [MISSING_ROOT; 3];
+        }
+        return [
+            Complex64::new(-delta / gamma, 0.0),
+            MISSING_ROOT,
+            MISSING_ROOT,
+        ];
+    }
+
+    let discriminant = gamma * gamma - 4.0 * beta * delta;
+    let two_beta = 2.0 * beta;
+
+    if discriminant >= 0.0 {
+        let sqrt_disc = discriminant.sqrt();
+        [
+            Complex64::new((-gamma + sqrt_disc) / two_beta, 0.0),
+            Complex64::new((-gamma - sqrt_disc) / two_beta, 0.0),
+            MISSING_ROOT,
+        ]
+    } else {
+        let sqrt_disc = (-discriminant).sqrt();
+        let real = -gamma / two_beta;
+        let imag = sqrt_disc / two_beta;
+        [
+            Complex64::new(real, imag),
+            Complex64::new(real, -imag),
+            MISSING_ROOT,
         ]
     }
 }
@@ -241,10 +294,44 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "alpha must be non-zero")]
-    fn test_cubic_alpha_zero() {
-        // Not a cubic equation - should panic
-        solve_cubic(0.0, 1.0, -2.0, 1.0);
+    fn test_cubic_alpha_zero_falls_back_to_quadratic() {
+        // x² - 2x + 1 = 0 → double root at 1
+        let roots = solve_cubic(0.0, 1.0, -2.0, 1.0);
+        let real_roots = extract_real_roots(&roots);
+        assert_eq!(real_roots.len(), 2);
+        for r in &real_roots {
+            assert!(approx_eq(*r, 1.0, 1e-10));
+        }
+    }
+
+    #[test]
+    fn test_cubic_alpha_near_zero_falls_back_to_quadratic() {
+        // Mimics the conic-intersection case from issue #32: alpha is the
+        // determinant of a near-degenerate conic and underflows to ~1e-15.
+        // The remaining quadratic 2x² - 4x + 2 = 0 has a double root at 1.
+        let roots = solve_cubic(-7.3e-15, 2.0, -4.0, 2.0);
+        let real_roots = extract_real_roots(&roots);
+        assert!(!real_roots.is_empty(), "expected a real fallback root");
+        for r in &real_roots {
+            assert!(approx_eq(*r, 1.0, 1e-9), "got {}", r);
+        }
+    }
+
+    #[test]
+    fn test_cubic_alpha_zero_linear_fallback() {
+        // 2x + 4 = 0 → x = -2
+        let roots = solve_cubic(0.0, 0.0, 2.0, 4.0);
+        let real_roots = extract_real_roots(&roots);
+        assert_eq!(real_roots.len(), 1);
+        assert!(approx_eq(real_roots[0], -2.0, 1e-12));
+    }
+
+    #[test]
+    fn test_cubic_alpha_zero_complex_quadratic() {
+        // x² + 1 = 0 → no real roots
+        let roots = solve_cubic(0.0, 1.0, 0.0, 1.0);
+        let real_roots = extract_real_roots(&roots);
+        assert!(real_roots.is_empty());
     }
 
     #[test]
