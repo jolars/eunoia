@@ -54,8 +54,14 @@ pub(crate) struct FinalLayoutConfig {
     pub loss_type: crate::loss::LossType,
     /// Optimizer to use
     pub optimizer: Optimizer,
-    /// Tolerance for convergence (currently unused, reserved for future use)
-    #[allow(dead_code)]
+    /// Convergence tolerance. Currently honored by L-BFGS only — passed as
+    /// `tol_grad`, with `tol_cost = tolerance²`. Other solvers (Nelder-Mead,
+    /// nonlinear CG, TrustRegion) don't expose tolerance setters in argmin
+    /// 0.11 and run to `max_iterations`.
+    ///
+    /// Default `1e-6` matches eulerr's nlm `gradtol`/`steptol`. Looser than
+    /// argmin's L-BFGS defaults (`sqrt(EPSILON)` ≈ 1.5e-8 grad, `EPSILON`
+    /// ≈ 2.2e-16 cost), which had L-BFGS grinding far past useful convergence.
     pub tolerance: f64,
     /// Seed used for stochastic operations: simulated annealing, and
     /// position-perturbation restarts.
@@ -70,7 +76,7 @@ pub(crate) struct FinalLayoutConfig {
 impl Default for FinalLayoutConfig {
     fn default() -> Self {
         Self {
-            max_iterations: 50000,
+            max_iterations: 200,
             loss_type: crate::loss::LossType::sse(),
             optimizer: Optimizer::Lbfgs,
             tolerance: 1e-6,
@@ -295,7 +301,9 @@ fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
                 _shape: std::marker::PhantomData,
             };
             let line_search = MoreThuenteLineSearch::new();
-            let solver = LBFGS::new(line_search, 10);
+            let solver = LBFGS::new(line_search, 10)
+                .with_tolerance_grad(config.tolerance)?
+                .with_tolerance_cost(config.tolerance * config.tolerance)?;
             let result = Executor::new(cost_function_lbfgs, solver)
                 .configure(|state| {
                     state

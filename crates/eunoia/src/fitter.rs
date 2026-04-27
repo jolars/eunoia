@@ -46,6 +46,7 @@ use std::collections::{HashMap, HashSet};
 pub struct Fitter<'a, S: DiagramShape = Circle> {
     spec: &'a DiagramSpec,
     max_iterations: usize,
+    tolerance: f64,
     seed: Option<u64>,
     loss_type: LossType,
     optimizer: Optimizer,
@@ -79,10 +80,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     pub fn new(spec: &'a DiagramSpec) -> Self {
         Fitter {
             spec,
-            // Match the final optimizer's default budget. The previous 100-iteration
-            // cap was often enough for easy fits but could stop well before
-            // convergence on harder specs (for example issue #29).
-            max_iterations: 50_000,
+            // 200 iters × tolerance 1e-6 (wired into L-BFGS' grad/cost tolerances
+            // in `final_layout.rs`) tracks eulerr's nlm budget. The previous
+            // 50_000-iter cap combined with argmin's default `sqrt(EPSILON)`/
+            // `EPSILON` tolerances meant L-BFGS routinely ran tens of thousands
+            // of iterations past any useful convergence on every restart.
+            max_iterations: 200,
+            tolerance: 1e-6,
             seed: None,
             loss_type: LossType::sse(),
             optimizer: Optimizer::default(),
@@ -235,6 +239,36 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
+    /// Set the convergence tolerance for the final-stage optimizer.
+    ///
+    /// Currently honored by L-BFGS only — passed as `tol_grad`, with
+    /// `tol_cost = tolerance²`. Other solvers (Nelder-Mead, nonlinear CG,
+    /// TrustRegion) do not expose tolerance setters in argmin 0.11 and run
+    /// until `max_iterations`.
+    ///
+    /// The default is `1e-6`, matching eulerr's nlm `gradtol`/`steptol`.
+    /// Tightening this (e.g. `1e-9`) gives a sharper fit at the cost of more
+    /// iterations; loosening it (e.g. `1e-3`) speeds up fits where coarse
+    /// convergence is acceptable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let fitter = Fitter::<Circle>::new(&spec).tolerance(1e-4);
+    /// ```
+    pub fn tolerance(mut self, tolerance: f64) -> Self {
+        self.tolerance = tolerance;
+        self
+    }
+
     /// Set the optimizer to use for final layout optimization.
     ///
     /// # Examples
@@ -334,6 +368,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
         let max_iterations = self.max_iterations;
+        let tolerance = self.tolerance;
         let loss_type = self.loss_type;
         let optimizer = self.optimizer;
 
@@ -400,13 +435,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 
                 let config = final_layout::FinalLayoutConfig {
                     max_iterations,
+                    tolerance,
                     loss_type,
                     optimizer,
                     seed: attempt_seed,
                     // Outer loop already provides full-pipeline diversity via fresh
                     // MDS inits, so each attempt's final stage runs once.
                     n_restarts: 1,
-                    ..Default::default()
                 };
 
                 match final_layout::optimize_layout::<S>(
