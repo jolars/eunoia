@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.17",
-    "esbuild": "^0.25.12"
+    "esbuild": "^0.25.12",
+    "jspdf": "^4.2.1",
+    "svg2pdf.js": "^2.7.0"
   }
 }

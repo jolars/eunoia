@@ -6,6 +6,7 @@
 use eunoia::Optimizer;
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::geometry::traits::Polygonize;
+use eunoia::loss::LossType;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -32,11 +33,77 @@ impl From<WasmOptimizer> for Optimizer {
     }
 }
 
+/// Loss-function options for WASM, mirroring `eunoia::loss::LossType`.
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum WasmLossType {
+    SumSquared,
+    SumAbsolute,
+    SumAbsoluteRegionError,
+    SumSquaredRegionError,
+    MaxAbsolute,
+    MaxSquared,
+    RootMeanSquared,
+    Stress,
+    DiagError,
+}
+
+impl From<WasmLossType> for LossType {
+    fn from(loss: WasmLossType) -> Self {
+        match loss {
+            WasmLossType::SumSquared => LossType::SumSquared,
+            WasmLossType::SumAbsolute => LossType::SumAbsoute,
+            WasmLossType::SumAbsoluteRegionError => LossType::SumAbsoluteRegionError,
+            WasmLossType::SumSquaredRegionError => LossType::SumSquaredRegionError,
+            WasmLossType::MaxAbsolute => LossType::MaxAbsolute,
+            WasmLossType::MaxSquared => LossType::MaxSquared,
+            WasmLossType::RootMeanSquared => LossType::RootMeanSquared,
+            WasmLossType::Stress => LossType::Stress,
+            WasmLossType::DiagError => LossType::DiagError,
+        }
+    }
+}
+
 /// Initialize WASM module
 #[wasm_bindgen(start)]
 pub fn init() {
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
+}
+
+/// Holds the auxiliary diagnostics derived from a fitted `Layout`,
+/// in a form ready to attach to a WASM result struct.
+struct LayoutDiagnostics {
+    stress: f64,
+    diag_error: f64,
+    iterations: usize,
+    region_error_json: String,
+    residuals_json: String,
+}
+
+fn extract_diagnostics<S>(layout: &eunoia::Layout<S>) -> Result<LayoutDiagnostics, JsValue>
+where
+    S: eunoia::geometry::traits::DiagramShape + Copy + 'static,
+{
+    let region_error: std::collections::HashMap<String, f64> = layout
+        .region_error()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+    let residuals: std::collections::HashMap<String, f64> = layout
+        .residuals()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+    Ok(LayoutDiagnostics {
+        stress: layout.stress(),
+        diag_error: layout.diag_error(),
+        iterations: layout.iterations(),
+        region_error_json: serde_json::to_string(&region_error)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        residuals_json: serde_json::to_string(&residuals)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
 }
 
 /// A circle representation for WASM with label
@@ -316,9 +383,14 @@ pub struct PolygonResult {
     polygons: Vec<WasmPolygon>,
     circles: Vec<WasmCircle>,
     ellipses: Vec<WasmEllipse>,
-    loss: f64,
+    pub loss: f64,
+    pub stress: f64,
+    pub diag_error: f64,
+    pub iterations: usize,
     target_areas_json: String,
     fitted_areas_json: String,
+    region_error_json: String,
+    residuals_json: String,
 }
 
 #[wasm_bindgen]
@@ -339,11 +411,6 @@ impl PolygonResult {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn loss(&self) -> f64 {
-        self.loss
-    }
-
-    #[wasm_bindgen(getter)]
     pub fn target_areas_json(&self) -> String {
         self.target_areas_json.clone()
     }
@@ -351,6 +418,16 @@ impl PolygonResult {
     #[wasm_bindgen(getter)]
     pub fn fitted_areas_json(&self) -> String {
         self.fitted_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn region_error_json(&self) -> String {
+        self.region_error_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn residuals_json(&self) -> String {
+        self.residuals_json.clone()
     }
 }
 
@@ -385,8 +462,13 @@ impl WasmRegion {
 pub struct WasmRegionPolygons {
     regions: Vec<WasmRegion>,
     pub loss: f64,
+    pub stress: f64,
+    pub diag_error: f64,
+    pub iterations: usize,
     target_areas_json: String,
     fitted_areas_json: String,
+    region_error_json: String,
+    residuals_json: String,
 }
 
 #[wasm_bindgen]
@@ -404,6 +486,16 @@ impl WasmRegionPolygons {
     #[wasm_bindgen(getter)]
     pub fn fitted_areas_json(&self) -> String {
         self.fitted_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn region_error_json(&self) -> String {
+        self.region_error_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn residuals_json(&self) -> String {
+        self.residuals_json.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -1085,6 +1177,7 @@ pub fn generate_circles_as_polygons(
     n_vertices: usize,
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1122,9 +1215,13 @@ pub fn generate_circles_as_polygons(
     if let Some(opt) = optimizer {
         fitter = fitter.optimizer(opt.into());
     }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagnostics = extract_diagnostics(&layout)?;
 
     let wasm_circles: Vec<WasmCircle> = diagram_spec
         .set_names()
@@ -1178,10 +1275,15 @@ pub fn generate_circles_as_polygons(
         circles: wasm_circles,
         ellipses: vec![],
         loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
     })
 }
 
@@ -1193,6 +1295,7 @@ pub fn generate_ellipses_as_polygons(
     n_vertices: usize,
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1230,9 +1333,13 @@ pub fn generate_ellipses_as_polygons(
     if let Some(opt) = optimizer {
         fitter = fitter.optimizer(opt.into());
     }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagnostics = extract_diagnostics(&layout)?;
 
     let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
         .set_names()
@@ -1288,10 +1395,15 @@ pub fn generate_ellipses_as_polygons(
         circles: vec![],
         ellipses: wasm_ellipses,
         loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
     })
 }
 
@@ -1303,6 +1415,7 @@ pub fn generate_region_polygons_circles(
     n_vertices: usize,
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1340,9 +1453,13 @@ pub fn generate_region_polygons_circles(
     if let Some(opt) = optimizer {
         fitter = fitter.optimizer(opt.into());
     }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons using the plotting feature
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
@@ -1386,10 +1503,15 @@ pub fn generate_region_polygons_circles(
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
         loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
     })
 }
 
@@ -1401,6 +1523,7 @@ pub fn generate_region_polygons_ellipses(
     n_vertices: usize,
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1438,9 +1561,13 @@ pub fn generate_region_polygons_ellipses(
     if let Some(opt) = optimizer {
         fitter = fitter.optimizer(opt.into());
     }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
     let layout = fitter
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons using the plotting feature
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
@@ -1484,9 +1611,14 @@ pub fn generate_region_polygons_ellipses(
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
         loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
     })
 }
