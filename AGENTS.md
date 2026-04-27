@@ -474,7 +474,7 @@ eulerr's `input` argument is:
 - ✅ Ellipse shape implemented with exact 3+ way intersections
 - ✅ Polygon conversion via `Polygonize` trait (+ `plotting` feature for clipping/regions)
 - ✅ Post-fit normalization: clustering, rotation, centering, skyline packing
-- ✅ Selectable final-stage optimizer (Nelder-Mead, L-BFGS, CG, TrustRegion, SimulatedAnnealing) and selectable initial-layout MDS solver (`MdsSolver`: L-BFGS, CG, TrustRegion+Steihaug, Newton-CG) with cycling pool support via `Fitter::initial_solver_pool`. Default pool is `[Lbfgs, TrustRegion]`, chosen because the two reach different local minima and the mix raises best-of-N quality on hard ellipse fits without raising wall time (restarts run in parallel).
+- ✅ Selectable final-stage optimizer (Nelder-Mead, L-BFGS, CG, TrustRegion, SimulatedAnnealing) and selectable initial-layout MDS solver (`MdsSolver`: L-BFGS, CG, TrustRegion+Steihaug, Newton-CG) with cycling pool support via `Fitter::initial_solver_pool`. Default pool is `[Lbfgs]` (single-solver). The mixed `[Lbfgs, TrustRegion]` pool improves best-of-N quality on issue #28-class specs but has been observed to hang on some eulerr-style real-world inputs, so it is opt-in.
 - ✅ Global-search fallback: bounded SA auto-triggers for 3-set ellipse fits when `diagError > threshold` (matches eulerr's GenSA fallback). Tunable via `Fitter::sa_fallback_threshold`.
 - ✅ Named quality metrics on `Layout`: `region_error()`, `diag_error()`, `stress()` (β-scaled venneuler form), `residuals()`.
 - ❌ Triangle shape not implemented

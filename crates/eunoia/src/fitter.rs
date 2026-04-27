@@ -97,25 +97,26 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // optimizer per attempt, lowest-loss attempt kept). Matches
             // eulerr's `n_restarts = 10`. Each fit does that much work.
             n_restarts: 10,
-            // Cycle L-BFGS and TrustRegion+Steihaug across restarts. Bench
-            // (`benches/initial_layout.rs`) showed they hit different local
-            // basins on hard ellipse fits (issue #28 6-set), so a 50/50 mix
-            // raises best-of-N quality without raising wall time — restarts
-            // already run in parallel.
-            initial_solvers: vec![MdsSolver::Lbfgs, MdsSolver::TrustRegion],
+            // L-BFGS-only by default. We tried mixing in TrustRegion+Steihaug
+            // (it hits different local basins than L-BFGS on hard ellipse fits
+            // per `benches/initial_layout.rs`), but it caused hangs on real
+            // eulerr-style specs. The mix is still available via
+            // `initial_solver_pool`; the default keeps the proven path.
+            initial_solvers: vec![MdsSolver::Lbfgs],
             _shape: std::marker::PhantomData,
         }
     }
 
     /// Pin the initial-layout MDS solver to a single choice.
     ///
-    /// By default the fitter cycles two solvers (`L-BFGS` and `TrustRegion`)
-    /// across the outer `n_restarts` loop, because that pairing reaches
-    /// different local minima and improves best-of-N quality on hard ellipse
-    /// fits. Use this builder to disable cycling and use a single solver for
-    /// every restart.
+    /// The default is [`MdsSolver::Lbfgs`] for every restart. Other solvers
+    /// (`TrustRegion+Steihaug`, `Newton-CG`, `ConjugateGradient`) are exposed
+    /// for experimentation; on hard ellipse fits TrustRegion sometimes finds
+    /// basins L-BFGS misses, but it can also hang on certain real-world
+    /// specs, so it is opt-in.
     ///
-    /// To cycle a custom set, see [`initial_solver_pool`].
+    /// To cycle multiple solvers across the outer `n_restarts` loop, see
+    /// [`initial_solver_pool`].
     ///
     /// # Examples
     ///
@@ -144,7 +145,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Restart `i` uses `pool[i % pool.len()]`. Mixing solvers in the pool
     /// widens local-minimum coverage on hard fits without raising wall time,
     /// since restarts already run in parallel. The default pool is
-    /// `[MdsSolver::Lbfgs, MdsSolver::TrustRegion]`.
+    /// `[MdsSolver::Lbfgs]` (single-solver) — the mixed `[Lbfgs, TrustRegion]`
+    /// pool improves best-of-N quality on issue #28-class specs but has been
+    /// observed to hang on some eulerr-style real-world inputs.
     ///
     /// # Panics
     ///
