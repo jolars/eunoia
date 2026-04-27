@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/jolars/eunoia/compare/v0.2.0...v0.3.0) (2026-04-27)
+
+### Features
+- make lbfgs the default optimizer ([`859ee66`](https://github.com/jolars/eunoia/commit/859ee669b7d8e519d530bdfe08f8f9bad0b71af7))
+
+### Bug Fixes
+- fix underflow in cubic solver ([`f1b0c39`](https://github.com/jolars/eunoia/commit/f1b0c39553fbedb425e918f56720f8437bb0efdd))
 ## [0.2.0](https://github.com/jolars/eunoia/compare/v0.1.1...v0.2.0) (2026-04-27)
 
 ### Features
