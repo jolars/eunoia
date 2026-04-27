@@ -27,9 +27,9 @@ use crate::spec::PreprocessedSpec;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Optimizer {
     /// Nelder-Mead simplex method (derivative-free)
-    #[default]
     NelderMead,
     /// L-BFGS with numerical gradients (typically better for smooth problems)
+    #[default]
     Lbfgs,
     /// Nonlinear Conjugate Gradient with numerical gradients
     ConjugateGradient,
@@ -57,6 +57,14 @@ pub(crate) struct FinalLayoutConfig {
     /// Tolerance for convergence (currently unused, reserved for future use)
     #[allow(dead_code)]
     pub tolerance: f64,
+    /// Seed used for stochastic operations: simulated annealing, and
+    /// position-perturbation restarts.
+    pub seed: u64,
+    /// Number of optimization restarts from perturbed initial circle layouts.
+    /// Attempt 0 always uses the unperturbed MDS init; attempts `1..n_restarts`
+    /// perturb the circle positions before converting to shape parameters.
+    /// Mirrors eulerr's `n_restarts = 10` strategy.
+    pub n_restarts: usize,
 }
 
 impl Default for FinalLayoutConfig {
@@ -64,16 +72,23 @@ impl Default for FinalLayoutConfig {
         Self {
             max_iterations: 50000,
             loss_type: crate::loss::LossType::sse(),
-            optimizer: Optimizer::NelderMead, // Nelder-Mead is more robust for now
+            optimizer: Optimizer::Lbfgs,
             tolerance: 1e-6,
+            seed: 0xDEAD_BEEF,
+            n_restarts: 10,
         }
     }
 }
 
 /// Optimize the final layout by minimizing region error.
 ///
-/// This takes the initial layout (positions and radii from circles) and converts them
-/// to shape-specific parameters, then optimizes those parameters.
+/// Runs the configured optimizer up to `config.n_restarts` times — attempt 0
+/// from the unperturbed MDS initial layout, then attempts `1..n_restarts` from
+/// MDS positions perturbed with seeded Gaussian noise. The lowest-loss result
+/// across all restarts is returned. This mirrors eulerr's `n_restarts = 10`
+/// strategy and helps escape topologically wrong basins where a local optimizer
+/// gets stuck (e.g. shapes that should overlap landing disjoint, where the loss
+/// is locally flat — see issue #28).
 ///
 /// Returns the optimized parameters as a flat vector along with the loss.
 pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
@@ -85,16 +100,89 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     let n_sets = spec.n_sets;
     let params_per_shape = S::n_params();
 
-    // Convert initial circle parameters to shape-specific parameters
-    let mut initial_params = Vec::with_capacity(n_sets * params_per_shape);
-    for i in 0..n_sets {
-        let x = initial_positions[i * 2];
-        let y = initial_positions[i * 2 + 1];
-        let r = initial_radii[i];
-        initial_params.extend(S::params_from_circle(x, y, r));
+    // Mean radius drives the perturbation scale; positions are perturbed by
+    // ~N(0, mean_radius) on each axis, which is large enough to land in a
+    // different basin but small enough to stay near the MDS solution.
+    let mean_radius = if !initial_radii.is_empty() {
+        initial_radii.iter().sum::<f64>() / initial_radii.len() as f64
+    } else {
+        1.0
+    };
+
+    let mut best: Option<(Vec<f64>, f64)> = None;
+    let mut last_err: Option<Error> = None;
+    let n_restarts = config.n_restarts.max(1);
+    let mut rng = StdRng::seed_from_u64(config.seed ^ 0x52455354_41525453); // "RESTARTS"
+
+    for attempt in 0..n_restarts {
+        let mut positions = initial_positions.to_vec();
+        if attempt > 0 {
+            // Perturb positions with Gaussian noise. Box-Muller two-at-a-time
+            // keeps this dependency-free.
+            for i in 0..n_sets {
+                let u1: f64 = rng.random_range(f64::EPSILON..1.0);
+                let u2: f64 = rng.random_range(0.0..1.0);
+                let mag = (-2.0 * u1.ln()).sqrt();
+                let dx = mag * (2.0 * std::f64::consts::PI * u2).cos();
+                let dy = mag * (2.0 * std::f64::consts::PI * u2).sin();
+                positions[i * 2] += dx * mean_radius;
+                positions[i * 2 + 1] += dy * mean_radius;
+            }
+        }
+
+        let mut initial_params = Vec::with_capacity(n_sets * params_per_shape);
+        for i in 0..n_sets {
+            let x = positions[i * 2];
+            let y = positions[i * 2 + 1];
+            let r = initial_radii[i];
+            initial_params.extend(S::params_from_circle(x, y, r));
+        }
+        let initial_param = DVector::from_vec(initial_params);
+
+        // A perturbed start can drive `compute_exclusive_regions` into a
+        // degenerate geometry that panics inside the numeric stack
+        // (e.g. cubic-equation solver with α≈0). Catch panics so one bad
+        // restart doesn't abort the whole fit; a restart that panics or
+        // errors is just skipped. Silence the panic hook for the duration
+        // so caught panics don't spam stderr.
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let attempt_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            optimize_from_initial::<S>(spec, &initial_param, &config)
+        }));
+        std::panic::set_hook(prev_hook);
+
+        match attempt_result {
+            Ok(Ok((params, loss))) => {
+                let params_vec = params.as_slice().to_vec();
+                match &best {
+                    None => best = Some((params_vec, loss)),
+                    Some((_, best_loss)) if loss < *best_loss => best = Some((params_vec, loss)),
+                    _ => {}
+                }
+            }
+            Ok(Err(e)) => last_err = Some(e),
+            Err(_) => {
+                // Panic in optimizer / cost function; skip this restart.
+            }
+        }
     }
 
-    let initial_param = DVector::from_vec(initial_params);
+    match best {
+        Some(b) => Ok(b),
+        None => Err(last_err.unwrap_or_else(|| {
+            Error::msg("all optimization restarts failed (panicked or errored)")
+        })),
+    }
+}
+
+/// Run the configured optimizer once from a given initial parameter vector.
+fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> Result<(DVector<f64>, f64), Error> {
+    let params_per_shape = S::n_params();
 
     // Choose optimizer and run based on configuration
     let (final_params, loss) = match config.optimizer {
@@ -258,13 +346,13 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
                 config.loss_type,
                 params_per_shape,
                 config.max_iterations,
-                0,
+                config.seed,
             )?;
             (DVector::from_vec(best_params), best_loss)
         }
     };
 
-    Ok((final_params.as_slice().to_vec(), loss))
+    Ok((final_params, loss))
 }
 
 /// Refine a set of parameters using bounded simulated annealing.
@@ -315,19 +403,22 @@ pub(crate) fn run_simulated_annealing<S: DiagramShape + Copy + 'static>(
 
 /// Derive parameter bounds for the SA fallback, matching eulerr's
 /// `get_constraints` (eulerr/R/utils.R:164):
-/// - positions (h, k): clamped to the bounding box of all shapes
-/// - semi-axes (a, b) for ellipses / radius (r) for circles: `[current/3, current*3]`
+/// - positions (h, k): bounding box of all shapes, padded by `max(2*max_extent,
+///   bbox-width, bbox-height)` so SA can leave the local cluster
+/// - semi-axes (a, b) for ellipses / radius (r) for circles: `[current/5, current*5]`
 /// - rotation phi (ellipses only): `[0, π]`
 pub(crate) fn derive_sa_bounds(params: &[f64], params_per_shape: usize) -> (Vec<f64>, Vec<f64>) {
     let n_shapes = params.len() / params_per_shape;
     let mut lower = vec![0.0; params.len()];
     let mut upper = vec![0.0; params.len()];
 
-    // Compute overall bounding box over all shapes.
+    // Compute overall bounding box over all shapes and track the largest single
+    // extent so we can pad the box and let SA escape the local cluster.
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut max_y = f64::NEG_INFINITY;
+    let mut max_extent: f64 = 0.0;
 
     for i in 0..n_shapes {
         let off = i * params_per_shape;
@@ -348,6 +439,7 @@ pub(crate) fn derive_sa_bounds(params: &[f64], params_per_shape: usize) -> (Vec<
         min_y = min_y.min(k - ylim);
         max_x = max_x.max(h + xlim);
         max_y = max_y.max(k + ylim);
+        max_extent = max_extent.max(xlim).max(ylim);
     }
 
     // Guard against degenerate single-point bounds.
@@ -360,6 +452,16 @@ pub(crate) fn derive_sa_bounds(params: &[f64], params_per_shape: usize) -> (Vec<
         max_y += 1.0;
     }
 
+    // Pad the position bounds so SA can place shapes outside the current
+    // cluster. Without this, SA inherits the local optimum's bounding box and
+    // can only refine inside it — defeating the global pass. We pad by at
+    // least 2 * the largest shape extent and at least the larger bbox side.
+    let pad = (max_extent * 2.0).max((max_x - min_x).max(max_y - min_y));
+    min_x -= pad;
+    min_y -= pad;
+    max_x += pad;
+    max_y += pad;
+
     for i in 0..n_shapes {
         let off = i * params_per_shape;
         lower[off] = min_x;
@@ -370,16 +472,16 @@ pub(crate) fn derive_sa_bounds(params: &[f64], params_per_shape: usize) -> (Vec<
         if params_per_shape == 5 {
             let a = params[off + 2].abs().max(1e-6);
             let b = params[off + 3].abs().max(1e-6);
-            lower[off + 2] = a / 3.0;
-            upper[off + 2] = a * 3.0;
-            lower[off + 3] = b / 3.0;
-            upper[off + 3] = b * 3.0;
+            lower[off + 2] = a / 5.0;
+            upper[off + 2] = a * 5.0;
+            lower[off + 3] = b / 5.0;
+            upper[off + 3] = b * 5.0;
             lower[off + 4] = 0.0;
             upper[off + 4] = std::f64::consts::PI;
         } else if params_per_shape == 3 {
             let r = params[off + 2].abs().max(1e-6);
-            lower[off + 2] = r / 3.0;
-            upper[off + 2] = r * 3.0;
+            lower[off + 2] = r / 5.0;
+            upper[off + 2] = r * 5.0;
         }
     }
 
@@ -635,6 +737,8 @@ mod tests {
             loss_type: crate::loss::LossType::sse(),
             max_iterations: 50,
             tolerance: 1e-4,
+            seed: 0,
+            n_restarts: 1,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -710,6 +814,8 @@ mod tests {
             loss_type: crate::loss::LossType::sse(),
             max_iterations: 100,
             tolerance: 1e-6,
+            seed: 0,
+            n_restarts: 1,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -753,6 +859,8 @@ mod tests {
             loss_type: crate::loss::LossType::sse(),
             max_iterations: 200,
             tolerance: 1e-6,
+            seed: 0,
+            n_restarts: 1,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -808,6 +916,8 @@ mod tests {
                 loss_type: crate::loss::LossType::sse(),
                 max_iterations: 200,
                 tolerance: 1e-6,
+                seed: 0,
+                n_restarts: 1,
             };
 
             let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -851,19 +961,18 @@ mod tests {
         ];
         let (lower, upper) = derive_sa_bounds(&params, 5);
 
-        // Position bounds span bounding box of both shapes.
-        // ellipse 1 x-extent: [-2, 2]; ellipse 2 x-extent: [3, 7]; overall [-2, 7]
-        assert!((lower[0] - (-2.0)).abs() < 1e-9);
-        assert!((upper[0] - 7.0).abs() < 1e-9);
-        // y-extent for both: [-1, 1]
-        assert!((lower[1] - (-1.0)).abs() < 1e-9);
-        assert!((upper[1] - 1.0).abs() < 1e-9);
+        // Position bounds: bounding box [-2, 7] x [-1, 1] padded by
+        // max(2*max_extent, max(bbox_w, bbox_h)) = max(4, 9) = 9.
+        assert!((lower[0] - (-11.0)).abs() < 1e-9);
+        assert!((upper[0] - 16.0).abs() < 1e-9);
+        assert!((lower[1] - (-10.0)).abs() < 1e-9);
+        assert!((upper[1] - 10.0).abs() < 1e-9);
 
-        // Semi-axis bounds: a/3..a*3 for each
-        assert!((lower[2] - (2.0 / 3.0)).abs() < 1e-9);
-        assert!((upper[2] - 6.0).abs() < 1e-9);
-        assert!((lower[3] - (1.0 / 3.0)).abs() < 1e-9);
-        assert!((upper[3] - 3.0).abs() < 1e-9);
+        // Semi-axis bounds: a/5..a*5 for each
+        assert!((lower[2] - (2.0 / 5.0)).abs() < 1e-9);
+        assert!((upper[2] - 10.0).abs() < 1e-9);
+        assert!((lower[3] - (1.0 / 5.0)).abs() < 1e-9);
+        assert!((upper[3] - 5.0).abs() < 1e-9);
 
         // Rotation bounds [0, π]
         assert!((lower[4]).abs() < 1e-9);
@@ -875,12 +984,13 @@ mod tests {
         // Circle: [x, y, r]
         let params = vec![0.0, 0.0, 2.0, 5.0, 0.0, 1.0];
         let (lower, upper) = derive_sa_bounds(&params, 3);
-        // Overall bounding box x: [-2, 6], y: [-2, 2]
-        assert!((lower[0] - (-2.0)).abs() < 1e-9);
-        assert!((upper[0] - 6.0).abs() < 1e-9);
-        // Radius bounds: [r/3, r*3]
-        assert!((lower[2] - (2.0 / 3.0)).abs() < 1e-9);
-        assert!((upper[2] - 6.0).abs() < 1e-9);
+        // bbox [-2, 6] x [-2, 2], max_extent = 2,
+        // pad = max(2*2, max(8, 4)) = 8 → x in [-10, 14], y in [-10, 10]
+        assert!((lower[0] - (-10.0)).abs() < 1e-9);
+        assert!((upper[0] - 14.0).abs() < 1e-9);
+        // Radius bounds: [r/5, r*5]
+        assert!((lower[2] - (2.0 / 5.0)).abs() < 1e-9);
+        assert!((upper[2] - 10.0).abs() < 1e-9);
     }
 
     #[test]

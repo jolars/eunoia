@@ -1,78 +1,33 @@
-use argmin::core::{CostFunction, Error, Executor, Gradient, State};
-use argmin::solver::linesearch::MoreThuenteLineSearch;
+use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
+use argmin::solver::conjugategradient::beta::PolakRibiere;
+use argmin::solver::conjugategradient::NonlinearConjugateGradient;
+use argmin::solver::linesearch::condition::ArmijoCondition;
+use argmin::solver::linesearch::{BacktrackingLineSearch, MoreThuenteLineSearch};
 use argmin::solver::quasinewton::LBFGS;
+use argmin::solver::trustregion::{CauchyPoint, TrustRegion};
 use nalgebra::DVector;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-#[cfg(not(target_arch = "wasm32"))]
-use rayon::prelude::*;
-
 use crate::spec::PairwiseRelations;
 
-/// Configuration for the initial layout optimization.
-#[derive(Debug, Clone)]
-pub(crate) struct InitialLayoutConfig {
-    /// Maximum number of optimization attempts
-    pub max_attempts: usize,
-    /// Number of attempts without improvement before stopping
-    pub patience: usize,
-    /// Relative improvement threshold (e.g., 0.01 for 1% improvement)
-    pub improvement_threshold: f64,
-    /// Absolute loss threshold for perfect fit early stopping
-    pub perfect_fit_threshold: f64,
-}
-
-impl Default for InitialLayoutConfig {
-    fn default() -> Self {
-        Self {
-            max_attempts: 100,
-            patience: 10,
-            improvement_threshold: 0.001, // 0.1% improvement
-            perfect_fit_threshold: 1e-8,  // Near-zero loss
-        }
-    }
-}
-
-/// Compute initial layout using patience-based optimization with default configuration.
+/// Run one MDS optimization from a freshly seeded random initialization.
+///
+/// The Fitter's outer `n_restarts` loop is the only layer of diversity — each
+/// outer attempt calls this once and forwards the result to its downstream
+/// loss comparison. We deliberately don't pre-select on MDS loss before
+/// downstream evaluation, since MDS-suboptimal layouts can produce perfect
+/// downstream fits while MDS-optimal ones can be downstream-rigid (issue #28).
 pub(crate) fn compute_initial_layout(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     set_areas: &[f64],
     rng: &mut dyn rand::RngCore,
 ) -> Result<Vec<f64>, Error> {
-    compute_initial_layout_with_config(
-        distances,
-        relationships,
-        set_areas,
-        InitialLayoutConfig::default(),
-        rng,
-    )
-}
-
-/// Compute initial layout using patience-based optimization.
-///
-/// This function tries random initializations until no improvement is seen
-/// for `patience` consecutive attempts, or until `max_attempts` is reached.
-pub(crate) fn compute_initial_layout_with_config(
-    distances: &Vec<Vec<f64>>,
-    relationships: &PairwiseRelations,
-    set_areas: &[f64],
-    config: InitialLayoutConfig,
-    rng: &mut dyn rand::RngCore,
-) -> Result<Vec<f64>, Error> {
     let n_sets = distances.len();
 
-    let mut best_params = Vec::new();
-    let mut best_loss = f64::INFINITY;
-    let mut attempts_without_improvement = 0;
-
-    // Sampling scale for random initial positions: side of a square that fits
-    // all sets (= sqrt(sum of set areas) = sqrt(sum(πr²))). This matches
-    // eulerr's `bnd = sqrt(sum(r^2 * pi))` and is intentionally generous —
-    // tighter sampling makes MDS converge to configurations where shapes are
-    // packed too close together to give the final-stage ellipse optimizer
-    // room to deform (issue #28).
+    // Sampling scale: side of a square that fits all sets
+    // (= sqrt(Σ set_areas)). Matches eulerr's `bnd = sqrt(sum(r^2 * pi))`.
     let total_area: f64 = set_areas.iter().sum();
     let scale = if total_area > 0.0 {
         total_area.sqrt()
@@ -80,75 +35,42 @@ pub(crate) fn compute_initial_layout_with_config(
         10.0
     };
 
-    // Pre-derive a per-attempt seed from the parent RNG. This keeps results
-    // deterministic for a given parent seed regardless of how attempts are
-    // scheduled across threads.
-    let attempt_seeds: Vec<u64> = (0..config.max_attempts).map(|_| rng.random()).collect();
-
-    // Chunk size controls how much work runs in parallel before we re-check
-    // the patience criterion. Picking the thread count balances parallel
-    // throughput with the early-stop savings of patience.
-    #[cfg(not(target_arch = "wasm32"))]
-    let chunk_size = rayon::current_num_threads().max(1);
-    #[cfg(target_arch = "wasm32")]
-    let chunk_size = 1;
-
-    'outer: for chunk in attempt_seeds.chunks(chunk_size) {
-        #[cfg(not(target_arch = "wasm32"))]
-        let results: Vec<(f64, Vec<f64>)> = chunk
-            .par_iter()
-            .map(|&seed| run_attempt(distances, relationships, n_sets, scale, seed))
-            .collect::<Result<_, _>>()?;
-
-        #[cfg(target_arch = "wasm32")]
-        let results: Vec<(f64, Vec<f64>)> = chunk
-            .iter()
-            .map(|&seed| run_attempt(distances, relationships, n_sets, scale, seed))
-            .collect::<Result<_, _>>()?;
-
-        for (loss, params) in results {
-            log::debug!("Attempt loss: {}", loss);
-
-            if loss < config.perfect_fit_threshold {
-                return Ok(params);
-            }
-
-            if loss < best_loss {
-                let relative_improvement = if best_loss.is_finite() && best_loss > 0.0 {
-                    (best_loss - loss) / best_loss
-                } else {
-                    f64::INFINITY
-                };
-
-                if !best_loss.is_finite() || relative_improvement > config.improvement_threshold {
-                    best_loss = loss;
-                    best_params = params;
-                    attempts_without_improvement = 0;
-                } else {
-                    attempts_without_improvement += 1;
-                }
-            } else {
-                attempts_without_improvement += 1;
-            }
-
-            if attempts_without_improvement >= config.patience {
-                break 'outer;
-            }
-        }
-    }
-
-    Ok(best_params)
+    let seed: u64 = rng.random();
+    let solver = MDS_SOLVERS[0];
+    let (_loss, params) = run_attempt(distances, relationships, n_sets, scale, seed, solver)?;
+    Ok(params)
 }
 
-/// Run a single MDS LBFGS attempt from a freshly seeded random initialization.
-///
-/// Returns the final cost and the corresponding best parameter vector.
+/// MDS solver choice. Different solvers have different convergence dynamics
+/// on the same MDS objective, so cycling through them across attempts gives
+/// us more diverse local minima than a single-solver pool.
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)] // kept for the cycling pool below
+enum MdsSolver {
+    Lbfgs,
+    ConjugateGradient,
+    TrustRegion,
+}
+
+// Currently L-BFGS-only. ConjugateGradient and TrustRegion are implemented
+// (and verified vs FD) but not in the active cycle:
+// - CG: not yet shown to materially help on our specs; doubles cost.
+// - TrustRegion: argmin's CauchyPoint subproblem hangs when the Hessian is
+//   indefinite, which our MDS Hessian routinely is (terms `8*xd² + 4*D` go
+//   negative whenever shapes are closer than their target distance).
+// Revive either once they've earned their cost.
+const MDS_SOLVERS: [MdsSolver; 1] = [MdsSolver::Lbfgs];
+
+/// Run a single MDS attempt from a freshly seeded random initialization,
+/// using the given solver. Returns the final cost and the corresponding best
+/// parameter vector.
 fn run_attempt(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     n_sets: usize,
     scale: f64,
     seed: u64,
+    solver: MdsSolver,
 ) -> Result<(f64, Vec<f64>), Error> {
     let mut local_rng = StdRng::seed_from_u64(seed);
 
@@ -165,17 +87,75 @@ fn run_attempt(
         relationships,
     };
 
-    let line_search = MoreThuenteLineSearch::new();
-    let solver = LBFGS::new(line_search, 10);
+    match solver {
+        MdsSolver::Lbfgs => {
+            let line_search = MoreThuenteLineSearch::new();
+            let solver = LBFGS::new(line_search, 10);
+            let result = Executor::new(cost_function, solver)
+                .configure(|state| state.param(initial_param).max_iters(200))
+                .run()?;
+            Ok((
+                result.state().get_cost(),
+                result.state().get_best_param().unwrap().as_slice().to_vec(),
+            ))
+        }
+        MdsSolver::ConjugateGradient => {
+            let line_search = BacktrackingLineSearch::new(ArmijoCondition::new(0.01)?);
+            let solver = NonlinearConjugateGradient::new(line_search, PolakRibiere::new());
+            let result = Executor::new(cost_function, solver)
+                .configure(|state| state.param(initial_param).max_iters(200))
+                .run()?;
+            Ok((
+                result.state().get_cost(),
+                result.state().get_best_param().unwrap().as_slice().to_vec(),
+            ))
+        }
+        MdsSolver::TrustRegion => {
+            // TrustRegion needs Vec<f64> params; wrap MdsCost.
+            let vec_cost = VecMdsCost {
+                inner: cost_function,
+            };
+            let solver = TrustRegion::new(CauchyPoint::new());
+            let initial_param_vec = initial_param.as_slice().to_vec();
+            let result = Executor::new(vec_cost, solver)
+                .configure(|state| state.param(initial_param_vec).max_iters(200))
+                .run()?;
+            Ok((
+                result.state().get_cost(),
+                result.state().get_best_param().unwrap().clone(),
+            ))
+        }
+    }
+}
 
-    let result = Executor::new(cost_function, solver)
-        .configure(|state| state.param(initial_param).max_iters(200))
-        .run()?;
+/// Vec<f64>-param wrapper around `MdsCost` for argmin's TrustRegion solver.
+struct VecMdsCost<'a> {
+    inner: MdsCost<'a>,
+}
 
-    let loss = result.state().get_cost();
-    let params = result.state().get_best_param().unwrap().as_slice().to_vec();
+impl<'a> CostFunction for VecMdsCost<'a> {
+    type Param = Vec<f64>;
+    type Output = f64;
+    fn cost(&self, p: &Vec<f64>) -> Result<f64, Error> {
+        self.inner.cost(&DVector::from_vec(p.clone()))
+    }
+}
 
-    Ok((loss, params))
+impl<'a> Gradient for VecMdsCost<'a> {
+    type Param = Vec<f64>;
+    type Gradient = Vec<f64>;
+    fn gradient(&self, p: &Vec<f64>) -> Result<Vec<f64>, Error> {
+        let g = self.inner.gradient(&DVector::from_vec(p.clone()))?;
+        Ok(g.as_slice().to_vec())
+    }
+}
+
+impl<'a> Hessian for VecMdsCost<'a> {
+    type Param = Vec<f64>;
+    type Hessian = Vec<Vec<f64>>;
+    fn hessian(&self, p: &Vec<f64>) -> Result<Vec<Vec<f64>>, Error> {
+        self.inner.hessian(&DVector::from_vec(p.clone()))
+    }
 }
 
 struct MdsCost<'a> {
@@ -267,6 +247,82 @@ impl<'a> Gradient for MdsCost<'a> {
     }
 }
 
+impl<'a> Hessian for MdsCost<'a> {
+    type Param = DVector<f64>;
+    type Hessian = Vec<Vec<f64>>;
+
+    /// Analytic Hessian. For each ordered active pair (i, j) with
+    /// xd = x_i - x_j, yd = y_i - y_j, D = xd² + yd² - d_ij², the contribution
+    /// from D² to the Hessian is:
+    ///
+    /// - block xx, yy: (δ_ki - δ_kj)(δ_li - δ_lj) * (8·xd² + 4·D)  [/yd² for yy]
+    /// - block xy:     (δ_ki - δ_kj)(δ_li - δ_lj) * 8·xd·yd
+    ///
+    /// Both ordered iterations (i,j) and (j,i) contribute the same numerical
+    /// pattern to the same entries, doubling the per-pair amount — which
+    /// matches the loss being a sum over ordered pairs.
+    fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
+        let n_sets = param.len() / 2;
+        let n = 2 * n_sets;
+        let x = param.rows(0, n_sets);
+        let y = param.rows(n_sets, n_sets);
+
+        let mut h = vec![vec![0.0; n]; n];
+
+        for i in 0..n_sets {
+            for j in 0..n_sets {
+                if i == j {
+                    continue;
+                }
+
+                let xd = x[i] - x[j];
+                let yd = y[i] - y[j];
+                let d = xd.powi(2) + yd.powi(2) - self.distances[i][j].powi(2);
+
+                if self.relationships.is_disjoint(i, j) && d >= 0.0 {
+                    continue;
+                }
+                if (self.relationships.is_subset(i, j) || self.relationships.is_subset(j, i))
+                    && d <= 0.0
+                {
+                    continue;
+                }
+
+                let xx = 8.0 * xd * xd + 4.0 * d;
+                let yy = 8.0 * yd * yd + 4.0 * d;
+                let xy = 8.0 * xd * yd;
+
+                // x block (rows/cols 0..n_sets)
+                h[i][i] += xx;
+                h[i][j] -= xx;
+                h[j][i] -= xx;
+                h[j][j] += xx;
+
+                // y block (rows/cols n_sets..2n_sets)
+                let ii = i + n_sets;
+                let jj = j + n_sets;
+                h[ii][ii] += yy;
+                h[ii][jj] -= yy;
+                h[jj][ii] -= yy;
+                h[jj][jj] += yy;
+
+                // x-y cross block (and symmetric y-x)
+                h[i][ii] += xy;
+                h[i][jj] -= xy;
+                h[j][ii] -= xy;
+                h[j][jj] += xy;
+                // symmetric mirror
+                h[ii][i] += xy;
+                h[jj][i] -= xy;
+                h[ii][j] -= xy;
+                h[jj][j] += xy;
+            }
+        }
+
+        Ok(h)
+    }
+}
+
 #[cfg(test)]
 mod gradient_check {
     use super::*;
@@ -283,6 +339,25 @@ mod gradient_check {
             g[i] = (cost.cost(&pp).unwrap() - cost.cost(&pm).unwrap()) / (2.0 * h);
         }
         g
+    }
+
+    fn fd_hessian(cost: &MdsCost, p: &DVector<f64>) -> Vec<Vec<f64>> {
+        // Finite-difference the *analytic* gradient.
+        let h = 1e-5;
+        let n = p.len();
+        let mut hessian = vec![vec![0.0; n]; n];
+        for j in 0..n {
+            let mut pp = p.clone();
+            let mut pm = p.clone();
+            pp[j] += h;
+            pm[j] -= h;
+            let gp = cost.gradient(&pp).unwrap();
+            let gm = cost.gradient(&pm).unwrap();
+            for i in 0..n {
+                hessian[i][j] = (gp[i] - gm[i]) / (2.0 * h);
+            }
+        }
+        hessian
     }
 
     #[test]
@@ -341,6 +416,49 @@ mod gradient_check {
             }
         }
         // We don't assert here; the diagnostic prints diagnose the discrepancy.
+    }
+
+    #[test]
+    fn analytic_hessian_matches_finite_difference() {
+        let distances = vec![
+            vec![0.0, 2.232, 2.232, 2.232],
+            vec![2.232, 0.0, 1.642, 1.642],
+            vec![2.232, 1.642, 0.0, 1.642],
+            vec![2.232, 1.642, 1.642, 0.0],
+        ];
+        let mut relations = PairwiseRelations {
+            n_sets: 4,
+            subset: vec![vec![false; 4]; 4],
+            disjoint: vec![vec![false; 4]; 4],
+            overlap_areas: vec![vec![0.0; 4]; 4],
+        };
+        for i in 1..4 {
+            relations.subset[0][i] = true;
+            relations.subset[i][0] = true;
+        }
+        let cost = MdsCost {
+            distances: &distances,
+            relationships: &relations,
+        };
+        let p = DVector::from_vec(vec![0.5, 3.0, 3.5, 4.5, 0.3, 1.0, 2.5, 0.8]);
+        let analytic = cost.hessian(&p).unwrap();
+        let numeric = fd_hessian(&cost, &p);
+        let n = p.len();
+        let mut max_abs_diff = 0.0_f64;
+        let mut max_abs = 0.0_f64;
+        for i in 0..n {
+            for j in 0..n {
+                let d = (analytic[i][j] - numeric[i][j]).abs();
+                max_abs_diff = max_abs_diff.max(d);
+                max_abs = max_abs.max(numeric[i][j].abs());
+            }
+        }
+        assert!(
+            max_abs_diff < 1e-3 * max_abs.max(1.0),
+            "analytic Hessian disagrees with FD reference: max abs diff {:.4e}, max abs {:.4e}",
+            max_abs_diff,
+            max_abs,
+        );
     }
 }
 
@@ -629,79 +747,5 @@ mod tests {
         // Should succeed even with asymmetric distances
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 6);
-    }
-
-    #[test]
-    fn test_patience_based_optimization() {
-        let mut rng = StdRng::seed_from_u64(42);
-        // Test that patience-based optimization stops early when no improvement
-        let distances = vec![vec![0.0, 1.5], vec![1.5, 0.0]];
-        let relationships = create_test_relationships(2);
-
-        let config = InitialLayoutConfig {
-            max_attempts: 100,
-            patience: 10,
-            improvement_threshold: 0.01,
-            perfect_fit_threshold: 1e-8,
-        };
-
-        let result =
-            compute_initial_layout_with_config(&distances, &relationships, &[], config, &mut rng);
-        assert!(result.is_ok());
-
-        let params = result.unwrap();
-        assert_eq!(params.len(), 4);
-
-        // Verify the result satisfies distance constraints
-        let (x, y) = params.split_at(2);
-        let d = ((x[0] - x[1]).powi(2) + (y[0] - y[1]).powi(2)).sqrt();
-        assert!(approx_eq(d, 1.5, 0.2), "Distance: {}", d);
-    }
-
-    #[test]
-    fn test_patience_with_zero_threshold() {
-        let mut rng = StdRng::seed_from_u64(42);
-        // Test with zero threshold - should only improve on any decrease
-        let distances = vec![vec![0.0, 2.0], vec![2.0, 0.0]];
-        let relationships = create_test_relationships(2);
-
-        let config = InitialLayoutConfig {
-            max_attempts: 10,
-            patience: 2,
-            improvement_threshold: 0.0,
-            perfect_fit_threshold: 1e-8,
-        };
-
-        let result =
-            compute_initial_layout_with_config(&distances, &relationships, &[], config, &mut rng);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_early_stopping_on_perfect_fit() {
-        let mut rng = StdRng::seed_from_u64(42);
-        // Test that optimization stops immediately when loss reaches zero
-        // Two circles at exact distance (should achieve near-zero loss quickly)
-        let distances = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
-        let relationships = create_test_relationships(2);
-
-        let config = InitialLayoutConfig {
-            max_attempts: 100,
-            patience: 5,
-            improvement_threshold: 0.01,
-            perfect_fit_threshold: 1e-8,
-        };
-
-        let result =
-            compute_initial_layout_with_config(&distances, &relationships, &[], config, &mut rng);
-        assert!(result.is_ok());
-
-        let params = result.unwrap();
-        assert_eq!(params.len(), 4);
-
-        // Verify the distance is correct
-        let (x, y) = params.split_at(2);
-        let d = ((x[0] - x[1]).powi(2) + (y[0] - y[1]).powi(2)).sqrt();
-        assert!(approx_eq(d, 1.0, 0.1), "Distance: {}", d);
     }
 }

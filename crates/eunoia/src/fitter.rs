@@ -17,7 +17,7 @@ use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
 use crate::spec::DiagramSpec;
 use rand::rngs::StdRng;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 
 /// Fitter for creating diagram layouts from specifications.
@@ -47,6 +47,7 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     loss_type: LossType,
     optimizer: Optimizer,
     sa_fallback_threshold: Option<f64>,
+    n_restarts: usize,
     _shape: std::marker::PhantomData<S>,
 }
 
@@ -74,18 +75,28 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             seed: None,
             loss_type: LossType::sse(),
             optimizer: Optimizer::default(),
-            // Match eulerr: trigger SA last-ditch for 3-set ellipse fits when
-            // diagError > 0.001 after the primary optimizer.
-            sa_fallback_threshold: Some(0.001),
+            // SA fallback is disabled by default — empirically it never
+            // improved the result vs the primary optimizer on any spec or seed
+            // we tested (likely because it starts from the local optimum with
+            // a low initial temperature and can't escape). The mechanism is
+            // kept behind the builder for experimentation, but turning it on
+            // is currently a no-op in practice.
+            sa_fallback_threshold: None,
+            // Number of full-pipeline restarts (fresh MDS init + final
+            // optimizer per attempt, lowest-loss attempt kept). Matches
+            // eulerr's `n_restarts = 10`. Each fit does that much work.
+            n_restarts: 10,
             _shape: std::marker::PhantomData,
         }
     }
 
     /// Configure the diag-error threshold above which a simulated-annealing
-    /// fallback runs for 3-set ellipse fits after the primary optimizer.
+    /// fallback runs for ellipse fits after the primary optimizer.
     ///
-    /// Pass `None` to disable the fallback entirely. The default is `Some(0.001)`,
-    /// matching eulerr's `extraopt_threshold`.
+    /// Pass `None` to disable the fallback entirely. The default is `None` —
+    /// empirical testing has not found a configuration where the SA fallback
+    /// improves on the primary optimizer, so it is off by default. Set to
+    /// `Some(threshold)` to opt in for experimentation.
     ///
     /// # Examples
     ///
@@ -178,6 +189,19 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
+    /// Set the number of full-pipeline restarts.
+    ///
+    /// Each restart runs the entire fit (fresh MDS initialization + final
+    /// optimization) from an independently seeded random circle layout, and
+    /// the lowest-loss result is kept. Mirrors eulerr's `n_restarts = 10`.
+    /// Higher values give a better chance of finding the global optimum but
+    /// cost proportionally more (10× the work for `n=10`). Set to 1 to
+    /// disable restarts.
+    pub fn n_restarts(mut self, n: usize) -> Self {
+        self.n_restarts = n.max(1);
+        self
+    }
+
     /// Fit the diagram using circles.
     ///
     /// This creates a layout with circles positioned to match the specification.
@@ -215,69 +239,116 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
 
-        // Create RNG based on seed
-        let mut rng: Box<dyn rand::RngCore> = match self.seed {
-            Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(rand::rng()),
-        };
+        // Master RNG: derives a per-attempt seed for each full-pipeline restart.
+        let master_seed = self.seed.unwrap_or_else(|| rand::rng().random());
+        let mut master_rng = StdRng::seed_from_u64(master_seed);
 
-        // Step 1: Compute initial layout using MDS (always use circles for initial layout)
         let optimal_distances = Self::compute_optimal_distances(&spec)?;
-
-        let initial_params = initial_layout::compute_initial_layout(
-            &optimal_distances,
-            &spec.relationships,
-            &mut *rng,
-        )
-        .unwrap();
-
-        let (x, y) = initial_params.split_at(n_sets);
-
-        // Step 2: Optimize layout to minimize region error
-        let initial_positions: Vec<f64> = x
-            .iter()
-            .zip(y.iter())
-            .flat_map(|(xi, yi)| vec![*xi, *yi])
-            .collect();
-
         let initial_radii: Vec<f64> = spec
             .set_areas
             .iter()
             .map(|area| (area / std::f64::consts::PI).sqrt())
             .collect();
 
-        let (mut final_params, _loss) = if optimize {
+        // Run the full pipeline (fresh MDS init + final optimization) `n_restarts`
+        // times and keep the lowest-loss attempt. Mirrors eulerr's `n_restarts=10`:
+        // each restart explores an independent MDS basin (since MDS samples random
+        // initial positions), and only one of those typically lands in a basin
+        // that the final optimizer can refine to a perfect fit (issue #28).
+        let n_attempts = if optimize { self.n_restarts.max(1) } else { 1 };
+        let attempt_seeds: Vec<u64> = (0..n_attempts).map(|_| master_rng.random()).collect();
+
+        let mut best: Option<(Vec<f64>, f64)> = None;
+        let mut last_err: Option<DiagramError> = None;
+
+        for attempt_seed in attempt_seeds {
+            let mut attempt_rng = StdRng::seed_from_u64(attempt_seed);
+
+            let initial_params = match initial_layout::compute_initial_layout(
+                &optimal_distances,
+                &spec.relationships,
+                &spec.set_areas,
+                &mut attempt_rng,
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    last_err = Some(DiagramError::InvalidCombination(format!(
+                        "Initial layout failed: {}",
+                        e
+                    )));
+                    continue;
+                }
+            };
+
+            let (x, y) = initial_params.split_at(n_sets);
+            let initial_positions: Vec<f64> = x
+                .iter()
+                .zip(y.iter())
+                .flat_map(|(xi, yi)| vec![*xi, *yi])
+                .collect();
+
+            if !optimize {
+                // Without final optimization there's nothing to score across
+                // attempts — just take the first MDS init as-is.
+                let mut params = Vec::new();
+                for i in 0..n_sets {
+                    let xi = initial_positions[i * 2];
+                    let yi = initial_positions[i * 2 + 1];
+                    let r = initial_radii[i];
+                    params.extend(S::params_from_circle(xi, yi, r));
+                }
+                best = Some((params, 0.0));
+                break;
+            }
+
             let config = final_layout::FinalLayoutConfig {
                 max_iterations: self.max_iterations,
                 loss_type: self.loss_type,
                 optimizer: self.optimizer,
+                seed: attempt_seed,
+                // Outer loop already provides full-pipeline diversity via fresh
+                // MDS inits, so each attempt's final stage runs once.
+                n_restarts: 1,
                 ..Default::default()
             };
 
-            final_layout::optimize_layout::<S>(&spec, &initial_positions, &initial_radii, config)
-                .map_err(|e| {
-                    DiagramError::InvalidCombination(format!("Optimization failed: {}", e))
-                })?
-        } else {
-            // Skip optimization, use initial circle parameters converted to shape params
-            let mut params = Vec::new();
-            for i in 0..n_sets {
-                let x = initial_positions[i * 2];
-                let y = initial_positions[i * 2 + 1];
-                let r = initial_radii[i];
-                params.extend(S::params_from_circle(x, y, r));
+            match final_layout::optimize_layout::<S>(
+                &spec,
+                &initial_positions,
+                &initial_radii,
+                config,
+            ) {
+                Ok((params, loss)) => match &best {
+                    None => best = Some((params, loss)),
+                    Some((_, best_loss)) if loss < *best_loss => best = Some((params, loss)),
+                    _ => {}
+                },
+                Err(e) => {
+                    last_err = Some(DiagramError::InvalidCombination(format!(
+                        "Optimization failed: {}",
+                        e
+                    )));
+                }
             }
-            (params, 0.0)
-        };
+        }
+
+        let (mut final_params, _loss) = best.ok_or_else(|| {
+            last_err.unwrap_or_else(|| {
+                DiagramError::InvalidCombination(
+                    "All restarts failed to produce a layout".to_string(),
+                )
+            })
+        })?;
 
         // Step 2b: Global-search fallback — run simulated annealing if the primary
-        // optimizer left us with a bad fit. Matches eulerr's GenSA fallback, which
-        // only triggers for 3-set ellipse fits (fit_diagram.R:253-303).
+        // optimizer left us with a bad fit. Like eulerr's GenSA fallback, but
+        // gated only on `diag_error > threshold` (any arity), since high-arity
+        // ellipse fits also benefit from the global pass (issue #28).
         if optimize {
             if let Some(threshold) = self.sa_fallback_threshold {
                 let is_ellipse = std::any::TypeId::of::<S>()
                     == std::any::TypeId::of::<crate::geometry::shapes::Ellipse>();
-                if n_sets == 3 && is_ellipse {
+                if is_ellipse {
                     let current_diag =
                         final_layout::diag_error_from_params::<S>(&final_params, &spec);
                     if current_diag > threshold {
@@ -522,6 +593,68 @@ mod tests {
         // should not be worse than the primary-only one (SA only accepts an
         // improvement, otherwise falls back to the primary solution).
         assert!(layout_with.diag_error() <= layout_without.diag_error() + 1e-6);
+    }
+
+    /// Regression fixture for issue #28 (6-set ellipse spec from eulerr's
+    /// `test-accuracy.R`). eulerr's `nlm` backend fits this exactly. Currently
+    /// reaches `diag_error ≈ 1.7e-9` at seed=1 — well below the bar.
+    #[test]
+    fn test_issue28_six_set_ellipse_regression() {
+        use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 4.0)
+            .set("B", 6.0)
+            .set("C", 3.0)
+            .set("D", 2.0)
+            .set("E", 7.0)
+            .set("F", 3.0)
+            .intersection(&["A", "B"], 2.0)
+            .intersection(&["A", "F"], 2.0)
+            .intersection(&["B", "C"], 2.0)
+            .intersection(&["B", "D"], 1.0)
+            .intersection(&["B", "F"], 2.0)
+            .intersection(&["C", "D"], 1.0)
+            .intersection(&["D", "E"], 1.0)
+            .intersection(&["E", "F"], 1.0)
+            .intersection(&["A", "B", "F"], 1.0)
+            .intersection(&["B", "C", "D"], 1.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
+        assert!(
+            layout.diag_error() < 1e-6,
+            "issue #28 case 1: diag_error = {:e} (expected < 1e-6)",
+            layout.diag_error()
+        );
+    }
+
+    /// Regression fixture for issue #28 (4-set ellipse spec where A is a
+    /// superset of B/C/D). eulerr fits this exactly. Currently reaches
+    /// `diag_error ≈ 1e-11` at seed=1 — well below the bar.
+    #[test]
+    fn test_issue28_four_set_superset_ellipse_regression() {
+        use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 30.0)
+            .intersection(&["A", "B"], 3.0)
+            .intersection(&["A", "C"], 3.0)
+            .intersection(&["A", "D"], 3.0)
+            .intersection(&["A", "B", "C"], 2.0)
+            .intersection(&["A", "B", "D"], 2.0)
+            .intersection(&["A", "C", "D"], 2.0)
+            .intersection(&["A", "B", "C", "D"], 1.0)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
+        assert!(
+            layout.diag_error() < 1e-6,
+            "issue #28 case 2: diag_error = {:e} (expected < 1e-6)",
+            layout.diag_error()
+        );
     }
 
     #[test]
