@@ -581,6 +581,38 @@ pub(crate) struct BoundaryArc {
     pub delta_phi: f64,
 }
 
+/// Implicit-form value `((p.x − c.x)² + (p.y − c.y)²) / r²` for point `p` and
+/// circle `c`. `< 1` strictly inside, `= 1` on the boundary, `> 1` outside.
+#[inline]
+fn circle_implicit_value(p: &Point, c: &Circle) -> f64 {
+    let dx = p.x() - c.center().x();
+    let dy = p.y() - c.center().y();
+    (dx * dx + dy * dy) / (c.radius() * c.radius())
+}
+
+/// Decide whether an arc whose midpoint is on `∂C_j` is owned by `j` for
+/// the purpose of region-boundary contributions. The midpoint must be inside
+/// every other mask circle; when it lies on another mask circle's boundary
+/// (boundaries coincide), the smaller-index circle owns the arc to avoid
+/// double-counting (the identical-circles case in particular would otherwise
+/// emit one full-circle arc per circle).
+fn arc_midpoint_owned_by_j(j: usize, mid: &Point, indices: &[usize], circles: &[Circle]) -> bool {
+    let eps = 1e-7;
+    for &l in indices {
+        if l == j {
+            continue;
+        }
+        let v = circle_implicit_value(mid, &circles[l]);
+        if v > 1.0 + eps {
+            return false;
+        }
+        if (v - 1.0).abs() <= eps && l < j {
+            return false;
+        }
+    }
+    true
+}
+
 /// Build the CCW-oriented list of boundary arcs for an overlapping region.
 ///
 /// For each circle in the mask, the function identifies the IPs that lie on
@@ -598,6 +630,10 @@ pub(crate) struct BoundaryArc {
 /// "polygon + min-segment" decomposition would miss — most notably 3+-way
 /// regions where the IPs all come from a single pair of circles because a
 /// third circle fully contains their lens.
+///
+/// When circle boundaries coincide (identical circles, or arcs shared between
+/// two circles), an index tiebreaker — `arc_midpoint_owned_by_j` — hands the
+/// arc to the smallest-index circle so the area is not multi-counted.
 pub(crate) fn region_boundary_arcs(
     mask: crate::geometry::diagram::RegionMask,
     circles: &[Circle],
@@ -646,12 +682,13 @@ pub(crate) fn region_boundary_arcs(
 
         if j_phis.is_empty() {
             // Either C_j is wholly inside every other mask circle (full-circle
-            // arc) or wholly outside the region (no arc). Probe at φ = 0.
+            // arc) or wholly outside the region (no arc). Probe at φ = 0; if
+            // the probe lies on ∂C_l for some l ≠ j (boundaries coincide),
+            // the index tiebreaker hands the arc to the smallest-index circle
+            // so identical / coincident-boundary circles don't all emit
+            // duplicate full-circle arcs.
             let probe = Point::new(cj.center().x() + cj.radius(), cj.center().y());
-            let inside_others = indices
-                .iter()
-                .all(|&l| l == j || circles[l].contains_point(&probe));
-            if inside_others {
+            if arc_midpoint_owned_by_j(j, &probe, &indices, circles) {
                 arcs.push(BoundaryArc {
                     circle: j,
                     phi_start: 0.0,
@@ -677,16 +714,15 @@ pub(crate) fn region_boundary_arcs(
                 continue;
             }
             // Midpoint of the candidate arc; include only if it sits inside
-            // every other circle in the mask (i.e. on R's boundary).
+            // every other circle in the mask (i.e. on R's boundary). The
+            // index tiebreaker handles boundary-coincident arcs the same way
+            // as the empty-IP branch above.
             let phi_mid = phi_a + delta * 0.5;
             let mid = Point::new(
                 cj.center().x() + cj.radius() * phi_mid.cos(),
                 cj.center().y() + cj.radius() * phi_mid.sin(),
             );
-            let inside_others = indices
-                .iter()
-                .all(|&l| l == j || circles[l].contains_point(&mid));
-            if !inside_others {
+            if !arc_midpoint_owned_by_j(j, &mid, &indices, circles) {
                 continue;
             }
             // Canonicalise phi_end to (-π, π] so sin/cos in the area &
@@ -1342,5 +1378,49 @@ mod tests {
         let c = Circle::new(Point::new(0.0, 0.0), 2.0);
         let chord_length = 5.0; // Impossible: longer than diameter
         c.segment_area_from_chord(chord_length);
+    }
+
+    #[test]
+    fn test_three_circle_complete_overlap() {
+        use crate::geometry::traits::DiagramShape;
+
+        // Three identical unit circles. Without the index tiebreaker each
+        // circle would emit a full-circle arc and A∩B∩C would return ~3π.
+        let c = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let areas = Circle::compute_exclusive_regions(&[c, c, c]);
+
+        let mask_all = 0b111;
+        let all_three = areas.get(&mask_all).copied().unwrap_or(0.0);
+
+        assert!(
+            (all_three - PI).abs() < 1e-6,
+            "Complete overlap should give area ~π, got {}",
+            all_three
+        );
+    }
+
+    #[test]
+    fn test_three_circle_two_coincident_one_smaller() {
+        use crate::geometry::traits::DiagramShape;
+
+        // Two coincident unit circles plus a smaller circle of radius 0.5
+        // sharing the same centre. Expected A∩B∩C = π·0.25.
+        // Without the tiebreaker, both unit circles emit a full-circle arc
+        // (each one sits on the other's boundary), so the inclusion-exclusion
+        // pipeline overshoots.
+        let big = Circle::new(Point::new(0.0, 0.0), 1.0);
+        let small = Circle::new(Point::new(0.0, 0.0), 0.5);
+        let areas = Circle::compute_exclusive_regions(&[big, big, small]);
+
+        let mask_all = 0b111;
+        let all_three = areas.get(&mask_all).copied().unwrap_or(0.0);
+        let expected = PI * 0.25;
+
+        assert!(
+            (all_three - expected).abs() < 1e-6,
+            "Expected area {}, got {}",
+            expected,
+            all_three
+        );
     }
 }
