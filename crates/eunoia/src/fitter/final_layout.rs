@@ -26,10 +26,15 @@ use crate::spec::PreprocessedSpec;
 /// Optimizer to use for final layout optimization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Optimizer {
-    /// Nelder-Mead simplex method (derivative-free)
-    NelderMead,
-    /// L-BFGS with numerical gradients (typically better for smooth problems)
+    /// Nelder-Mead simplex method (derivative-free).
     #[default]
+    NelderMead,
+    /// L-BFGS with numerical gradients. Pays `2n × cost_evals` per gradient
+    /// via central differences (each cost eval runs the full
+    /// conic-intersection pipeline), so on small ellipse fits NelderMead is
+    /// often dramatically faster at equivalent fit quality. On hard high-arity
+    /// fits L-BFGS finds basins NelderMead misses (issue #28). The default
+    /// fitter cycles `[NelderMead, Lbfgs]` across restarts to get both.
     Lbfgs,
     /// Nonlinear Conjugate Gradient with numerical gradients
     ConjugateGradient,
@@ -77,7 +82,7 @@ impl Default for FinalLayoutConfig {
     fn default() -> Self {
         Self {
             max_iterations: 200,
-            loss_type: crate::loss::LossType::sse(),
+            loss_type: crate::loss::LossType::default(),
             optimizer: Optimizer::Lbfgs,
             tolerance: 1e-6,
             seed: 0xDEAD_BEEF,
@@ -301,9 +306,16 @@ fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
                 _shape: std::marker::PhantomData,
             };
             let line_search = MoreThuenteLineSearch::new();
+            // Both tolerances at `config.tolerance`. Squaring the cost
+            // tolerance (the obvious "be stricter on cost than gradient"
+            // trick) backfires: with central-difference gradients the FD
+            // noise floor on cost evals is ~`sqrt(EPSILON) × |cost|`, well
+            // above any tolerance < ~1e-9. A too-tight cost tolerance means
+            // the optimizer never declares "no progress" and grinds to
+            // `max_iters` even when sitting at the optimum (issue #34).
             let solver = LBFGS::new(line_search, 10)
                 .with_tolerance_grad(config.tolerance)?
-                .with_tolerance_cost(config.tolerance * config.tolerance)?;
+                .with_tolerance_cost(config.tolerance)?;
             let result = Executor::new(cost_function_lbfgs, solver)
                 .configure(|state| {
                     state

@@ -10,8 +10,26 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LossType {
     /// Sum of squared errors: Σ(fitted - target)²
-    #[default]
     SumSquared,
+    /// Scale-invariant variant of [`SumSquared`]: `Σ(fitted - target)² / Σtarget²`.
+    ///
+    /// Same descent direction and optimum as [`SumSquared`] (denominator is a
+    /// constant of the spec), but the loss magnitude is bounded ~`[0, 1]`
+    /// regardless of input area scale. Tolerance behavior — both `tol_grad`
+    /// and `tol_cost` in L-BFGS — therefore stays consistent across input
+    /// scales, where the unnormalized [`SumSquared`] forces tolerance to be
+    /// re-tuned per spec (issue #34: at areas ~3500, the unnormalized cost is
+    /// in the millions and FD noise sits well above any reasonable absolute
+    /// tolerance).
+    ///
+    /// Unlike [`Stress`], there is no β-rescale degree of freedom, so this
+    /// loss penalizes both shape *and* scale mismatch and won't let small
+    /// regions drift the way Stress can on high-arity specs.
+    ///
+    /// [`SumSquared`]: Self::SumSquared
+    /// [`Stress`]: Self::Stress
+    #[default]
+    NormalizedSumSquared,
     /// Sums of absolute errors: Σ|fitted - target|
     SumAbsoute,
     /// SumRegionError sum(|fitted / sum(fitted) - target / sum(target)|)
@@ -103,6 +121,21 @@ impl LossType {
                     (f - t).powi(2)
                 })
                 .sum(),
+            LossType::NormalizedSumSquared => {
+                let sum_t2: f64 = target.values().map(|&v| v * v).sum();
+                if sum_t2 < 1e-20 {
+                    return 0.0;
+                }
+                let sum_sq: f64 = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f - t).powi(2)
+                    })
+                    .sum();
+                sum_sq / sum_t2
+            }
             LossType::RootMeanSquared => {
                 let sum_squared: f64 = all_masks
                     .iter()

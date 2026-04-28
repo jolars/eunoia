@@ -49,7 +49,13 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     tolerance: f64,
     seed: Option<u64>,
     loss_type: LossType,
-    optimizer: Optimizer,
+    /// Pool of final-stage optimizers cycled across outer-loop restarts:
+    /// attempt `i` uses `optimizer_pool[i % optimizer_pool.len()]`. Default
+    /// `[NelderMead, Lbfgs]` — Nelder-Mead is dramatically faster on small
+    /// ellipse fits where it matches L-BFGS' fit quality, and L-BFGS finds
+    /// basins Nelder-Mead misses on hard high-arity fits (issue #28). Best
+    /// loss across attempts wins.
+    optimizer_pool: Vec<Optimizer>,
     sa_fallback_threshold: Option<f64>,
     n_restarts: usize,
     /// Pool of MDS solvers cycled across outer-loop restarts: attempt `i`
@@ -85,11 +91,23 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // 50_000-iter cap combined with argmin's default `sqrt(EPSILON)`/
             // `EPSILON` tolerances meant L-BFGS routinely ran tens of thousands
             // of iterations past any useful convergence on every restart.
+            // With the default loss now `NormalizedSumSquared` (scale-invariant
+            // SSE — see `LossType`), the loss magnitude is bounded ~`[0, 1]`
+            // regardless of input area scale, so tolerance behavior is
+            // consistent across specs. 1e-6 sits well above the central-diff
+            // FD noise floor on the normalized cost yet pushes typical 3-set
+            // ellipse fits to near-machine quality.
             max_iterations: 200,
             tolerance: 1e-6,
             seed: None,
             loss_type: LossType::sse(),
-            optimizer: Optimizer::default(),
+            // Cycle Nelder-Mead and L-BFGS across restarts. Per-attempt cost
+            // varies (NM is O(ms), L-BFGS is O(100ms-1s) on ellipses due to
+            // numerical-gradient overhead — issue #34), but with restarts
+            // already running in parallel the wall time is bounded by the
+            // slowest single attempt. The mix gives speed on cases NM solves
+            // and robustness on cases that need L-BFGS (issue #28).
+            optimizer_pool: vec![Optimizer::NelderMead, Optimizer::Lbfgs],
             // SA fallback is disabled by default — empirically it never
             // improved the result vs the primary optimizer on any spec or seed
             // we tested (likely because it starts from the local optimum with
@@ -287,7 +305,48 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// let fitter = Fitter::<Ellipse>::new(&spec).optimizer(Optimizer::Lbfgs);
     /// ```
     pub fn optimizer(mut self, optimizer: Optimizer) -> Self {
-        self.optimizer = optimizer;
+        self.optimizer_pool = vec![optimizer];
+        self
+    }
+
+    /// Set the pool of final-stage optimizers cycled across outer-loop restarts.
+    ///
+    /// Restart `i` uses `pool[i % pool.len()]`, and the lowest-loss attempt
+    /// across the entire `n_restarts` loop wins. The default pool is
+    /// `[NelderMead, Lbfgs]` — NM is O(ms) per fit on small ellipse problems
+    /// and L-BFGS finds basins NM misses on hard high-arity fits (issue #28),
+    /// so cycling gives both speed and robustness.
+    ///
+    /// Calling [`optimizer`] reduces the pool to a single solver.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pool` is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, Optimizer};
+    /// use eunoia::geometry::shapes::Ellipse;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // 8 NM attempts to 2 L-BFGS attempts per `n_restarts`-cycle.
+    /// let fitter = Fitter::<Ellipse>::new(&spec).optimizer_pool(vec![
+    ///     Optimizer::NelderMead, Optimizer::NelderMead, Optimizer::NelderMead, Optimizer::NelderMead,
+    ///     Optimizer::NelderMead, Optimizer::NelderMead, Optimizer::NelderMead, Optimizer::NelderMead,
+    ///     Optimizer::Lbfgs, Optimizer::Lbfgs,
+    /// ]);
+    /// ```
+    ///
+    /// [`optimizer`]: Self::optimizer
+    pub fn optimizer_pool(mut self, pool: Vec<Optimizer>) -> Self {
+        assert!(!pool.is_empty(), "optimizer_pool must be non-empty");
+        self.optimizer_pool = pool;
         self
     }
 
@@ -370,7 +429,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let max_iterations = self.max_iterations;
         let tolerance = self.tolerance;
         let loss_type = self.loss_type;
-        let optimizer = self.optimizer;
+        let optimizer_pool = self.optimizer_pool.clone();
 
         // Master RNG: derives a per-attempt seed for each full-pipeline restart.
         let master_seed = self.seed.unwrap_or_else(|| rand::rng().random());
@@ -433,11 +492,12 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     return Ok((params, 0.0));
                 }
 
+                let attempt_optimizer = optimizer_pool[attempt_idx % optimizer_pool.len()];
                 let config = final_layout::FinalLayoutConfig {
                     max_iterations,
                     tolerance,
                     loss_type,
-                    optimizer,
+                    optimizer: attempt_optimizer,
                     seed: attempt_seed,
                     // Outer loop already provides full-pipeline diversity via fresh
                     // MDS inits, so each attempt's final stage runs once.
@@ -822,7 +882,20 @@ mod tests {
             .build()
             .unwrap();
 
-        let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
+        // Asserts L-BFGS can drive diag_error below 1e-6 *when given the
+        // budget*. The default tolerance (1e-4) is set above the FD noise
+        // floor for speed (issue #34); this test pins down the tight-budget
+        // behavior eulerr's C++ backend reached on this spec.
+        // tol=1e-10 is needed to drive the *normalized* cost below the
+        // FD noise floor on this hard high-arity case; with the old
+        // SumSquared default (loss scaled with input²), tol=1e-8 was
+        // equivalent. See `LossType::NormalizedSumSquared` doc.
+        let layout = Fitter::<Ellipse>::new(&spec)
+            .seed(1)
+            .tolerance(1e-10)
+            .max_iterations(2000)
+            .fit()
+            .unwrap();
         assert!(
             layout.diag_error() < 1e-6,
             "issue #28 case 1: diag_error = {:e} (expected < 1e-6)",
@@ -850,7 +923,16 @@ mod tests {
             .build()
             .unwrap();
 
-        let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
+        // tol=1e-10 is needed to drive the *normalized* cost below the
+        // FD noise floor on this hard high-arity case; with the old
+        // SumSquared default (loss scaled with input²), tol=1e-8 was
+        // equivalent. See `LossType::NormalizedSumSquared` doc.
+        let layout = Fitter::<Ellipse>::new(&spec)
+            .seed(1)
+            .tolerance(1e-10)
+            .max_iterations(2000)
+            .fit()
+            .unwrap();
         assert!(
             layout.diag_error() < 1e-6,
             "issue #28 case 2: diag_error = {:e} (expected < 1e-6)",
