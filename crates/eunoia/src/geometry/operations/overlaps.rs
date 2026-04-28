@@ -1,4 +1,3 @@
-use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Circle;
 use crate::geometry::traits::{Area, Closed, DiagramShape};
@@ -28,9 +27,9 @@ pub fn compute_overlaps<S: DiagramShape>(
 
 /// Compute exact overlap areas for circles using geometric calculation.
 ///
-/// This uses the `multiple_overlap_areas` function from the circle module
-/// which computes exact areas using polygon + circular segment calculations.
-/// For 2 circles, it falls back to the analytical intersection_area method.
+/// Uses the boundary-arc integral via `region_boundary_arcs` +
+/// `area_from_boundary_arcs`. For 2 circles, falls back to the analytical
+/// `intersection_area` method.
 ///
 /// # Arguments
 ///
@@ -50,24 +49,15 @@ pub fn compute_overlaps_circles(circles: &[Circle]) -> f64 {
         return circles[0].intersection_area(&circles[1]);
     }
 
-    // For 3+ circles: collect intersection points and use polygon method
-    let mut intersections: Vec<IntersectionPoint> = Vec::new();
-
-    for i in 0..n_sets {
-        for j in (i + 1)..n_sets {
-            let pts = circles[i].intersection_points(&circles[j]);
-            for point in pts {
-                let adopters = (0..n_sets)
-                    .filter(|&k| circles[k].contains_point(&point))
-                    .collect();
-
-                intersections.push(IntersectionPoint::new(point, (i, j), adopters));
-            }
-        }
-    }
-
-    // Use the exact circle overlap calculation for 3+ circles
-    crate::geometry::shapes::circle::multiple_overlap_areas(circles, &intersections)
+    let intersections = crate::geometry::diagram::collect_intersections(circles, n_sets);
+    let full_mask: usize = (1usize << n_sets) - 1;
+    let arcs = crate::geometry::shapes::circle::region_boundary_arcs(
+        full_mask,
+        circles,
+        &intersections,
+        n_sets,
+    );
+    crate::geometry::shapes::circle::area_from_boundary_arcs(&arcs, circles)
 }
 
 /// Compute overlap areas using Monte Carlo integration.
@@ -167,6 +157,7 @@ fn monte_carlo_overlap<S: DiagramShape>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::diagram::IntersectionPoint;
     use crate::geometry::shapes::Circle;
     use rand::rngs::StdRng;
     use rand::SeedableRng;

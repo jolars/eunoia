@@ -289,6 +289,11 @@ pub fn adopters_to_mask(adopters: &[usize]) -> RegionMask {
 }
 
 /// Compute the area of a region based on its bit mask.
+#[deprecated(
+    since = "0.3.1",
+    note = "Delegates to `multiple_overlap_areas_with_mask`, which returns wrong areas for 3+-way regions where one circle in the mask contains the others' lens. Use `compute_exclusive_regions` (boundary-arc path) instead."
+)]
+#[allow(deprecated)]
 pub fn compute_region_area(
     mask: RegionMask,
     circles: &[Circle],
@@ -521,23 +526,11 @@ pub fn compute_exclusive_areas_from_layout(
     set_names: &[String],
 ) -> HashMap<Combination, f64> {
     let n_sets = circles.len();
+    let exclusive_areas = compute_exclusive_regions(circles);
 
-    let intersections = collect_intersections(circles, n_sets);
-    let regions = discover_regions(circles, &intersections, n_sets);
-
-    let mut overlapping_areas = HashMap::new();
-    for &mask in &regions {
-        let area = compute_region_area(mask, circles, &intersections, n_sets);
-        overlapping_areas.insert(mask, area);
-    }
-
-    let exclusive_areas = to_exclusive_areas(&overlapping_areas);
-
-    // Convert masks to Combinations
     let mut exclusive_combos = HashMap::new();
     for (mask, area) in exclusive_areas {
         if area > 0.0 {
-            // Only include non-zero areas
             let indices = mask_to_indices(mask, n_sets);
             let combo_sets: Vec<&str> = indices.iter().map(|&i| set_names[i].as_str()).collect();
 
@@ -790,6 +783,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_compute_region_area_single() {
         let c = Circle::new(Point::new(0.0, 0.0), 2.0);
         let circles = vec![c];
@@ -809,6 +803,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_compute_region_area_two_circles() {
         let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
         let c2 = Circle::new(Point::new(1.0, 0.0), 1.0);
@@ -830,6 +825,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_compute_region_area_three_circles() {
         let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
         let c2 = Circle::new(Point::new(1.5, 0.0), 2.0);
@@ -1443,6 +1439,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn compare_abcdef_exact_vs_monte_carlo() {
         let c1 = Circle::new(Point::new(1.5, 0.0), 1.8);
         let c2 = Circle::new(Point::new(0.75, 1.2990381057), 1.8);

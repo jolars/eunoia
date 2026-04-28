@@ -348,6 +348,10 @@ pub(crate) fn distance_for_overlap(
     Ok(*result.state.get_best_param().unwrap())
 }
 
+#[deprecated(
+    since = "0.3.1",
+    note = "Returns wrong area when one circle in the mask contains the others' lens. Use `crate::geometry::diagram::compute_exclusive_regions` or the boundary-arc helpers (`region_boundary_arcs` + `area_from_boundary_arcs`) instead."
+)]
 pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) -> f64 {
     let n_circles = circles.len();
 
@@ -449,6 +453,10 @@ pub fn multiple_overlap_areas(circles: &[Circle], points: &[IntersectionPoint]) 
 /// * `circles` - All circles in the diagram
 /// * `points` - Intersection points (with adopters referencing indices in `circles`)
 /// * `circle_indices` - Indices of the circles that define this region
+#[deprecated(
+    since = "0.3.1",
+    note = "Returns wrong area when one circle in the mask contains the others' lens. Use `crate::geometry::diagram::compute_exclusive_regions` or the boundary-arc helpers (`region_boundary_arcs` + `area_from_boundary_arcs`) instead."
+)]
 pub fn multiple_overlap_areas_with_mask(
     circles: &[Circle],
     points: &[IntersectionPoint],
