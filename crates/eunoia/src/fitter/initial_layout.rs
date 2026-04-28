@@ -1,8 +1,5 @@
 use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
-use argmin::solver::conjugategradient::beta::PolakRibiere;
-use argmin::solver::conjugategradient::NonlinearConjugateGradient;
-use argmin::solver::linesearch::condition::ArmijoCondition;
-use argmin::solver::linesearch::{BacktrackingLineSearch, MoreThuenteLineSearch};
+use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::newton::NewtonCG;
 use argmin::solver::quasinewton::LBFGS;
 use argmin::solver::trustregion::{Steihaug, TrustRegion};
@@ -83,10 +80,6 @@ pub enum MdsSolver {
     /// cheap per iteration; the strongest single-solver default by wall time.
     #[default]
     Lbfgs,
-    /// Polak-Ribière nonlinear CG with Armijo backtracking. Gradient-only.
-    /// Empirically slower than L-BFGS on every spec we tested with no
-    /// quality compensation; kept for completeness.
-    ConjugateGradient,
     /// Trust region with Steihaug-CG subproblem. Uses the analytic Hessian
     /// and tolerates the indefinite Hessian our MDS objective routinely
     /// produces. Reaches different local minima than L-BFGS on hard ellipse
@@ -128,17 +121,6 @@ fn run_attempt(
         MdsSolver::Lbfgs => {
             let line_search = MoreThuenteLineSearch::new();
             let solver = LBFGS::new(line_search, 10);
-            let result = Executor::new(cost_function, solver)
-                .configure(|state| state.param(initial_param).max_iters(200))
-                .run()?;
-            Ok((
-                result.state().get_cost(),
-                result.state().get_best_param().unwrap().as_slice().to_vec(),
-            ))
-        }
-        MdsSolver::ConjugateGradient => {
-            let line_search = BacktrackingLineSearch::new(ArmijoCondition::new(0.01)?);
-            let solver = NonlinearConjugateGradient::new(line_search, PolakRibiere::new());
             let result = Executor::new(cost_function, solver)
                 .configure(|state| state.param(initial_param).max_iters(200))
                 .run()?;

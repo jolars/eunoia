@@ -15,7 +15,6 @@
     >
       <option value="Lbfgs">L-BFGS</option>
       <option value="NelderMead">Nelder-Mead</option>
-      <option value="ConjugateGradient">Conjugate Gradient</option>
       <option value="TrustRegion">Trust Region</option>
     </select>
   </div>

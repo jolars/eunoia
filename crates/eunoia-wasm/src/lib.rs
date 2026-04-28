@@ -18,7 +18,6 @@ use console_error_panic_hook;
 pub enum WasmOptimizer {
     NelderMead,
     Lbfgs,
-    ConjugateGradient,
     TrustRegion,
 }
 
@@ -27,7 +26,6 @@ impl From<WasmOptimizer> for Optimizer {
         match opt {
             WasmOptimizer::NelderMead => Optimizer::NelderMead,
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
-            WasmOptimizer::ConjugateGradient => Optimizer::ConjugateGradient,
             WasmOptimizer::TrustRegion => Optimizer::TrustRegion,
         }
     }

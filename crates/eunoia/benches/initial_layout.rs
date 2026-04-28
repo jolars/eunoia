@@ -21,9 +21,8 @@ use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
 use eunoia::{Fitter, MdsSolver};
 
-const SOLVERS: [(MdsSolver, &str); 4] = [
+const SOLVERS: [(MdsSolver, &str); 3] = [
     (MdsSolver::Lbfgs, "lbfgs"),
-    (MdsSolver::ConjugateGradient, "cg"),
     (MdsSolver::TrustRegion, "tr_steihaug"),
     (MdsSolver::NewtonCg, "newton_cg"),
 ];

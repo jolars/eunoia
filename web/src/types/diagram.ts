@@ -59,7 +59,6 @@ export type LegendPosition = "right" | "left" | "top" | "bottom";
 export type OptimizerName =
   | "NelderMead"
   | "Lbfgs"
-  | "ConjugateGradient"
   | "TrustRegion";
 export type LossName =
   | "SumSquared"

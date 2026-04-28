@@ -132,7 +132,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Pin the initial-layout MDS solver to a single choice.
     ///
     /// The default is [`MdsSolver::Lbfgs`] for every restart. Other solvers
-    /// (`TrustRegion+Steihaug`, `Newton-CG`, `ConjugateGradient`) are exposed
+    /// (`TrustRegion+Steihaug`, `Newton-CG`) are exposed
     /// for experimentation; on hard ellipse fits TrustRegion sometimes finds
     /// basins L-BFGS misses, but it can also hang on certain real-world
     /// specs, so it is opt-in.
@@ -260,9 +260,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Set the convergence tolerance for the final-stage optimizer.
     ///
     /// Currently honored by L-BFGS only — passed as `tol_grad`, with
-    /// `tol_cost = tolerance²`. Other solvers (Nelder-Mead, nonlinear CG,
-    /// TrustRegion) do not expose tolerance setters in argmin 0.11 and run
-    /// until `max_iterations`.
+    /// `tol_cost = tolerance²`. Other solvers (Nelder-Mead, TrustRegion) do
+    /// not expose tolerance setters in argmin 0.11 and run until
+    /// `max_iterations`.
     ///
     /// The default is `1e-6`, matching eulerr's nlm `gradtol`/`steptol`.
     /// Tightening this (e.g. `1e-9`) gives a sharper fit at the cost of more

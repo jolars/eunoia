@@ -141,7 +141,7 @@ Interactive diagram viewer built with Svelte + TypeScript.
    - Uses `DiagramShape::compute_exclusive_regions()` for exact area computation
      (exact conic/polysegments for circles and ellipses, including 3+ way)
    - Minimizes a selectable loss function via argmin
-     (Nelder-Mead, L-BFGS, CG, TrustRegion)
+     (Nelder-Mead, L-BFGS, TrustRegion)
    - Constructs final shapes via `DiagramShape::from_params()`
 
 4. **Layout Finalization**:
@@ -369,7 +369,7 @@ The entire optimization pipeline is **shape-generic** - no changes needed to fit
 ### Optimization Code
 
 - Lives in `fitter/` module
-- Uses argmin for optimization (Nelder-Mead, L-BFGS, CG, TrustRegion — selectable via `Optimizer`)
+- Uses argmin for optimization (Nelder-Mead, L-BFGS, TrustRegion — selectable via `Optimizer`)
 - Loss functions are pluggable via `LossType` in `loss.rs` (SSE, RMSE, stress,
   sum/max absolute, sum/max squared, region-error variants, DiagError)
 - MDS-based initial layout (`initial_layout.rs`) with outer full-pipeline
@@ -474,7 +474,7 @@ eulerr's `input` argument is:
 - ✅ Ellipse shape implemented with exact 3+ way intersections
 - ✅ Polygon conversion via `Polygonize` trait (+ `plotting` feature for clipping/regions)
 - ✅ Post-fit normalization: clustering, rotation, centering, skyline packing
-- ✅ Selectable final-stage optimizer (Nelder-Mead, L-BFGS, CG, TrustRegion, SimulatedAnnealing) and selectable initial-layout MDS solver (`MdsSolver`: L-BFGS, CG, TrustRegion+Steihaug, Newton-CG) with cycling pool support via `Fitter::initial_solver_pool`. Default pool is `[Lbfgs]` (single-solver). The mixed `[Lbfgs, TrustRegion]` pool improves best-of-N quality on issue #28-class specs but has been observed to hang on some eulerr-style real-world inputs, so it is opt-in.
+- ✅ Selectable final-stage optimizer (Nelder-Mead, L-BFGS, TrustRegion, SimulatedAnnealing) and selectable initial-layout MDS solver (`MdsSolver`: L-BFGS, TrustRegion+Steihaug, Newton-CG) with cycling pool support via `Fitter::initial_solver_pool`. Default pool is `[Lbfgs]` (single-solver). The mixed `[Lbfgs, TrustRegion]` pool improves best-of-N quality on issue #28-class specs but has been observed to hang on some eulerr-style real-world inputs, so it is opt-in.
 - ✅ Global-search fallback: bounded SA auto-triggers for 3-set ellipse fits when `diagError > threshold` (matches eulerr's GenSA fallback). Tunable via `Fitter::sa_fallback_threshold`.
 - ✅ Named quality metrics on `Layout`: `region_error()`, `diag_error()`, `stress()` (β-scaled venneuler form), `residuals()`.
 - ✅ Analytical final-stage gradient for **circles and ellipses** with `NormalizedSumSquared` and `SumSquared` losses. Derived from boundary-velocity (`dA/dθ = ∮_∂R (v·n) ds`) on a CCW arc decomposition of each region; chained through inclusion-exclusion to exclusive-area gradients. Wired into `DiagramCost::gradient` and used transparently by L-BFGS / CG / TrustRegion. Falls back to central finite differences when the loss doesn't expose an analytical gradient. ~12-32× faster on circles (n=3 → n=8), ~14-32× faster on ellipses (gradient call only). Boundary builders: `geometry/shapes/circle.rs::region_boundary_arcs` (3 params/shape) and `geometry/shapes/ellipse.rs::region_boundary_arcs_ellipse` (5 params/shape, `t = atan2(v·a, u·b)` parameterisation, with index tiebreaker for boundary-coincident ellipses). Shared IE-gradient combiner in `geometry/diagram.rs::to_exclusive_areas_and_gradients`; loss derivative in `loss.rs::LossType::compute_with_gradient`; trait dispatch in `geometry/traits.rs::DiagramShape::compute_exclusive_regions_with_gradient`.

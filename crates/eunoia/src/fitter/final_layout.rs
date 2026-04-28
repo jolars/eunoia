@@ -5,11 +5,7 @@
 //! fitted areas in the diagram.
 
 use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
-use argmin::solver::conjugategradient::beta::PolakRibiere;
-use argmin::solver::conjugategradient::NonlinearConjugateGradient;
-use argmin::solver::linesearch::{
-    condition::ArmijoCondition, BacktrackingLineSearch, MoreThuenteLineSearch,
-};
+use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::neldermead::NelderMead;
 use argmin::solver::quasinewton::LBFGS;
 use argmin::solver::simulatedannealing::{Anneal, SATempFunc, SimulatedAnnealing};
@@ -36,8 +32,6 @@ pub enum Optimizer {
     /// fits L-BFGS finds basins NelderMead misses (issue #28). The default
     /// fitter cycles `[NelderMead, Lbfgs]` across restarts to get both.
     Lbfgs,
-    /// Nonlinear Conjugate Gradient with numerical gradients
-    ConjugateGradient,
     /// Trust Region method
     TrustRegion,
     /// Simulated annealing (derivative-free, bounded global search).
@@ -61,8 +55,8 @@ pub(crate) struct FinalLayoutConfig {
     pub optimizer: Optimizer,
     /// Convergence tolerance. Currently honored by L-BFGS only — passed as
     /// `tol_grad`, with `tol_cost = tolerance²`. Other solvers (Nelder-Mead,
-    /// nonlinear CG, TrustRegion) don't expose tolerance setters in argmin
-    /// 0.11 and run to `max_iterations`.
+    /// TrustRegion) don't expose tolerance setters in argmin 0.11 and run to
+    /// `max_iterations`.
     ///
     /// Default `1e-6` matches eulerr's nlm `gradtol`/`steptol`. Looser than
     /// argmin's L-BFGS defaults (`sqrt(EPSILON)` ≈ 1.5e-8 grad, `EPSILON`
@@ -317,29 +311,6 @@ fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
                 .with_tolerance_grad(config.tolerance)?
                 .with_tolerance_cost(config.tolerance)?;
             let result = Executor::new(cost_function_lbfgs, solver)
-                .configure(|state| {
-                    state
-                        .param(initial_param.clone())
-                        .max_iters(config.max_iterations as u64)
-                })
-                .run()?;
-            (
-                result.state().get_best_param().unwrap().clone(),
-                result.state().get_cost(),
-            )
-        }
-        Optimizer::ConjugateGradient => {
-            // Conjugate Gradient with numerical gradients
-            let cost_function_cg = DiagramCost::<S> {
-                spec,
-                loss_type: config.loss_type,
-                params_per_shape,
-                _shape: std::marker::PhantomData,
-            };
-            let line_search = BacktrackingLineSearch::new(ArmijoCondition::new(0.01)?);
-            let beta_update = PolakRibiere::new();
-            let solver = NonlinearConjugateGradient::new(line_search, beta_update);
-            let result = Executor::new(cost_function_cg, solver)
                 .configure(|state| {
                     state
                         .param(initial_param.clone())
