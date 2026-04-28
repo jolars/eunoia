@@ -596,13 +596,20 @@ fn circle_implicit_value(p: &Point, c: &Circle) -> f64 {
 /// (boundaries coincide), the smaller-index circle owns the arc to avoid
 /// double-counting (the identical-circles case in particular would otherwise
 /// emit one full-circle arc per circle).
+///
+/// Tolerance is scaled per comparator circle: a geometric near-tangency of
+/// `~δ` translates to an implicit-value deviation of `~2δ/r`, so we pick
+/// `eps_l = 2·BOUNDARY_COINCIDENCE_GEOM_TOL / r_l` (clamped against
+/// floating-point noise) so the threshold corresponds to a roughly constant
+/// geometric gap regardless of circle scale.
 fn arc_midpoint_owned_by_j(j: usize, mid: &Point, indices: &[usize], circles: &[Circle]) -> bool {
-    let eps = 1e-7;
     for &l in indices {
         if l == j {
             continue;
         }
-        let v = circle_implicit_value(mid, &circles[l]);
+        let cl = &circles[l];
+        let eps = (2.0 * BOUNDARY_COINCIDENCE_GEOM_TOL / cl.radius()).max(IMPLICIT_VALUE_FP_TOL);
+        let v = circle_implicit_value(mid, cl);
         if v > 1.0 + eps {
             return false;
         }
@@ -612,6 +619,16 @@ fn arc_midpoint_owned_by_j(j: usize, mid: &Point, indices: &[usize], circles: &[
     }
     true
 }
+
+/// Geometric tolerance (in world-frame distance units) for treating two
+/// circle boundaries as coincident at a probe point. Converted to a per-circle
+/// implicit-value tolerance inside the tiebreaker.
+const BOUNDARY_COINCIDENCE_GEOM_TOL: f64 = 1e-7;
+
+/// Floor for the per-circle implicit-value tolerance, guarding against
+/// floating-point noise on huge circles where the geometric tolerance would
+/// otherwise map to a sub-ulp implicit-value threshold.
+const IMPLICIT_VALUE_FP_TOL: f64 = 1e-12;
 
 /// Build the CCW-oriented list of boundary arcs for an overlapping region.
 ///

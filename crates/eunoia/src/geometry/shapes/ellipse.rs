@@ -801,13 +801,21 @@ fn ellipse_implicit_value(p: &Point, e: &Ellipse) -> f64 {
 /// boundary (boundaries coincide), the smaller-index ellipse owns the arc to
 /// avoid double-counting (the identical-ellipses case in particular would
 /// otherwise emit one full-circle arc per ellipse).
+///
+/// Tolerance is scaled per comparator ellipse: a geometric near-tangency of
+/// `~δ` translates to an implicit-value deviation of `~2δ/max(a,b)`, so we
+/// pick `eps_l = 2·BOUNDARY_COINCIDENCE_GEOM_TOL / max(a_l, b_l)` (clamped
+/// against floating-point noise) so the threshold corresponds to a roughly
+/// constant geometric gap regardless of ellipse scale.
 fn arc_midpoint_owned_by_j(j: usize, mid: &Point, indices: &[usize], ellipses: &[Ellipse]) -> bool {
-    let eps = 1e-7;
     for &l in indices {
         if l == j {
             continue;
         }
-        let v = ellipse_implicit_value(mid, &ellipses[l]);
+        let el = &ellipses[l];
+        let scale = el.semi_major.max(el.semi_minor);
+        let eps = (2.0 * BOUNDARY_COINCIDENCE_GEOM_TOL / scale).max(IMPLICIT_VALUE_FP_TOL);
+        let v = ellipse_implicit_value(mid, el);
         if v > 1.0 + eps {
             return false;
         }
@@ -817,6 +825,16 @@ fn arc_midpoint_owned_by_j(j: usize, mid: &Point, indices: &[usize], ellipses: &
     }
     true
 }
+
+/// Geometric tolerance (in world-frame distance units) for treating two
+/// shape boundaries as coincident at a probe point. Converted to a per-shape
+/// implicit-value tolerance inside the tiebreaker.
+const BOUNDARY_COINCIDENCE_GEOM_TOL: f64 = 1e-7;
+
+/// Floor for the per-shape implicit-value tolerance, guarding against
+/// floating-point noise on huge ellipses where the geometric tolerance would
+/// otherwise map to a sub-ulp implicit-value threshold.
+const IMPLICIT_VALUE_FP_TOL: f64 = 1e-12;
 
 /// Build the CCW boundary arc list for an ellipse-mask region. Mirrors the
 /// circle-side `region_boundary_arcs`, working per-ellipse: for each ellipse
