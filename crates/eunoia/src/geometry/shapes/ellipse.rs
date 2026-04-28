@@ -750,79 +750,313 @@ impl Closed for Ellipse {
     }
 }
 
+/// One arc of an ellipse on the boundary of a region. The arc is traversed
+/// CCW around the region; for intersections of convex sets this is also CCW
+/// around the owning ellipse, so `delta_t > 0` always.
+///
+/// `t_start` is the canonical-frame parameter value at the arc's start
+/// (`t = atan2(v·a, u·b)` where `(u, v)` is the point in the unrotated ellipse
+/// frame). The endpoint can be recovered as `t_start + delta_t`; sin/cos of
+/// that continuous value coincide with sin/cos of the wrapped atan2 endpoint.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EllipseArc {
+    pub ellipse: usize,
+    pub t_start: f64,
+    pub delta_t: f64,
+}
+
+/// World-frame point on ellipse `e` at canonical parameter `t`.
+fn ellipse_point_at(e: &Ellipse, t: f64) -> Point {
+    let cos_t = t.cos();
+    let sin_t = t.sin();
+    let u = e.semi_major * cos_t;
+    let v = e.semi_minor * sin_t;
+    let cos_phi = e.rotation.cos();
+    let sin_phi = e.rotation.sin();
+    Point::new(
+        e.center.x() + u * cos_phi - v * sin_phi,
+        e.center.y() + u * sin_phi + v * cos_phi,
+    )
+}
+
+/// Canonical-frame parameter `t` for a world-frame point on (or near) `e`.
+fn ellipse_param_for_point(e: &Ellipse, p: &Point) -> f64 {
+    let local = p.to_ellipse_frame(e);
+    // t such that (cos t, sin t) ∝ (local.x()/a, local.y()/b). Multiplying both
+    // arguments by a·b > 0 is equivalent and avoids dividing by potentially
+    // small axes:
+    (local.y() * e.semi_major).atan2(local.x() * e.semi_minor)
+}
+
+/// Implicit-form value `(u/a)² + (v/b)²` for point `p` in ellipse `e`'s frame.
+/// `< 1` strictly inside, `= 1` on the boundary, `> 1` outside.
+fn ellipse_implicit_value(p: &Point, e: &Ellipse) -> f64 {
+    let local = p.to_ellipse_frame(e);
+    (local.x() / e.semi_major).powi(2) + (local.y() / e.semi_minor).powi(2)
+}
+
+/// Decide whether an arc whose midpoint is on `∂E_j` is owned by `j` for
+/// the purpose of region-boundary contributions. The midpoint must be inside
+/// every other mask ellipse; when its lies on another mask ellipse's
+/// boundary (boundaries coincide), the smaller-index ellipse owns the arc to
+/// avoid double-counting (the identical-ellipses case in particular would
+/// otherwise emit one full-circle arc per ellipse).
+fn arc_midpoint_owned_by_j(j: usize, mid: &Point, indices: &[usize], ellipses: &[Ellipse]) -> bool {
+    let eps = 1e-7;
+    for &l in indices {
+        if l == j {
+            continue;
+        }
+        let v = ellipse_implicit_value(mid, &ellipses[l]);
+        if v > 1.0 + eps {
+            return false;
+        }
+        if (v - 1.0).abs() <= eps && l < j {
+            return false;
+        }
+    }
+    true
+}
+
+/// Build the CCW boundary arc list for an ellipse-mask region. Mirrors the
+/// circle-side `region_boundary_arcs`, working per-ellipse: for each ellipse
+/// in the mask, finds IPs on its boundary that sit inside every other mask
+/// ellipse, sorts by canonical parameter `t`, and emits an arc for every
+/// inter-IP segment whose midpoint sits inside every other mask ellipse.
+pub(crate) fn region_boundary_arcs_ellipse(
+    mask: RegionMask,
+    ellipses: &[Ellipse],
+    intersections: &[crate::geometry::diagram::IntersectionPoint],
+    n_sets: usize,
+) -> Vec<EllipseArc> {
+    use crate::geometry::diagram::{adopters_to_mask, mask_to_indices};
+    let count = mask.count_ones();
+    if count == 0 {
+        return Vec::new();
+    }
+    if count == 1 {
+        let idx = mask.trailing_zeros() as usize;
+        return vec![EllipseArc {
+            ellipse: idx,
+            t_start: 0.0,
+            delta_t: 2.0 * PI,
+        }];
+    }
+
+    let indices = mask_to_indices(mask, n_sets);
+    let mut arcs: Vec<EllipseArc> = Vec::new();
+    let two_pi = 2.0 * PI;
+    let arc_eps = 1e-9;
+
+    for &j in &indices {
+        let ej = &ellipses[j];
+        // IPs on ∂E_j (j is one of the parents) that sit inside every other
+        // mask ellipse (mask ⊆ adopters).
+        let mut j_ts: Vec<f64> = intersections
+            .iter()
+            .filter(|ip| {
+                let (p1, p2) = ip.parents();
+                if p1 != j && p2 != j {
+                    return false;
+                }
+                let am = adopters_to_mask(ip.adopters());
+                (mask & am) == mask
+            })
+            .map(|ip| ellipse_param_for_point(ej, ip.point()))
+            .collect();
+
+        if j_ts.is_empty() {
+            // E_j has no IPs in the region: either it's wholly inside every
+            // other mask ellipse (full-circle arc) or it's outside (no arc).
+            // The probe lives on ∂E_j; if it also lies on ∂E_l for some
+            // l ≠ j, the index tiebreaker hands the arc to the smallest-index
+            // ellipse so identical / coincident-boundary ellipses don't all
+            // emit duplicate full-circle arcs.
+            let probe = ellipse_point_at(ej, 0.0);
+            if arc_midpoint_owned_by_j(j, &probe, &indices, ellipses) {
+                arcs.push(EllipseArc {
+                    ellipse: j,
+                    t_start: 0.0,
+                    delta_t: two_pi,
+                });
+            }
+            continue;
+        }
+
+        j_ts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let m = j_ts.len();
+        for k in 0..m {
+            let t_a = j_ts[k];
+            let t_b = j_ts[(k + 1) % m];
+            let mut delta = t_b - t_a;
+            if delta <= 0.0 {
+                delta += two_pi;
+            }
+            if delta < arc_eps || delta > two_pi - arc_eps {
+                continue;
+            }
+            let t_mid = t_a + delta * 0.5;
+            let mid = ellipse_point_at(ej, t_mid);
+            if !arc_midpoint_owned_by_j(j, &mid, &indices, ellipses) {
+                continue;
+            }
+            arcs.push(EllipseArc {
+                ellipse: j,
+                t_start: t_a,
+                delta_t: delta,
+            });
+        }
+    }
+
+    arcs
+}
+
+/// Area of a region from its CCW boundary arc list, via
+/// `A = (1/2) ∮ (x dy − y dx)`. For arc on ellipse k:
+/// ```text
+/// (x dy − y dx) dt =
+///     [ x_c·(b cos φ cos t − a sin φ sin t)
+///     + y_c·(a cos φ sin t + b sin φ cos t)
+///     + a·b ] dt
+/// ```
+pub(crate) fn area_from_boundary_arcs_ellipse(arcs: &[EllipseArc], ellipses: &[Ellipse]) -> f64 {
+    let mut total = 0.0;
+    for arc in arcs {
+        let e = &ellipses[arc.ellipse];
+        let xc = e.center.x();
+        let yc = e.center.y();
+        let a = e.semi_major;
+        let b = e.semi_minor;
+        let cphi = e.rotation.cos();
+        let sphi = e.rotation.sin();
+        let t_a = arc.t_start;
+        let t_b = t_a + arc.delta_t;
+        let s_b_minus_s_a = t_b.sin() - t_a.sin();
+        let c_b_minus_c_a = t_b.cos() - t_a.cos();
+        // ∫(b cos φ cos t − a sin φ sin t) dt = b cos φ (sin t_b − sin t_a)
+        //                                       + a sin φ (cos t_b − cos t_a)
+        let int_x = b * cphi * s_b_minus_s_a + a * sphi * c_b_minus_c_a;
+        // ∫(a cos φ sin t + b sin φ cos t) dt = −a cos φ (cos t_b − cos t_a)
+        //                                       + b sin φ (sin t_b − sin t_a)
+        let int_y = -a * cphi * c_b_minus_c_a + b * sphi * s_b_minus_s_a;
+        total += xc * int_x + yc * int_y + a * b * arc.delta_t;
+    }
+    0.5 * total
+}
+
+/// Accumulate the gradient of a region's overlapping area into `grad`, where
+/// `grad` is a length-`5 · n_sets` flat vector laid out as
+/// `[x₀, y₀, a₀, b₀, φ₀, x₁, y₁, …]`. Each arc on ellipse k contributes (via
+/// boundary velocity `dA/dθ = ∮ (v·n) ds`):
+///
+/// ```text
+/// ∂/∂x_c += b cos φ (sin t_b − sin t_a) + a sin φ (cos t_b − cos t_a)
+/// ∂/∂y_c += −a cos φ (cos t_b − cos t_a) + b sin φ (sin t_b − sin t_a)
+/// ∂/∂a   += (b/2) Δt + (b/4) (sin 2t_b − sin 2t_a)
+/// ∂/∂b   += (a/2) Δt − (a/4) (sin 2t_b − sin 2t_a)
+/// ∂/∂φ   += (a² − b²)/4 · (cos 2t_a − cos 2t_b)
+/// ```
+pub(crate) fn accumulate_region_overlap_gradient_ellipse(
+    arcs: &[EllipseArc],
+    ellipses: &[Ellipse],
+    grad: &mut [f64],
+) {
+    for arc in arcs {
+        let e = &ellipses[arc.ellipse];
+        let a = e.semi_major;
+        let b = e.semi_minor;
+        let cphi = e.rotation.cos();
+        let sphi = e.rotation.sin();
+        let t_a = arc.t_start;
+        let t_b = t_a + arc.delta_t;
+        let s_a = t_a.sin();
+        let s_b = t_b.sin();
+        let c_a = t_a.cos();
+        let c_b = t_b.cos();
+        let s2_a = (2.0 * t_a).sin();
+        let s2_b = (2.0 * t_b).sin();
+        let c2_a = (2.0 * t_a).cos();
+        let c2_b = (2.0 * t_b).cos();
+        let off = arc.ellipse * 5;
+        grad[off] += b * cphi * (s_b - s_a) + a * sphi * (c_b - c_a);
+        grad[off + 1] += -a * cphi * (c_b - c_a) + b * sphi * (s_b - s_a);
+        grad[off + 2] += 0.5 * b * arc.delta_t + 0.25 * b * (s2_b - s2_a);
+        grad[off + 3] += 0.5 * a * arc.delta_t - 0.25 * a * (s2_b - s2_a);
+        grad[off + 4] += 0.25 * (a * a - b * b) * (c2_a - c2_b);
+    }
+}
+
+/// Collect IPs between every pair of ellipses, with adopters computed via the
+/// implicit-form check used by [`Ellipse::compute_exclusive_regions`] (small
+/// tolerance to capture boundary points).
+pub(crate) fn collect_intersections_ellipse(
+    ellipses: &[Ellipse],
+) -> Vec<crate::geometry::diagram::IntersectionPoint> {
+    use crate::geometry::diagram::IntersectionPoint;
+    let n_sets = ellipses.len();
+    let mut intersections: Vec<IntersectionPoint> = Vec::new();
+    for i in 0..n_sets {
+        for j in (i + 1)..n_sets {
+            let pts = ellipses[i].intersection_points(&ellipses[j]);
+            for p in pts {
+                let adopters: Vec<usize> = (0..n_sets)
+                    .filter(|&k| {
+                        let local = p.to_ellipse_frame(&ellipses[k]);
+                        let val = (local.x() / ellipses[k].semi_major).powi(2)
+                            + (local.y() / ellipses[k].semi_minor).powi(2);
+                        val <= 1.0 + 1e-9
+                    })
+                    .collect();
+                intersections.push(IntersectionPoint::new(p, (i, j), adopters));
+            }
+        }
+    }
+    intersections
+}
+
 impl DiagramShape for Ellipse {
     fn compute_exclusive_regions(shapes: &[Self]) -> std::collections::HashMap<RegionMask, f64> {
-        use crate::geometry::diagram::{adopters_to_mask, to_exclusive_areas, IntersectionPoint};
+        use crate::geometry::diagram::to_exclusive_areas;
         use std::collections::HashMap;
 
         let n_sets = shapes.len();
+        let intersections = collect_intersections_ellipse(shapes);
 
-        // 1) Collect ALL intersection points from ALL pairs (matches eulerr lines 52-63)
-        let mut intersections: Vec<IntersectionPoint> = Vec::new();
-        for i in 0..n_sets {
-            for j in (i + 1)..n_sets {
-                let pts = shapes[i].intersection_points(&shapes[j]);
-                for p in pts {
-                    // adopters: all shapes that contain this intersection point
-                    // Use a small tolerance when checking containment to include boundary points
-                    let adopters: Vec<usize> = (0..n_sets)
-                        .filter(|&k| {
-                            let local = p.to_ellipse_frame(&shapes[k]);
-                            let val = (local.x() / shapes[k].semi_major).powi(2)
-                                + (local.y() / shapes[k].semi_minor).powi(2);
-                            val <= 1.0 + 1e-9
-                        })
-                        .collect();
-                    intersections.push(IntersectionPoint::new(p, (i, j), adopters));
-                }
-            }
-        }
-
-        // 2) Generate all region masks (matches eulerr's id = set_index(n))
         let n_overlaps = (1 << n_sets) - 1;
         let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
-
         for mask in 1..=n_overlaps {
-            let bits: Vec<usize> = (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect();
-
-            if bits.len() == 1 {
-                // Single set - just return its area
-                overlapping_areas.insert(mask, shapes[bits[0]].area());
-            } else {
-                // Two or more sets - find intersection points for this region (lines 75-79)
-                let region_points: Vec<usize> = intersections
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, ip)| {
-                        let (p1, p2) = ip.parents();
-                        // Check if both parents are in the mask
-                        let parents_in_mask = bits.contains(&p1) && bits.contains(&p2);
-                        // Check if mask is a subset of adopters
-                        let adopters_mask = adopters_to_mask(ip.adopters());
-                        let mask_subset = (mask & adopters_mask) == mask;
-
-                        if parents_in_mask && mask_subset {
-                            Some(idx)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                if region_points.is_empty() {
-                    // No intersections: either disjoint or subset (line 83)
-                    let area = disjoint_or_subset(shapes, &bits);
-                    overlapping_areas.insert(mask, area);
-                } else {
-                    // Use polysegments algorithm (line 88)
-                    let area = compute_polysegments(shapes, &intersections, &region_points);
-                    overlapping_areas.insert(mask, area);
-                }
-            }
+            let arcs = region_boundary_arcs_ellipse(mask, shapes, &intersections, n_sets);
+            overlapping_areas.insert(mask, area_from_boundary_arcs_ellipse(&arcs, shapes));
         }
 
-        // 5) Convert overlapping to exclusive (lines 104-109)
         to_exclusive_areas(&overlapping_areas)
+    }
+
+    fn compute_exclusive_regions_with_gradient(
+        shapes: &[Self],
+    ) -> Option<crate::geometry::traits::ExclusiveRegionsAndGradient> {
+        use crate::geometry::diagram::to_exclusive_areas_and_gradients;
+        use std::collections::HashMap;
+
+        let n_sets = shapes.len();
+        let n_params = n_sets * 5;
+        let intersections = collect_intersections_ellipse(shapes);
+
+        let n_overlaps = (1 << n_sets) - 1;
+        let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
+        let mut overlapping_grads: HashMap<RegionMask, Vec<f64>> = HashMap::new();
+        for mask in 1..=n_overlaps {
+            let arcs = region_boundary_arcs_ellipse(mask, shapes, &intersections, n_sets);
+            overlapping_areas.insert(mask, area_from_boundary_arcs_ellipse(&arcs, shapes));
+            let mut grad = vec![0.0; n_params];
+            accumulate_region_overlap_gradient_ellipse(&arcs, shapes, &mut grad);
+            overlapping_grads.insert(mask, grad);
+        }
+        Some(to_exclusive_areas_and_gradients(
+            &overlapping_areas,
+            &overlapping_grads,
+            n_params,
+        ))
     }
 
     fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
@@ -859,100 +1093,6 @@ impl DiagramShape for Ellipse {
             self.rotation,
         ]
     }
-}
-
-/// Check if region is disjoint or one ellipse contains another (eulerr's disjoint_or_subset)
-fn disjoint_or_subset(shapes: &[Ellipse], indices: &[usize]) -> f64 {
-    // Check containment
-    for &i in indices {
-        for &j in indices {
-            if i != j && shapes[i].contains(&shapes[j]) {
-                return shapes[j].area();
-            }
-        }
-    }
-    // Disjoint
-    0.0
-}
-
-/// Compute area using polysegments algorithm (eulerr's polysegments function)
-fn compute_polysegments(
-    shapes: &[Ellipse],
-    intersections: &[crate::geometry::diagram::IntersectionPoint],
-    region_points: &[usize],
-) -> f64 {
-    let n = region_points.len();
-    if n == 0 {
-        return 0.0;
-    }
-
-    // Compute centroid of the intersection points (lines 44-50)
-    let cx = region_points
-        .iter()
-        .map(|&idx| intersections[idx].point().x())
-        .sum::<f64>()
-        / n as f64;
-    let cy = region_points
-        .iter()
-        .map(|&idx| intersections[idx].point().y())
-        .sum::<f64>()
-        / n as f64;
-
-    // Sort points by angle around centroid (lines 52-62)
-    let mut sorted_indices: Vec<usize> = (0..n).collect();
-    sorted_indices.sort_by(|&a, &b| {
-        let pa = intersections[region_points[a]].point();
-        let pb = intersections[region_points[b]].point();
-        let angle_a = (pa.x() - cx).atan2(pa.y() - cy);
-        let angle_b = (pb.x() - cx).atan2(pb.y() - cy);
-        angle_a.partial_cmp(&angle_b).unwrap()
-    });
-
-    // Compute area by walking around the boundary (lines 65-100)
-    let mut area = 0.0;
-
-    for k in 0..n {
-        let l = if k == 0 { n - 1 } else { k - 1 };
-
-        let i_idx = region_points[sorted_indices[k]];
-        let j_idx = region_points[sorted_indices[l]];
-
-        let pi = intersections[i_idx].point();
-        let pj = intersections[j_idx].point();
-
-        // Find common parents (lines 72-78)
-        let parents_i = intersections[i_idx].parents();
-        let parents_j = intersections[j_idx].parents();
-
-        let mut common_parents = Vec::new();
-        for &p in &[parents_i.0, parents_i.1] {
-            if p == parents_j.0 || p == parents_j.1 {
-                common_parents.push(p);
-            }
-        }
-
-        if common_parents.is_empty() {
-            // Failure case - should not happen with valid input
-            return 0.0;
-        }
-
-        // Triangle contribution (line 90)
-        let triangle = 0.5 * ((pj.x() + pi.x()) * (pj.y() - pi.y()));
-
-        // Compute segments from common parent ellipses (lines 85-86)
-        let mut segments = Vec::new();
-        for &ellipse_idx in &common_parents {
-            let seg = shapes[ellipse_idx].ellipse_segment(*pi, *pj);
-            segments.push(seg);
-        }
-
-        // Add triangle + min(segments) (line 89-91)
-        if let Some(&min_seg) = segments.iter().min_by(|a, b| a.partial_cmp(b).unwrap()) {
-            area += triangle + min_seg;
-        }
-    }
-
-    area
 }
 
 impl Polygonize for Ellipse {

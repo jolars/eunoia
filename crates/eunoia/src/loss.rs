@@ -250,6 +250,57 @@ impl LossType {
             }
         }
     }
+
+    /// Compute loss and analytical gradient `∂L/∂f_mask`, returning `None` if
+    /// no closed-form gradient is implemented for this loss type. Callers
+    /// fall back to finite differences when this returns `None`.
+    pub fn compute_with_gradient(
+        &self,
+        fitted: &HashMap<RegionMask, f64>,
+        target: &HashMap<RegionMask, f64>,
+    ) -> Option<(f64, HashMap<RegionMask, f64>)> {
+        let mut all_masks: Vec<RegionMask> = fitted.keys().chain(target.keys()).copied().collect();
+        all_masks.sort_unstable();
+        all_masks.dedup();
+
+        if all_masks.is_empty() {
+            return Some((0.0, HashMap::new()));
+        }
+
+        match self {
+            LossType::SumSquared => {
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                let mut total = 0.0;
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let diff = f - t;
+                    total += diff * diff;
+                    grad.insert(mask, 2.0 * diff);
+                }
+                Some((total, grad))
+            }
+            LossType::NormalizedSumSquared => {
+                let sum_t2: f64 = target.values().map(|&v| v * v).sum();
+                if sum_t2 < 1e-20 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                let mut total = 0.0;
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let diff = f - t;
+                    total += diff * diff;
+                    grad.insert(mask, 2.0 * diff / sum_t2);
+                }
+                Some((total / sum_t2, grad))
+            }
+            // Other loss variants don't yet have analytical gradients; the
+            // optimiser falls back to central finite differences.
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

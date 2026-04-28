@@ -196,6 +196,12 @@ impl DiagramShape for Circle {
     fn to_params(&self) -> Vec<f64> {
         vec![self.center.x(), self.center.y(), self.radius]
     }
+
+    fn compute_exclusive_regions_with_gradient(
+        shapes: &[Self],
+    ) -> Option<crate::geometry::traits::ExclusiveRegionsAndGradient> {
+        Some(crate::geometry::diagram::compute_exclusive_regions_with_gradient_circles(shapes))
+    }
 }
 
 impl Polygonize for Circle {
@@ -547,6 +553,209 @@ pub fn multiple_overlap_areas_with_mask(
     }
 
     area.abs()
+}
+
+/// One circular arc on the boundary of a region, oriented to be traversed in the
+/// CCW direction around the region.
+///
+/// `phi_start` and `phi_end` are the standard `atan2` angles (in `(-π, π]`) of
+/// the arc endpoints relative to the owning circle's centre. `delta_phi` is the
+/// signed short-arc angular delta from `phi_start` to `phi_end` in `(-π, π]`
+/// (a full-circle arc uses `2π`); its sign matches the traversal direction
+/// around the owning circle (`+1` = CCW, `−1` = CW). The pair `(phi_start,
+/// delta_phi)` is sufficient to drive the boundary integral; `phi_end` is
+/// stored only as a convenience for the closed-form gradient formulas.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BoundaryArc {
+    pub circle: usize,
+    pub phi_start: f64,
+    pub phi_end: f64,
+    pub delta_phi: f64,
+}
+
+/// Build the CCW-oriented list of boundary arcs for an overlapping region.
+///
+/// For each circle in the mask, the function identifies the IPs that lie on
+/// that circle's boundary and inside every other circle in the mask, sorts
+/// them by angle around the circle's centre, and emits an arc for every
+/// inter-IP segment whose midpoint sits inside every other mask circle. When
+/// no such IPs exist on a circle, a probe point is used to decide whether the
+/// circle contributes a full-circle arc (i.e. it is wholly inside every
+/// other) or no arc.
+///
+/// All emitted arcs have `delta_phi > 0` (CCW around the owning circle), since
+/// for a region that is the intersection of disks, R sits inside each
+/// boundary circle and CCW-around-Cₖ on the boundary coincides with CCW
+/// around R. This is robust across degenerate cases that the older
+/// "polygon + min-segment" decomposition would miss — most notably 3+-way
+/// regions where the IPs all come from a single pair of circles because a
+/// third circle fully contains their lens.
+pub(crate) fn region_boundary_arcs(
+    mask: crate::geometry::diagram::RegionMask,
+    circles: &[Circle],
+    intersections: &[IntersectionPoint],
+    n_sets: usize,
+) -> Vec<BoundaryArc> {
+    use crate::geometry::diagram::{adopters_to_mask, mask_to_indices};
+    let circle_count = mask.count_ones();
+    if circle_count == 0 {
+        return Vec::new();
+    }
+    if circle_count == 1 {
+        let idx = mask.trailing_zeros() as usize;
+        return vec![BoundaryArc {
+            circle: idx,
+            phi_start: 0.0,
+            phi_end: 0.0,
+            delta_phi: 2.0 * PI,
+        }];
+    }
+
+    let indices = mask_to_indices(mask, n_sets);
+    let mut arcs = Vec::new();
+    let two_pi = 2.0 * PI;
+    // Numerical guard for collapsing arcs at tangencies / shared IPs.
+    let arc_eps = 1e-9;
+
+    for &j in &indices {
+        let cj = &circles[j];
+        // IPs on ∂C_j (j as a parent) that are inside every other mask circle.
+        let mut j_phis: Vec<f64> = intersections
+            .iter()
+            .filter(|ip| {
+                let (p1, p2) = ip.parents();
+                if p1 != j && p2 != j {
+                    return false;
+                }
+                let am = adopters_to_mask(ip.adopters());
+                (mask & am) == mask
+            })
+            .map(|ip| {
+                let p = ip.point();
+                (p.y() - cj.center().y()).atan2(p.x() - cj.center().x())
+            })
+            .collect();
+
+        if j_phis.is_empty() {
+            // Either C_j is wholly inside every other mask circle (full-circle
+            // arc) or wholly outside the region (no arc). Probe at φ = 0.
+            let probe = Point::new(cj.center().x() + cj.radius(), cj.center().y());
+            let inside_others = indices
+                .iter()
+                .all(|&l| l == j || circles[l].contains_point(&probe));
+            if inside_others {
+                arcs.push(BoundaryArc {
+                    circle: j,
+                    phi_start: 0.0,
+                    phi_end: 0.0,
+                    delta_phi: two_pi,
+                });
+            }
+            continue;
+        }
+
+        j_phis.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let m = j_phis.len();
+
+        for k in 0..m {
+            let phi_a = j_phis[k];
+            let phi_b = j_phis[(k + 1) % m];
+            // CCW arc length from phi_a to phi_b.
+            let mut delta = phi_b - phi_a;
+            if delta <= 0.0 {
+                delta += two_pi;
+            }
+            if delta < arc_eps || delta > two_pi - arc_eps {
+                continue;
+            }
+            // Midpoint of the candidate arc; include only if it sits inside
+            // every other circle in the mask (i.e. on R's boundary).
+            let phi_mid = phi_a + delta * 0.5;
+            let mid = Point::new(
+                cj.center().x() + cj.radius() * phi_mid.cos(),
+                cj.center().y() + cj.radius() * phi_mid.sin(),
+            );
+            let inside_others = indices
+                .iter()
+                .all(|&l| l == j || circles[l].contains_point(&mid));
+            if !inside_others {
+                continue;
+            }
+            // Canonicalise phi_end to (-π, π] so sin/cos in the area &
+            // gradient formulas operate on raw atan2 values; the periodicity
+            // of sin/cos makes phi_end == phi_a + delta (continuous) and
+            // phi_end (canonical) interchangeable.
+            let phi_end_canonical = wrap_angle(phi_a + delta);
+            arcs.push(BoundaryArc {
+                circle: j,
+                phi_start: phi_a,
+                phi_end: phi_end_canonical,
+                delta_phi: delta,
+            });
+        }
+    }
+
+    arcs
+}
+
+/// Compute the area enclosed by a CCW boundary arc list via the line-integral
+/// `A = (1/2) ∮ (x dy − y dx)`. For an arc on circle k parametrised by φ:
+/// ```text
+/// x dy − y dx = (xₖ rₖ cos φ + yₖ rₖ sin φ + rₖ²) dφ
+/// ```
+/// integrating from `phi_start` to `phi_start + delta_phi` (continuous).
+pub(crate) fn area_from_boundary_arcs(arcs: &[BoundaryArc], circles: &[Circle]) -> f64 {
+    let mut total = 0.0;
+    for arc in arcs {
+        let cj = &circles[arc.circle];
+        let xk = cj.center().x();
+        let yk = cj.center().y();
+        let r = cj.radius();
+        let phi_a = arc.phi_start;
+        let phi_b = phi_a + arc.delta_phi;
+        total += xk * r * (phi_b.sin() - phi_a.sin());
+        total += yk * r * (phi_a.cos() - phi_b.cos());
+        total += r * r * arc.delta_phi;
+    }
+    0.5 * total
+}
+
+/// Wrap an angle into `(-π, π]`.
+#[inline]
+pub(crate) fn wrap_angle(x: f64) -> f64 {
+    let two_pi = 2.0 * PI;
+    let y = x.rem_euclid(two_pi);
+    if y > PI {
+        y - two_pi
+    } else {
+        y
+    }
+}
+
+/// Accumulate the gradient of an overlapping region's area into `grad`, where
+/// `grad` is a length-`3 · n_sets` vector laid out as `[x₀, y₀, r₀, x₁, …]`.
+///
+/// Each boundary arc on circle `k` contributes:
+/// ```text
+/// ∂A/∂xₖ += sign · rₖ · (sin φ_end − sin φ_start)
+/// ∂A/∂yₖ −= sign · rₖ · (cos φ_end − cos φ_start)
+/// ∂A/∂rₖ += rₖ · |delta_phi|
+/// ```
+/// where `sign = sign(delta_phi)`, derived from the boundary-velocity identity
+/// `dA/dθ = ∮_∂R (v_θ · n) ds` with `θ ∈ {xₖ, yₖ, rₖ}`.
+pub(crate) fn accumulate_region_overlap_gradient(
+    arcs: &[BoundaryArc],
+    circles: &[Circle],
+    grad: &mut [f64],
+) {
+    for arc in arcs {
+        let r = circles[arc.circle].radius();
+        let sign = arc.delta_phi.signum();
+        let off = arc.circle * 3;
+        grad[off] += sign * r * (arc.phi_end.sin() - arc.phi_start.sin());
+        grad[off + 1] -= sign * r * (arc.phi_end.cos() - arc.phi_start.cos());
+        grad[off + 2] += r * arc.delta_phi.abs();
+    }
 }
 
 #[cfg(test)]

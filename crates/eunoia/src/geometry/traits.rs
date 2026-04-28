@@ -123,7 +123,32 @@ pub trait DiagramShape: Closed {
     /// This is the inverse of `from_params`. Returns the parameters that can
     /// reconstruct this shape.
     fn to_params(&self) -> Vec<f64>;
+
+    /// Optional analytical gradient companion to [`compute_exclusive_regions`].
+    ///
+    /// Returns `Some((exclusive_areas, gradients))` where each `gradients[mask]`
+    /// is a length-`n_sets · Self::n_params()` vector of `∂A_excl[mask]/∂θ`,
+    /// with `θ` ordered to match the flat parameter vector consumed by
+    /// `from_params`. The default implementation returns `None`, signalling to
+    /// the optimiser that finite differences should be used instead.
+    fn compute_exclusive_regions_with_gradient(
+        _shapes: &[Self],
+    ) -> Option<ExclusiveRegionsAndGradient>
+    where
+        Self: Sized,
+    {
+        None
+    }
 }
+
+/// Pair of (exclusive areas, exclusive gradients) returned by
+/// [`DiagramShape::compute_exclusive_regions_with_gradient`]. The gradient
+/// vectors are flat, length `n_sets * Self::n_params()`, mirroring the
+/// optimiser's parameter layout.
+pub type ExclusiveRegionsAndGradient = (
+    std::collections::HashMap<crate::geometry::diagram::RegionMask, f64>,
+    std::collections::HashMap<crate::geometry::diagram::RegionMask, Vec<f64>>,
+);
 
 /// Trait for converting shapes to polygons for visualization.
 ///

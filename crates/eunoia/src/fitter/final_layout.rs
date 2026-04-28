@@ -571,7 +571,29 @@ impl<'a, S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'a, S> {
     type Gradient = DVector<f64>;
 
     fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, Error> {
-        // Use central finite differences for numerical gradient
+        // Try the analytical path: requires both the shape (region geometry)
+        // and the loss to provide analytical gradients. Falls back to central
+        // finite differences when either piece isn't available.
+        let shapes = self.params_to_shapes(param);
+        if let Some((fitted, fitted_grads)) = S::compute_exclusive_regions_with_gradient(&shapes) {
+            if let Some((_loss, loss_grad)) = self
+                .loss_type
+                .compute_with_gradient(&fitted, &self.spec.exclusive_areas)
+            {
+                let n_params = param.len();
+                let mut grad = vec![0.0; n_params];
+                for (mask, &dl_df) in loss_grad.iter() {
+                    if let Some(df_dtheta) = fitted_grads.get(mask) {
+                        for (k, item) in grad.iter_mut().enumerate().take(n_params) {
+                            *item += dl_df * df_dtheta[k];
+                        }
+                    }
+                }
+                return Ok(DVector::from_vec(grad));
+            }
+        }
+
+        // Fallback: central finite differences.
         let param_vec = param.as_slice().to_vec();
         let f = |x: &Vec<f64>| {
             let p = DVector::from_vec(x.to_vec());
@@ -1007,6 +1029,679 @@ mod tests {
         // Radius bounds: [r/5, r*5]
         assert!((lower[2] - (2.0 / 5.0)).abs() < 1e-9);
         assert!((upper[2] - 10.0).abs() < 1e-9);
+    }
+
+    /// Compare the analytical gradient produced by `DiagramCost::gradient` to
+    /// the central-difference gradient of the cost function. Asserts a relative
+    /// error below `tol`. This is the primary correctness check for the
+    /// analytical-gradient path: equality (up to FD noise) on smooth interior
+    /// configurations.
+    fn assert_analytic_matches_fd<F>(
+        spec: &PreprocessedSpec,
+        params: &[f64],
+        loss_type: crate::loss::LossType,
+        h: f64,
+        tol: f64,
+        label: F,
+    ) where
+        F: FnOnce() -> String,
+    {
+        let cost = DiagramCost::<Circle> {
+            spec,
+            loss_type,
+            params_per_shape: Circle::n_params(),
+            _shape: std::marker::PhantomData,
+        };
+        let p = DVector::from_vec(params.to_vec());
+
+        let analytic = cost.gradient(&p).expect("analytic gradient");
+
+        // Central differences with explicit step size.
+        let n = params.len();
+        let mut fd = vec![0.0; n];
+        for i in 0..n {
+            let mut plus = params.to_vec();
+            let mut minus = params.to_vec();
+            plus[i] += h;
+            minus[i] -= h;
+            let f_plus = cost.cost(&DVector::from_vec(plus)).expect("cost +");
+            let f_minus = cost.cost(&DVector::from_vec(minus)).expect("cost -");
+            fd[i] = (f_plus - f_minus) / (2.0 * h);
+        }
+
+        let analytic_slice: Vec<f64> = analytic.as_slice().to_vec();
+        let diff_norm: f64 = analytic_slice
+            .iter()
+            .zip(fd.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+        let rel = if fd_norm > 1e-12 {
+            diff_norm / fd_norm
+        } else {
+            diff_norm
+        };
+        assert!(
+            rel < tol,
+            "{}: analytic vs FD gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+            label(),
+            rel,
+            fd_norm,
+            analytic_slice,
+            fd
+        );
+    }
+
+    /// Build a PreprocessedSpec from a known circle layout — the target areas
+    /// are simply the layout's own exclusive areas, so the gradient at the
+    /// layout's own params is well-defined and the loss at that point is zero.
+    /// Perturbing the params lets us probe the gradient on the smooth interior
+    /// without sitting at the optimum.
+    fn spec_from_circles(circles: &[Circle]) -> PreprocessedSpec {
+        use helpers::create_spec_from_exclusive;
+        let names: Vec<String> = (0..circles.len()).map(|i| format!("S{}", i)).collect();
+        let exclusive = diagram::compute_exclusive_areas_from_layout(circles, &names);
+        create_spec_from_exclusive(exclusive).preprocess().unwrap()
+    }
+
+    fn flat_params(circles: &[Circle]) -> Vec<f64> {
+        let mut v = Vec::with_capacity(3 * circles.len());
+        for c in circles {
+            v.push(c.center().x());
+            v.push(c.center().y());
+            v.push(c.radius());
+        }
+        v
+    }
+
+    #[test]
+    fn analytic_gradient_two_circle_overlap() {
+        // Classic 2-circle lens: this is the case I derived analytically.
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+            Circle::new(Point::new(1.0, 0.0), 1.0),
+        ];
+        let spec = spec_from_circles(&circles);
+        // Probe at a perturbed config so the loss isn't exactly zero
+        // (gradient at L=0 minimum is also zero, which is uninformative).
+        let params = vec![0.0, 0.0, 1.0, 1.2, 0.0, 0.95];
+        for &loss in &[
+            crate::loss::LossType::SumSquared,
+            crate::loss::LossType::NormalizedSumSquared,
+        ] {
+            assert_analytic_matches_fd(&spec, &params, loss, 1e-6, 1e-4, || {
+                format!("two_circle_overlap loss={:?}", loss)
+            });
+        }
+    }
+
+    #[test]
+    fn analytic_gradient_three_circle_venn() {
+        // Equilateral 3-Venn — exercises the polygon-boundary path.
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+            Circle::new(Point::new(1.0, 0.0), 1.0),
+            Circle::new(Point::new(0.5, 0.866), 1.0),
+        ];
+        let spec = spec_from_circles(&circles);
+        let mut params = flat_params(&circles);
+        // perturb to leave the optimum and avoid trivial zero gradient.
+        params[0] += 0.07;
+        params[4] -= 0.05;
+        params[8] += 0.03;
+        for &loss in &[
+            crate::loss::LossType::SumSquared,
+            crate::loss::LossType::NormalizedSumSquared,
+        ] {
+            assert_analytic_matches_fd(&spec, &params, loss, 1e-6, 1e-3, || {
+                format!("three_circle_venn loss={:?}", loss)
+            });
+        }
+    }
+
+    #[test]
+    fn analytic_gradient_disjoint() {
+        // All-disjoint: exclusive areas are just the singletons; no
+        // intersection-region gradients. Probes the n=1 boundary case.
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+            Circle::new(Point::new(5.0, 0.0), 1.2),
+            Circle::new(Point::new(2.5, 5.0), 0.8),
+        ];
+        let spec = spec_from_circles(&circles);
+        let params = flat_params(&circles);
+        // Perturb radii (positions don't move the loss when shapes stay
+        // disjoint, so the gradient on x/y is zero — trivially matches).
+        let mut perturbed = params.clone();
+        perturbed[2] += 0.1;
+        perturbed[5] -= 0.05;
+        perturbed[8] += 0.07;
+        assert_analytic_matches_fd(
+            &spec,
+            &perturbed,
+            crate::loss::LossType::NormalizedSumSquared,
+            1e-6,
+            1e-4,
+            || "disjoint".to_string(),
+        );
+    }
+
+    #[test]
+    fn analytic_gradient_nested() {
+        // Containment: small circle entirely inside a larger one.
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), 3.0),
+            Circle::new(Point::new(0.5, 0.2), 0.8),
+        ];
+        let spec = spec_from_circles(&circles);
+        let mut params = flat_params(&circles);
+        // Perturb the inner circle.
+        params[3] += 0.1;
+        params[5] += 0.05;
+        assert_analytic_matches_fd(
+            &spec,
+            &params,
+            crate::loss::LossType::NormalizedSumSquared,
+            1e-6,
+            1e-4,
+            || "nested".to_string(),
+        );
+    }
+
+    /// Same idea as `benchmark_gradient_call_only` but for ellipses.
+    #[test]
+    #[ignore]
+    fn benchmark_gradient_call_only_ellipse() {
+        use crate::geometry::shapes::Ellipse;
+        use crate::loss::LossType;
+        use rand::{Rng, SeedableRng};
+        use std::time::Instant;
+        let cases: &[(usize, u64, usize)] = &[(3, 13, 500), (5, 100, 200), (8, 200, 100)];
+        for &(n, seed, iters) in cases {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let ellipses: Vec<Ellipse> = (0..n)
+                .map(|_| {
+                    Ellipse::new(
+                        Point::new(rng.random_range(-2.5..2.5), rng.random_range(-2.5..2.5)),
+                        rng.random_range(0.7..1.6),
+                        rng.random_range(0.5..1.0),
+                        rng.random_range(-0.5..0.5),
+                    )
+                })
+                .collect();
+            let spec = spec_from_ellipses(&ellipses);
+            let mut params = flat_params_ellipse(&ellipses);
+            for v in &mut params {
+                *v += rng.random_range(-0.04..0.04);
+            }
+            let p = DVector::from_vec(params.clone());
+            let cost = DiagramCost::<Ellipse> {
+                spec: &spec,
+                loss_type: LossType::NormalizedSumSquared,
+                params_per_shape: Ellipse::n_params(),
+                _shape: std::marker::PhantomData,
+            };
+            let t0 = Instant::now();
+            for _ in 0..iters {
+                let _ = cost.gradient(&p).unwrap();
+            }
+            let dt_an = t0.elapsed();
+            let t0 = Instant::now();
+            for _ in 0..iters {
+                let pv = p.as_slice().to_vec();
+                let f = |x: &Vec<f64>| {
+                    let pp = DVector::from_vec(x.to_vec());
+                    Ok(cost.cost(&pp).unwrap_or(f64::INFINITY))
+                };
+                let g = vec::central_diff(&f);
+                let _ = g(&pv).unwrap();
+            }
+            let dt_fd = t0.elapsed();
+            eprintln!(
+                "ellipse n={} ({} grads): analytic={:>7.2}ms ({:>5.1}us/call) | FD={:>7.2}ms ({:>5.1}us/call) | speedup={:.1}x",
+                n,
+                iters,
+                dt_an.as_secs_f64() * 1000.0,
+                dt_an.as_secs_f64() * 1e6 / iters as f64,
+                dt_fd.as_secs_f64() * 1000.0,
+                dt_fd.as_secs_f64() * 1e6 / iters as f64,
+                dt_fd.as_secs_f64() / dt_an.as_secs_f64(),
+            );
+        }
+    }
+
+    /// Apples-to-apples: time the gradient function alone, with and without
+    /// the analytical path, on the same loss. The FD comparison comes from
+    /// running the same `DiagramCost::gradient` body but skipping the
+    /// analytic short-circuit by using `finitediff::vec::central_diff`
+    /// directly — what the old implementation did.
+    #[test]
+    #[ignore]
+    fn benchmark_gradient_call_only() {
+        use crate::loss::LossType;
+        use rand::{Rng, SeedableRng};
+        use std::time::Instant;
+
+        let cases: &[(usize, u64, usize)] = &[(3, 11, 1000), (5, 33, 500), (8, 55, 200)];
+        for &(n, seed, iters) in cases {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let circles: Vec<Circle> = (0..n)
+                .map(|_| {
+                    Circle::new(
+                        Point::new(rng.random_range(-3.0..3.0), rng.random_range(-3.0..3.0)),
+                        rng.random_range(0.6..1.8),
+                    )
+                })
+                .collect();
+            let spec = spec_from_circles(&circles);
+            let mut params = flat_params(&circles);
+            for v in &mut params {
+                *v += rng.random_range(-0.05..0.05);
+            }
+            let p = DVector::from_vec(params.clone());
+
+            let cost = DiagramCost::<Circle> {
+                spec: &spec,
+                loss_type: LossType::NormalizedSumSquared,
+                params_per_shape: Circle::n_params(),
+                _shape: std::marker::PhantomData,
+            };
+
+            // Analytical (current default for NormalizedSumSquared + Circle).
+            let t0 = Instant::now();
+            for _ in 0..iters {
+                let _ = cost.gradient(&p).unwrap();
+            }
+            let dt_an = t0.elapsed();
+
+            // FD baseline: invoke the central_diff path directly (same as the
+            // pre-analytic implementation).
+            let cost_fd = || -> f64 {
+                let dvec = p.clone();
+                cost.cost(&dvec).unwrap()
+            };
+            let _warm = cost_fd();
+            let t0 = Instant::now();
+            for _ in 0..iters {
+                let pv = p.as_slice().to_vec();
+                let f = |x: &Vec<f64>| {
+                    let pp = DVector::from_vec(x.to_vec());
+                    Ok(cost.cost(&pp).unwrap_or(f64::INFINITY))
+                };
+                let g = vec::central_diff(&f);
+                let _ = g(&pv).unwrap();
+            }
+            let dt_fd = t0.elapsed();
+
+            eprintln!(
+                "n={} ({} grads): analytic={:>7.2}ms ({:>5.1}us/call) | FD={:>7.2}ms ({:>5.1}us/call) | speedup={:.1}x",
+                n,
+                iters,
+                dt_an.as_secs_f64() * 1000.0,
+                dt_an.as_secs_f64() * 1e6 / iters as f64,
+                dt_fd.as_secs_f64() * 1000.0,
+                dt_fd.as_secs_f64() * 1e6 / iters as f64,
+                dt_fd.as_secs_f64() / dt_an.as_secs_f64(),
+            );
+        }
+    }
+
+    /// Build an ellipse-only spec from a known layout, parallel to
+    /// `spec_from_circles`.
+    fn spec_from_ellipses(ellipses: &[crate::geometry::shapes::Ellipse]) -> PreprocessedSpec {
+        use crate::geometry::traits::Area;
+        use crate::Combination;
+        use std::collections::HashMap;
+        // Use the new boundary-based area for both target generation and
+        // the cost-function side, so the FD baseline and analytical gradient
+        // are consistent at the smooth interior.
+        let exclusive =
+            crate::geometry::shapes::ellipse::Ellipse::compute_exclusive_regions(ellipses);
+        // Convert mask->area map into Combination-keyed map.
+        let names: Vec<String> = (0..ellipses.len()).map(|i| format!("S{}", i)).collect();
+        let mut combos: HashMap<Combination, f64> = HashMap::new();
+        for (mask, area) in exclusive {
+            if area > 0.0 {
+                let sets: Vec<&str> = (0..ellipses.len())
+                    .filter(|&i| (mask & (1 << i)) != 0)
+                    .map(|i| names[i].as_str())
+                    .collect();
+                if !sets.is_empty() {
+                    combos.insert(Combination::new(&sets), area);
+                }
+            }
+        }
+        // Even if some areas were 0, ensure singletons are present in the
+        // builder so set indices line up.
+        let single_areas: HashMap<usize, f64> = (0..ellipses.len())
+            .map(|i| (i, ellipses[i].area()))
+            .collect();
+        let mut builder = crate::spec::DiagramSpecBuilder::new();
+        for i in 0..ellipses.len() {
+            let area = combos
+                .get(&Combination::new(&[names[i].as_str()]))
+                .copied()
+                .unwrap_or(single_areas[&i]);
+            builder = builder.set(names[i].as_str(), area);
+        }
+        for (combo, area) in &combos {
+            if combo.sets().len() > 1 {
+                let sets: Vec<&str> = combo.sets().iter().map(|s| s.as_str()).collect();
+                builder = builder.intersection(&sets, *area);
+            }
+        }
+        builder.build().unwrap().preprocess().unwrap()
+    }
+
+    fn flat_params_ellipse(ellipses: &[crate::geometry::shapes::Ellipse]) -> Vec<f64> {
+        let mut v = Vec::with_capacity(5 * ellipses.len());
+        for e in ellipses {
+            v.push(e.center().x());
+            v.push(e.center().y());
+            v.push(e.semi_major());
+            v.push(e.semi_minor());
+            v.push(e.rotation());
+        }
+        v
+    }
+
+    /// Generic cost-function FD-vs-analytic comparison parameterised over the
+    /// shape type. Mirrors `assert_analytic_matches_fd` for circles.
+    fn assert_analytic_matches_fd_shape<S, F>(
+        spec: &PreprocessedSpec,
+        params: &[f64],
+        loss_type: crate::loss::LossType,
+        h: f64,
+        tol: f64,
+        label: F,
+    ) where
+        S: DiagramShape + Copy + 'static,
+        F: FnOnce() -> String,
+    {
+        let cost = DiagramCost::<S> {
+            spec,
+            loss_type,
+            params_per_shape: S::n_params(),
+            _shape: std::marker::PhantomData,
+        };
+        let p = DVector::from_vec(params.to_vec());
+        let analytic = cost.gradient(&p).expect("analytic gradient");
+        let n = params.len();
+        let mut fd = vec![0.0; n];
+        for i in 0..n {
+            let mut plus = params.to_vec();
+            let mut minus = params.to_vec();
+            plus[i] += h;
+            minus[i] -= h;
+            let f_plus = cost.cost(&DVector::from_vec(plus)).expect("cost +");
+            let f_minus = cost.cost(&DVector::from_vec(minus)).expect("cost -");
+            fd[i] = (f_plus - f_minus) / (2.0 * h);
+        }
+        let analytic_slice: Vec<f64> = analytic.as_slice().to_vec();
+        let diff_norm: f64 = analytic_slice
+            .iter()
+            .zip(fd.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+        let rel = if fd_norm > 1e-12 {
+            diff_norm / fd_norm
+        } else {
+            diff_norm
+        };
+        assert!(
+            rel < tol,
+            "{}: analytic vs FD gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+            label(),
+            rel,
+            fd_norm,
+            analytic_slice,
+            fd
+        );
+    }
+
+    #[test]
+    fn analytic_gradient_ellipse_two_overlap() {
+        use crate::geometry::shapes::Ellipse;
+        let ellipses = vec![
+            Ellipse::new(Point::new(0.0, 0.0), 1.0, 0.6, 0.0),
+            Ellipse::new(Point::new(1.0, 0.2), 1.2, 0.5, 0.4),
+        ];
+        let spec = spec_from_ellipses(&ellipses);
+        let mut params = flat_params_ellipse(&ellipses);
+        params[0] += 0.05;
+        params[4] += 0.07;
+        for &loss in &[
+            crate::loss::LossType::SumSquared,
+            crate::loss::LossType::NormalizedSumSquared,
+        ] {
+            assert_analytic_matches_fd_shape::<Ellipse, _>(
+                &spec,
+                &params,
+                loss,
+                1e-6,
+                5e-4,
+                || format!("ellipse two_overlap loss={:?}", loss),
+            );
+        }
+    }
+
+    #[test]
+    fn analytic_gradient_ellipse_three_venn() {
+        use crate::geometry::shapes::Ellipse;
+        let ellipses = vec![
+            Ellipse::new(Point::new(0.0, 0.0), 1.2, 0.7, 0.0),
+            Ellipse::new(Point::new(1.0, 0.0), 1.1, 0.65, 0.3),
+            Ellipse::new(Point::new(0.5, 0.866), 1.0, 0.8, -0.2),
+        ];
+        let spec = spec_from_ellipses(&ellipses);
+        let mut params = flat_params_ellipse(&ellipses);
+        params[0] += 0.07;
+        params[4] -= 0.05;
+        params[8] += 0.03;
+        params[14] += 0.04;
+        assert_analytic_matches_fd_shape::<Ellipse, _>(
+            &spec,
+            &params,
+            crate::loss::LossType::NormalizedSumSquared,
+            1e-6,
+            5e-3,
+            || "ellipse three_venn".to_string(),
+        );
+    }
+
+    #[test]
+    fn analytic_gradient_ellipse_disjoint() {
+        use crate::geometry::shapes::Ellipse;
+        let ellipses = vec![
+            Ellipse::new(Point::new(0.0, 0.0), 1.0, 0.6, 0.0),
+            Ellipse::new(Point::new(5.0, 0.0), 1.2, 0.5, 0.5),
+            Ellipse::new(Point::new(2.5, 5.0), 0.8, 0.4, -0.3),
+        ];
+        let spec = spec_from_ellipses(&ellipses);
+        let mut params = flat_params_ellipse(&ellipses);
+        params[2] += 0.1;
+        params[3] -= 0.05;
+        params[4] += 0.07;
+        assert_analytic_matches_fd_shape::<Ellipse, _>(
+            &spec,
+            &params,
+            crate::loss::LossType::NormalizedSumSquared,
+            1e-6,
+            5e-4,
+            || "ellipse disjoint".to_string(),
+        );
+    }
+
+    #[test]
+    fn analytic_gradient_ellipse_nested() {
+        use crate::geometry::shapes::Ellipse;
+        let ellipses = vec![
+            Ellipse::new(Point::new(0.0, 0.0), 3.0, 2.5, 0.1),
+            Ellipse::new(Point::new(0.5, 0.2), 0.8, 0.5, 0.3),
+        ];
+        let spec = spec_from_ellipses(&ellipses);
+        let mut params = flat_params_ellipse(&ellipses);
+        // Perturb the inner ellipse only — outer stays around inner.
+        params[5] += 0.1;
+        params[7] += 0.05;
+        params[9] += 0.05;
+        assert_analytic_matches_fd_shape::<Ellipse, _>(
+            &spec,
+            &params,
+            crate::loss::LossType::NormalizedSumSquared,
+            1e-6,
+            5e-4,
+            || "ellipse nested".to_string(),
+        );
+    }
+
+    #[test]
+    fn analytic_gradient_ellipse_random_layouts() {
+        use crate::geometry::shapes::Ellipse;
+        use rand::Rng;
+        use rand::SeedableRng;
+        let configs: &[(usize, u64)] = &[(2, 7), (3, 13), (3, 21), (5, 100)];
+        for &(n, seed) in configs {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let ellipses: Vec<Ellipse> = (0..n)
+                .map(|_| {
+                    Ellipse::new(
+                        Point::new(rng.random_range(-2.5..2.5), rng.random_range(-2.5..2.5)),
+                        rng.random_range(0.7..1.6),
+                        rng.random_range(0.5..1.0),
+                        rng.random_range(-0.5..0.5),
+                    )
+                })
+                .collect();
+            let spec = spec_from_ellipses(&ellipses);
+            let mut params = flat_params_ellipse(&ellipses);
+            for v in &mut params {
+                *v += rng.random_range(-0.04..0.04);
+            }
+            assert_analytic_matches_fd_shape::<Ellipse, _>(
+                &spec,
+                &params,
+                crate::loss::LossType::NormalizedSumSquared,
+                1e-6,
+                1e-2,
+                || format!("ellipse random n={}, seed={}", n, seed),
+            );
+        }
+    }
+
+    /// Eyeball benchmark: time L-BFGS fits with the analytical gradient
+    /// against the finite-difference fallback. This is an `#[ignore]`-gated
+    /// observation, not an asserted regression — wall time varies across
+    /// machines, but on a typical workstation the analytical path should be
+    /// noticeably faster on 5- and 8-set fits and produce equivalent loss.
+    #[test]
+    #[ignore]
+    fn benchmark_lbfgs_analytic_vs_fd() {
+        use crate::loss::LossType;
+        use std::time::Instant;
+        // Disable analytical gradient for the FD baseline by pretending the
+        // shape doesn't support it — we do this by routing through a wrapper
+        // cost that always falls through to FD. The simplest implementation:
+        // run the optimiser with a loss type that doesn't expose an analytic
+        // gradient (e.g. SumAbsoute), and compare against the same fit using
+        // NormalizedSumSquared (which DOES). This isn't apples-to-apples on
+        // loss surface but does exercise the gradient path. For a more direct
+        // test, see comments below.
+        let configs: &[(usize, u64)] = &[(5, 33), (5, 44), (8, 55)];
+        for &(n, seed) in configs {
+            use rand::Rng;
+            use rand::SeedableRng;
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let circles: Vec<Circle> = (0..n)
+                .map(|_| {
+                    Circle::new(
+                        Point::new(rng.random_range(-3.0..3.0), rng.random_range(-3.0..3.0)),
+                        rng.random_range(0.6..1.8),
+                    )
+                })
+                .collect();
+            let spec = spec_from_circles(&circles);
+            let positions: Vec<f64> = circles
+                .iter()
+                .flat_map(|c| [c.center().x(), c.center().y()])
+                .collect();
+            let radii: Vec<f64> = circles.iter().map(|c| c.radius()).collect();
+
+            // Analytical-gradient path: NormalizedSumSquared has compute_with_gradient.
+            let cfg_an = FinalLayoutConfig {
+                optimizer: Optimizer::Lbfgs,
+                loss_type: LossType::NormalizedSumSquared,
+                max_iterations: 200,
+                tolerance: 1e-6,
+                seed: 0,
+                n_restarts: 1,
+            };
+            let t0 = Instant::now();
+            let (_p_an, loss_an) =
+                optimize_layout::<Circle>(&spec, &positions, &radii, cfg_an).expect("analytic fit");
+            let dt_an = t0.elapsed();
+
+            // FD path: SumAbsoute has no compute_with_gradient → falls back to FD.
+            // (Same optimiser, different loss; serves as a relative timing reference.)
+            let cfg_fd = FinalLayoutConfig {
+                optimizer: Optimizer::Lbfgs,
+                loss_type: LossType::SumAbsoute,
+                max_iterations: 200,
+                tolerance: 1e-6,
+                seed: 0,
+                n_restarts: 1,
+            };
+            let t0 = Instant::now();
+            let (_p_fd, loss_fd) =
+                optimize_layout::<Circle>(&spec, &positions, &radii, cfg_fd).expect("fd fit");
+            let dt_fd = t0.elapsed();
+
+            eprintln!(
+                "n={} seed={}: analytic={:>6.1}ms loss={:.4e} | fd-loss={:>6.1}ms loss={:.4e}",
+                n,
+                seed,
+                dt_an.as_secs_f64() * 1000.0,
+                loss_an,
+                dt_fd.as_secs_f64() * 1000.0,
+                loss_fd
+            );
+        }
+    }
+
+    #[test]
+    fn analytic_gradient_random_layouts() {
+        use rand::Rng;
+        use rand::SeedableRng;
+        // Several seeds × sizes, spanning generic 3-, 5-, 8-set fits.
+        let configs: &[(usize, u64)] = &[(3, 11), (3, 22), (5, 33), (5, 44), (8, 55)];
+        for &(n, seed) in configs {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let circles: Vec<Circle> = (0..n)
+                .map(|_| {
+                    Circle::new(
+                        Point::new(rng.random_range(-3.0..3.0), rng.random_range(-3.0..3.0)),
+                        rng.random_range(0.6..1.8),
+                    )
+                })
+                .collect();
+            let spec = spec_from_circles(&circles);
+            // Perturb params to leave the (target = layout) optimum.
+            let mut params = flat_params(&circles);
+            for v in &mut params {
+                *v += rng.random_range(-0.05..0.05);
+            }
+            assert_analytic_matches_fd(
+                &spec,
+                &params,
+                crate::loss::LossType::NormalizedSumSquared,
+                1e-6,
+                5e-3,
+                || format!("random n={}, seed={}", n, seed),
+            );
+        }
     }
 
     #[test]

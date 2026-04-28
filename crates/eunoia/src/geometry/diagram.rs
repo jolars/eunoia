@@ -54,11 +54,64 @@ pub fn compute_exclusive_regions(circles: &[Circle]) -> HashMap<RegionMask, f64>
 
     let mut overlapping_areas = HashMap::new();
     for &mask in &regions {
-        let area = compute_region_area(mask, circles, &intersections, n_sets);
+        // Build the CCW boundary arc list and integrate. This handles
+        // 3+-way regions where a circle in the mask fully contains the
+        // pairwise lens of two others — the previous polygon-with-min-segment
+        // decomposition collapsed both arcs onto the same circle and produced
+        // `2·min_segment` instead of `segment_a + segment_b`.
+        let arcs = crate::geometry::shapes::circle::region_boundary_arcs(
+            mask,
+            circles,
+            &intersections,
+            n_sets,
+        );
+        let area = crate::geometry::shapes::circle::area_from_boundary_arcs(&arcs, circles);
         overlapping_areas.insert(mask, area);
     }
 
     to_exclusive_areas(&overlapping_areas)
+}
+
+/// Compute exclusive regions, exclusive areas, and the analytical gradient of
+/// each exclusive area with respect to the flat parameter vector
+/// `[x₀, y₀, r₀, x₁, y₁, r₁, …]`.
+///
+/// The gradient is exact within a fixed boundary topology (no IPs appearing /
+/// disappearing, no nesting transitions). At topology changes the area itself
+/// is non-smooth and the gradient has the same one-sided behaviour the
+/// finite-difference fallback would exhibit.
+pub(crate) fn compute_exclusive_regions_with_gradient_circles(
+    circles: &[Circle],
+) -> (HashMap<RegionMask, f64>, HashMap<RegionMask, Vec<f64>>) {
+    let n_sets = circles.len();
+    let n_params = n_sets * 3;
+
+    let intersections = collect_intersections(circles, n_sets);
+    let regions = discover_regions(circles, &intersections, n_sets);
+
+    let mut overlapping_areas = HashMap::new();
+    let mut overlapping_grads: HashMap<RegionMask, Vec<f64>> = HashMap::new();
+
+    for &mask in &regions {
+        // Build the CCW boundary arcs once, then derive both area and gradient
+        // from the same representation so they're consistent by construction.
+        let arcs = crate::geometry::shapes::circle::region_boundary_arcs(
+            mask,
+            circles,
+            &intersections,
+            n_sets,
+        );
+        let area = crate::geometry::shapes::circle::area_from_boundary_arcs(&arcs, circles);
+        overlapping_areas.insert(mask, area);
+
+        let mut grad = vec![0.0; n_params];
+        crate::geometry::shapes::circle::accumulate_region_overlap_gradient(
+            &arcs, circles, &mut grad,
+        );
+        overlapping_grads.insert(mask, grad);
+    }
+
+    to_exclusive_areas_and_gradients(&overlapping_areas, &overlapping_grads, n_params)
 }
 
 /// Collect all intersection points between pairs of circles.
@@ -383,6 +436,64 @@ pub fn to_exclusive_areas(
     }
 
     exclusive
+}
+
+/// Convert overlapping areas + gradients to exclusive areas + gradients via
+/// inclusion-exclusion. The gradient transformation mirrors the area one
+/// (linear with the same sign pattern) and clamping the area to zero also
+/// zeroes the corresponding gradient, matching the non-smooth `max(·, 0)` step.
+pub(crate) fn to_exclusive_areas_and_gradients(
+    overlapping_areas: &HashMap<RegionMask, f64>,
+    overlapping_grads: &HashMap<RegionMask, Vec<f64>>,
+    n_params: usize,
+) -> (HashMap<RegionMask, f64>, HashMap<RegionMask, Vec<f64>>) {
+    let mut exclusive_areas = overlapping_areas.clone();
+    let mut exclusive_grads = overlapping_grads.clone();
+
+    let mut masks: Vec<_> = overlapping_areas.keys().copied().collect();
+    masks.sort_by_key(|m| (m.count_ones(), *m));
+
+    for i in (0..masks.len()).rev() {
+        let mask_i = masks[i];
+        let mut area_sub = 0.0;
+        let mut grad_sub = vec![0.0; n_params];
+
+        #[allow(clippy::needless_range_loop)]
+        for j in (i + 1)..masks.len() {
+            let mask_j = masks[j];
+            if is_subset(mask_i, mask_j) {
+                area_sub += exclusive_areas[&mask_j];
+                if let Some(gj) = exclusive_grads.get(&mask_j) {
+                    for k in 0..n_params {
+                        grad_sub[k] += gj[k];
+                    }
+                }
+            }
+        }
+
+        *exclusive_areas.get_mut(&mask_i).unwrap() -= area_sub;
+        if let Some(gi) = exclusive_grads.get_mut(&mask_i) {
+            for k in 0..n_params {
+                gi[k] -= grad_sub[k];
+            }
+        }
+    }
+
+    // Clamp area at zero, mirroring the non-smooth `max(·, 0)` step. Where the
+    // area is clamped, the corresponding gradient is also zeroed so the
+    // chain-rule loss derivative stays consistent with the clamped area.
+    for (mask, area) in exclusive_areas.iter_mut() {
+        if *area < 0.0 {
+            *area = 0.0;
+            if let Some(g) = exclusive_grads.get_mut(mask) {
+                for v in g.iter_mut() {
+                    *v = 0.0;
+                }
+            }
+        }
+    }
+
+    (exclusive_areas, exclusive_grads)
 }
 
 /// Check if mask1 is a subset of mask2.
