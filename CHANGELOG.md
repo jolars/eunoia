@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/jolars/eunoia/compare/v0.3.0...v0.4.0) (2026-04-28)
+
+### Features
+- add normalized SSE as loss, make it default ([`d55251e`](https://github.com/jolars/eunoia/commit/d55251e3464faf08dfd7cd6750267e31a8fff1fc))
+- expose tolerance for solver ([`1803fed`](https://github.com/jolars/eunoia/commit/1803fed934837608799fb5c2f248e40dc1d12bb7))
+
+### Bug Fixes
+- avoid double-counting areas when overlapping ([`c46725d`](https://github.com/jolars/eunoia/commit/c46725d95ec61c6c64bbb3d4e95910f808748f50))
+- deprecate and move away from faulty area functions ([`1fc2751`](https://github.com/jolars/eunoia/commit/1fc275133d89b01c96e051691b542a8b34efd819)), closes [#38](https://github.com/jolars/eunoia/issues/38)
+
+### Performance Improvements
+- add analytical gradients for squared-error losses ([`9e0e6b1`](https://github.com/jolars/eunoia/commit/9e0e6b1f5d837a145fea5fa60d7097eb30a43ed9))
 ## [0.3.0](https://github.com/jolars/eunoia/compare/v0.2.0...v0.3.0) (2026-04-27)
 
 ### Features
