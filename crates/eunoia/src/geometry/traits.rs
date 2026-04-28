@@ -124,7 +124,7 @@ pub trait DiagramShape: Closed {
     /// reconstruct this shape.
     fn to_params(&self) -> Vec<f64>;
 
-    /// Optional analytical gradient companion to [`compute_exclusive_regions`].
+    /// Optional analytical gradient companion to `compute_exclusive_regions`.
     ///
     /// Returns `Some((exclusive_areas, gradients))` where each `gradients[mask]`
     /// is a length-`n_sets · Self::n_params()` vector of `∂A_excl[mask]/∂θ`,
