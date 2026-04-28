@@ -7,6 +7,12 @@ mod layout;
 pub mod normalize;
 mod packing;
 
+#[cfg(test)]
+mod corpus_quality;
+
+#[cfg(test)]
+mod synthetic_groundtruth;
+
 pub use final_layout::Optimizer;
 pub use initial_layout::MdsSolver;
 pub use layout::Layout;
@@ -857,30 +863,17 @@ mod tests {
     /// Regression fixture for issue #28 (6-set ellipse spec from eulerr's
     /// `test-accuracy.R`). eulerr's `nlm` backend fits this exactly. Currently
     /// reaches `diag_error ≈ 1.7e-9` at seed=1 — well below the bar.
+    ///
+    /// Spec is shared with the corpus (`wilkinson_6_set`); the corpus test
+    /// asserts the *default* user experience, this test asserts what
+    /// L-BFGS can reach with a tight budget.
     #[test]
     #[ignore = "slow regression coverage"]
     fn test_issue28_six_set_ellipse_regression() {
         use crate::geometry::shapes::Ellipse;
+        use crate::test_utils::corpus;
 
-        let spec = DiagramSpecBuilder::new()
-            .set("A", 4.0)
-            .set("B", 6.0)
-            .set("C", 3.0)
-            .set("D", 2.0)
-            .set("E", 7.0)
-            .set("F", 3.0)
-            .intersection(&["A", "B"], 2.0)
-            .intersection(&["A", "F"], 2.0)
-            .intersection(&["B", "C"], 2.0)
-            .intersection(&["B", "D"], 1.0)
-            .intersection(&["B", "F"], 2.0)
-            .intersection(&["C", "D"], 1.0)
-            .intersection(&["D", "E"], 1.0)
-            .intersection(&["E", "F"], 1.0)
-            .intersection(&["A", "B", "F"], 1.0)
-            .intersection(&["B", "C", "D"], 1.0)
-            .build()
-            .unwrap();
+        let spec = (corpus::get("wilkinson_6_set").expect("corpus entry").build)();
 
         // Asserts L-BFGS can drive diag_error below 1e-6 *when given the
         // budget*. The default tolerance (1e-4) is set above the FD noise
@@ -906,22 +899,17 @@ mod tests {
     /// Regression fixture for issue #28 (4-set ellipse spec where A is a
     /// superset of B/C/D). eulerr fits this exactly. Currently reaches
     /// `diag_error ≈ 1e-11` at seed=1 — well below the bar.
+    ///
+    /// Spec is shared with the corpus (`three_inside_fourth`).
     #[test]
     #[ignore = "slow regression coverage"]
     fn test_issue28_four_set_superset_ellipse_regression() {
         use crate::geometry::shapes::Ellipse;
+        use crate::test_utils::corpus;
 
-        let spec = DiagramSpecBuilder::new()
-            .set("A", 30.0)
-            .intersection(&["A", "B"], 3.0)
-            .intersection(&["A", "C"], 3.0)
-            .intersection(&["A", "D"], 3.0)
-            .intersection(&["A", "B", "C"], 2.0)
-            .intersection(&["A", "B", "D"], 2.0)
-            .intersection(&["A", "C", "D"], 2.0)
-            .intersection(&["A", "B", "C", "D"], 1.0)
-            .build()
-            .unwrap();
+        let spec = (corpus::get("three_inside_fourth")
+            .expect("corpus entry")
+            .build)();
 
         // tol=1e-10 is needed to drive the *normalized* cost below the
         // FD noise floor on this hard high-arity case; with the old

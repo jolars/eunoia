@@ -1,6 +1,9 @@
 use std::borrow::Borrow;
 
 #[cfg(test)]
+pub mod corpus;
+
+#[cfg(test)]
 pub fn approx_eq<I, J>(a: I, b: J, epsilon: f64) -> bool
 where
     I: IntoIterator,
