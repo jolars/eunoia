@@ -208,21 +208,20 @@ they're pre-existing behaviour the harness now exposes.
       30 dims. Either bigger budget or pivot to memetic DE+LM. Not blocking;
       flag as separate follow-up.
 
-- [ ] **Differential Evolution probe (`Optimizer::DeLm`)**. Cheap experiment to
-      decide whether `issue91_6_set` (the one spec CMA-ES can't escape at 30
-      dims and default budget) is reachable by a different population dynamic,
-      or whether it's genuinely outside reach of any non-Jacobian global stage
-      at this budget. Reuse the same threshold-fire scaffolding
-      `Optimizer::CmaEsLm` uses; swap CMA-ES for a basic DE/rand/1/bin (mutation
-      factor `0.5`, crossover `0.9`, population `~10·n`) inline in
-      `fitter/de.rs`, \~150 LOC, no new deps. Benchmark via
-      `examples/quality_report` against `default` (CmaEsLm) on the full corpus +
-      the synthetic-groundtruth proptest. Decision rule: if the `issue91_6_set`
-      median drops below `1e-1`, invest in a memetic DE+LM variant (adaptive
-      `F`/`CR`, archive-based mutation, ...); if it doesn't, close out the
-      global-stage line of work and move on to Latin hypercube starts and the
-      bounded `a/b` reparameterisation below --- both likely worth more
-      diag-error per hour spent than further global-stage tuning at this budget.
+- [x] **Differential Evolution probe (`Optimizer::DeLm`)** --- ran, negative,
+      reverted. DE/rand/1/bin (`F=0.5`, `CR=0.9`, pop `~10·n`) inline in
+      `fitter/de.rs` with the same threshold-fire scaffolding as
+      `Optimizer::CmaEsLm`. On the full `examples/quality_report` sweep `delm`
+      ellipse median on `issue91_6_set` was `3.816e-1`, identical to `default`
+      / `cmaes_lm` / `lm_final` to four sig figs --- well above the `1e-1`
+      decision threshold. DE didn't improve any other spec either; cost was
+      \~3.4× the cheap baseline (13.5 s vs 3.9 s ellipse total) for zero gain.
+      Combined with the `mds_mixed` ellipse median nudging `issue91_6_set` to
+      `3.685e-1` (the only config that moved at all), this confirms the basin
+      is global, not a CMA-ES-specific local trap --- initialization is where
+      the remaining headroom lives, not the global stage. Closes the
+      global-stage line of work; module + dispatch arm + quality_report row
+      reverted.
 
 - [x] **Latin hypercube initial starts** --- landed as opt-in
       `InitialSampler::LatinHypercube` (default stays `Uniform` for eulerr
