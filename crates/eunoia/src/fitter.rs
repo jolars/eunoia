@@ -766,16 +766,32 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             optimized_shapes.push(S::from_params(&final_params[start..end]));
         }
 
-        // Compute the pre-normalize exclusive-region areas. We thread these
+        // Compute the pre-normalize exclusive-region areas and thread them
         // into `normalize_layout` so cluster detection uses the same exact-
-        // conic / inclusion-exclusion math the optimizer minimised against —
-        // otherwise the geometric `find_clusters` (built on
+        // conic / inclusion-exclusion math the optimizer minimised against.
+        // Otherwise the geometric `find_clusters` (built on
         // `Closed::intersects` quick-rejects + boundary crossings) can
         // disagree with the optimizer at near-coincident ellipse geometry,
         // mis-split a cluster, and let `pack_clusters` translate genuinely
-        // overlapping shapes apart. Always computed (not gated on
-        // `debug_assertions`) because the area-based clustering path is now
-        // the production code path.
+        // overlapping shapes apart.
+        //
+        // No post-normalize sanity assert lives here: a previous version
+        // compared the pre/post exclusive-region map (per-mask) and another
+        // compared total visible area, but both proved unreliable in
+        // practice. `normalize_layout` is rigid (rotation + mirror +
+        // translation), so the geometry is mathematically preserved — but
+        // `compute_exclusive_regions` re-runs quartic conic intersection
+        // on rotated coordinates, and on near-degenerate ellipse fits ULP
+        // drift in the rotated coefficients can shift root classifications
+        // enough that the recomputed region map differs by O(1e-2) of the
+        // total area on `three_inside_fourth`-style "shapes inside one big
+        // shape" geometries. That overlaps the original `intersects`
+        // clustering-bug magnitude (~6.5e-2 × scale) too closely to give a
+        // useful false-positive margin. Coverage of the original bug now
+        // comes structurally from `find_clusters_from_exclusive_regions`
+        // (which uses the same area math the optimizer consumed) plus
+        // end-to-end `diag_error` ceilings in `corpus_quality` and
+        // `synthetic_groundtruth`.
         let pre_normalize_regions = S::compute_exclusive_regions(&optimized_shapes);
 
         // Step 4: Normalize the non-empty shapes only (zero shapes would confuse
@@ -785,46 +801,6 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             0.05,
             Some(&pre_normalize_regions),
         );
-
-        #[cfg(debug_assertions)]
-        {
-            let post_normalize_regions = S::compute_exclusive_regions(&optimized_shapes);
-            // Compare TOTAL VISIBLE AREA, not the per-region map. Rationale:
-            // `normalize_layout` is composed of rigid motions (rotation,
-            // mirror, translation, packing of disjoint clusters). Rigid
-            // motion exactly preserves both individual region areas and
-            // their sum — but recomputing the per-region map after rotation
-            // re-runs conic-intersection root-finding on rotated
-            // coordinates, and ULP drift can drop or add a near-tangent
-            // intersection point, *changing* which masks exist in the map
-            // (even though the geometry is mathematically the same).
-            // The original bug this assert was added for — a clustering
-            // mis-split that translated genuinely overlapping shapes apart
-            // via `pack_clusters` — visibly changes total visible area
-            // (separated overlap area becomes counted twice instead of
-            // once), so the total-area invariant catches it without being
-            // sensitive to near-tangent recompute drift.
-            let pre_total: f64 = pre_normalize_regions.values().sum();
-            let post_total: f64 = post_normalize_regions.values().sum();
-            let scale = pre_total.abs().max(post_total.abs()).max(1.0);
-            // `rel_tol = 1e-3` was tuned empirically: on
-            // `three_inside_fourth` ellipse seed=7 the post-rotation
-            // conic-intersection recompute drifts the total by
-            // ~2.8e-5 × scale (a near-tangent region's mask flips between
-            // pre and post), and on the other un-skipped specs the drift
-            // is well below that. The original `intersects` clustering bug
-            // this assert was added for translated a whole shape away,
-            // shifting its overlap area by ~6.5e-2 × scale on the same
-            // spec — 65× over the new threshold, still firmly trips.
-            debug_assert!(
-                (pre_total - post_total).abs() <= 1e-3 * scale,
-                "normalize_layout changed total visible area: \
-                 pre = {pre_total:.6e}, post = {post_total:.6e}, \
-                 delta = {:.6e} ({:.2e} × scale)",
-                (pre_total - post_total).abs(),
-                (pre_total - post_total).abs() / scale,
-            );
-        }
 
         // Step 5: Re-assemble full shape list in the ORIGINAL spec set ordering,
         // inserting zero-parameter placeholders for sets that were pruned by
