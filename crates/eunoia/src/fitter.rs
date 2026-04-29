@@ -124,7 +124,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // 50_000-iter cap combined with argmin's default `sqrt(EPSILON)`/
             // `EPSILON` tolerances meant L-BFGS routinely ran tens of thousands
             // of iterations past any useful convergence on every restart.
-            // With the default loss now `NormalizedSumSquared` (scale-invariant
+            // With the default loss `SumSquared` (scale-invariant
             // SSE — see `LossType`), the loss magnitude is bounded ~`[0, 1]`
             // regardless of input area scale, so tolerance behavior is
             // consistent across specs. 1e-6 sits well above the central-diff
@@ -133,13 +133,10 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             max_iterations: 200,
             tolerance: 1e-6,
             seed: None,
-            // Use the scale-invariant SumSquared variant directly (matches
-            // `LossType::default()`). Prior code called `LossType::sse()`,
-            // which is the *unnormalized* SumSquared and made loss magnitude
-            // (and the absolute-tolerance behaviour wired off it) scale with
-            // the input areas — defeating the purpose of the tolerance choice
-            // documented below.
-            loss_type: LossType::NormalizedSumSquared,
+            // `SumSquared` is the scale-invariant `Σ(f-t)² / Σt²`. The
+            // bounded-`[0, 1]` magnitude keeps `tolerance` and
+            // `cmaes_fallback_threshold` portable across specs.
+            loss_type: LossType::SumSquared,
             // L-BFGS only. We previously cycled `[NelderMead, Lbfgs]` so each
             // restart attempt traded off NM's per-call speed against L-BFGS'
             // basin coverage, but the `examples/quality_report` sweep showed
@@ -1097,10 +1094,10 @@ mod tests {
         // budget*. The default tolerance (1e-4) is set above the FD noise
         // floor for speed (issue #34); this test pins down the tight-budget
         // behavior eulerr's C++ backend reached on this spec.
-        // tol=1e-10 is needed to drive the *normalized* cost below the
-        // FD noise floor on this hard high-arity case; with the old
-        // SumSquared default (loss scaled with input²), tol=1e-8 was
-        // equivalent. See `LossType::NormalizedSumSquared` doc.
+        // tol=1e-10 is needed to drive the cost below the FD noise floor
+        // on this hard high-arity case; the un-normalised SumSquared
+        // (scaled with input²) used to reach the same bar at tol=1e-8.
+        // See `LossType::SumSquared` doc.
         let layout = Fitter::<Ellipse>::new(&spec)
             .seed(1)
             .tolerance(1e-10)
@@ -1129,10 +1126,10 @@ mod tests {
             .expect("corpus entry")
             .build)();
 
-        // tol=1e-10 is needed to drive the *normalized* cost below the
-        // FD noise floor on this hard high-arity case; with the old
-        // SumSquared default (loss scaled with input²), tol=1e-8 was
-        // equivalent. See `LossType::NormalizedSumSquared` doc.
+        // tol=1e-10 is needed to drive the cost below the FD noise floor
+        // on this hard high-arity case; the un-normalised SumSquared
+        // (scaled with input²) used to reach the same bar at tol=1e-8.
+        // See `LossType::SumSquared` doc.
         let layout = Fitter::<Ellipse>::new(&spec)
             .seed(1)
             .tolerance(1e-10)

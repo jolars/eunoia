@@ -5,11 +5,12 @@
 //! minimized* (not `diag_error`) as the primary metric, with `diag_error`
 //! and runtime as secondary diagnostics.
 //!
-//! All configs share the same loss type (currently the `Fitter` default,
-//! `NormalizedSumSquared`-via-`LossType::sse`), so loss values are directly
-//! comparable across configs *for a given spec*. Across specs they aren't —
-//! `SumSquared` scales with the area magnitudes — so cross-spec aggregates
-//! use the median rather than the mean.
+//! All configs share the same loss type (the `Fitter` default,
+//! `LossType::SumSquared = Σ(f-t)² / Σt²`), so loss values are directly
+//! comparable across configs and across specs (the loss is bounded
+//! roughly in `[0, 1]` regardless of input area scale). Cross-spec
+//! aggregates still use the median to keep one bad outlier from
+//! dominating.
 //!
 //! Run with:
 //!
@@ -54,7 +55,7 @@ mod quality_report {
     /// Common-across-configs description. Things that vary across configs
     /// (final-stage optimizer, MDS solver pool) are listed per config.
     const COMMON_CONFIG: &str =
-        "n_restarts=10, max_iterations=200, tolerance=1e-6, loss=NormalizedSumSquared \
+        "n_restarts=10, max_iterations=200, tolerance=1e-6, loss=SumSquared \
          (Fitter default after dropping NM from the optimizer pool)";
 
     /// Type of a config-builder closure: takes a fresh `Fitter` and applies
@@ -354,7 +355,6 @@ mod quality_report {
     fn loss_type_name(t: LossType) -> &'static str {
         match t {
             LossType::SumSquared => "SumSquared",
-            LossType::NormalizedSumSquared => "NormalizedSumSquared",
             LossType::SumAbsoute => "SumAbsolute",
             LossType::SumAbsoluteRegionError => "SumAbsoluteRegionError",
             LossType::SumSquaredRegionError => "SumSquaredRegionError",

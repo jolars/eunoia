@@ -6,50 +6,54 @@
 use crate::geometry::diagram::RegionMask;
 use std::collections::HashMap;
 
-/// Loss function type
+/// Loss function type.
+///
+/// Every variant is **scale-invariant**: the loss magnitude is bounded
+/// roughly in `[0, 1]` regardless of input area scale, so the optimizer's
+/// tolerance and CMA-ES fallback threshold (`Fitter::tolerance`,
+/// `Fitter::cmaes_fallback_threshold`) carry the same meaning across
+/// specs from `gene_sets` (areas ~10²) to `issue71_4_set_extreme_scale`
+/// (areas up to 38000). Each variant divides by an appropriate
+/// target-side norm — `Σtᵢ²`, `Σ|tᵢ|`, `max|tᵢ|`, …
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LossType {
-    /// Sum of squared errors: Σ(fitted - target)²
-    SumSquared,
-    /// Scale-invariant variant of [`SumSquared`]: `Σ(fitted - target)² / Σtarget²`.
+    /// Normalised sum of squared errors: `Σ(fitted - target)² / Σtarget²`.
     ///
-    /// Same descent direction and optimum as [`SumSquared`] (denominator is a
-    /// constant of the spec), but the loss magnitude is bounded ~`[0, 1]`
-    /// regardless of input area scale. Tolerance behavior — both `tol_grad`
-    /// and `tol_cost` in L-BFGS — therefore stays consistent across input
-    /// scales, where the unnormalized [`SumSquared`] forces tolerance to be
-    /// re-tuned per spec (issue #34: at areas ~3500, the unnormalized cost is
-    /// in the millions and FD noise sits well above any reasonable absolute
-    /// tolerance).
+    /// Default. Dividing by `Σt²` is a constant of the spec, so the
+    /// descent direction is identical to the un-normalised
+    /// `Σ(f - t)²` — only the loss-magnitude scale changes.
     ///
     /// Unlike [`Stress`], there is no β-rescale degree of freedom, so this
-    /// loss penalizes both shape *and* scale mismatch and won't let small
+    /// loss penalises both shape *and* scale mismatch and won't let small
     /// regions drift the way Stress can on high-arity specs.
     ///
-    /// [`SumSquared`]: Self::SumSquared
     /// [`Stress`]: Self::Stress
     #[default]
-    NormalizedSumSquared,
-    /// Sums of absolute errors: Σ|fitted - target|
+    SumSquared,
+    /// Normalised sum of absolute errors: `Σ|fitted - target| / Σ|target|`.
     SumAbsoute,
     /// SumRegionError sum(|fitted / sum(fitted) - target / sum(target)|)
     SumAbsoluteRegionError,
     /// SumSquaredRegionError sum((fitted / sum(fitted) - target / sum(target))²)
     SumSquaredRegionError,
-    /// Maximum absolute error: max(|fitted - target|)
+    /// Normalised maximum absolute error: `max|fitted - target| / max|target|`.
     MaxAbsolute,
-    /// Maximum squared error: max((fitted - target)²)
+    /// Normalised maximum squared error: `max(fitted - target)² / max(target²)`.
     MaxSquared,
-    /// Root mean squared error: sqrt(mean((fitted - target)²))
+    /// Normalised root-mean-squared error:
+    /// `sqrt(Σ(fitted - target)² / Σtarget²)` (= sqrt of [`SumSquared`]).
+    ///
+    /// [`SumSquared`]: Self::SumSquared
     RootMeanSquared,
-    /// Stress (venneuler-style)
+    /// Stress (venneuler-style). Already normalised by `Σf²`.
     Stress,
-    /// DiagError max(|fit / sum(fit) - target / sum(target)|), EulerAPE style
+    /// DiagError max(|fit / sum(fit) - target / sum(target)|), EulerAPE style.
+    /// Already normalised.
     DiagError,
 }
 
 impl LossType {
-    /// Sum of squared errors
+    /// Normalised sum of squared errors. Alias for [`LossType::SumSquared`].
     pub fn sse() -> Self {
         Self::SumSquared
     }
@@ -113,15 +117,7 @@ impl LossType {
         }
 
         match self {
-            LossType::SumSquared => all_masks
-                .iter()
-                .map(|&mask| {
-                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                    let t = target.get(&mask).copied().unwrap_or(0.0);
-                    (f - t).powi(2)
-                })
-                .sum(),
-            LossType::NormalizedSumSquared => {
+            LossType::SumSquared => {
                 let sum_t2: f64 = target.values().map(|&v| v * v).sum();
                 if sum_t2 < 1e-20 {
                     return 0.0;
@@ -137,6 +133,13 @@ impl LossType {
                 sum_sq / sum_t2
             }
             LossType::RootMeanSquared => {
+                // sqrt(Σ(f-t)² / Σt²) — scale-invariant variant of the
+                // classic RMSE. Equals `sqrt(SumSquared)` after this
+                // normalisation.
+                let sum_t2: f64 = target.values().map(|&v| v * v).sum();
+                if sum_t2 < 1e-20 {
+                    return 0.0;
+                }
                 let sum_squared: f64 = all_masks
                     .iter()
                     .map(|&mask| {
@@ -145,7 +148,7 @@ impl LossType {
                         (f - t).powi(2)
                     })
                     .sum();
-                (sum_squared / all_masks.len() as f64).sqrt()
+                (sum_squared / sum_t2).sqrt()
             }
             LossType::Stress => {
                 // venneuler-style stress (matches eulerr):
@@ -176,22 +179,36 @@ impl LossType {
                     .sum();
                 numerator / sum_f2
             }
-            LossType::MaxAbsolute => all_masks
-                .iter()
-                .map(|&mask| {
-                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                    let t = target.get(&mask).copied().unwrap_or(0.0);
-                    (f - t).abs()
-                })
-                .fold(0.0, f64::max),
-            LossType::MaxSquared => all_masks
-                .iter()
-                .map(|&mask| {
-                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                    let t = target.get(&mask).copied().unwrap_or(0.0);
-                    (f - t).powi(2)
-                })
-                .fold(0.0, f64::max),
+            LossType::MaxAbsolute => {
+                let max_t: f64 = target.values().map(|v| v.abs()).fold(0.0_f64, f64::max);
+                if max_t < 1e-20 {
+                    return 0.0;
+                }
+                all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f - t).abs()
+                    })
+                    .fold(0.0, f64::max)
+                    / max_t
+            }
+            LossType::MaxSquared => {
+                let max_t2: f64 = target.values().map(|v| v * v).fold(0.0_f64, f64::max);
+                if max_t2 < 1e-20 {
+                    return 0.0;
+                }
+                all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f - t).powi(2)
+                    })
+                    .fold(0.0, f64::max)
+                    / max_t2
+            }
             LossType::DiagError => {
                 // eulerr's diagError: max|f_i/Σf - t_i/Σt| (linear sum normalization)
                 let ssf = fitted.values().sum::<f64>();
@@ -210,14 +227,21 @@ impl LossType {
                     })
                     .fold(0.0, f64::max)
             }
-            LossType::SumAbsoute => all_masks
-                .iter()
-                .map(|&mask| {
-                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                    let t = target.get(&mask).copied().unwrap_or(0.0);
-                    (f - t).abs()
-                })
-                .sum(),
+            LossType::SumAbsoute => {
+                let sum_abs_t: f64 = target.values().map(|v| v.abs()).sum();
+                if sum_abs_t < 1e-20 {
+                    return 0.0;
+                }
+                let sum_abs: f64 = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f - t).abs()
+                    })
+                    .sum();
+                sum_abs / sum_abs_t
+            }
             LossType::SumAbsoluteRegionError => {
                 let ssf = fitted.values().sum::<f64>();
                 let sst = target.values().sum::<f64>();
@@ -269,18 +293,6 @@ impl LossType {
 
         match self {
             LossType::SumSquared => {
-                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
-                let mut total = 0.0;
-                for &mask in &all_masks {
-                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
-                    let t = target.get(&mask).copied().unwrap_or(0.0);
-                    let diff = f - t;
-                    total += diff * diff;
-                    grad.insert(mask, 2.0 * diff);
-                }
-                Some((total, grad))
-            }
-            LossType::NormalizedSumSquared => {
                 let sum_t2: f64 = target.values().map(|&v| v * v).sum();
                 if sum_t2 < 1e-20 {
                     return Some((0.0, HashMap::new()));
@@ -321,8 +333,10 @@ mod tests {
         target.insert(0b010, 18.0);
         target.insert(0b100, 28.0);
 
-        // (10-12)² + (20-18)² + (30-28)² = 4 + 4 + 4 = 12
-        assert_eq!(loss.compute(&fitted, &target), 12.0);
+        // Σ(f-t)² = 4 + 4 + 4 = 12; Σt² = 144 + 324 + 784 = 1252.
+        // SumSquared = 12 / 1252.
+        let expected = 12.0 / 1252.0;
+        assert!((loss.compute(&fitted, &target) - expected).abs() < 1e-12);
     }
 
     #[test]
@@ -339,8 +353,9 @@ mod tests {
         target.insert(0b010, 18.0);
         target.insert(0b100, 28.0);
 
-        // sqrt((4 + 4 + 4) / 3) = sqrt(4) = 2.0
-        assert_eq!(loss.compute(&fitted, &target), 2.0);
+        // sqrt(Σ(f-t)² / Σt²) = sqrt(12 / 1252).
+        let expected = (12.0_f64 / 1252.0).sqrt();
+        assert!((loss.compute(&fitted, &target) - expected).abs() < 1e-12);
     }
 
     #[test]
@@ -382,8 +397,8 @@ mod tests {
         target.insert(0b010, 25.0);
         target.insert(0b100, 28.0);
 
-        // max(|10-8|, |20-25|, |30-28|) = max(2, 5, 2) = 5
-        assert_eq!(loss.compute(&fitted, &target), 5.0);
+        // max(|10-8|, |20-25|, |30-28|) / max|t| = 5 / 28
+        assert!((loss.compute(&fitted, &target) - 5.0 / 28.0).abs() < 1e-12);
     }
 
     #[test]
@@ -404,8 +419,8 @@ mod tests {
         target.insert(0b001, 5.0);
         target.insert(0b010, 3.0);
 
-        // (0-5)² + (0-3)² = 25 + 9 = 34
-        assert_eq!(loss.compute(&fitted, &target), 34.0);
+        // Σ(0 - t)² = 25 + 9 = 34;  Σt² = 25 + 9 = 34;  loss = 1.0
+        assert!((loss.compute(&fitted, &target) - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -422,8 +437,9 @@ mod tests {
         target.insert(0b010, 3.0);
         // 0b100 missing from target
 
-        // (5-5)² + (3-3)² + (7-0)² = 0 + 0 + 49 = 49
-        assert_eq!(loss.compute(&fitted, &target), 49.0);
+        // Σ(f-t)² = 0 + 0 + 49 = 49;  Σt² = 25 + 9 = 34;  loss = 49/34.
+        let expected = 49.0 / 34.0;
+        assert!((loss.compute(&fitted, &target) - expected).abs() < 1e-12);
     }
 
     #[test]

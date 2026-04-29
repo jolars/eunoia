@@ -40,7 +40,7 @@ pub(crate) struct CmaEsConfig {
     /// Stop when the spread of the best fitness over the most recent
     /// `STAGNATION_GENS` generations falls below this value. Should be set
     /// well above the noise floor of the fitness — for the diagram cost on
-    /// `NormalizedSumSquared` losses, ~`1e-10` is a safe choice.
+    /// `SumSquared` losses, ~`1e-10` is a safe choice.
     pub fn_tol: f64,
     /// Seed for sampling.
     pub seed: u64,

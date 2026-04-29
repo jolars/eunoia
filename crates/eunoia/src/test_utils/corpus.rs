@@ -384,7 +384,7 @@ static CORPUS: [CorpusEntry; 27] = [
         build: spec_issue71_4_set_extreme_scale,
         category: Category::Hard,
         // 4 orders of magnitude scale variation (A=38066 vs D=6). Stress test
-        // for the `NormalizedSumSquared` loss on extreme dynamic range.
+        // for the `SumSquared` loss on extreme dynamic range.
         // Ellipse ceiling is platform-conditional — see
         // [`ISSUE71_ELLIPSE_CEILING`] for the rationale.
         max_diag_error_circle: Some(1e-1),

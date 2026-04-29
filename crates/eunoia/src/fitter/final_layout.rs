@@ -26,9 +26,9 @@ use crate::spec::PreprocessedSpec;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Optimizer {
     /// Levenberg-Marquardt with analytic Jacobian. Default — specialised for
-    /// sum-of-squares losses (`LossType::SumSquared` /
-    /// `LossType::NormalizedSumSquared`). When configured with a non-LSQ
-    /// loss, the dispatch silently falls back to `Lbfgs`.
+    /// the (now sole) sum-of-squares loss `LossType::SumSquared`. When
+    /// configured with a non-LSQ loss, the dispatch silently falls back to
+    /// `Lbfgs`.
     ///
     /// Uses the existing analytical region-area gradients to assemble a
     /// per-residual Jacobian (one row per region mask), then approximates
@@ -51,7 +51,7 @@ pub enum Optimizer {
     ///
     /// Each restart runs plain LM first; if the result is at or below
     /// `Fitter::cmaes_fallback_threshold` (default `1e-3` on the default
-    /// `NormalizedSumSquared` loss) the CMA-ES step is skipped entirely
+    /// `SumSquared` loss) the CMA-ES step is skipped entirely
     /// and the LM result is returned.
     /// Easy specs that LM already crushes pay zero extra wall time.
     ///
@@ -66,9 +66,8 @@ pub enum Optimizer {
     /// {plain LM, CMA-ES → LM polish} is returned, so the path is
     /// strictly non-regressing vs `LevenbergMarquardt`.
     ///
-    /// Restricted to `SumSquared` / `NormalizedSumSquared` losses (the
-    /// LM polish requires it); non-LSQ losses fall back to L-BFGS for the
-    /// polish step.
+    /// Restricted to the `SumSquared` loss (the LM polish requires it);
+    /// non-LSQ losses fall back to L-BFGS for the polish step.
     ///
     /// Cost: when CMA-ES fires, ~λ·max_iters extra function evaluations
     /// on top of LM, with λ = `4 + floor(3 ln n)` for an n-parameter
@@ -676,17 +675,15 @@ impl<'a, S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'a, S> {
 /// (zero residual contribution, zero Jacobian row), matching the existing
 /// loss exactly.
 ///
-/// Supported losses: [`LossType::SumSquared`] and
-/// [`LossType::NormalizedSumSquared`]. Other losses are rejected at
+/// Supported loss: [`LossType::SumSquared`]. Other losses are rejected at
 /// construction with an [`Error`].
 struct LmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
     spec: &'a PreprocessedSpec,
     params_per_shape: usize,
     /// Fixed canonical residual ordering: all non-empty subset masks.
     masks: Vec<RegionMask>,
-    /// `1.0` for `SumSquared`; `1/sqrt(Σ tᵢ²)` for `NormalizedSumSquared`. The
-    /// stored residuals get multiplied by this so `Σ rᵢ²` equals the
-    /// configured loss.
+    /// `1/sqrt(Σ tᵢ²)`. Stored residuals get multiplied by this so
+    /// `Σ rᵢ²` equals the configured loss `Σ(f-t)² / Σt²`.
     norm_factor: f64,
     /// Current parameter vector. Owned so the trait's `params(&self)` can
     /// return a clone.
@@ -710,8 +707,7 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
         initial_param: &DVector<f64>,
     ) -> Result<Self, Error> {
         let norm_factor = match loss_type {
-            LossType::SumSquared => 1.0,
-            LossType::NormalizedSumSquared => {
+            LossType::SumSquared => {
                 let sum_t2: f64 = spec.exclusive_areas.values().map(|&v| v * v).sum();
                 if sum_t2 < 1e-20 {
                     return Err(Error::msg(
@@ -722,7 +718,7 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
             }
             other => {
                 return Err(Error::msg(format!(
-                    "Levenberg-Marquardt only supports SumSquared / NormalizedSumSquared losses, got {other:?}"
+                    "Levenberg-Marquardt only supports SumSquared loss, got {other:?}"
                 )));
             }
         };
@@ -1240,14 +1236,14 @@ mod tests {
         // Probe at a perturbed config so the loss isn't exactly zero
         // (gradient at L=0 minimum is also zero, which is uninformative).
         let params = vec![0.0, 0.0, 1.0, 1.2, 0.0, 0.95];
-        for &loss in &[
+        assert_analytic_matches_fd(
+            &spec,
+            &params,
             crate::loss::LossType::SumSquared,
-            crate::loss::LossType::NormalizedSumSquared,
-        ] {
-            assert_analytic_matches_fd(&spec, &params, loss, 1e-6, 1e-4, || {
-                format!("two_circle_overlap loss={:?}", loss)
-            });
-        }
+            1e-6,
+            1e-4,
+            || "two_circle_overlap SumSquared".to_string(),
+        );
     }
 
     #[test]
@@ -1264,14 +1260,14 @@ mod tests {
         params[0] += 0.07;
         params[4] -= 0.05;
         params[8] += 0.03;
-        for &loss in &[
+        assert_analytic_matches_fd(
+            &spec,
+            &params,
             crate::loss::LossType::SumSquared,
-            crate::loss::LossType::NormalizedSumSquared,
-        ] {
-            assert_analytic_matches_fd(&spec, &params, loss, 1e-6, 1e-3, || {
-                format!("three_circle_venn loss={:?}", loss)
-            });
-        }
+            1e-6,
+            1e-3,
+            || "three_circle_venn SumSquared".to_string(),
+        );
     }
 
     #[test]
@@ -1294,7 +1290,7 @@ mod tests {
         assert_analytic_matches_fd(
             &spec,
             &perturbed,
-            crate::loss::LossType::NormalizedSumSquared,
+            crate::loss::LossType::SumSquared,
             1e-6,
             1e-4,
             || "disjoint".to_string(),
@@ -1316,7 +1312,7 @@ mod tests {
         assert_analytic_matches_fd(
             &spec,
             &params,
-            crate::loss::LossType::NormalizedSumSquared,
+            crate::loss::LossType::SumSquared,
             1e-6,
             1e-4,
             || "nested".to_string(),
@@ -1352,7 +1348,7 @@ mod tests {
             let p = DVector::from_vec(params.clone());
             let cost = DiagramCost::<Ellipse> {
                 spec: &spec,
-                loss_type: LossType::NormalizedSumSquared,
+                loss_type: LossType::SumSquared,
                 params_per_shape: Ellipse::n_params(),
                 _shape: std::marker::PhantomData,
             };
@@ -1417,12 +1413,12 @@ mod tests {
 
             let cost = DiagramCost::<Circle> {
                 spec: &spec,
-                loss_type: LossType::NormalizedSumSquared,
+                loss_type: LossType::SumSquared,
                 params_per_shape: Circle::n_params(),
                 _shape: std::marker::PhantomData,
             };
 
-            // Analytical (current default for NormalizedSumSquared + Circle).
+            // Analytical (current default for SumSquared + Circle).
             let t0 = Instant::now();
             for _ in 0..iters {
                 let _ = cost.gradient(&p).unwrap();
@@ -1587,19 +1583,14 @@ mod tests {
         let mut params = flat_params_ellipse(&ellipses);
         params[0] += 0.05;
         params[4] += 0.07;
-        for &loss in &[
+        assert_analytic_matches_fd_shape::<Ellipse, _>(
+            &spec,
+            &params,
             crate::loss::LossType::SumSquared,
-            crate::loss::LossType::NormalizedSumSquared,
-        ] {
-            assert_analytic_matches_fd_shape::<Ellipse, _>(
-                &spec,
-                &params,
-                loss,
-                1e-6,
-                5e-4,
-                || format!("ellipse two_overlap loss={:?}", loss),
-            );
-        }
+            1e-6,
+            5e-4,
+            || "ellipse two_overlap SumSquared".to_string(),
+        );
     }
 
     #[test]
@@ -1619,7 +1610,7 @@ mod tests {
         assert_analytic_matches_fd_shape::<Ellipse, _>(
             &spec,
             &params,
-            crate::loss::LossType::NormalizedSumSquared,
+            crate::loss::LossType::SumSquared,
             1e-6,
             5e-3,
             || "ellipse three_venn".to_string(),
@@ -1642,7 +1633,7 @@ mod tests {
         assert_analytic_matches_fd_shape::<Ellipse, _>(
             &spec,
             &params,
-            crate::loss::LossType::NormalizedSumSquared,
+            crate::loss::LossType::SumSquared,
             1e-6,
             5e-4,
             || "ellipse disjoint".to_string(),
@@ -1665,7 +1656,7 @@ mod tests {
         assert_analytic_matches_fd_shape::<Ellipse, _>(
             &spec,
             &params,
-            crate::loss::LossType::NormalizedSumSquared,
+            crate::loss::LossType::SumSquared,
             1e-6,
             5e-4,
             || "ellipse nested".to_string(),
@@ -1698,7 +1689,7 @@ mod tests {
             assert_analytic_matches_fd_shape::<Ellipse, _>(
                 &spec,
                 &params,
-                crate::loss::LossType::NormalizedSumSquared,
+                crate::loss::LossType::SumSquared,
                 1e-6,
                 1e-2,
                 || format!("ellipse random n={}, seed={}", n, seed),
@@ -1721,7 +1712,7 @@ mod tests {
         // cost that always falls through to FD. The simplest implementation:
         // run the optimiser with a loss type that doesn't expose an analytic
         // gradient (e.g. SumAbsoute), and compare against the same fit using
-        // NormalizedSumSquared (which DOES). This isn't apples-to-apples on
+        // SumSquared (which DOES). This isn't apples-to-apples on
         // loss surface but does exercise the gradient path. For a more direct
         // test, see comments below.
         let configs: &[(usize, u64)] = &[(5, 33), (5, 44), (8, 55)];
@@ -1744,10 +1735,10 @@ mod tests {
                 .collect();
             let radii: Vec<f64> = circles.iter().map(|c| c.radius()).collect();
 
-            // Analytical-gradient path: NormalizedSumSquared has compute_with_gradient.
+            // Analytical-gradient path: SumSquared has compute_with_gradient.
             let cfg_an = FinalLayoutConfig {
                 optimizer: Optimizer::Lbfgs,
-                loss_type: LossType::NormalizedSumSquared,
+                loss_type: LossType::SumSquared,
                 max_iterations: 200,
                 tolerance: 1e-6,
                 seed: 0,
@@ -1812,7 +1803,7 @@ mod tests {
             assert_analytic_matches_fd(
                 &spec,
                 &params,
-                crate::loss::LossType::NormalizedSumSquared,
+                crate::loss::LossType::SumSquared,
                 1e-6,
                 5e-3,
                 || format!("random n={}, seed={}", n, seed),
@@ -1829,8 +1820,7 @@ mod tests {
         use rand::SeedableRng;
         let configs: &[(usize, u64, crate::loss::LossType)] = &[
             (3, 11, crate::loss::LossType::SumSquared),
-            (3, 22, crate::loss::LossType::NormalizedSumSquared),
-            (5, 33, crate::loss::LossType::NormalizedSumSquared),
+            (5, 33, crate::loss::LossType::SumSquared),
         ];
         for &(n, seed, loss_type) in configs {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
