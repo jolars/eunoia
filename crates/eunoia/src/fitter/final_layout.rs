@@ -30,7 +30,7 @@ pub enum Optimizer {
     /// conic-intersection pipeline), so on small ellipse fits NelderMead is
     /// often dramatically faster at equivalent fit quality. On hard high-arity
     /// fits L-BFGS finds basins NelderMead misses (issue #28). The default
-    /// fitter cycles `[NelderMead, Lbfgs]` across restarts to get both.
+    /// fitter pool is `[Lbfgs]` only — see `Fitter::optimizer_pool`.
     Lbfgs,
     /// Trust Region method
     TrustRegion,

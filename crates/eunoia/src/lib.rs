@@ -40,8 +40,10 @@ pub mod constants;
 #[cfg(feature = "plotting")]
 pub mod plotting;
 
-// Internal test utilities
-#[cfg(test)]
+// Internal test utilities. Also reachable from example binaries when the
+// `corpus` feature is enabled — only the `corpus` submodule is publicly
+// usable in that mode; everything else stays gated on `cfg(test)`.
+#[cfg(any(test, feature = "corpus"))]
 pub mod test_utils;
 
 // Re-export main API types

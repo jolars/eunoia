@@ -1,6 +1,7 @@
+#[cfg(test)]
 use std::borrow::Borrow;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "corpus"))]
 pub mod corpus;
 
 #[cfg(test)]

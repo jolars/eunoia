@@ -7,12 +7,25 @@ file. The corpus lives at `crates/eunoia/src/test_utils/corpus.rs`; the
 default-suite tests are in `crates/eunoia/src/fitter/corpus_quality.rs` and
 `crates/eunoia/src/fitter/synthetic_groundtruth.rs`.
 
-- [ ] **Aggregate quality-report binary**
-      (`crates/eunoia/examples/quality_report.rs`). Run the full corpus ×
-      `QUALITY_SEEDS` (16) × shapes, dump a markdown table to stdout and a JSON
-      snapshot to `target/quality_report.json` for PR-vs-PR diffing. Block on
-      this before serious optimizer-comparison work --- it's how we'll measure
-      CMA-ES / DE+L-BFGS / etc against the current default.
+- [x] **Aggregate quality-report binary**
+      (`crates/eunoia/examples/quality_report.rs`). Runs the full corpus ×
+      `QUALITY_SEEDS` (16) × {Circle, Ellipse} using the default `Fitter`,
+      prints a markdown summary to stdout, and writes a JSON snapshot to
+      `<target>/quality_report.json`. Captures both fit quality
+      (`diag_error`, final loss, iterations) and runtime (per-cell
+      `elapsed_ms`, per-spec aggregates, per-shape totals) so a single report
+      characterises both axes of any optimizer change.
+
+      Run with:
+
+      ```
+      cargo run --release --example quality_report --features corpus
+      ```
+
+      The `corpus` feature exposes `eunoia::test_utils::corpus` outside
+      `cfg(test)` so the example can build the same fixture set the
+      integration tests use; it is internal, not part of the public API
+      contract. Default sweep wall time on a developer machine is ~1 s.
 
 - [ ] **Bench dedupe**: move the 4 helpers in
       `crates/eunoia/benches/initial_layout.rs` (`three_circle_easy`,
@@ -62,12 +75,32 @@ they're pre-existing behaviour the harness now exposes.
 
 ## Optimizer work (gated on the harness)
 
+- [ ] **Levenberg-Marquardt final stage** (try this *before* CMA-ES). Our
+      objective is `Σ rᵢ²` where `rᵢ = fitted_i - target_i` — textbook
+      nonlinear least-squares — and we already have analytical residual
+      gradients (per-region area gradients on `NormalizedSumSquared` /
+      `SumSquared`, see AGENTS.md status). LM approximates the Hessian via
+      `JᵀJ` from the Jacobian, so the "no analytical Hessian" gap doesn't
+      bite. argmin 0.10 doesn't ship LM — use the `levenberg-marquardt`
+      crate (nalgebra-integrated) and wire it as a new `Optimizer` variant.
+      Add a `lm` config to `examples/quality_report.rs` and compare against
+      the new L-BFGS-only default. Baseline numbers for the comparison live
+      in `target/quality_report.json` at the time this TODO was written.
+
+- [ ] **Gauss-Newton final stage** (cheap follow-on to LM). argmin already
+      ships `GaussNewton` with line search. Once LM's residual Jacobian
+      plumbing is in place, GN is essentially a different solver-call away —
+      useful as a "what does LM's damping buy us" data point, mostly to
+      characterise how often the linearisation is good enough that GN's
+      undamped step is fine.
+
 - [ ] **CMA-ES + L-BFGS polish pilot**. Bound-constrained final stage, CMA-ES
       global step, L-BFGS final polish using the existing analytical gradients.
       Benchmark against `corpus_circles_diag_error` /
       `corpus_ellipses_diag_error` and the synthetic ground-truth proptest. If
       CMA-ES alone closes the issue #28 / `eulerape_3_set` gap, ship it; only
-      then consider memetic DE+L-BFGS.
+      then consider memetic DE+L-BFGS. Run *after* the LM/GN comparison —
+      they're cheaper to try and may already close the gap on their own.
 
 - [ ] **Latin hypercube initial starts** instead of uniform random perturbations
       across `n_restarts`. Cheap potential 10-20% best-of-N quality bump; no

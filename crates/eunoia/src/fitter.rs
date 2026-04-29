@@ -57,10 +57,13 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     loss_type: LossType,
     /// Pool of final-stage optimizers cycled across outer-loop restarts:
     /// attempt `i` uses `optimizer_pool[i % optimizer_pool.len()]`. Default
-    /// `[NelderMead, Lbfgs]` — Nelder-Mead is dramatically faster on small
-    /// ellipse fits where it matches L-BFGS' fit quality, and L-BFGS finds
-    /// basins Nelder-Mead misses on hard high-arity fits (issue #28). Best
-    /// loss across attempts wins.
+    /// `[Lbfgs]`. The previous default mixed Nelder-Mead in (`[NelderMead,
+    /// Lbfgs]`) on the theory that NM is faster on small ellipse fits and
+    /// L-BFGS handles the hard ones, but the `examples/quality_report` sweep
+    /// showed NM-only ellipse fits land ~6 orders of magnitude worse on
+    /// median loss than L-BFGS-only with no time advantage at our default
+    /// `n_restarts`, so cycling NM in just dilutes the pool. Best loss across
+    /// attempts still wins.
     optimizer_pool: Vec<Optimizer>,
     sa_fallback_threshold: Option<f64>,
     n_restarts: usize,
@@ -106,14 +109,23 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             max_iterations: 200,
             tolerance: 1e-6,
             seed: None,
-            loss_type: LossType::sse(),
-            // Cycle Nelder-Mead and L-BFGS across restarts. Per-attempt cost
-            // varies (NM is O(ms), L-BFGS is O(100ms-1s) on ellipses due to
-            // numerical-gradient overhead — issue #34), but with restarts
-            // already running in parallel the wall time is bounded by the
-            // slowest single attempt. The mix gives speed on cases NM solves
-            // and robustness on cases that need L-BFGS (issue #28).
-            optimizer_pool: vec![Optimizer::NelderMead, Optimizer::Lbfgs],
+            // Use the scale-invariant SumSquared variant directly (matches
+            // `LossType::default()`). Prior code called `LossType::sse()`,
+            // which is the *unnormalized* SumSquared and made loss magnitude
+            // (and the absolute-tolerance behaviour wired off it) scale with
+            // the input areas — defeating the purpose of the tolerance choice
+            // documented below.
+            loss_type: LossType::NormalizedSumSquared,
+            // L-BFGS only. We previously cycled `[NelderMead, Lbfgs]` so each
+            // restart attempt traded off NM's per-call speed against L-BFGS'
+            // basin coverage, but the `examples/quality_report` sweep showed
+            // NM-only ellipse fits land ~6 orders of magnitude worse on median
+            // loss than L-BFGS-only with no wall-time advantage at the default
+            // `n_restarts=10` (NM's per-call speed didn't beat L-BFGS in the
+            // restart-parallelised total). Mixing NM into the pool just
+            // diluted the result. Trust-region landed in the same basins as
+            // L-BFGS but ~10× slower.
+            optimizer_pool: vec![Optimizer::Lbfgs],
             // SA fallback is disabled by default — empirically it never
             // improved the result vs the primary optimizer on any spec or seed
             // we tested (likely because it starts from the local optimum with
@@ -319,9 +331,11 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///
     /// Restart `i` uses `pool[i % pool.len()]`, and the lowest-loss attempt
     /// across the entire `n_restarts` loop wins. The default pool is
-    /// `[NelderMead, Lbfgs]` — NM is O(ms) per fit on small ellipse problems
-    /// and L-BFGS finds basins NM misses on hard high-arity fits (issue #28),
-    /// so cycling gives both speed and robustness.
+    /// `[Lbfgs]` (single-solver) — `examples/quality_report` showed NM-only
+    /// ellipse fits land ~6 orders of magnitude worse on median loss with no
+    /// wall-time advantage at the default `n_restarts`, so mixing NM in
+    /// merely diluted the pool. Use this builder to opt back in to a mixed
+    /// pool for experimentation.
     ///
     /// Calling [`optimizer`] reduces the pool to a single solver.
     ///

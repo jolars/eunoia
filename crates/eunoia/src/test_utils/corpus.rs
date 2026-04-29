@@ -121,7 +121,7 @@ pub fn get(name: &str) -> Option<&'static CorpusEntry> {
 // that can't be fit at all (single-set #16) are marked `SanityOnly`.
 
 #[allow(clippy::too_many_lines)]
-static CORPUS: [CorpusEntry; 17] = [
+static CORPUS: [CorpusEntry; 27] = [
     CorpusEntry {
         name: "uniform_3_set",
         build: spec_uniform_3_set,
@@ -297,10 +297,147 @@ static CORPUS: [CorpusEntry; 17] = [
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
     },
+    // -- issue-derived specs (eulerr issue tracker) --
+    // These come from real bug reports against eulerr's `euler()` and exercise
+    // pathologies the original 17-spec reproducibility suite doesn't reach:
+    // small overlaps that fit-to-zero, extreme scale variation, full 6-set
+    // coverage, and the only `InputType::Inclusive` entry in the corpus.
+    // Ceilings are loose by default — tighten as the optimizer improves.
+    CorpusEntry {
+        name: "issue54_6_set_full",
+        build: spec_issue54_6_set_full,
+        category: Category::Hard,
+        // Full 6-set with all 63 combinations; only ~20 are non-zero. Stresses
+        // the high-arity intersection code path much harder than wilkinson_6_set.
+        max_diag_error_circle: Some(1.5e-1),
+        max_diag_error_ellipse: Some(7e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue114_4_set_dominant_quad",
+        build: spec_issue114_4_set_dominant_quad,
+        category: Category::Hard,
+        // Real biology-style 4-set where the 4-way intersection dominates
+        // (A&B&C&D = 10336 vs A only = 7516); D singleton is huge (26642).
+        max_diag_error_circle: Some(1e-1),
+        max_diag_error_ellipse: Some(5e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue47_3_set_huge_triple",
+        build: spec_issue47_3_set_huge_triple,
+        category: Category::Hard,
+        // 3-set where pairs are small (15-40) but A&B&C = 120 — geometrically
+        // impossible for circles (triangle-inequality on overlap regions),
+        // ellipses can fit it.
+        max_diag_error_circle: Some(8e-2),
+        max_diag_error_ellipse: Some(3e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue92_3_set_dropped_pair",
+        build: spec_issue92_3_set_dropped_pair,
+        category: Category::Medium,
+        // Minimal repro of "small pair → fitted=0" pathology. A&B=12 sits
+        // between large A&C=459, B&C=703, A&B&C=162.
+        max_diag_error_circle: Some(5e-2),
+        max_diag_error_ellipse: Some(2e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue44_4_set_inclusive",
+        build: spec_issue44_4_set_inclusive,
+        category: Category::Hard,
+        // Only `InputType::Inclusive` (eulerr `input="union"`) entry. The
+        // inclusion-exclusion decomposition zeros out A only and B only — A
+        // and B are fully covered by their pairwise and triple intersections
+        // — so the geometry has two "doubly covered" sets and is genuinely
+        // hard. Default fitter lands ~1.5e-2 most seeds, ~9e-2 worst case.
+        max_diag_error_circle: Some(1e-1),
+        max_diag_error_ellipse: Some(1e-1),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue71_4_set_extreme_scale",
+        build: spec_issue71_4_set_extreme_scale,
+        category: Category::Hard,
+        // 4 orders of magnitude scale variation (A=38066 vs D=6). Stress test
+        // for the `NormalizedSumSquared` loss on extreme dynamic range.
+        // Ellipse @ seed=42 reaches a near-coincident configuration that
+        // trips the same `normalize_layout` debug_assert as
+        // `two_overlapping_completely` and `issue32_3_set_small_triple`;
+        // release-mode fits cleanly. Skip ellipse until that upstream bug
+        // is fixed.
+        max_diag_error_circle: Some(1e-1),
+        max_diag_error_ellipse: Some(5e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Skip(
+            "normalize_layout debug_assert on near-coincident ellipses",
+        ),
+    },
+    CorpusEntry {
+        name: "issue103_4_set_missing_d",
+        build: spec_issue103_4_set_missing_d,
+        category: Category::Hard,
+        // 4-set with all 15 combinations populated; user reports A&D and D
+        // missing from the plot intermittently. B-dominated (B=455 vs others <100).
+        max_diag_error_circle: Some(1e-1),
+        max_diag_error_ellipse: Some(5e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue32_3_set_small_triple",
+        build: spec_issue32_3_set_small_triple,
+        category: Category::Medium,
+        // 3-set with two zero pairs (A&B=0, B&C=0) and a small triple (A&B&C=3)
+        // sandwiched in a large A&C=314. Tests "small intersection drop"
+        // pathology, sibling to issue92. Two zero pair overlaps push B and
+        // {A,C} toward coincident-arc geometry on some seeds, tripping the
+        // same `normalize_layout` debug_assert as `two_overlapping_completely`
+        // — release-mode fits cleanly (~3.5e-3), so the skip is debug-only
+        // safety until that upstream bug is fixed.
+        max_diag_error_circle: Some(5e-2),
+        max_diag_error_ellipse: Some(2e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Skip(
+            "normalize_layout debug_assert on near-coincident ellipses",
+        ),
+    },
+    CorpusEntry {
+        name: "issue91_6_set",
+        build: spec_issue91_6_set,
+        category: Category::Hard,
+        // Full 6-set with 63 mostly-positive combinations. Values were passed
+        // disjoint (eulerr default) by the reporter even though they look
+        // intersection-style, so the spec is far from any realizable geometry —
+        // hard exclusive-input stress test for high-arity fits.
+        max_diag_error_circle: Some(2e-1),
+        max_diag_error_ellipse: Some(1e-1),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue111_3_set_asymmetric",
+        build: spec_issue111_3_set_asymmetric,
+        category: Category::Medium,
+        // 3-set with two orders of magnitude scale variation
+        // (A=10000, B=1000, C=100) plus moderate intersections.
+        max_diag_error_circle: Some(5e-2),
+        max_diag_error_ellipse: Some(2e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+    },
 ];
 
 // Builders. Names mirror the comments in `test-reproducibility.R`.
-// All values use exclusive (`disjoint` in eulerr terminology) input.
+// All values use exclusive (`disjoint` in eulerr terminology) input,
+// except `spec_issue44_4_set_inclusive` which uses `InputType::Inclusive`.
 
 fn spec_uniform_3_set() -> DiagramSpec {
     DiagramSpecBuilder::new()
@@ -551,14 +688,318 @@ fn spec_random_4_set() -> DiagramSpec {
         .expect("random_4_set")
 }
 
+// eulerr issue #54: 6-set with all 63 combinations populated.
+// `cts` / `nms` arrays from the issue body, decoded to A..F.
+fn spec_issue54_6_set_full() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 27.0)
+        .set("B", 7.0)
+        .set("C", 17.0)
+        .set("D", 12.0)
+        .set("E", 12.0)
+        .set("F", 11.0)
+        .intersection(&["A", "B"], 5.0)
+        .intersection(&["A", "C"], 0.0)
+        .intersection(&["A", "D"], 12.0)
+        .intersection(&["A", "E"], 0.0)
+        .intersection(&["A", "F"], 1.0)
+        .intersection(&["B", "C"], 1.0)
+        .intersection(&["B", "D"], 0.0)
+        .intersection(&["B", "E"], 4.0)
+        .intersection(&["B", "F"], 0.0)
+        .intersection(&["C", "D"], 1.0)
+        .intersection(&["C", "E"], 0.0)
+        .intersection(&["C", "F"], 4.0)
+        .intersection(&["D", "E"], 1.0)
+        .intersection(&["D", "F"], 1.0)
+        .intersection(&["E", "F"], 0.0)
+        .intersection(&["A", "B", "C"], 0.0)
+        .intersection(&["A", "B", "D"], 0.0)
+        .intersection(&["A", "B", "E"], 0.0)
+        .intersection(&["A", "B", "F"], 0.0)
+        .intersection(&["A", "C", "D"], 1.0)
+        .intersection(&["A", "C", "E"], 0.0)
+        .intersection(&["A", "C", "F"], 0.0)
+        .intersection(&["A", "D", "E"], 0.0)
+        .intersection(&["A", "D", "F"], 1.0)
+        .intersection(&["A", "E", "F"], 0.0)
+        .intersection(&["B", "C", "D"], 0.0)
+        .intersection(&["B", "C", "E"], 0.0)
+        .intersection(&["B", "C", "F"], 0.0)
+        .intersection(&["B", "D", "E"], 0.0)
+        .intersection(&["B", "D", "F"], 0.0)
+        .intersection(&["B", "E", "F"], 0.0)
+        .intersection(&["C", "D", "E"], 0.0)
+        .intersection(&["C", "D", "F"], 0.0)
+        .intersection(&["C", "E", "F"], 1.0)
+        .intersection(&["D", "E", "F"], 0.0)
+        .intersection(&["A", "B", "C", "D"], 0.0)
+        .intersection(&["A", "B", "C", "E"], 0.0)
+        .intersection(&["A", "B", "C", "F"], 0.0)
+        .intersection(&["A", "B", "D", "E"], 0.0)
+        .intersection(&["A", "B", "D", "F"], 1.0)
+        .intersection(&["A", "B", "E", "F"], 0.0)
+        .intersection(&["A", "C", "D", "E"], 0.0)
+        .intersection(&["A", "C", "D", "F"], 0.0)
+        .intersection(&["A", "C", "E", "F"], 0.0)
+        .intersection(&["A", "D", "E", "F"], 0.0)
+        .intersection(&["B", "C", "D", "E"], 0.0)
+        .intersection(&["B", "C", "D", "F"], 0.0)
+        .intersection(&["B", "C", "E", "F"], 0.0)
+        .intersection(&["B", "D", "E", "F"], 0.0)
+        .intersection(&["C", "D", "E", "F"], 0.0)
+        .intersection(&["A", "B", "C", "D", "E"], 0.0)
+        .intersection(&["A", "B", "C", "D", "F"], 0.0)
+        .intersection(&["A", "B", "C", "E", "F"], 0.0)
+        .intersection(&["A", "B", "D", "E", "F"], 0.0)
+        .intersection(&["A", "C", "D", "E", "F"], 0.0)
+        .intersection(&["B", "C", "D", "E", "F"], 0.0)
+        .intersection(&["A", "B", "C", "D", "E", "F"], 1.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue54_6_set_full")
+}
+
+// eulerr issue #114: 4-set with all 15 combinations populated, exclusive input.
+// Real biology-style data; A&B&C&D dominates singletons.
+fn spec_issue114_4_set_dominant_quad() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 7516.0)
+        .set("B", 7621.0)
+        .set("C", 3152.0)
+        .set("D", 26642.0)
+        .intersection(&["A", "B"], 781.0)
+        .intersection(&["A", "C"], 817.0)
+        .intersection(&["A", "D"], 6418.0)
+        .intersection(&["B", "C"], 369.0)
+        .intersection(&["B", "D"], 1465.0)
+        .intersection(&["C", "D"], 4118.0)
+        .intersection(&["A", "B", "C"], 324.0)
+        .intersection(&["A", "B", "D"], 2525.0)
+        .intersection(&["A", "C", "D"], 8847.0)
+        .intersection(&["B", "C", "D"], 1149.0)
+        .intersection(&["A", "B", "C", "D"], 10336.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue114_4_set_dominant_quad")
+}
+
+// eulerr issue #47: 3-set where pairs are small but the triple is huge.
+fn spec_issue47_3_set_huge_triple() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 500.0)
+        .set("B", 400.0)
+        .set("C", 400.0)
+        .intersection(&["A", "B"], 30.0)
+        .intersection(&["A", "C"], 40.0)
+        .intersection(&["B", "C"], 15.0)
+        .intersection(&["A", "B", "C"], 120.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue47_3_set_huge_triple")
+}
+
+// eulerr issue #92: 3-set with a small A&B (12) sandwiched in big A&C, B&C.
+fn spec_issue92_3_set_dropped_pair() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 164.0)
+        .set("B", 561.0)
+        .set("C", 166.0)
+        .intersection(&["A", "B"], 12.0)
+        .intersection(&["A", "C"], 459.0)
+        .intersection(&["B", "C"], 703.0)
+        .intersection(&["A", "B", "C"], 162.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue92_3_set_dropped_pair")
+}
+
+// eulerr issue #44: 4-set with `input = "union"` (Inclusive in eunoia terms).
+// Combinations not listed (A&C&D) are implicitly zero.
+fn spec_issue44_4_set_inclusive() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 10487.0)
+        .set("B", 13190.0)
+        .set("C", 15675.0)
+        .set("D", 3519.0)
+        .intersection(&["A", "B"], 8302.0)
+        .intersection(&["A", "C"], 7501.0)
+        .intersection(&["A", "D"], 2986.0)
+        .intersection(&["B", "C"], 10276.0)
+        .intersection(&["B", "D"], 2914.0)
+        .intersection(&["C", "D"], 0.0)
+        .intersection(&["A", "B", "C"], 5791.0)
+        .intersection(&["A", "B", "D"], 2511.0)
+        .intersection(&["A", "C", "D"], 0.0)
+        .intersection(&["B", "C", "D"], 0.0)
+        .intersection(&["A", "B", "C", "D"], 0.0)
+        .input_type(InputType::Inclusive)
+        .build()
+        .expect("issue44_4_set_inclusive")
+}
+
+// eulerr issue #71: 4-set with extreme scale variation.
+// User's set names "1ug, 300ng, 100ng, 50ng" mapped to A..D in spec order.
+// 12 combinations listed; missing ones (B&D, B&C&D) default to 0.
+fn spec_issue71_4_set_extreme_scale() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 38066.0)
+        .set("B", 569.0)
+        .set("C", 23.0)
+        .set("D", 6.0)
+        .intersection(&["A", "B"], 7211.0)
+        .intersection(&["A", "C"], 88.0)
+        .intersection(&["A", "D"], 9.0)
+        .intersection(&["B", "C"], 15.0)
+        .intersection(&["B", "D"], 0.0)
+        .intersection(&["C", "D"], 1.0)
+        .intersection(&["A", "B", "C"], 819.0)
+        .intersection(&["A", "B", "D"], 65.0)
+        .intersection(&["A", "C", "D"], 0.0)
+        .intersection(&["B", "C", "D"], 0.0)
+        .intersection(&["A", "B", "C", "D"], 162.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue71_4_set_extreme_scale")
+}
+
+// eulerr issue #103: 4-set with all 15 combinations populated.
+// Values from `eulerResult$original.values`.
+fn spec_issue103_4_set_missing_d() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 26.0)
+        .set("B", 455.0)
+        .set("C", 86.0)
+        .set("D", 26.0)
+        .intersection(&["A", "B"], 10.0)
+        .intersection(&["A", "C"], 6.0)
+        .intersection(&["A", "D"], 4.0)
+        .intersection(&["B", "C"], 34.0)
+        .intersection(&["B", "D"], 56.0)
+        .intersection(&["C", "D"], 21.0)
+        .intersection(&["A", "B", "C"], 2.0)
+        .intersection(&["A", "B", "D"], 8.0)
+        .intersection(&["A", "C", "D"], 13.0)
+        .intersection(&["B", "C", "D"], 79.0)
+        .intersection(&["A", "B", "C", "D"], 51.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue103_4_set_missing_d")
+}
+
+// eulerr issue #32: 3-set with two zero pairs and a small triple (3) that
+// the fitter drops to zero. Values from the user's `euler(dat)` output.
+fn spec_issue32_3_set_small_triple() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 201.0)
+        .set("B", 72.0)
+        .set("C", 266.0)
+        .intersection(&["A", "B"], 0.0)
+        .intersection(&["A", "C"], 314.0)
+        .intersection(&["B", "C"], 0.0)
+        .intersection(&["A", "B", "C"], 3.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue32_3_set_small_triple")
+}
+
+// eulerr issue #91: full 6-set with 63 combinations, exclusive input.
+// User mapped sets 1..6 → A..F; values transcribed from the issue body
+// (the trailing `"63"=1851` is a typo for `1&2&3&4&5&6=1851`).
+#[allow(clippy::too_many_lines)]
+fn spec_issue91_6_set() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 3290.0)
+        .set("B", 2717.0)
+        .set("C", 3569.0)
+        .set("D", 3316.0)
+        .set("E", 3598.0)
+        .set("F", 3471.0)
+        .intersection(&["A", "B"], 2717.0)
+        .intersection(&["A", "C"], 2640.0)
+        .intersection(&["A", "D"], 2466.0)
+        .intersection(&["A", "E"], 2485.0)
+        .intersection(&["A", "F"], 2415.0)
+        .intersection(&["B", "C"], 2228.0)
+        .intersection(&["B", "D"], 2132.0)
+        .intersection(&["B", "E"], 2098.0)
+        .intersection(&["B", "F"], 2059.0)
+        .intersection(&["C", "D"], 3316.0)
+        .intersection(&["C", "E"], 2667.0)
+        .intersection(&["C", "F"], 2596.0)
+        .intersection(&["D", "E"], 2495.0)
+        .intersection(&["D", "F"], 2444.0)
+        .intersection(&["E", "F"], 3471.0)
+        .intersection(&["A", "B", "C"], 2228.0)
+        .intersection(&["A", "B", "D"], 2132.0)
+        .intersection(&["A", "B", "E"], 2098.0)
+        .intersection(&["A", "B", "F"], 2059.0)
+        .intersection(&["A", "C", "D"], 2466.0)
+        .intersection(&["A", "C", "E"], 2294.0)
+        .intersection(&["A", "C", "F"], 2233.0)
+        .intersection(&["A", "D", "E"], 2156.0)
+        .intersection(&["A", "D", "F"], 2114.0)
+        .intersection(&["A", "E", "F"], 2415.0)
+        .intersection(&["B", "C", "D"], 2132.0)
+        .intersection(&["B", "C", "E"], 1956.0)
+        .intersection(&["B", "C", "F"], 1921.0)
+        .intersection(&["B", "D", "E"], 1881.0)
+        .intersection(&["B", "D", "F"], 1851.0)
+        .intersection(&["B", "E", "F"], 2059.0)
+        .intersection(&["C", "D", "E"], 2495.0)
+        .intersection(&["C", "D", "F"], 2444.0)
+        .intersection(&["C", "E", "F"], 2596.0)
+        .intersection(&["D", "E", "F"], 2444.0)
+        .intersection(&["A", "B", "C", "D"], 2132.0)
+        .intersection(&["A", "B", "C", "E"], 1956.0)
+        .intersection(&["A", "B", "C", "F"], 1921.0)
+        .intersection(&["A", "B", "D", "E"], 1881.0)
+        .intersection(&["A", "B", "D", "F"], 1851.0)
+        .intersection(&["A", "B", "E", "F"], 2059.0)
+        .intersection(&["A", "C", "D", "E"], 2156.0)
+        .intersection(&["A", "C", "D", "F"], 2114.0)
+        .intersection(&["A", "C", "E", "F"], 2233.0)
+        .intersection(&["A", "D", "E", "F"], 2114.0)
+        .intersection(&["B", "C", "D", "E"], 1881.0)
+        .intersection(&["B", "C", "D", "F"], 1851.0)
+        .intersection(&["B", "C", "E", "F"], 1921.0)
+        .intersection(&["B", "D", "E", "F"], 1851.0)
+        .intersection(&["C", "D", "E", "F"], 2444.0)
+        .intersection(&["A", "B", "C", "D", "E"], 1881.0)
+        .intersection(&["A", "B", "C", "D", "F"], 1851.0)
+        .intersection(&["A", "B", "C", "E", "F"], 1921.0)
+        .intersection(&["A", "B", "D", "E", "F"], 1851.0)
+        .intersection(&["A", "C", "D", "E", "F"], 2114.0)
+        .intersection(&["B", "C", "D", "E", "F"], 1851.0)
+        .intersection(&["A", "B", "C", "D", "E", "F"], 1851.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue91_6_set")
+}
+
+// eulerr issue #111: 3-set with two-orders-of-magnitude scale variation.
+fn spec_issue111_3_set_asymmetric() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 10000.0)
+        .set("B", 1000.0)
+        .set("C", 100.0)
+        .intersection(&["A", "B"], 50.0)
+        .intersection(&["A", "C"], 30.0)
+        .intersection(&["B", "C"], 260.0)
+        .intersection(&["A", "B", "C"], 15.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue111_3_set_asymmetric")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn corpus_has_17_unique_named_entries() {
+    fn corpus_has_27_unique_named_entries() {
         let entries = all();
-        assert_eq!(entries.len(), 17);
+        assert_eq!(entries.len(), 27);
         let mut names: Vec<&str> = entries.iter().map(|e| e.name).collect();
         names.sort();
         let mut deduped = names.clone();

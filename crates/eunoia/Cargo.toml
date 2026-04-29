@@ -32,6 +32,11 @@ rayon = "1.10"
 default = []
 wasm = ["argmin/wasm-bindgen"]
 plotting = ["dep:i_overlay"]
+# Exposes the shared `test_utils::corpus` fixtures outside `cfg(test)` so
+# example binaries (e.g. `examples/quality_report.rs`) can build the same
+# spec set the integration tests use. Internal — not part of the public API
+# contract.
+corpus = []
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
