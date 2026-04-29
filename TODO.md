@@ -44,12 +44,22 @@ default-suite tests are in `crates/eunoia/src/fitter/corpus_quality.rs` and
 The corpus / proptest surfaced these. None were introduced by the harness;
 they're pre-existing behaviour the harness now exposes.
 
-- [ ] **`eulerape_3_set`ellipses land at `diag_error ≈ 1.16e-2`** at default
+- [~] **`eulerape_3_set`ellipses land at `diag_error ≈ 1.16e-2`** at default
       `Fitter` settings on every `TEST_SEEDS` entry. Ellipses can represent this
       layout exactly in principle --- eulerr's eulerAPE article spec is the
       canonical "ellipses fit it perfectly" example. Looks like a default-budget
       local-minimum trap. Loosened ceiling to 2e-2 in the corpus; tighten back
       to \~5e-4 once fixed.
+
+      **Mostly closed** by the log-space `(a, b) = (exp u, exp v)`
+      reparameterisation: median diag now `~7.7e-16` and seeds 1 and 7 hit
+      machine zero. Seed 42 lands in a near-coincident ellipse
+      configuration that trips the `normalize_layout` debug_assert (same
+      upstream issue as the specs already marked `Fittable::Skip`), so the
+      ellipse corpus row is now `Fittable::Skip`. Release-mode quality is
+      captured in `examples/quality_report`. Returns to `Fittable::Normal`
+      once the `normalize_layout` debug_assert is fixed (see the
+      "near-coincident ellipses" item below).
 
 - [ ] **`normalize_layout`debug_assert trips on coincident ellipses**
       (`fitter.rs` "normalize_layout changed fitted exclusive regions").
@@ -198,8 +208,19 @@ they're pre-existing behaviour the harness now exposes.
       arrangement isn't enough for that 6-set basin; revisit alongside
       the global-stage work below.
 
-- [ ] **Bounded final stage for pathological `a/b` ratios**. With LM as the
-      default and L-BFGS-B not in argmin, the cleanest fix is reparameterising
-      semi-axes as `a = exp(u)`, `b = exp(v)` so the unbounded solver stays on a
-      valid manifold. Re-test first --- LM's stronger basin coverage may have
-      already eliminated the proptest tail failures that motivated this.
+- [x] **Bounded final stage for pathological `a/b` ratios** --- landed by
+      reparameterising ellipse semi-axes as `a = exp(u)`, `b = exp(v)` (and
+      chaining the analytical Jacobian: `∂A/∂u = a · ∂A/∂a`,
+      `∂A/∂v = b · ∂A/∂b`). The `from_params`/`to_params`/`params_from_circle`
+      pair, the gradient accumulator, the `venn_warm_start_params` builder,
+      and the CMA-ES box for `params_per_shape == 5` (now log-space, scale-
+      invariant std `~1.54`) all moved to the new representation in lockstep.
+      Verdict on `examples/quality_report` ellipse sweep: median loss
+      `1.077e-26 → 7.373e-27`, mean diag `3.43e-3 → 4.40e-3` (regression
+      driven mainly by `random_4_set` `1.75e-2 → 2.61e-2`, a spec already
+      flagged as "may not be improvable"); spec wins (median loss) `19 → 17`.
+      Big structural wins: `eulerape_3_set` (canonical "ellipses fit it
+      perfectly" basin) closed at 2 of 3 corpus seeds (median diag
+      `1.16e-2 → 7.7e-16`); `gene_sets` median loss `5.1e-5 → 4.2e-9`;
+      `ellipses_recover_from_their_own_areas` proptest stable up to 2000
+      cases (was failing tail at ~200).

@@ -445,10 +445,12 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
 ///   bounded to centroid ± `4 · max(span, max_radius)`; radii bounded to
 ///   `[1e-6 · max_radius, 5 · max_radius]`. Initial std on x/y is
 ///   `max(span, max_radius)/2`, on r it's `max_radius/2`.
-/// - Ellipse (`params_per_shape == 5`): `[x, y, a, b, angle]`. Same x/y
-///   bounds; semi-axes bounded the same way as circle radii; angle is
-///   unbounded with std `π/4` (it's periodic anyway, hard caps would just
-///   force CMA-ES to push against an artificial wall).
+/// - Ellipse (`params_per_shape == 5`): `[x, y, ln(a), ln(b), angle]`.
+///   Same x/y bounds; the semi-axis envelope `[1e-6·max_radius,
+///   5·max_radius]` is mapped into log space, so the bound width
+///   (~ln(5e6) ≈ 15.4) and the std (~1.54) are scale-invariant. Angle is
+///   unbounded with std `π/4` (periodic; hard caps would just force
+///   CMA-ES against an artificial wall).
 ///
 /// Other `params_per_shape` values fall back to wide unbounded bounds with
 /// std proportional to the parameter magnitude — fine for the rest of the
@@ -474,8 +476,11 @@ fn cmaes_bounds_for(
         match params_per_shape {
             3 => radii.push(initial_param[base + 2]),
             5 => {
-                radii.push(initial_param[base + 2]);
-                radii.push(initial_param[base + 3]);
+                // Ellipse semi-axes live in log space (`u = ln(a)`,
+                // `v = ln(b)`); exponentiate to get the linear
+                // semi-axis magnitudes used for position scale.
+                radii.push(initial_param[base + 2].exp());
+                radii.push(initial_param[base + 3].exp());
             }
             _ => {}
         }
@@ -517,14 +522,21 @@ fn cmaes_bounds_for(
                 std_dev.push((max_radius * 0.5).max(1e-6));
             }
             5 => {
-                // a (semi-major)
-                lower.push(1e-6 * max_radius);
-                upper.push(5.0 * max_radius);
-                std_dev.push((max_radius * 0.5).max(1e-6));
-                // b (semi-minor)
-                lower.push(1e-6 * max_radius);
-                upper.push(5.0 * max_radius);
-                std_dev.push((max_radius * 0.5).max(1e-6));
+                // u = ln(a), v = ln(b). Bounds map the linear interval
+                // `[1e-6·max_radius, 5·max_radius]` (same envelope as
+                // before) into log space; the width is constant in log
+                // space (~15.4), so the std is independent of scale.
+                let u_lower = (1e-6 * max_radius).ln();
+                let u_upper = (5.0 * max_radius).ln();
+                let log_std = (u_upper - u_lower) * 0.1; // ~1.54
+                                                         // u = ln(semi-major)
+                lower.push(u_lower);
+                upper.push(u_upper);
+                std_dev.push(log_std);
+                // v = ln(semi-minor)
+                lower.push(u_lower);
+                upper.push(u_upper);
+                std_dev.push(log_std);
                 // angle (periodic; no hard caps)
                 lower.push(f64::NEG_INFINITY);
                 upper.push(f64::INFINITY);

@@ -964,14 +964,15 @@ pub(crate) fn area_from_boundary_arcs_ellipse(arcs: &[EllipseArc], ellipses: &[E
 
 /// Accumulate the gradient of a region's overlapping area into `grad`, where
 /// `grad` is a length-`5 · n_sets` flat vector laid out as
-/// `[x₀, y₀, a₀, b₀, φ₀, x₁, y₁, …]`. Each arc on ellipse k contributes (via
-/// boundary velocity `dA/dθ = ∮ (v·n) ds`):
+/// `[x₀, y₀, u₀, v₀, φ₀, x₁, y₁, …]` with `u = ln(a)`, `v = ln(b)`. Each arc
+/// on ellipse k contributes (via boundary velocity `dA/dθ = ∮ (v·n) ds`,
+/// then chained through `a = exp(u)`, `b = exp(v)`):
 ///
 /// ```text
 /// ∂/∂x_c += b cos φ (sin t_b − sin t_a) + a sin φ (cos t_b − cos t_a)
 /// ∂/∂y_c += −a cos φ (cos t_b − cos t_a) + b sin φ (sin t_b − sin t_a)
-/// ∂/∂a   += (b/2) Δt + (b/4) (sin 2t_b − sin 2t_a)
-/// ∂/∂b   += (a/2) Δt − (a/4) (sin 2t_b − sin 2t_a)
+/// ∂/∂u   += a · [(b/2) Δt + (b/4) (sin 2t_b − sin 2t_a)]
+/// ∂/∂v   += b · [(a/2) Δt − (a/4) (sin 2t_b − sin 2t_a)]
 /// ∂/∂φ   += (a² − b²)/4 · (cos 2t_a − cos 2t_b)
 /// ```
 pub(crate) fn accumulate_region_overlap_gradient_ellipse(
@@ -998,8 +999,10 @@ pub(crate) fn accumulate_region_overlap_gradient_ellipse(
         let off = arc.ellipse * 5;
         grad[off] += b * cphi * (s_b - s_a) + a * sphi * (c_b - c_a);
         grad[off + 1] += -a * cphi * (c_b - c_a) + b * sphi * (s_b - s_a);
-        grad[off + 2] += 0.5 * b * arc.delta_t + 0.25 * b * (s2_b - s2_a);
-        grad[off + 3] += 0.5 * a * arc.delta_t - 0.25 * a * (s2_b - s2_a);
+        // ∂A/∂u = ∂A/∂a · da/du = (∂A/∂a) · a
+        grad[off + 2] += a * (0.5 * b * arc.delta_t + 0.25 * b * (s2_b - s2_a));
+        // ∂A/∂v = ∂A/∂b · db/dv = (∂A/∂b) · b
+        grad[off + 3] += b * (0.5 * a * arc.delta_t - 0.25 * a * (s2_b - s2_a));
         grad[off + 4] += 0.25 * (a * a - b * b) * (c2_a - c2_b);
     }
 }
@@ -1078,26 +1081,34 @@ impl DiagramShape for Ellipse {
     }
 
     fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
-        // Convert circle to ellipse using direct semi-axis representation:
-        // semi_major = semi_minor = radius (circle), rotation = 0
-        vec![x, y, radius, radius, 0.0]
+        // Semi-axes are stored in log space (`u = ln(a)`, `v = ln(b)`) so the
+        // unbounded LM solver stays on the positive-axis manifold without
+        // a clamp; `from_params` exponentiates back. For a circle, `a = b = r`,
+        // so `u = v = ln(r)`. Rotation is unconstrained (periodic).
+        let log_radius = radius.ln();
+        vec![x, y, log_radius, log_radius, 0.0]
     }
 
     fn n_params() -> usize {
-        5 // x, y, semi_major, semi_minor, rotation
+        5 // x, y, ln(semi_major), ln(semi_minor), rotation
     }
 
     fn from_params(params: &[f64]) -> Self {
         assert_eq!(
             params.len(),
             5,
-            "Ellipse requires 5 parameters: x, y, semi_major, semi_minor, rotation"
+            "Ellipse requires 5 parameters: x, y, ln(semi_major), ln(semi_minor), rotation"
         );
 
+        // Floor at `f64::MIN_POSITIVE` so that very negative `u` / `v`
+        // values (which `.exp()` underflows to 0) still produce a strictly
+        // positive semi-axis — `Ellipse::new`'s debug_assert requires
+        // `> 0`. The optimizer should not drive here in practice; this is
+        // purely defensive against runaway log-space steps.
         Ellipse::new(
             Point::new(params[0], params[1]),
-            params[2].abs(), // Ensure positive semi_major
-            params[3].abs(), // Ensure positive semi_minor
+            params[2].exp().max(f64::MIN_POSITIVE),
+            params[3].exp().max(f64::MIN_POSITIVE),
             params[4],
         )
     }
@@ -1106,8 +1117,8 @@ impl DiagramShape for Ellipse {
         vec![
             self.center.x(),
             self.center.y(),
-            self.semi_major,
-            self.semi_minor,
+            self.semi_major.ln(),
+            self.semi_minor.ln(),
             self.rotation,
         ]
     }
@@ -2024,16 +2035,17 @@ mod tests {
     fn test_diagram_shape_params_from_circle() {
         use crate::geometry::traits::DiagramShape;
 
-        // params_from_circle should give direct semi-axis parameterization
+        // params_from_circle stores semi-axes in log space.
         let params = Ellipse::params_from_circle(1.0, 2.0, 3.0);
+        let log3 = 3.0_f64.ln();
         assert_eq!(params.len(), 5);
         assert_eq!(params[0], 1.0); // x
         assert_eq!(params[1], 2.0); // y
-        assert_eq!(params[2], 3.0); // semi_major (same as radius for circle)
-        assert_eq!(params[3], 3.0); // semi_minor (same as radius for circle)
+        assert!((params[2] - log3).abs() < 1e-12); // ln(semi_major)
+        assert!((params[3] - log3).abs() < 1e-12); // ln(semi_minor)
         assert_eq!(params[4], 0.0); // rotation
 
-        // from_params should reconstruct a circle
+        // from_params should reconstruct a circle (exp roundtrip).
         let e = Ellipse::from_params(&params);
         assert!((e.semi_major() - 3.0).abs() < 1e-10);
         assert!((e.semi_minor() - 3.0).abs() < 1e-10);

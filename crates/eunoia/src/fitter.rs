@@ -915,8 +915,10 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
             }
             5 => {
                 // Ellipse params layout matches `Ellipse::params_from_circle`:
-                // [x, y, a, b, phi].
-                params.extend([h, k, a, b, phi]);
+                // [x, y, ln(a), ln(b), phi]. Semi-axes are stored in log
+                // space so the unbounded LM solver stays on the positive-
+                // axis manifold.
+                params.extend([h, k, a.ln(), b.ln(), phi]);
             }
             _ => return None,
         }
