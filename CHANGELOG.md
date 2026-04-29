@@ -1,21 +1,5 @@
 # Changelog
 
-## [0.5.0](https://github.com/jolars/eunoia/compare/v0.4.0...v0.5.0) (2026-04-29)
-
-### Breaking changes
-- drop SA fallback and TrustRegion, us LM as default ([`d7ef0d2`](https://github.com/jolars/eunoia/commit/d7ef0d23508dfd243f4bc24234fcf5e72e13b181))
-
-### Features
-- support venn diagrams too ([`8da00ea`](https://github.com/jolars/eunoia/commit/8da00ea4e33d13e2c7996b18f2f52636c0738af6))
-- add CMA-ES as fallback ([`9f72eb4`](https://github.com/jolars/eunoia/commit/9f72eb4bda36c4ba80092d4f010700c1e91b1659))
-- drop SA fallback and TrustRegion, us LM as default ([`d7ef0d2`](https://github.com/jolars/eunoia/commit/d7ef0d23508dfd243f4bc24234fcf5e72e13b181))
-- drop conjugate gradient descent solver ([`21532cc`](https://github.com/jolars/eunoia/commit/21532cc0e152432bd475ef223e09d9f35fd9a43c))
-
-### Bug Fixes
-- use LM in MDS initial solver too ([`8589141`](https://github.com/jolars/eunoia/commit/85891413d26d09c49490fdc03f7912be1aa5017d))
-
-### Performance Improvements
-- add deterministic venn diagram start ([`1c4f783`](https://github.com/jolars/eunoia/commit/1c4f7839ba1bac59a0a3617bea760ba839c08122))
 ## [0.4.0](https://github.com/jolars/eunoia/compare/v0.3.0...v0.4.0) (2026-04-28)
 
 ### Features
