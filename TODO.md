@@ -75,39 +75,40 @@ they're pre-existing behaviour the harness now exposes.
 
 ## Optimizer work (gated on the harness)
 
-- [ ] **Levenberg-Marquardt final stage** (try this *before* CMA-ES). Our
-      objective is `Σ rᵢ²` where `rᵢ = fitted_i - target_i` — textbook
-      nonlinear least-squares — and we already have analytical residual
-      gradients (per-region area gradients on `NormalizedSumSquared` /
-      `SumSquared`, see AGENTS.md status). LM approximates the Hessian via
-      `JᵀJ` from the Jacobian, so the "no analytical Hessian" gap doesn't
-      bite. argmin 0.10 doesn't ship LM — use the `levenberg-marquardt`
-      crate (nalgebra-integrated) and wire it as a new `Optimizer` variant.
-      Add a `lm` config to `examples/quality_report.rs` and compare against
-      the new L-BFGS-only default. Baseline numbers for the comparison live
-      in `target/quality_report.json` at the time this TODO was written.
+- [x] **Levenberg-Marquardt final stage** — landed as
+      `Optimizer::LevenbergMarquardt` (final stage) and
+      `MdsSolver::LevenbergMarquardt` (MDS stage), via the
+      `levenberg-marquardt = "0.13"` crate. On the quality_report ellipse
+      sweep, `lm_final` drops median loss from `1.6e-7` (L-BFGS default) to
+      `1.1e-28`, mean diag_error from `7.4e-3` to `4.8e-3`, and total wall
+      time from 4.5 s to 1.55 s — wins 20 of 27 specs vs default's 5. On
+      circles the gain is marginal (already near-optimum). Restricted to
+      `SumSquared` / `NormalizedSumSquared`; rejects other losses at
+      construction.
 
-- [ ] **Gauss-Newton final stage** (cheap follow-on to LM). argmin already
-      ships `GaussNewton` with line search. Once LM's residual Jacobian
-      plumbing is in place, GN is essentially a different solver-call away —
-      useful as a "what does LM's damping buy us" data point, mostly to
-      characterise how often the linearisation is good enough that GN's
-      undamped step is fine.
+- [ ] **Gauss-Newton final stage** (low-priority bookkeeping after LM landed).
+      argmin ships `GaussNewton` with line search; the LM Jacobian plumbing
+      is already in place, so GN is a one-line solver swap. With LM hitting
+      ~1e-28 median ellipse loss out of the box this is no longer a
+      quality candidate — only worth running to characterise how often the
+      linearisation is good enough that GN's undamped step matches LM.
 
-- [ ] **CMA-ES + L-BFGS polish pilot**. Bound-constrained final stage, CMA-ES
-      global step, L-BFGS final polish using the existing analytical gradients.
-      Benchmark against `corpus_circles_diag_error` /
-      `corpus_ellipses_diag_error` and the synthetic ground-truth proptest. If
-      CMA-ES alone closes the issue #28 / `eulerape_3_set` gap, ship it; only
-      then consider memetic DE+L-BFGS. Run *after* the LM/GN comparison —
-      they're cheaper to try and may already close the gap on their own.
+- [ ] **CMA-ES global step + LM polish**. Bound-constrained final stage, CMA-ES
+      for global escape, LM polish using the analytical Jacobian. The original
+      motivation (`eulerape_3_set`, issue #28) is partly closed by LM-on-LM
+      already, but a few specs still benefit from a global escape:
+      `issue91_6_set` (~3.5e-1 loss with `lm_full`), `issue44_4_set_inclusive`
+      (~4.4e-3), `issue92_3_set_dropped_pair` (~1.3e-4). Benchmark against
+      `corpus_circles_diag_error` / `corpus_ellipses_diag_error` and the
+      synthetic ground-truth proptest. If CMA-ES closes those, ship it;
+      otherwise consider memetic DE+LM.
 
 - [ ] **Latin hypercube initial starts** instead of uniform random perturbations
       across `n_restarts`. Cheap potential 10-20% best-of-N quality bump; no
       algorithmic complexity.
 
-- [ ] **L-BFGS-B (bounded) for the final stage**. Argmin doesn't ship it; either
-      project unbounded L-BFGS results onto valid ranges, or reparameterise
-      (`a = exp(u)`, `b = exp(v)`) so the unbounded solver stays on a valid
-      manifold. Worth doing regardless of the bigger redesign --- pathological
-      `a/b` ratios show up at the proptest generation tail.
+- [ ] **Bounded final stage for pathological `a/b` ratios**. With LM as the
+      default and L-BFGS-B not in argmin, the cleanest fix is reparameterising
+      semi-axes as `a = exp(u)`, `b = exp(v)` so the unbounded solver stays on
+      a valid manifold. Re-test first — LM's stronger basin coverage may have
+      already eliminated the proptest tail failures that motivated this.

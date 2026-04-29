@@ -78,14 +78,25 @@ mod quality_report {
             // Pure Nelder-Mead final-stage. Tracks how badly NM-only does
             // (huge ellipse loss) — useful as the lower bound on quality.
             ("neldermead_only", |f| f.optimizer(Optimizer::NelderMead)),
-            // Trust-region with Steihaug-CG. Different ascent direction
-            // entirely; some hard ellipse fits sit in basins L-BFGS misses.
-            ("trustregion", |f| f.optimizer(Optimizer::TrustRegion)),
             // Mixed MDS pool. Default keeps initial-layout on L-BFGS-only
             // because the mix has been observed to hang on real eulerr-style
             // specs; this config flips that on so we can quantify the cost.
             ("mds_mixed", |f| {
                 f.initial_solver_pool(vec![MdsSolver::Lbfgs, MdsSolver::TrustRegion])
+            }),
+            // Levenberg-Marquardt at the final stage only. LM approximates
+            // the Hessian as JᵀJ from the analytical region-area Jacobian
+            // we already compute for L-BFGS — strictly stronger curvature
+            // info for least-squares losses.
+            ("lm_final", |f| f.optimizer(Optimizer::LevenbergMarquardt)),
+            // LM at the MDS stage only.
+            ("lm_initial", |f| {
+                f.initial_solver(MdsSolver::LevenbergMarquardt)
+            }),
+            // LM in both stages.
+            ("lm_full", |f| {
+                f.optimizer(Optimizer::LevenbergMarquardt)
+                    .initial_solver(MdsSolver::LevenbergMarquardt)
             }),
         ]
     }

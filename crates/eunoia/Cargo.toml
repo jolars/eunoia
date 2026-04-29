@@ -19,6 +19,7 @@ argmin = "0.10"
 argmin-math = { version = "0.4", features = ["nalgebra_v0_32"] }
 finitediff = "0.2.0"
 i_overlay = { version = "~2.0", optional = true }
+levenberg-marquardt = "0.13"
 log = { version = "0.4", features = ["release_max_level_info"] }
 nalgebra = "0.32"
 num-complex = "0.4"

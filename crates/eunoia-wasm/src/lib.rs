@@ -16,17 +16,17 @@ use console_error_panic_hook;
 #[wasm_bindgen]
 #[derive(Clone, Copy)]
 pub enum WasmOptimizer {
-    NelderMead,
+    LevenbergMarquardt,
     Lbfgs,
-    TrustRegion,
+    NelderMead,
 }
 
 impl From<WasmOptimizer> for Optimizer {
     fn from(opt: WasmOptimizer) -> Self {
         match opt {
-            WasmOptimizer::NelderMead => Optimizer::NelderMead,
+            WasmOptimizer::LevenbergMarquardt => Optimizer::LevenbergMarquardt,
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
-            WasmOptimizer::TrustRegion => Optimizer::TrustRegion,
+            WasmOptimizer::NelderMead => Optimizer::NelderMead,
         }
     }
 }

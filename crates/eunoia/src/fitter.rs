@@ -65,7 +65,6 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     /// `n_restarts`, so cycling NM in just dilutes the pool. Best loss across
     /// attempts still wins.
     optimizer_pool: Vec<Optimizer>,
-    sa_fallback_threshold: Option<f64>,
     n_restarts: usize,
     /// Pool of MDS solvers cycled across outer-loop restarts: attempt `i`
     /// uses `initial_solvers[i % initial_solvers.len()]`. Mixing solvers in
@@ -124,15 +123,11 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // `n_restarts=10` (NM's per-call speed didn't beat L-BFGS in the
             // restart-parallelised total). Mixing NM into the pool just
             // diluted the result. Trust-region landed in the same basins as
-            // L-BFGS but ~10× slower.
-            optimizer_pool: vec![Optimizer::Lbfgs],
-            // SA fallback is disabled by default — empirically it never
-            // improved the result vs the primary optimizer on any spec or seed
-            // we tested (likely because it starts from the local optimum with
-            // a low initial temperature and can't escape). The mechanism is
-            // kept behind the builder for experimentation, but turning it on
-            // is currently a no-op in practice.
-            sa_fallback_threshold: None,
+            // L-BFGS but ~10× slower. Levenberg-Marquardt then crushed
+            // L-BFGS in turn (~20 orders of magnitude lower median loss on
+            // ellipses, ~3× faster wall time) — see the `lm_final` row in
+            // `examples/quality_report`.
+            optimizer_pool: vec![Optimizer::LevenbergMarquardt],
             // Number of full-pipeline restarts (fresh MDS init + final
             // optimizer per attempt, lowest-loss attempt kept). Matches
             // eulerr's `n_restarts = 10`. Each fit does that much work.
@@ -222,36 +217,6 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     pub fn initial_solver_pool(mut self, pool: Vec<MdsSolver>) -> Self {
         assert!(!pool.is_empty(), "initial_solver_pool must be non-empty");
         self.initial_solvers = pool;
-        self
-    }
-
-    /// Configure the diag-error threshold above which a simulated-annealing
-    /// fallback runs for ellipse fits after the primary optimizer.
-    ///
-    /// Pass `None` to disable the fallback entirely. The default is `None` —
-    /// empirical testing has not found a configuration where the SA fallback
-    /// improves on the primary optimizer, so it is off by default. Set to
-    /// `Some(threshold)` to opt in for experimentation.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::{DiagramSpecBuilder, Fitter};
-    /// use eunoia::geometry::shapes::Ellipse;
-    ///
-    /// let spec = DiagramSpecBuilder::new()
-    ///     .set("A", 5.0)
-    ///     .set("B", 4.0)
-    ///     .set("C", 3.0)
-    ///     .intersection(&["A", "B"], 1.0)
-    ///     .build()
-    ///     .unwrap();
-    ///
-    /// // Disable the SA fallback
-    /// let fitter = Fitter::<Ellipse>::new(&spec).sa_fallback_threshold(None);
-    /// ```
-    pub fn sa_fallback_threshold(mut self, threshold: Option<f64>) -> Self {
-        self.sa_fallback_threshold = threshold;
         self
     }
 
@@ -578,49 +543,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             }
         }
 
-        let (mut final_params, _loss) = best.ok_or_else(|| {
+        let (final_params, _loss) = best.ok_or_else(|| {
             last_err.unwrap_or_else(|| {
                 DiagramError::InvalidCombination(
                     "All restarts failed to produce a layout".to_string(),
                 )
             })
         })?;
-
-        // Step 2b: Global-search fallback — run simulated annealing if the primary
-        // optimizer left us with a bad fit. Like eulerr's GenSA fallback, but
-        // gated only on `diag_error > threshold` (any arity), since high-arity
-        // ellipse fits also benefit from the global pass (issue #28).
-        if optimize {
-            if let Some(threshold) = self.sa_fallback_threshold {
-                let is_ellipse = std::any::TypeId::of::<S>()
-                    == std::any::TypeId::of::<crate::geometry::shapes::Ellipse>();
-                if is_ellipse {
-                    let current_diag =
-                        final_layout::diag_error_from_params::<S>(&final_params, &spec);
-                    if current_diag > threshold {
-                        let (lower, upper) =
-                            final_layout::derive_sa_bounds(&final_params, S::n_params());
-                        let sa_seed = self.seed.unwrap_or(0xDEAD_BEEF);
-                        if let Ok((sa_params, _sa_loss)) = final_layout::run_simulated_annealing::<S>(
-                            &spec,
-                            &final_params,
-                            &lower,
-                            &upper,
-                            self.loss_type,
-                            S::n_params(),
-                            self.max_iterations.max(5000),
-                            sa_seed,
-                        ) {
-                            let sa_diag =
-                                final_layout::diag_error_from_params::<S>(&sa_params, &spec);
-                            if sa_diag < current_diag {
-                                final_params = sa_params;
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         // Step 3: Create shapes for the non-empty sets from optimized parameters
         let params_per_shape = S::n_params();
@@ -844,36 +773,6 @@ mod tests {
         assert!(layout.loss() < 10.0); // Should converge to reasonable solution
     }
 
-    #[test]
-    fn test_sa_fallback_does_not_regress_easy_ellipse_fit() {
-        // For an easy 3-set ellipse problem, Nelder-Mead should find a near-perfect
-        // fit on its own and the SA fallback (if it runs) must not make things worse.
-        use crate::geometry::shapes::Ellipse;
-
-        let spec = DiagramSpecBuilder::new()
-            .set("A", 10.0)
-            .set("B", 10.0)
-            .set("C", 10.0)
-            .intersection(&["A", "B"], 2.0)
-            .intersection(&["B", "C"], 2.0)
-            .intersection(&["A", "C"], 2.0)
-            .intersection(&["A", "B", "C"], 0.5)
-            .build()
-            .unwrap();
-
-        let layout_with = Fitter::<Ellipse>::new(&spec).seed(42).fit().unwrap();
-        let layout_without = Fitter::<Ellipse>::new(&spec)
-            .seed(42)
-            .sa_fallback_threshold(None)
-            .fit()
-            .unwrap();
-
-        // Both should converge to reasonable solutions; the fallback result
-        // should not be worse than the primary-only one (SA only accepts an
-        // improvement, otherwise falls back to the primary solution).
-        assert!(layout_with.diag_error() <= layout_without.diag_error() + 1e-6);
-    }
-
     /// Regression fixture for issue #28 (6-set ellipse spec from eulerr's
     /// `test-accuracy.R`). eulerr's `nlm` backend fits this exactly. Currently
     /// reaches `diag_error ≈ 1.7e-9` at seed=1 — well below the bar.
@@ -940,30 +839,6 @@ mod tests {
             "issue #28 case 2: diag_error = {:e} (expected < 1e-6)",
             layout.diag_error()
         );
-    }
-
-    #[test]
-    fn test_sa_fallback_threshold_disabled_via_builder() {
-        // With threshold=None the fallback path must not run; sanity-check the
-        // builder plumbing by confirming fit() still succeeds and returns a layout.
-        use crate::geometry::shapes::Ellipse;
-
-        let spec = DiagramSpecBuilder::new()
-            .set("A", 5.0)
-            .set("B", 4.0)
-            .set("C", 3.0)
-            .intersection(&["A", "B"], 1.0)
-            .build()
-            .unwrap();
-
-        let layout = Fitter::<Ellipse>::new(&spec)
-            .seed(7)
-            .sa_fallback_threshold(None)
-            .fit()
-            .unwrap();
-
-        assert_eq!(layout.shapes().len(), 3);
-        assert!(layout.loss().is_finite());
     }
 
     #[test]

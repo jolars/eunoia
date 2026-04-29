@@ -3,7 +3,9 @@ use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::newton::NewtonCG;
 use argmin::solver::quasinewton::LBFGS;
 use argmin::solver::trustregion::{Steihaug, TrustRegion};
-use nalgebra::DVector;
+use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use nalgebra::storage::Owned;
+use nalgebra::{DMatrix, DVector, Dyn};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -89,6 +91,17 @@ pub enum MdsSolver {
     /// analytic Hessian via inner CG iterations. Comparable quality to
     /// L-BFGS but ~3× the wall time on small problems.
     NewtonCg,
+    /// Levenberg-Marquardt with the analytic per-pair Jacobian. The MDS
+    /// objective `Σ_{i≠j} d_{ij}²` is a textbook nonlinear least-squares
+    /// problem (one residual per ordered pair, post-clamp), so LM gets to
+    /// approximate the Hessian as `JᵀJ` from the residual Jacobian rather
+    /// than relying on the analytic Hessian (TrustRegion / NewtonCg) or
+    /// gradient history (L-BFGS).
+    ///
+    /// Caveat: the disjoint / subset clamps (`max(0, ·)`, `min(0, ·)`) make
+    /// the residuals C¹ rather than C², matching the existing analytic
+    /// gradient. Boundary activations are rare near a converged layout.
+    LevenbergMarquardt,
 }
 
 /// Run a single MDS attempt from a freshly seeded random initialization,
@@ -165,6 +178,20 @@ fn run_attempt(
             Ok((
                 result.state().get_cost(),
                 result.state().get_best_param().unwrap().clone(),
+            ))
+        }
+        MdsSolver::LevenbergMarquardt => {
+            let problem = LmMdsProblem::new(distances, relationships, n_sets, &initial_param);
+            // Tolerances match the other MDS solvers (default argmin behaviour
+            // is `sqrt(EPSILON)`-ish; LM's default `30·EPS` is far stricter
+            // than we need). 200 iters mirrors the hardcoded cap on the
+            // other arms.
+            let lm = LevenbergMarquardt::new().with_patience(200);
+            let (problem_after, report) = lm.minimize(problem);
+            // LM minimises ½·Σrᵢ²; MdsCost returns Σrᵢ², so multiply by 2.
+            Ok((
+                report.objective_function * 2.0,
+                problem_after.params.iter().copied().collect(),
             ))
         }
     }
@@ -365,6 +392,109 @@ impl<'a> Hessian for MdsCost<'a> {
     }
 }
 
+/// Levenberg-Marquardt least-squares adapter around the MDS cost.
+///
+/// One residual per ordered pair `(i, j)` with `i ≠ j`, valued at
+/// `d_ij = (x_i − x_j)² + (y_i − y_j)² − target_ij²` and clamped to zero on
+/// the satisfied side of disjoint / subset constraints. `Σ rᵢ²` matches the
+/// existing `MdsCost::cost`. The Jacobian is sparse — each row depends only
+/// on `(x_i, y_i, x_j, y_j)` — but we store it dense, since `n_sets ≤ 8` in
+/// realistic fits keeps the matrix tiny.
+struct LmMdsProblem<'a> {
+    distances: &'a Vec<Vec<f64>>,
+    relationships: &'a PairwiseRelations,
+    n_sets: usize,
+    /// Param layout matches `MdsCost`: `[x_0, …, x_{n−1}, y_0, …, y_{n−1}]`.
+    params: DVector<f64>,
+    /// Canonical residual ordering: ordered pairs in row-major (i, j) order
+    /// with `i ≠ j`, length `n*(n−1)`.
+    pairs: Vec<(usize, usize)>,
+}
+
+impl<'a> LmMdsProblem<'a> {
+    fn new(
+        distances: &'a Vec<Vec<f64>>,
+        relationships: &'a PairwiseRelations,
+        n_sets: usize,
+        initial_param: &DVector<f64>,
+    ) -> Self {
+        let mut pairs = Vec::with_capacity(n_sets.saturating_sub(1) * n_sets);
+        for i in 0..n_sets {
+            for j in 0..n_sets {
+                if i != j {
+                    pairs.push((i, j));
+                }
+            }
+        }
+        Self {
+            distances,
+            relationships,
+            n_sets,
+            params: initial_param.clone(),
+            pairs,
+        }
+    }
+
+    /// Returns `(d, xd, yd, active)` for ordered pair `(i, j)` at the current
+    /// parameters. `active = false` means the disjoint/subset clamp is in
+    /// effect and the residual / Jacobian row should be zero.
+    fn pair_state(&self, i: usize, j: usize) -> (f64, f64, f64, bool) {
+        let n = self.n_sets;
+        let xd = self.params[i] - self.params[j];
+        let yd = self.params[n + i] - self.params[n + j];
+        let d = xd.powi(2) + yd.powi(2) - self.distances[i][j].powi(2);
+        if self.relationships.is_disjoint(i, j) && d >= 0.0 {
+            return (0.0, xd, yd, false);
+        }
+        if (self.relationships.is_subset(i, j) || self.relationships.is_subset(j, i)) && d <= 0.0 {
+            return (0.0, xd, yd, false);
+        }
+        (d, xd, yd, true)
+    }
+}
+
+impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for LmMdsProblem<'a> {
+    type ResidualStorage = Owned<f64, Dyn>;
+    type JacobianStorage = Owned<f64, Dyn, Dyn>;
+    type ParameterStorage = Owned<f64, Dyn>;
+
+    fn set_params(&mut self, x: &DVector<f64>) {
+        self.params.copy_from(x);
+    }
+
+    fn params(&self) -> DVector<f64> {
+        self.params.clone()
+    }
+
+    fn residuals(&self) -> Option<DVector<f64>> {
+        let mut residuals = DVector::zeros(self.pairs.len());
+        for (k, &(i, j)) in self.pairs.iter().enumerate() {
+            let (d, _xd, _yd, active) = self.pair_state(i, j);
+            residuals[k] = if active { d } else { 0.0 };
+        }
+        Some(residuals)
+    }
+
+    fn jacobian(&self) -> Option<DMatrix<f64>> {
+        let n = self.n_sets;
+        let mut jacobian = DMatrix::zeros(self.pairs.len(), self.params.len());
+        for (k, &(i, j)) in self.pairs.iter().enumerate() {
+            let (_d, xd, yd, active) = self.pair_state(i, j);
+            if !active {
+                continue;
+            }
+            // d = (x_i − x_j)² + (y_i − y_j)² − target² ⇒
+            //   ∂d/∂x_i = 2·xd, ∂d/∂x_j = −2·xd,
+            //   ∂d/∂y_i = 2·yd, ∂d/∂y_j = −2·yd.
+            jacobian[(k, i)] = 2.0 * xd;
+            jacobian[(k, j)] = -2.0 * xd;
+            jacobian[(k, n + i)] = 2.0 * yd;
+            jacobian[(k, n + j)] = -2.0 * yd;
+        }
+        Some(jacobian)
+    }
+}
+
 #[cfg(test)]
 mod gradient_check {
     use super::*;
@@ -500,6 +630,56 @@ mod gradient_check {
             "analytic Hessian disagrees with FD reference: max abs diff {:.4e}, max abs {:.4e}",
             max_abs_diff,
             max_abs,
+        );
+    }
+
+    #[test]
+    fn lm_jacobian_consistent_with_mds_gradient() {
+        // For a sum-of-squares loss, ∇L(θ) = 2·Jᵀ·r. Verifies the LM MDS
+        // adapter constructs J consistently with the analytical gradient
+        // already verified against finite differences above.
+        let distances = vec![
+            vec![0.0, 2.232, 2.232, 2.232],
+            vec![2.232, 0.0, 1.642, 1.642],
+            vec![2.232, 1.642, 0.0, 1.642],
+            vec![2.232, 1.642, 1.642, 0.0],
+        ];
+        let mut relations = PairwiseRelations {
+            n_sets: 4,
+            subset: vec![vec![false; 4]; 4],
+            disjoint: vec![vec![false; 4]; 4],
+            overlap_areas: vec![vec![0.0; 4]; 4],
+        };
+        for i in 1..4 {
+            relations.subset[0][i] = true;
+            relations.subset[i][0] = true;
+        }
+        let cost = MdsCost {
+            distances: &distances,
+            relationships: &relations,
+        };
+        let p = DVector::from_vec(vec![0.5, 3.0, 3.5, 4.5, 0.3, 1.0, 2.5, 0.8]);
+        let analytic = cost.gradient(&p).unwrap();
+
+        let problem = LmMdsProblem::new(&distances, &relations, 4, &p);
+        let r = problem.residuals().unwrap();
+        let j = problem.jacobian().unwrap();
+        let lm_grad = j.transpose() * &r * 2.0;
+
+        let max_abs_diff = analytic
+            .iter()
+            .zip(lm_grad.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f64, f64::max);
+        let max_abs = analytic
+            .iter()
+            .map(|x: &f64| x.abs())
+            .fold(0.0_f64, f64::max);
+        assert!(
+            max_abs_diff < 1e-9 + 1e-8 * max_abs,
+            "|2·Jᵀ·r − ∇L| = {:.3e} (max |∇L| = {:.3e})",
+            max_abs_diff,
+            max_abs
         );
     }
 }

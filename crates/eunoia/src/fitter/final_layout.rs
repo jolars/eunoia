@@ -8,40 +8,45 @@ use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
 use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::neldermead::NelderMead;
 use argmin::solver::quasinewton::LBFGS;
-use argmin::solver::simulatedannealing::{Anneal, SATempFunc, SimulatedAnnealing};
-use argmin::solver::trustregion::{CauchyPoint, TrustRegion};
 use finitediff::vec;
-use nalgebra::DVector;
+use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
+use nalgebra::storage::Owned;
+use nalgebra::{DMatrix, DVector, Dyn};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::cell::RefCell;
+use std::collections::HashMap;
 
+use crate::geometry::diagram::RegionMask;
 use crate::geometry::traits::DiagramShape;
+use crate::loss::LossType;
 use crate::spec::PreprocessedSpec;
 
 /// Optimizer to use for final layout optimization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Optimizer {
-    /// Nelder-Mead simplex method (derivative-free).
-    #[default]
-    NelderMead,
-    /// L-BFGS with numerical gradients. Pays `2n × cost_evals` per gradient
-    /// via central differences (each cost eval runs the full
-    /// conic-intersection pipeline), so on small ellipse fits NelderMead is
-    /// often dramatically faster at equivalent fit quality. On hard high-arity
-    /// fits L-BFGS finds basins NelderMead misses (issue #28). The default
-    /// fitter pool is `[Lbfgs]` only — see `Fitter::optimizer_pool`.
-    Lbfgs,
-    /// Trust Region method
-    TrustRegion,
-    /// Simulated annealing (derivative-free, bounded global search).
+    /// Levenberg-Marquardt with analytic Jacobian. Default — specialised for
+    /// sum-of-squares losses (`LossType::SumSquared` /
+    /// `LossType::NormalizedSumSquared`). When configured with a non-LSQ
+    /// loss, the dispatch silently falls back to `Lbfgs`.
     ///
-    /// This is derivative-free and can escape local minima, but it is far
-    /// slower than the local solvers. It is automatically triggered as a
-    /// "last-ditch" fallback for 3-set ellipse fits via
-    /// [`crate::Fitter::sa_fallback_threshold`]; using it as the primary
-    /// optimizer is mostly useful for benchmarking or pathological inputs.
-    SimulatedAnnealing,
+    /// Uses the existing analytical region-area gradients to assemble a
+    /// per-residual Jacobian (one row per region mask), then approximates
+    /// the Hessian as `JᵀJ`. The Jacobian comes from
+    /// [`crate::geometry::traits::DiagramShape::compute_exclusive_regions_with_gradient`];
+    /// boundary builders for Circle and Ellipse are documented in `AGENTS.md`.
+    #[default]
+    LevenbergMarquardt,
+    /// L-BFGS. Used as the non-LSQ fallback under the LM dispatch arm and
+    /// available directly for losses where LM doesn't apply (RMSE, Stress,
+    /// DiagError, …). With analytical gradients it's competitive with LM on
+    /// circles, but ~20 orders of magnitude worse on ellipse median loss in
+    /// `examples/quality_report` — keep it as a fallback, not as a default.
+    Lbfgs,
+    /// Nelder-Mead simplex (derivative-free). Last-resort option for losses
+    /// where neither LM nor a meaningful gradient is available; kept mostly
+    /// because the harness still uses it as a quality lower-bound sentinel.
+    NelderMead,
 }
 
 /// Configuration for final layout optimization.
@@ -77,7 +82,7 @@ impl Default for FinalLayoutConfig {
         Self {
             max_iterations: 200,
             loss_type: crate::loss::LossType::default(),
-            optimizer: Optimizer::Lbfgs,
+            optimizer: Optimizer::LevenbergMarquardt,
             tolerance: 1e-6,
             seed: 0xDEAD_BEEF,
             n_restarts: 10,
@@ -187,66 +192,6 @@ fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
 
     // Choose optimizer and run based on configuration
     let (final_params, loss) = match config.optimizer {
-        Optimizer::TrustRegion => {
-            // TrustRegion requires Vec<f64> parameters, not DVector
-            // Create a wrapper cost function that works with Vec<f64>
-            struct VecCostFunction<'a, S: DiagramShape + Copy + 'static> {
-                inner: DiagramCost<'a, S>,
-            }
-
-            impl<'a, S: DiagramShape + Copy + 'static> CostFunction for VecCostFunction<'a, S> {
-                type Param = Vec<f64>;
-                type Output = f64;
-
-                fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
-                    let dvec = DVector::from_vec(param.clone());
-                    self.inner.cost(&dvec)
-                }
-            }
-
-            impl<'a, S: DiagramShape + Copy + 'static> Gradient for VecCostFunction<'a, S> {
-                type Param = Vec<f64>;
-                type Gradient = Vec<f64>;
-
-                fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, Error> {
-                    let dvec = DVector::from_vec(param.clone());
-                    let grad = self.inner.gradient(&dvec)?;
-                    Ok(grad.as_slice().to_vec())
-                }
-            }
-
-            impl<'a, S: DiagramShape + Copy + 'static> Hessian for VecCostFunction<'a, S> {
-                type Param = Vec<f64>;
-                type Hessian = Vec<Vec<f64>>;
-
-                fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
-                    let dvec = DVector::from_vec(param.clone());
-                    self.inner.hessian(&dvec)
-                }
-            }
-
-            let inner_cost = DiagramCost::<S> {
-                spec,
-                loss_type: config.loss_type,
-                params_per_shape,
-                _shape: std::marker::PhantomData,
-            };
-            let cost_function = VecCostFunction { inner: inner_cost };
-
-            let solver = TrustRegion::new(CauchyPoint::new());
-            let initial_param_vec = initial_param.as_slice().to_vec();
-            let result = Executor::new(cost_function, solver)
-                .configure(|state| {
-                    state
-                        .param(initial_param_vec)
-                        .max_iters(config.max_iterations as u64)
-                })
-                .run()?;
-            (
-                DVector::from_vec(result.state().get_best_param().unwrap().clone()),
-                result.state().get_best_cost(),
-            )
-        }
         Optimizer::NelderMead => {
             // NelderMead needs initial simplex
             let initial_simplex = {
@@ -322,175 +267,58 @@ fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
                 result.state().get_cost(),
             )
         }
-        Optimizer::SimulatedAnnealing => {
-            // Derive wide bounds from initial params and run SA.
-            let (lower, upper) = derive_sa_bounds(initial_param.as_slice(), params_per_shape);
-            let (best_params, best_loss) = run_simulated_annealing::<S>(
+        Optimizer::LevenbergMarquardt => {
+            // LM only fits sum-of-squares losses. For other losses
+            // (RMSE, Stress, DiagError, …) silently fall back to L-BFGS so
+            // making LM the default doesn't surprise users who change
+            // `loss_type`.
+            match LmDiagramProblem::<S>::new(
                 spec,
-                initial_param.as_slice(),
-                &lower,
-                &upper,
-                config.loss_type,
                 params_per_shape,
-                config.max_iterations,
-                config.seed,
-            )?;
-            (DVector::from_vec(best_params), best_loss)
+                config.loss_type,
+                initial_param,
+            ) {
+                Ok(problem) => {
+                    let solver = LevenbergMarquardt::new()
+                        .with_ftol(config.tolerance)
+                        .with_xtol(config.tolerance)
+                        .with_gtol(config.tolerance)
+                        // patience scales the eval budget with parameter
+                        // count (max_fev = patience·(n + 1)).
+                        .with_patience(config.max_iterations.max(1));
+                    let (problem_after, report) = solver.minimize(problem);
+                    // LM minimises ½·Σrᵢ²; existing loss is Σrᵢ², so ×2.
+                    let final_loss = report.objective_function * 2.0;
+                    (problem_after.params.clone(), final_loss)
+                }
+                Err(_incompatible_loss) => {
+                    let cost_function_lbfgs = DiagramCost::<S> {
+                        spec,
+                        loss_type: config.loss_type,
+                        params_per_shape,
+                        _shape: std::marker::PhantomData,
+                    };
+                    let line_search = MoreThuenteLineSearch::new();
+                    let solver = LBFGS::new(line_search, 10)
+                        .with_tolerance_grad(config.tolerance)?
+                        .with_tolerance_cost(config.tolerance)?;
+                    let result = Executor::new(cost_function_lbfgs, solver)
+                        .configure(|state| {
+                            state
+                                .param(initial_param.clone())
+                                .max_iters(config.max_iterations as u64)
+                        })
+                        .run()?;
+                    (
+                        result.state().get_best_param().unwrap().clone(),
+                        result.state().get_cost(),
+                    )
+                }
+            }
         }
     };
 
     Ok((final_params, loss))
-}
-
-/// Refine a set of parameters using bounded simulated annealing.
-///
-/// This is used for the "last-ditch" global search fallback after a primary
-/// optimizer produces a solution with unacceptably high `diagError`. Callers are
-/// expected to derive bounds via [`derive_sa_bounds`] (or equivalent) from the
-/// current solution before calling this.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn run_simulated_annealing<S: DiagramShape + Copy + 'static>(
-    spec: &PreprocessedSpec,
-    start_params: &[f64],
-    lower: &[f64],
-    upper: &[f64],
-    loss_type: crate::loss::LossType,
-    params_per_shape: usize,
-    max_iters: usize,
-    seed: u64,
-) -> Result<(Vec<f64>, f64), Error> {
-    let cost = BoundedDiagramCost::<S> {
-        inner: DiagramCost {
-            spec,
-            loss_type,
-            params_per_shape,
-            _shape: std::marker::PhantomData,
-        },
-        lower: lower.to_vec(),
-        upper: upper.to_vec(),
-        rng: RefCell::new(StdRng::seed_from_u64(seed ^ 0xA5A5_A5A5_A5A5_A5A5)),
-    };
-
-    let init_temp = 10.0_f64;
-    let solver = SimulatedAnnealing::new(init_temp)?
-        .with_temp_func(SATempFunc::Boltzmann)
-        .with_stall_best(200)
-        .with_stall_accepted(200);
-
-    let start_vec = start_params.to_vec();
-    let result = Executor::new(cost, solver)
-        .configure(|state| state.param(start_vec).max_iters(max_iters as u64))
-        .run()?;
-
-    Ok((
-        result.state().get_best_param().unwrap().clone(),
-        result.state().get_best_cost(),
-    ))
-}
-
-/// Derive parameter bounds for the SA fallback, matching eulerr's
-/// `get_constraints` (eulerr/R/utils.R:164):
-/// - positions (h, k): bounding box of all shapes, padded by `max(2*max_extent,
-///   bbox-width, bbox-height)` so SA can leave the local cluster
-/// - semi-axes (a, b) for ellipses / radius (r) for circles: `[current/5, current*5]`
-/// - rotation phi (ellipses only): `[0, π]`
-pub(crate) fn derive_sa_bounds(params: &[f64], params_per_shape: usize) -> (Vec<f64>, Vec<f64>) {
-    let n_shapes = params.len() / params_per_shape;
-    let mut lower = vec![0.0; params.len()];
-    let mut upper = vec![0.0; params.len()];
-
-    // Compute overall bounding box over all shapes and track the largest single
-    // extent so we can pad the box and let SA escape the local cluster.
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-    let mut max_extent: f64 = 0.0;
-
-    for i in 0..n_shapes {
-        let off = i * params_per_shape;
-        let (h, k, xlim, ylim) = if params_per_shape == 5 {
-            // Ellipse: [x, y, a, b, phi]
-            let a = params[off + 2].abs();
-            let b = params[off + 3].abs();
-            let phi = params[off + 4];
-            let xlim = ((a * phi.cos()).powi(2) + (b * phi.sin()).powi(2)).sqrt();
-            let ylim = ((a * phi.sin()).powi(2) + (b * phi.cos()).powi(2)).sqrt();
-            (params[off], params[off + 1], xlim, ylim)
-        } else {
-            // Circle: [x, y, r]
-            let r = params[off + 2].abs();
-            (params[off], params[off + 1], r, r)
-        };
-        min_x = min_x.min(h - xlim);
-        min_y = min_y.min(k - ylim);
-        max_x = max_x.max(h + xlim);
-        max_y = max_y.max(k + ylim);
-        max_extent = max_extent.max(xlim).max(ylim);
-    }
-
-    // Guard against degenerate single-point bounds.
-    if (max_x - min_x).abs() < 1e-6 {
-        min_x -= 1.0;
-        max_x += 1.0;
-    }
-    if (max_y - min_y).abs() < 1e-6 {
-        min_y -= 1.0;
-        max_y += 1.0;
-    }
-
-    // Pad the position bounds so SA can place shapes outside the current
-    // cluster. Without this, SA inherits the local optimum's bounding box and
-    // can only refine inside it — defeating the global pass. We pad by at
-    // least 2 * the largest shape extent and at least the larger bbox side.
-    let pad = (max_extent * 2.0).max((max_x - min_x).max(max_y - min_y));
-    min_x -= pad;
-    min_y -= pad;
-    max_x += pad;
-    max_y += pad;
-
-    for i in 0..n_shapes {
-        let off = i * params_per_shape;
-        lower[off] = min_x;
-        lower[off + 1] = min_y;
-        upper[off] = max_x;
-        upper[off + 1] = max_y;
-
-        if params_per_shape == 5 {
-            let a = params[off + 2].abs().max(1e-6);
-            let b = params[off + 3].abs().max(1e-6);
-            lower[off + 2] = a / 5.0;
-            upper[off + 2] = a * 5.0;
-            lower[off + 3] = b / 5.0;
-            upper[off + 3] = b * 5.0;
-            lower[off + 4] = 0.0;
-            upper[off + 4] = std::f64::consts::PI;
-        } else if params_per_shape == 3 {
-            let r = params[off + 2].abs().max(1e-6);
-            lower[off + 2] = r / 5.0;
-            upper[off + 2] = r * 5.0;
-        }
-    }
-
-    (lower, upper)
-}
-
-/// Compute the eulerr-style `diagError` (max regionError) from a flat parameter vector.
-pub(crate) fn diag_error_from_params<S: DiagramShape + Copy + 'static>(
-    params: &[f64],
-    spec: &PreprocessedSpec,
-) -> f64 {
-    let n_sets = spec.n_sets;
-    let params_per_shape = S::n_params();
-    let shapes: Vec<S> = (0..n_sets)
-        .map(|i| {
-            let start = i * params_per_shape;
-            let end = start + params_per_shape;
-            S::from_params(&params[start..end])
-        })
-        .collect();
-    let fitted = S::compute_exclusive_regions(&shapes);
-    crate::loss::LossType::DiagError.compute(&fitted, &spec.exclusive_areas)
 }
 
 /// Cost function for region error optimization.
@@ -576,49 +404,6 @@ impl<'a, S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'a, S> {
     }
 }
 
-/// Bounded wrapper around [`DiagramCost`] for use with simulated annealing.
-///
-/// Implements [`CostFunction`] (over `Vec<f64>`) and [`Anneal`] with bounded
-/// Gaussian perturbation — each parameter is perturbed by `N(0, extent)` and
-/// clamped to its lower/upper bound.
-struct BoundedDiagramCost<'a, S: DiagramShape + Copy + 'static> {
-    inner: DiagramCost<'a, S>,
-    lower: Vec<f64>,
-    upper: Vec<f64>,
-    rng: RefCell<StdRng>,
-}
-
-impl<'a, S: DiagramShape + Copy + 'static> CostFunction for BoundedDiagramCost<'a, S> {
-    type Param = Vec<f64>;
-    type Output = f64;
-
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
-        let dvec = DVector::from_vec(param.clone());
-        self.inner.cost(&dvec)
-    }
-}
-
-impl<'a, S: DiagramShape + Copy + 'static> Anneal for BoundedDiagramCost<'a, S> {
-    type Param = Vec<f64>;
-    type Output = Vec<f64>;
-    type Float = f64;
-
-    fn anneal(&self, param: &Self::Param, extent: Self::Float) -> Result<Self::Output, Error> {
-        let mut rng = self.rng.borrow_mut();
-        let mut next = param.clone();
-        // Scale step size by bound range so parameters with different dynamic ranges
-        // (positions vs. radii vs. rotation) take proportionate steps.
-        for (i, value) in next.iter_mut().enumerate() {
-            let range = (self.upper[i] - self.lower[i]).abs().max(1e-6);
-            // Uniform proposal in [-extent, +extent] * (range / 20) — roughly matching
-            // the scale of single-dimension perturbations common in SA.
-            let step = rng.random_range(-1.0..1.0) * extent * range / 20.0;
-            *value = (*value + step).clamp(self.lower[i], self.upper[i]);
-        }
-        Ok(next)
-    }
-}
-
 impl<'a, S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'a, S> {
     type Param = DVector<f64>;
     type Hessian = Vec<Vec<f64>>;
@@ -637,6 +422,162 @@ impl<'a, S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'a, S> {
         let h_central = finitediff::vec::central_hessian(&grad_fn);
         let hessian = h_central(&param_vec)?;
         Ok(hessian)
+    }
+}
+
+/// Levenberg-Marquardt least-squares adapter around the diagram cost.
+///
+/// Decomposes the existing `Σ(fitted_mask − target_mask)²` loss into per-region
+/// residuals so LM can build `JᵀJ` directly from the analytical
+/// region-area gradients exposed by
+/// [`DiagramShape::compute_exclusive_regions_with_gradient`].
+///
+/// Residual ordering is fixed at construction to all non-empty subset masks
+/// `1..(1 << n_sets)`. Masks not produced by the geometry have implicit area 0
+/// (zero residual contribution, zero Jacobian row), matching the existing
+/// loss exactly.
+///
+/// Supported losses: [`LossType::SumSquared`] and
+/// [`LossType::NormalizedSumSquared`]. Other losses are rejected at
+/// construction with an [`Error`].
+struct LmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
+    spec: &'a PreprocessedSpec,
+    params_per_shape: usize,
+    /// Fixed canonical residual ordering: all non-empty subset masks.
+    masks: Vec<RegionMask>,
+    /// `1.0` for `SumSquared`; `1/sqrt(Σ tᵢ²)` for `NormalizedSumSquared`. The
+    /// stored residuals get multiplied by this so `Σ rᵢ²` equals the
+    /// configured loss.
+    norm_factor: f64,
+    /// Current parameter vector. Owned so the trait's `params(&self)` can
+    /// return a clone.
+    params: DVector<f64>,
+    /// Lazy cache of `(fitted, fitted_grads)` keyed by the most recent
+    /// `set_params` call. Cleared on every `set_params`.
+    cache: RefCell<Option<DiagramCache>>,
+    _shape: std::marker::PhantomData<S>,
+}
+
+struct DiagramCache {
+    fitted: HashMap<RegionMask, f64>,
+    fitted_grads: HashMap<RegionMask, Vec<f64>>,
+}
+
+impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
+    fn new(
+        spec: &'a PreprocessedSpec,
+        params_per_shape: usize,
+        loss_type: LossType,
+        initial_param: &DVector<f64>,
+    ) -> Result<Self, Error> {
+        let norm_factor = match loss_type {
+            LossType::SumSquared => 1.0,
+            LossType::NormalizedSumSquared => {
+                let sum_t2: f64 = spec.exclusive_areas.values().map(|&v| v * v).sum();
+                if sum_t2 < 1e-20 {
+                    return Err(Error::msg(
+                        "Levenberg-Marquardt: target area norm is zero, cannot normalise",
+                    ));
+                }
+                1.0 / sum_t2.sqrt()
+            }
+            other => {
+                return Err(Error::msg(format!(
+                    "Levenberg-Marquardt only supports SumSquared / NormalizedSumSquared losses, got {other:?}"
+                )));
+            }
+        };
+        // Enumerate every non-empty subset mask once; residual ordering is
+        // fixed for the whole solve so the Jacobian shape stays constant
+        // (LM rejects residual-count changes).
+        let n_sets = spec.n_sets;
+        let masks: Vec<RegionMask> = (1..(1usize << n_sets)).collect();
+        Ok(Self {
+            spec,
+            params_per_shape,
+            masks,
+            norm_factor,
+            params: initial_param.clone(),
+            cache: RefCell::new(None),
+            _shape: std::marker::PhantomData,
+        })
+    }
+
+    fn ensure_cache(&self) {
+        let mut slot = self.cache.borrow_mut();
+        if slot.is_some() {
+            return;
+        }
+        let n_sets = self.spec.n_sets;
+        let shapes: Vec<S> = (0..n_sets)
+            .map(|i| {
+                let start = i * self.params_per_shape;
+                let end = start + self.params_per_shape;
+                S::from_params(&self.params.as_slice()[start..end])
+            })
+            .collect();
+        let (fitted, fitted_grads) = match S::compute_exclusive_regions_with_gradient(&shapes) {
+            Some(pair) => pair,
+            None => {
+                // Should not happen for shapes that wire LM in (Circle/Ellipse
+                // both implement the gradient path). Fall back to areas-only
+                // with empty gradient map; the Jacobian becomes all-zeros
+                // and LM will terminate immediately on its orthogonality
+                // check, surfacing the issue.
+                let fitted = S::compute_exclusive_regions(&shapes);
+                (fitted, HashMap::new())
+            }
+        };
+        *slot = Some(DiagramCache {
+            fitted,
+            fitted_grads,
+        });
+    }
+}
+
+impl<'a, S: DiagramShape + Copy + 'static> LeastSquaresProblem<f64, Dyn, Dyn>
+    for LmDiagramProblem<'a, S>
+{
+    type ResidualStorage = Owned<f64, Dyn>;
+    type JacobianStorage = Owned<f64, Dyn, Dyn>;
+    type ParameterStorage = Owned<f64, Dyn>;
+
+    fn set_params(&mut self, x: &DVector<f64>) {
+        self.params.copy_from(x);
+        self.cache.borrow_mut().take();
+    }
+
+    fn params(&self) -> DVector<f64> {
+        self.params.clone()
+    }
+
+    fn residuals(&self) -> Option<DVector<f64>> {
+        self.ensure_cache();
+        let cache = self.cache.borrow();
+        let cache = cache.as_ref().expect("cache populated by ensure_cache");
+        let mut residuals = DVector::zeros(self.masks.len());
+        for (i, &mask) in self.masks.iter().enumerate() {
+            let f = cache.fitted.get(&mask).copied().unwrap_or(0.0);
+            let t = self.spec.exclusive_areas.get(&mask).copied().unwrap_or(0.0);
+            residuals[i] = self.norm_factor * (f - t);
+        }
+        Some(residuals)
+    }
+
+    fn jacobian(&self) -> Option<DMatrix<f64>> {
+        self.ensure_cache();
+        let cache = self.cache.borrow();
+        let cache = cache.as_ref().expect("cache populated by ensure_cache");
+        let n_params = self.params.len();
+        let mut jacobian = DMatrix::zeros(self.masks.len(), n_params);
+        for (i, &mask) in self.masks.iter().enumerate() {
+            if let Some(grad) = cache.fitted_grads.get(&mask) {
+                for (j, &g) in grad.iter().enumerate().take(n_params) {
+                    jacobian[(i, j)] = self.norm_factor * g;
+                }
+            }
+        }
+        Some(jacobian)
     }
 }
 
@@ -959,47 +900,6 @@ mod tests {
                 tol
             );
         }
-    }
-
-    #[test]
-    fn test_derive_sa_bounds_ellipse() {
-        // Two ellipses side by side with a=2, b=1, phi=0
-        let params = vec![
-            0.0, 0.0, 2.0, 1.0, 0.0, // ellipse 1
-            5.0, 0.0, 2.0, 1.0, 0.0, // ellipse 2
-        ];
-        let (lower, upper) = derive_sa_bounds(&params, 5);
-
-        // Position bounds: bounding box [-2, 7] x [-1, 1] padded by
-        // max(2*max_extent, max(bbox_w, bbox_h)) = max(4, 9) = 9.
-        assert!((lower[0] - (-11.0)).abs() < 1e-9);
-        assert!((upper[0] - 16.0).abs() < 1e-9);
-        assert!((lower[1] - (-10.0)).abs() < 1e-9);
-        assert!((upper[1] - 10.0).abs() < 1e-9);
-
-        // Semi-axis bounds: a/5..a*5 for each
-        assert!((lower[2] - (2.0 / 5.0)).abs() < 1e-9);
-        assert!((upper[2] - 10.0).abs() < 1e-9);
-        assert!((lower[3] - (1.0 / 5.0)).abs() < 1e-9);
-        assert!((upper[3] - 5.0).abs() < 1e-9);
-
-        // Rotation bounds [0, π]
-        assert!((lower[4]).abs() < 1e-9);
-        assert!((upper[4] - std::f64::consts::PI).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_derive_sa_bounds_circle() {
-        // Circle: [x, y, r]
-        let params = vec![0.0, 0.0, 2.0, 5.0, 0.0, 1.0];
-        let (lower, upper) = derive_sa_bounds(&params, 3);
-        // bbox [-2, 6] x [-2, 2], max_extent = 2,
-        // pad = max(2*2, max(8, 4)) = 8 → x in [-10, 14], y in [-10, 10]
-        assert!((lower[0] - (-10.0)).abs() < 1e-9);
-        assert!((upper[0] - 14.0).abs() < 1e-9);
-        // Radius bounds: [r/5, r*5]
-        assert!((lower[2] - (2.0 / 5.0)).abs() < 1e-9);
-        assert!((upper[2] - 10.0).abs() < 1e-9);
     }
 
     /// Compare the analytical gradient produced by `DiagramCost::gradient` to
@@ -1676,33 +1576,85 @@ mod tests {
     }
 
     #[test]
-    fn test_sa_run_finds_improvement() {
-        // Build a tiny 2-circle problem and confirm SA doesn't break catastrophically
-        // (we only check it runs to completion and returns finite output).
-        use crate::geometry::shapes::Circle;
+    fn lm_jacobian_consistent_with_diagram_gradient() {
+        // For sum-of-squares losses, ∇L(θ) = 2·Jᵀ·r where J is the
+        // residual Jacobian and r the residual vector. Verifies the LM
+        // adapter constructs J consistently with `DiagramCost::gradient`.
+        use rand::Rng;
+        use rand::SeedableRng;
+        let configs: &[(usize, u64, crate::loss::LossType)] = &[
+            (3, 11, crate::loss::LossType::SumSquared),
+            (3, 22, crate::loss::LossType::NormalizedSumSquared),
+            (5, 33, crate::loss::LossType::NormalizedSumSquared),
+        ];
+        for &(n, seed, loss_type) in configs {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let circles: Vec<Circle> = (0..n)
+                .map(|_| {
+                    Circle::new(
+                        Point::new(rng.random_range(-3.0..3.0), rng.random_range(-3.0..3.0)),
+                        rng.random_range(0.6..1.8),
+                    )
+                })
+                .collect();
+            let spec = spec_from_circles(&circles);
+            let mut params = flat_params(&circles);
+            for v in &mut params {
+                *v += rng.random_range(-0.05..0.05);
+            }
+            let param_dvec = DVector::from_vec(params.clone());
 
-        let spec = DiagramSpecBuilder::new()
-            .set("A", 10.0)
-            .set("B", 8.0)
-            .intersection(&["A", "B"], 2.0)
-            .build()
-            .unwrap();
+            let cost = DiagramCost::<Circle> {
+                spec: &spec,
+                loss_type,
+                params_per_shape: Circle::n_params(),
+                _shape: std::marker::PhantomData,
+            };
+            let analytic_grad = cost.gradient(&param_dvec).unwrap();
 
-        let preprocessed = spec.preprocess().unwrap();
-        let start = vec![0.0, 0.0, 1.78, 3.0, 0.0, 1.6];
-        let (lower, upper) = derive_sa_bounds(&start, 3);
-        let (best, loss) = run_simulated_annealing::<Circle>(
-            &preprocessed,
-            &start,
-            &lower,
-            &upper,
-            crate::loss::LossType::sse(),
-            3,
-            500,
-            42,
-        )
-        .unwrap();
-        assert_eq!(best.len(), start.len());
-        assert!(loss.is_finite());
+            let mut problem =
+                LmDiagramProblem::<Circle>::new(&spec, Circle::n_params(), loss_type, &param_dvec)
+                    .unwrap();
+            problem.set_params(&param_dvec);
+            let r = problem.residuals().unwrap();
+            let j = problem.jacobian().unwrap();
+            let lm_grad = j.transpose() * &r * 2.0;
+
+            let max_abs_diff = analytic_grad
+                .iter()
+                .zip(lm_grad.iter())
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0_f64, f64::max);
+            let max_abs = analytic_grad
+                .iter()
+                .map(|x: &f64| x.abs())
+                .fold(0.0_f64, f64::max);
+            assert!(
+                max_abs_diff < 1e-9 + 1e-8 * max_abs,
+                "n={} seed={} loss={:?}: |2·Jᵀ·r − ∇L| = {:.3e} (max |∇L| = {:.3e})",
+                n,
+                seed,
+                loss_type,
+                max_abs_diff,
+                max_abs
+            );
+        }
+    }
+
+    #[test]
+    fn lm_rejects_non_least_squares_loss() {
+        let circles = vec![
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+            Circle::new(Point::new(1.5, 0.0), 1.0),
+        ];
+        let spec = spec_from_circles(&circles);
+        let params = DVector::from_vec(flat_params(&circles));
+        let result = LmDiagramProblem::<Circle>::new(
+            &spec,
+            Circle::n_params(),
+            crate::loss::LossType::Stress,
+            &params,
+        );
+        assert!(result.is_err(), "Stress loss should be rejected by LM");
     }
 }
