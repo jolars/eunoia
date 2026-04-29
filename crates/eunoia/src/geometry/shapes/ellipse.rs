@@ -1042,15 +1042,19 @@ pub(crate) fn collect_intersections_ellipse(
 
 impl DiagramShape for Ellipse {
     fn compute_exclusive_regions(shapes: &[Self]) -> std::collections::HashMap<RegionMask, f64> {
-        use crate::geometry::diagram::to_exclusive_areas;
+        use crate::geometry::diagram::{discover_regions, to_exclusive_areas};
         use std::collections::HashMap;
 
         let n_sets = shapes.len();
         let intersections = collect_intersections_ellipse(shapes);
+        // Sparse discovery: walk only regions that can geometrically be
+        // non-empty. Full enumeration over `1..=(1<<n_sets)-1` is intractable
+        // beyond a handful of sets — at n=17 it's 131,071 boundary-arc passes
+        // per loss eval, which is the original eulerr issue #89 problem.
+        let regions = discover_regions(shapes, &intersections, n_sets);
 
-        let n_overlaps = (1 << n_sets) - 1;
         let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
-        for mask in 1..=n_overlaps {
+        for &mask in &regions {
             let arcs = region_boundary_arcs_ellipse(mask, shapes, &intersections, n_sets);
             overlapping_areas.insert(mask, area_from_boundary_arcs_ellipse(&arcs, shapes));
         }
@@ -1061,17 +1065,17 @@ impl DiagramShape for Ellipse {
     fn compute_exclusive_regions_with_gradient(
         shapes: &[Self],
     ) -> Option<crate::geometry::traits::ExclusiveRegionsAndGradient> {
-        use crate::geometry::diagram::to_exclusive_areas_and_gradients;
+        use crate::geometry::diagram::{discover_regions, to_exclusive_areas_and_gradients};
         use std::collections::HashMap;
 
         let n_sets = shapes.len();
         let n_params = n_sets * 5;
         let intersections = collect_intersections_ellipse(shapes);
+        let regions = discover_regions(shapes, &intersections, n_sets);
 
-        let n_overlaps = (1 << n_sets) - 1;
         let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
         let mut overlapping_grads: HashMap<RegionMask, Vec<f64>> = HashMap::new();
-        for mask in 1..=n_overlaps {
+        for &mask in &regions {
             let arcs = region_boundary_arcs_ellipse(mask, shapes, &intersections, n_sets);
             overlapping_areas.insert(mask, area_from_boundary_arcs_ellipse(&arcs, shapes));
             let mut grad = vec![0.0; n_params];
