@@ -776,12 +776,19 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         #[cfg(debug_assertions)]
         {
             let post_normalize_regions = S::compute_exclusive_regions(&optimized_shapes);
+            // Tolerances are scaled by the largest region (see
+            // `exclusive_region_maps_approx_equal`); `rel_tol = 1e-4` is
+            // loose enough to absorb conic-intersection roundoff at near-
+            // tangent ellipse configurations while still catching real
+            // bugs in `normalize_layout` (the `intersects` clustering bug
+            // that originally motivated this assert produced perturbations
+            // of ~10% of the largest region).
             debug_assert!(
                 exclusive_region_maps_approx_equal(
                     &pre_normalize_regions,
                     &post_normalize_regions,
                     1e-8,
-                    1e-6
+                    1e-4
                 ),
                 "normalize_layout changed fitted exclusive regions"
             );
@@ -957,13 +964,28 @@ fn exclusive_region_maps_approx_equal(
     abs_tol: f64,
     rel_tol: f64,
 ) -> bool {
+    // Use the largest region magnitude on either side as a single global
+    // scale, rather than the per-region magnitude. `compute_exclusive_regions`
+    // computes small regions via inclusion-exclusion of larger ones, so its
+    // numerical roundoff is bounded by `eps * max_region`, not by the per-
+    // region size — a region close to zero can legitimately drift by an
+    // amount tied to the largest region's roundoff. Per-region scale gave
+    // tolerances tighter than the achievable numerical precision on
+    // near-tangent configurations and was tripping the debug_assert on
+    // legitimate fits.
     let all_masks: HashSet<_> = lhs.keys().chain(rhs.keys()).copied().collect();
+    let global_scale = lhs
+        .values()
+        .chain(rhs.values())
+        .map(|v| v.abs())
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let threshold = abs_tol.max(rel_tol * global_scale);
 
     all_masks.into_iter().all(|mask| {
         let left = lhs.get(&mask).copied().unwrap_or(0.0);
         let right = rhs.get(&mask).copied().unwrap_or(0.0);
-        let scale = left.abs().max(right.abs()).max(1.0);
-        (left - right).abs() <= abs_tol.max(rel_tol * scale)
+        (left - right).abs() <= threshold
     })
 }
 

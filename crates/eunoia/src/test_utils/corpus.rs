@@ -218,15 +218,7 @@ static CORPUS: [CorpusEntry; 27] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: None,
         fittable_circle: Fittable::Normal,
-        // Linux/macOS fits all `TEST_SEEDS` at diag ~3.9e-3, but on Windows
-        // seed=7 lands in a near-coincident ellipse configuration that trips
-        // the `normalize_layout` debug_assert (same upstream issue as
-        // `eulerape_3_set`, `three_inside_fourth`, `issue71_4_set_extreme_scale`,
-        // `issue32_3_set_small_triple`). Skip until that's fixed; release-mode
-        // quality is captured in `examples/quality_report`.
-        fittable_ellipse: Fittable::Skip(
-            "normalize_layout debug_assert on near-coincident ellipses",
-        ),
+        fittable_ellipse: Fittable::Normal,
     },
     CorpusEntry {
         name: "three_inside_fourth",
@@ -235,18 +227,7 @@ static CORPUS: [CorpusEntry; 27] = [
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(5e-2),
         fittable_circle: Fittable::Normal,
-        // Under the LM-MDS initial-layout default, the ellipse fit at some
-        // seeds (e.g. seed=7) lands at a near-coincident configuration that
-        // trips the `normalize_layout` debug_assert. Release-mode fits
-        // cleanly (loss ~6e-4, diag ~1e-2), and other seeds work fine in
-        // debug too — but the corpus quality test runs in debug, so skip
-        // until the upstream `normalize_layout`-vs-exclusive-areas
-        // tolerance bug is fixed (same root cause as
-        // `two_overlapping_completely`, `issue71_4_set_extreme_scale`,
-        // `issue32_3_set_small_triple`).
-        fittable_ellipse: Fittable::Skip(
-            "normalize_layout debug_assert on near-coincident ellipses",
-        ),
+        fittable_ellipse: Fittable::Normal,
     },
     CorpusEntry {
         name: "eulerape_3_set",
@@ -256,17 +237,11 @@ static CORPUS: [CorpusEntry; 27] = [
         // achieve the exact triple intersection. Ellipses fit this near
         // machine zero on most seeds after the log-space `(a, b)`
         // reparameterisation closed the canonical basin (median diag
-        // ~7.7e-16 in `examples/quality_report`); however, seed 42
-        // lands in a near-coincident ellipse configuration that trips
-        // the `normalize_layout` debug_assert in debug builds. Marked
-        // `Skip` for ellipses to match the other near-coincident specs;
-        // release-mode quality is captured in `examples/quality_report`.
+        // ~7.7e-16 in `examples/quality_report`).
         max_diag_error_circle: Some(2e-2),
         max_diag_error_ellipse: Some(2e-2),
         fittable_circle: Fittable::Normal,
-        fittable_ellipse: Fittable::Skip(
-            "normalize_layout debug_assert on near-coincident ellipses",
-        ),
+        fittable_ellipse: Fittable::Normal,
     },
     CorpusEntry {
         name: "one_disjoint_two_intersecting",
@@ -294,11 +269,7 @@ static CORPUS: [CorpusEntry; 27] = [
         max_diag_error_circle: None,
         max_diag_error_ellipse: None,
         fittable_circle: Fittable::Normal,
-        // The ellipse path trips a `normalize_layout`-vs-exclusive-areas
-        // debug_assert on coincident ellipses (a separate upstream bug).
-        // Skip ellipses for this spec until that's resolved; circles fit
-        // it perfectly.
-        fittable_ellipse: Fittable::Skip("normalize_layout debug_assert on coincident ellipses"),
+        fittable_ellipse: Fittable::Normal,
     },
     CorpusEntry {
         name: "single_set",
@@ -338,11 +309,7 @@ static CORPUS: [CorpusEntry; 27] = [
         max_diag_error_circle: Some(1.5e-1),
         max_diag_error_ellipse: Some(7e-2),
         fittable_circle: Fittable::Normal,
-        // LM converges some seeds onto near-coincident ellipses where
-        // `normalize_layout`'s rotation/translation perturbs the
-        // exclusive-region geometry past the (already loosened) debug_assert
-        // tolerance — same upstream issue as `two_overlapping_completely`.
-        fittable_ellipse: Fittable::Skip("normalize_layout debug_assert on coincident ellipses"),
+        fittable_ellipse: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue114_4_set_dominant_quad",
@@ -398,17 +365,10 @@ static CORPUS: [CorpusEntry; 27] = [
         category: Category::Hard,
         // 4 orders of magnitude scale variation (A=38066 vs D=6). Stress test
         // for the `NormalizedSumSquared` loss on extreme dynamic range.
-        // Ellipse @ seed=42 reaches a near-coincident configuration that
-        // trips the same `normalize_layout` debug_assert as
-        // `two_overlapping_completely` and `issue32_3_set_small_triple`;
-        // release-mode fits cleanly. Skip ellipse until that upstream bug
-        // is fixed.
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(5e-2),
         fittable_circle: Fittable::Normal,
-        fittable_ellipse: Fittable::Skip(
-            "normalize_layout debug_assert on near-coincident ellipses",
-        ),
+        fittable_ellipse: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue103_4_set_missing_d",
@@ -427,17 +387,11 @@ static CORPUS: [CorpusEntry; 27] = [
         category: Category::Medium,
         // 3-set with two zero pairs (A&B=0, B&C=0) and a small triple (A&B&C=3)
         // sandwiched in a large A&C=314. Tests "small intersection drop"
-        // pathology, sibling to issue92. Two zero pair overlaps push B and
-        // {A,C} toward coincident-arc geometry on some seeds, tripping the
-        // same `normalize_layout` debug_assert as `two_overlapping_completely`
-        // — release-mode fits cleanly (~3.5e-3), so the skip is debug-only
-        // safety until that upstream bug is fixed.
+        // pathology, sibling to issue92.
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: Some(2e-2),
         fittable_circle: Fittable::Normal,
-        fittable_ellipse: Fittable::Skip(
-            "normalize_layout debug_assert on near-coincident ellipses",
-        ),
+        fittable_ellipse: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue91_6_set",

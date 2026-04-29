@@ -681,10 +681,15 @@ impl Closed for Ellipse {
     }
 
     fn intersects(&self, other: &Self) -> bool {
-        // Quick rejection: if centers are too far apart, they can't intersect
+        // Quick rejection: if centers are too far apart, they can't intersect.
+        // The farthest reach from an ellipse's center is `max(semi_major,
+        // semi_minor)` — the field names don't enforce ordering (the optimizer
+        // parameterises both axes independently in log-space, so either can
+        // be larger), so we have to take the max of the two rather than
+        // trusting `semi_major` alone.
         let center_distance = self.center.distance(&other.center);
-        let max_reach_self = self.semi_major;
-        let max_reach_other = other.semi_major;
+        let max_reach_self = self.semi_major.max(self.semi_minor);
+        let max_reach_other = other.semi_major.max(other.semi_minor);
 
         if center_distance > max_reach_self + max_reach_other {
             return false;
@@ -1597,6 +1602,39 @@ mod tests {
 
         // They should intersect (tangent point counts as intersection)
         assert!(e1.intersects(&e2));
+    }
+
+    #[test]
+    fn test_intersects_when_semi_minor_greater_than_semi_major() {
+        // Regression for a fitter bug where the optimizer produces an ellipse
+        // with `semi_minor > semi_major` (the field names are labels, not an
+        // ordering invariant — `from_params` just exponentiates the two log
+        // params). The old quick-reject in `intersects` used `semi_major` as
+        // the max reach, so two such ellipses whose actual long axes overlap
+        // could be falsely reported as non-intersecting, breaking
+        // `find_clusters` and tripping `normalize_layout`'s region-equality
+        // assert. The reproducer below comes from `eulerape_3_set` seed=42.
+        let e0 = Ellipse::new(
+            Point::new(36.86134450095962, 78.5649458016757),
+            (2.9862175109548414f64).exp(),
+            (4.125140737010668f64).exp(),
+            0.01270551956797799,
+        );
+        let e1 = Ellipse::new(
+            Point::new(86.13182443212173, 20.46219955112993),
+            (4.000229123217676f64).exp(),
+            (3.0943704188347185f64).exp(),
+            -0.023783971647556423,
+        );
+
+        assert!(
+            e0.intersection_area(&e1) > 0.0,
+            "sanity: ellipses do overlap by area",
+        );
+        assert!(
+            e0.intersects(&e1),
+            "intersects must agree with intersection_area on overlap",
+        );
     }
 
     #[test]

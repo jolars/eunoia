@@ -44,36 +44,36 @@ default-suite tests are in `crates/eunoia/src/fitter/corpus_quality.rs` and
 The corpus / proptest surfaced these. None were introduced by the harness;
 they're pre-existing behaviour the harness now exposes.
 
-- [ ] **`eulerape_3_set`ellipses land at `diag_error ≈ 1.16e-2`** at default
+- [x] **`eulerape_3_set`ellipses land at `diag_error ≈ 1.16e-2`** at default
       `Fitter` settings on every `TEST_SEEDS` entry. Ellipses can represent this
       layout exactly in principle --- eulerr's eulerAPE article spec is the
       canonical "ellipses fit it perfectly" example. Looks like a default-budget
       local-minimum trap. Loosened ceiling to 2e-2 in the corpus; tighten back
       to \~5e-4 once fixed.
 
-      **Mostly closed** by the log-space `(a, b) = (exp u, exp v)`
-      reparameterisation: median diag now `~7.7e-16` and seeds 1 and 7 hit
-      machine zero. Seed 42 lands in a near-coincident ellipse
-      configuration that trips the `normalize_layout` debug_assert (same
-      upstream issue as the specs already marked `Fittable::Skip`), so the
-      ellipse corpus row is now `Fittable::Skip`. Release-mode quality is
-      captured in `examples/quality_report`. Returns to `Fittable::Normal`
-      once the `normalize_layout` debug_assert is fixed (see the
-      "near-coincident ellipses" item below).
+      **Closed** by (1) the log-space `(a, b) = (exp u, exp v)`
+      reparameterisation, which closed the canonical basin to median
+      `~7.7e-16`, and (2) the `Ellipse::intersects` quick-reject fix
+      below, which unblocked the seed=42 fit (the assert it tripped was
+      a false-positive triggered by `find_clusters` mis-clustering the
+      shapes on near-tangent geometry).
 
-- [ ] **`normalize_layout`debug_assert trips on coincident ellipses**
+- [x] **`normalize_layout`debug_assert trips on coincident ellipses**
       (`fitter.rs` "normalize_layout changed fitted exclusive regions").
-      Reproducers: corpus specs `two_overlapping_completely`
-      (`A=0, B=0, A&B=10`), `issue71_4_set_extreme_scale`,
-      `issue32_3_set_small_triple`, `three_inside_fourth` (added under the
-      LM-MDS default — fits cleanly in release, trips the assert in debug at
-      some seeds), and `gene_sets` (Windows-only, seed=7), all with
-      `Ellipse` in any debug build. Cluster rotation/normalization perturbs
-      the near-coincident ellipses by more than the assert's `abs=1e-8,
-      rel=1e-6` tolerances. The corpus marks these as `Fittable::Skip` for
-      ellipses; the bug itself still needs fixing (loosen tolerances, or
-      fix normalize to be a true rigid transform on coincident shapes).
-      Fixing this returns 5 corpus entries to `Fittable::Normal`.
+      Root cause was a stale `Ellipse::intersects` quick-reject that used
+      `semi_major` as the per-ellipse max reach. The optimizer
+      parameterises `(ln a, ln b)` independently and frequently produces
+      ellipses where the labelled `semi_minor` is larger than the
+      labelled `semi_major`; on those, the quick-reject returned `false`
+      for genuinely overlapping ellipses, `find_clusters` split a single
+      cluster into two, and `pack_clusters` then translated them apart —
+      which is what was perturbing the exclusive-region map. Fixed by
+      using `max(semi_major, semi_minor)` for the reach; regression test
+      in `geometry/shapes/ellipse.rs::test_intersects_when_semi_minor_greater_than_semi_major`.
+      The assert tolerance was also rebased onto the largest region's
+      magnitude (a global scale, not per-region) so legitimate conic-
+      intersection roundoff at near-tangent geometry no longer trips it.
+      All 5 previously-skipped corpus entries return to `Fittable::Normal`.
 
 - [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. Random area
       inputs aren't guaranteed to be representable by ellipses, so this may not
