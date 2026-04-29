@@ -1,6 +1,7 @@
 import type {
   AdvancedOptions,
   DiagramStyle,
+  DiagramType,
   ExportSettings,
   FitResult,
   InputType,
@@ -8,6 +9,7 @@ import type {
   Row,
   ShapeType,
   TabKey,
+  VennSetCount,
 } from "../types/diagram";
 
 const STORAGE_KEY = "eunoia.app.v1";
@@ -49,6 +51,8 @@ class AppState {
   rows: Row[] = $state([...DEFAULT_ROWS]);
   inputType: InputType = $state("exclusive");
   shapeType: ShapeType = $state("circle");
+  diagramType: DiagramType = $state("euler");
+  vennN: VennSetCount = $state(3);
 
   // Style
   style: DiagramStyle = $state({ ...DEFAULT_STYLE });
@@ -78,6 +82,8 @@ class AppState {
     this.rows = [...DEFAULT_ROWS];
     this.inputType = "exclusive";
     this.shapeType = "circle";
+    this.diagramType = "euler";
+    this.vennN = 3;
     this.style = { ...DEFAULT_STYLE };
     this.advanced = { ...DEFAULT_ADVANCED };
     this.exportSettings = { ...DEFAULT_EXPORT };
@@ -88,6 +94,8 @@ class AppState {
       rows: $state.snapshot(this.rows),
       inputType: this.inputType,
       shapeType: this.shapeType,
+      diagramType: this.diagramType,
+      vennN: this.vennN,
       style: $state.snapshot(this.style),
       advanced: $state.snapshot(this.advanced),
       exportSettings: $state.snapshot(this.exportSettings),
@@ -98,6 +106,8 @@ class AppState {
     if (p.rows && Array.isArray(p.rows)) this.rows = p.rows;
     if (p.inputType) this.inputType = p.inputType;
     if (p.shapeType) this.shapeType = p.shapeType;
+    if (p.diagramType) this.diagramType = p.diagramType;
+    if (p.vennN && p.vennN >= 1 && p.vennN <= 5) this.vennN = p.vennN;
     if (p.style) this.style = { ...DEFAULT_STYLE, ...p.style };
     if (p.advanced) this.advanced = { ...DEFAULT_ADVANCED, ...p.advanced };
     if (p.exportSettings) {

@@ -52,14 +52,18 @@ they're pre-existing behaviour the harness now exposes.
       to \~5e-4 once fixed.
 
 - [ ] **`normalize_layout`debug_assert trips on coincident ellipses**
-      (`fitter.rs:627` "normalize_layout changed fitted exclusive regions").
-      Reproducer: corpus spec `two_overlapping_completely`
-      (`A=0, B=0,   A&B=10`) with `Ellipse` in any debug build. Cluster
-      rotation/normalization perturbs the two coincident ellipses by more than
-      the assert's `abs=1e-8, rel=1e-6` tolerances. The corpus marks this as
-      `Fittable::Skip` for ellipses; the bug itself still needs fixing (loosen
-      tolerances, or fix normalize to be a true rigid transform on coincident
-      shapes).
+      (`fitter.rs` "normalize_layout changed fitted exclusive regions").
+      Reproducers: corpus specs `two_overlapping_completely`
+      (`A=0, B=0, A&B=10`), `issue71_4_set_extreme_scale`,
+      `issue32_3_set_small_triple`, and `three_inside_fourth` (added under the
+      LM-MDS default — fits cleanly in release, trips the assert in debug at
+      some seeds), all with `Ellipse` in any debug build. Cluster
+      rotation/normalization perturbs the near-coincident ellipses by more
+      than the assert's `abs=1e-8, rel=1e-6` tolerances. The corpus marks
+      these as `Fittable::Skip` for ellipses; the bug itself still needs
+      fixing (loosen tolerances, or fix normalize to be a true rigid
+      transform on coincident shapes). Fixing this returns 4 corpus entries
+      to `Fittable::Normal`.
 
 - [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. Random area
       inputs aren't guaranteed to be representable by ellipses, so this may not
@@ -94,6 +98,25 @@ they're pre-existing behaviour the harness now exposes.
       to 1.55 s --- wins 20 of 27 specs vs default's 5. On circles the gain is
       marginal (already near-optimum). Restricted to `SumSquared` /
       `NormalizedSumSquared`; rejects other losses at construction.
+
+- [x] **MDS default flipped L-BFGS → LM.** The previous default
+      (`MdsSolver::Lbfgs`, L-BFGS + More-Thuente line search via argmin) was
+      observed to deadlock on certain initial conditions where the
+      disjoint/subset clamps in `MdsCost` zero the gradient at a non-
+      stationary point (e.g. one circle fully enclosing the others on
+      extreme-scale specs like `issue71_4_set_extreme_scale`). Argmin's
+      `max_iters` only caps outer L-BFGS iterations, not the inner line
+      search, so `Executor::run()` never returns. Confirmed upstream bug,
+      already filed as
+      [argmin-rs/argmin#357](https://github.com/argmin-rs/argmin/issues/357)
+      with root cause in
+      [#497](https://github.com/argmin-rs/argmin/issues/497) (`LBFGS::next_iter`
+      spawns the line-search Executor without inheriting `max_iters` /
+      `timeout`; defaults to `u64::MAX`). LM's trust-region update
+      sidesteps the line-search deadlock entirely. `MdsSolver::Lbfgs`
+      remains available opt-in; flag the deadlock risk in its docs.
+      Revisit the default once argmin#357/#497 land and we can wire a
+      proper line-search iteration cap.
 
 - [ ] **Gauss-Newton final stage** (low-priority bookkeeping after LM landed).
       argmin ships `GaussNewton` with line search; the LM Jacobian plumbing is
@@ -143,9 +166,59 @@ they're pre-existing behaviour the harness now exposes.
       bounded `a/b` reparameterisation below --- both likely worth more
       diag-error per hour spent than further global-stage tuning at this budget.
 
-- [ ] **Latin hypercube initial starts** instead of uniform random perturbations
-      across `n_restarts`. Cheap potential 10-20% best-of-N quality bump; no
-      algorithmic complexity.
+- [x] **Latin hypercube initial starts** --- probed twice (under both the
+      old L-BFGS-MDS default and the current LM-MDS default), no measurable
+      improvement either way. Landed as opt-in
+      `InitialSampler::LatinHypercube` (default stays `Uniform`); selectable
+      via `Fitter::initial_sampler`. Under the LM-MDS default at
+      `n_restarts=10`, LHS gives +1 spec win on each shape and ~0.2-0.8%
+      better mean diag (circle `1.700e-2` → `1.696e-2`; ellipse `3.622e-3`
+      → `3.594e-3`), well below the predicted 10-20% bump and within
+      run-to-run noise. Median loss is unchanged on circles and worse on
+      ellipses (`1.14e-25` → `3.25e-24`, both at floating-point floor). Not
+      a default candidate; scaffolding kept for users whose specs may
+      benefit. Probe also surfaced an unrelated pre-existing bug --- LHS at
+      small `n_restarts` forced certain extreme-scale specs into a stratum
+      that deadlocked argmin's L-BFGS MDS --- which led to the MDS default
+      flip below.
+
+- [ ] **Deterministic Venn-layout warm start** as one of the
+      `n_restarts` initial positions, fed in two flavours: (a) into the
+      MDS stage (so the MDS run polishes a topology-correct layout into
+      something that respects the spec's distances), and (b) directly to
+      the final solver (skip MDS for that attempt entirely, since MDS adds
+      no information when we already have a layout where every set
+      overlaps every other). Targets specs where the random/LHS init
+      consistently lands in a basin with missing intersection regions
+      (issue91-class hard 6-set ellipse fits, `eulerape_3_set`,
+      `random_4_set`). Uses the canonical Venn arrangements: regular
+      n-fold rotational symmetric circles for n ≤ 3, Wilkinson/Edwards
+      ellipse arrangements for n ∈ {4, 5, 6, 7}, fall back to LHS for
+      n ≥ 8 (no clean Venn beyond Edwards-7). Plumb as
+      `InitialSampler::Venn`, or as an additive
+      `InitialSeed::Venn` dimension that overrides one row of whatever
+      sampler is otherwise selected.
+
+      **Caveat to handle**: the Venn topology forces every $2^n - 1$
+      region open. For specs with strict disjoint or empty-intersection
+      pairs (e.g. `three_disjoint`, `two_disjoint`,
+      `one_disjoint_two_intersecting`) the topology is flat-out wrong as
+      a starting point; the final solver may not be able to fully shrink
+      the unwanted overlaps before getting stuck. Two ways to handle:
+      either zero out (or shrink) the overlap regions the spec marks
+      empty before feeding to the solver, or detect "spec has any
+      disjoint pair" and skip the Venn warm start for that spec (use a
+      regular sampler row for that restart slot instead).
+
+      **Probe via `examples/quality_report`**: add a `venn_seed` config
+      that puts the Venn warm start in slot 0 of `n_restarts`, leave
+      remaining slots on the existing default. Decision rule: if median
+      loss on `issue91_6_set` drops below `1e-1` and no easy spec
+      regresses, promote to default (Venn slot is cheap --- a fixed
+      construction per `n`, no extra MDS runs needed in flavour (b)).
+      Likely worth more diag-error per hour than further LHS tuning, and
+      complementary to the global-stage work since it attacks initial
+      basin choice, not search-direction quality.
 
 - [ ] **Bounded final stage for pathological `a/b` ratios**. With LM as the
       default and L-BFGS-B not in argmin, the cleanest fix is reparameterising

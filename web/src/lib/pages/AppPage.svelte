@@ -72,6 +72,8 @@
       rows: $state.snapshot(appState.rows),
       inputType: appState.inputType,
       shapeType: appState.shapeType,
+      diagramType: appState.diagramType,
+      vennN: appState.vennN,
       advanced: $state.snapshot(appState.advanced),
     };
     if (debounce) clearTimeout(debounce);
@@ -83,6 +85,8 @@
     void appState.rows;
     void appState.inputType;
     void appState.shapeType;
+    void appState.diagramType;
+    void appState.vennN;
     void appState.style;
     void appState.advanced;
     void appState.exportSettings;

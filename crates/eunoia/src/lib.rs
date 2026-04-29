@@ -36,6 +36,7 @@ pub mod math;
 pub mod spec;
 
 pub mod constants;
+pub mod venn;
 
 #[cfg(feature = "plotting")]
 pub mod plotting;
@@ -50,3 +51,4 @@ pub mod test_utils;
 pub use error::DiagramError;
 pub use fitter::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer};
 pub use spec::{Combination, DiagramSpecBuilder, InputType};
+pub use venn::VennDiagram;

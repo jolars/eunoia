@@ -1,9 +1,11 @@
 import type {
   AdvancedOptions,
+  DiagramType,
   FitResult,
   InputType,
   Row,
   ShapeType,
+  VennSetCount,
 } from "../types/diagram";
 
 const POLYGON_VERTICES = 256;
@@ -85,13 +87,122 @@ export interface FitInputs {
   rows: Row[];
   inputType: InputType;
   shapeType: ShapeType;
+  diagramType: DiagramType;
+  vennN: VennSetCount;
   advanced: AdvancedOptions;
 }
 
 // Re-export so the worker can import the type from a single place.
-export type { Row, InputType, ShapeType, AdvancedOptions };
+export type {
+  Row,
+  InputType,
+  ShapeType,
+  AdvancedOptions,
+  DiagramType,
+  VennSetCount,
+};
+
+function runVennFit(wasm: any, inputs: FitInputs): FitResult {
+  const showRegions = inputs.advanced.showRegions;
+
+  if (showRegions) {
+    const result = wasm.generate_venn_regions(inputs.vennN, POLYGON_VERTICES);
+    const rawRegions = Array.from(result.regions) as any[];
+    const allVerts = rawRegions.flatMap((r) =>
+      Array.from(r.polygons).flatMap((p: any) =>
+        Array.from(p.vertices) as { x: number; y: number }[],
+      ),
+    );
+    const ctx = buildContext([allVerts]);
+    const regions = rawRegions.map((r: any) => {
+      const polys = Array.from(r.polygons).map((p: any) => {
+        const pole = p.pole_of_inaccessibility(ctx.precision);
+        return {
+          label: r.combination as string,
+          vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map(
+            (v) => normPoint(v, ctx),
+          ),
+          labelPosition: normPoint(pole, ctx),
+        };
+      });
+      return {
+        combination: r.combination as string,
+        totalArea: r.total_area as number,
+        polygons: polys,
+      };
+    });
+    return {
+      shapeMode: "region",
+      shapeType: "ellipse",
+      polygons: [],
+      circles: [],
+      ellipses: [],
+      regions,
+      metrics: {
+        loss: result.loss,
+        stress: result.stress,
+        diagError: result.diag_error,
+        iterations: result.iterations,
+        target: parseRecord(result.target_areas_json),
+        fitted: parseRecord(result.fitted_areas_json),
+        regionError: parseRecord(result.region_error_json),
+        residuals: parseRecord(result.residuals_json),
+      },
+    };
+  }
+
+  const result = wasm.generate_venn_polygons(inputs.vennN, POLYGON_VERTICES);
+  const polygons = Array.from(result.polygons) as any[];
+  const ellipses = Array.from(result.ellipses) as any[];
+
+  const polyVerts = polygons.map(
+    (p) => Array.from(p.vertices) as { x: number; y: number }[],
+  );
+  const ctx = buildContext(polyVerts);
+
+  const normPolygons = polygons.map((p: any) => {
+    const pole = p.pole_of_inaccessibility(ctx.precision);
+    return {
+      label: p.label as string,
+      vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map(
+        (v) => normPoint(v, ctx),
+      ),
+      labelPosition: normPoint(pole, ctx),
+    };
+  });
+  const normEllipses = ellipses.map((e: any) => ({
+    label: e.label as string,
+    x: (e.x - ctx.minX) * ctx.scale,
+    y: (e.y - ctx.minY) * ctx.scale,
+    semi_major: e.semi_major * ctx.scale,
+    semi_minor: e.semi_minor * ctx.scale,
+    rotation: e.rotation,
+  }));
+
+  return {
+    shapeMode: "outline",
+    shapeType: "ellipse",
+    polygons: normPolygons,
+    circles: [],
+    ellipses: normEllipses,
+    regions: [],
+    metrics: {
+      loss: result.loss,
+      stress: result.stress,
+      diagError: result.diag_error,
+      iterations: result.iterations,
+      target: parseRecord(result.target_areas_json),
+      fitted: parseRecord(result.fitted_areas_json),
+      regionError: parseRecord(result.region_error_json),
+      residuals: parseRecord(result.residuals_json),
+    },
+  };
+}
 
 export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
+  if (inputs.diagramType === "venn") {
+    return runVennFit(wasm, inputs);
+  }
   const specs = buildSpecs(wasm, inputs.rows);
   if (specs.length === 0) return null;
   const seed =

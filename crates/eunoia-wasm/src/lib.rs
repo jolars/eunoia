@@ -4,6 +4,7 @@
 //! enabling Euler and Venn diagram generation in web browsers.
 
 use eunoia::Optimizer;
+use eunoia::VennDiagram;
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::geometry::traits::Polygonize;
 use eunoia::loss::LossType;
@@ -1595,6 +1596,141 @@ pub fn generate_region_polygons_ellipses(
     }
 
     // Get target and fitted areas, converting Combination keys to strings
+    let target_areas: std::collections::HashMap<String, f64> = layout
+        .requested()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+
+    Ok(WasmRegionPolygons {
+        regions: wasm_regions,
+        loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
+    })
+}
+
+/// Build a canonical n-set Venn diagram (1 ≤ n ≤ 5) and return per-set
+/// ellipse outlines as polygons.
+///
+/// No fitting is performed — this just emits the hardcoded canonical layout.
+/// Loss/stress/diag-error are reported against the synthetic spec (every
+/// region requested at area `1.0`); they have no optimization meaning.
+#[wasm_bindgen]
+pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResult, JsValue> {
+    let venn = VennDiagram::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let (layout, diagram_spec) = venn.into_layout_and_spec();
+    let diagnostics = extract_diagnostics(&layout)?;
+
+    let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|ellipse: &Ellipse| {
+                WasmEllipse::new(
+                    ellipse.center().x(),
+                    ellipse.center().y(),
+                    ellipse.semi_major(),
+                    ellipse.semi_minor(),
+                    ellipse.rotation(),
+                    name.to_string(),
+                )
+            })
+        })
+        .collect();
+
+    let wasm_polygons: Vec<WasmPolygon> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|ellipse: &Ellipse| {
+                let polygon = ellipse.polygonize(n_vertices);
+                let vertices: Vec<WasmPoint> = polygon
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: name.to_string(),
+                }
+            })
+        })
+        .collect();
+
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(PolygonResult {
+        polygons: wasm_polygons,
+        circles: vec![],
+        ellipses: wasm_ellipses,
+        loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
+    })
+}
+
+/// Build a canonical n-set Venn diagram (1 ≤ n ≤ 5) and return its decomposition
+/// into per-region exclusive polygons.
+#[wasm_bindgen]
+pub fn generate_venn_regions(n: usize, n_vertices: usize) -> Result<WasmRegionPolygons, JsValue> {
+    let venn = VennDiagram::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let (layout, diagram_spec) = venn.into_layout_and_spec();
+    let diagnostics = extract_diagnostics(&layout)?;
+
+    let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
+
+    let mut wasm_regions = Vec::new();
+    for (combination, polygons) in region_polygons.iter() {
+        let wasm_polygons: Vec<WasmPolygon> = polygons
+            .iter()
+            .map(|poly| {
+                let vertices: Vec<WasmPoint> = poly
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: combination.to_string(),
+                }
+            })
+            .collect();
+
+        wasm_regions.push(WasmRegion {
+            combination: combination.to_string(),
+            polygons: wasm_polygons,
+        });
+    }
+
     let target_areas: std::collections::HashMap<String, f64> = layout
         .requested()
         .iter()

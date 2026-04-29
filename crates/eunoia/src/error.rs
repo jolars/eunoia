@@ -19,6 +19,13 @@ pub enum DiagramError {
 
     /// Invalid combination format.
     InvalidCombination(String),
+
+    /// Number of sets is not supported for the requested operation.
+    ///
+    /// For example, canonical Venn arrangements with ellipses only exist for
+    /// `n ∈ 1..=5`; higher `n` requires non-ellipse curves (Edwards's
+    /// cogwheels) which eunoia does not support.
+    UnsupportedSetCount(usize),
 }
 
 impl Display for DiagramError {
@@ -42,6 +49,9 @@ impl Display for DiagramError {
             }
             DiagramError::InvalidCombination(combo) => {
                 write!(f, "Invalid combination format: '{}'", combo)
+            }
+            DiagramError::UnsupportedSetCount(n) => {
+                write!(f, "Unsupported set count: {}", n)
             }
         }
     }
@@ -104,6 +114,13 @@ mod tests {
         let error = DiagramError::InvalidCombination("A&".to_string());
         assert_eq!(error, DiagramError::InvalidCombination("A&".to_string()));
         assert_eq!(format!("{}", error), "Invalid combination format: 'A&'");
+    }
+
+    #[test]
+    fn test_unsupported_set_count_error() {
+        let error = DiagramError::UnsupportedSetCount(7);
+        assert_eq!(error, DiagramError::UnsupportedSetCount(7));
+        assert_eq!(format!("{}", error), "Unsupported set count: 7");
     }
 
     #[test]

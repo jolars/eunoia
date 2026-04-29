@@ -55,6 +55,9 @@ export interface FitResult {
 export type Row = { input: string; size: number };
 export type InputType = "exclusive" | "inclusive";
 export type ShapeType = "circle" | "ellipse";
+export type DiagramType = "euler" | "venn";
+/** Set count for canonical Venn diagrams. Limited to the range supported by `VennDiagram::new` (1..=5). */
+export type VennSetCount = 1 | 2 | 3 | 4 | 5;
 export type LegendPosition = "right" | "left" | "top" | "bottom";
 export type OptimizerName =
   | "NelderMead"
@@ -118,6 +121,8 @@ export interface PersistedState {
   rows: Row[];
   inputType: InputType;
   shapeType: ShapeType;
+  diagramType?: DiagramType;
+  vennN?: VennSetCount;
   style: DiagramStyle;
   advanced: AdvancedOptions;
   exportSettings: ExportSettings;
