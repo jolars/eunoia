@@ -44,7 +44,7 @@ default-suite tests are in `crates/eunoia/src/fitter/corpus_quality.rs` and
 The corpus / proptest surfaced these. None were introduced by the harness;
 they're pre-existing behaviour the harness now exposes.
 
-- [~] **`eulerape_3_set`ellipses land at `diag_error ≈ 1.16e-2`** at default
+- [ ] **`eulerape_3_set`ellipses land at `diag_error ≈ 1.16e-2`** at default
       `Fitter` settings on every `TEST_SEEDS` entry. Ellipses can represent this
       layout exactly in principle --- eulerr's eulerAPE article spec is the
       canonical "ellipses fit it perfectly" example. Looks like a default-budget
