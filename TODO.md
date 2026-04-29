@@ -65,15 +65,15 @@ they're pre-existing behaviour the harness now exposes.
       (`fitter.rs` "normalize_layout changed fitted exclusive regions").
       Reproducers: corpus specs `two_overlapping_completely`
       (`A=0, B=0, A&B=10`), `issue71_4_set_extreme_scale`,
-      `issue32_3_set_small_triple`, and `three_inside_fourth` (added under the
+      `issue32_3_set_small_triple`, `three_inside_fourth` (added under the
       LM-MDS default — fits cleanly in release, trips the assert in debug at
-      some seeds), all with `Ellipse` in any debug build. Cluster
-      rotation/normalization perturbs the near-coincident ellipses by more
-      than the assert's `abs=1e-8, rel=1e-6` tolerances. The corpus marks
-      these as `Fittable::Skip` for ellipses; the bug itself still needs
-      fixing (loosen tolerances, or fix normalize to be a true rigid
-      transform on coincident shapes). Fixing this returns 4 corpus entries
-      to `Fittable::Normal`.
+      some seeds), and `gene_sets` (Windows-only, seed=7), all with
+      `Ellipse` in any debug build. Cluster rotation/normalization perturbs
+      the near-coincident ellipses by more than the assert's `abs=1e-8,
+      rel=1e-6` tolerances. The corpus marks these as `Fittable::Skip` for
+      ellipses; the bug itself still needs fixing (loosen tolerances, or
+      fix normalize to be a true rigid transform on coincident shapes).
+      Fixing this returns 5 corpus entries to `Fittable::Normal`.
 
 - [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. Random area
       inputs aren't guaranteed to be representable by ellipses, so this may not
@@ -176,21 +176,38 @@ they're pre-existing behaviour the harness now exposes.
       bounded `a/b` reparameterisation below --- both likely worth more
       diag-error per hour spent than further global-stage tuning at this budget.
 
-- [x] **Latin hypercube initial starts** --- probed twice (under both the
-      old L-BFGS-MDS default and the current LM-MDS default), no measurable
-      improvement either way. Landed as opt-in
-      `InitialSampler::LatinHypercube` (default stays `Uniform`); selectable
-      via `Fitter::initial_sampler`. Under the LM-MDS default at
-      `n_restarts=10`, LHS gives +1 spec win on each shape and ~0.2-0.8%
-      better mean diag (circle `1.700e-2` → `1.696e-2`; ellipse `3.622e-3`
-      → `3.594e-3`), well below the predicted 10-20% bump and within
-      run-to-run noise. Median loss is unchanged on circles and worse on
-      ellipses (`1.14e-25` → `3.25e-24`, both at floating-point floor). Not
-      a default candidate; scaffolding kept for users whose specs may
-      benefit. Probe also surfaced an unrelated pre-existing bug --- LHS at
-      small `n_restarts` forced certain extreme-scale specs into a stratum
-      that deadlocked argmin's L-BFGS MDS --- which led to the MDS default
-      flip below.
+- [x] **Latin hypercube initial starts** --- landed as opt-in
+      `InitialSampler::LatinHypercube` (default stays `Uniform` for eulerr
+      parity); selectable via `Fitter::initial_sampler`.
+
+      Probed three times. The first two probes (under the old L-BFGS-MDS
+      default and the current LM-MDS default) used the full eulerr extent
+      `[0, scale]` for stratification and showed only ~0.2-0.8% mean-diag
+      improvement, within run-to-run noise. They also surfaced a deadlock:
+      LHS at small `n_restarts` forced certain extreme-scale specs into a
+      stratum that deadlocked argmin's L-BFGS MDS (which led to the MDS
+      default flip below).
+
+      The third probe shrank the LHS box to the central
+      `[0.25·scale, 0.75·scale]` (`LHS_HALF_WIDTH_FRAC = 0.25`,
+      `crates/eunoia/src/fitter/initial_layout.rs`). The full extent
+      over-spread the design into edge regions (one circle dragged way
+      out, others piled at the origin) that Uniform sampling rarely
+      visits but that LHS guarantees a stratum for. Re-running
+      `examples/quality_report` under the current `Optimizer::CmaEsLm`
+      default at `n_restarts=10`:
+      - ellipse: median loss `7.373e-27 → 5.305e-28`, mean diag
+        `4.398e-3 → 3.949e-3` (~10% improvement), wall time
+        `3.33 s → 3.02 s` (faster), same 16 spec wins.
+      - circle: median unchanged at `2.451e-4`, mean diag
+        `1.700e-2 → 1.694e-2`, same 18 spec wins.
+
+      Not flipped to default --- still a behavioural divergence from
+      eulerr and the gain is modest --- but the central-box LHS is now
+      a meaningful "tighter starts" knob for users on hard ellipse
+      specs. Whether to make it default is open: the ellipse delta is
+      one full order of magnitude on median loss, no wall-time
+      regression, but no proptest sweep yet under LHS-default.
 
 - [x] **Deterministic Venn-layout warm start** in slot 0 of `n_restarts`,
       flavour (b) (skip MDS, hand canonical Venn shape parameters straight

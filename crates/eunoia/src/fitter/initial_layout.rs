@@ -30,8 +30,8 @@ pub(crate) fn sampling_scale(set_areas: &[f64]) -> f64 {
 ///
 /// The outer `n_restarts` loop draws random initial positions for each MDS
 /// attempt. Stratifying that draw via Latin hypercube sampling spreads attempts
-/// more evenly across `[0, scale]^(2·n_sets)` than independent uniform draws,
-/// which can pile up multiple attempts in the same basin by chance.
+/// more evenly across the sampling box than independent uniform draws, which
+/// can pile up multiple attempts in the same basin by chance.
 ///
 /// See [`Fitter::initial_sampler`] to switch.
 ///
@@ -42,35 +42,60 @@ pub enum InitialSampler {
     /// `runif(n*2, 0, sqrt(sum(r^2*pi)))`.
     #[default]
     Uniform,
-    /// Latin hypercube sampling: across the batch of `n_restarts` attempts,
-    /// each of the `2·n_sets` axes is split into `n_restarts` equal strata of
-    /// width `scale / n_restarts`, and each stratum is sampled exactly once
-    /// under a random per-axis permutation.
+    /// Latin hypercube sampling on the central `[0.25·scale, 0.75·scale]^(2·n_sets)`
+    /// box: across the batch of `n_restarts` attempts, each of the `2·n_sets`
+    /// axes is split into `n_restarts` equal strata sampled exactly once under
+    /// a random per-axis permutation. The central box (vs the full eulerr
+    /// `[0, scale]` extent) keeps the LHS budget on initial conditions
+    /// downstream LM can refine, and empirically lifts mean `diag_error` ~10%
+    /// on ellipses without hurting circles at `n_restarts=10`. See
+    /// [`LHS_HALF_WIDTH_FRAC`].
     LatinHypercube,
 }
 
-/// Build a Latin hypercube design of `n_samples` points in `[0, scale]^n_dims`.
+/// Half-width of the LHS box as a fraction of the eulerr `[0, scale]` extent.
+///
+/// The eulerr Uniform sampler draws on `[0, scale]`; the LHS sampler draws on
+/// `[scale·(½ - LHS_HALF_WIDTH_FRAC), scale·(½ + LHS_HALF_WIDTH_FRAC)]`,
+/// i.e. centred at `scale/2` with total width `2·LHS_HALF_WIDTH_FRAC·scale`.
+///
+/// `0.25` gives the central 50% of the eulerr extent
+/// (`[0.25·scale, 0.75·scale]`). Rationale: under independent uniform draws on
+/// `[0, scale]`, ~50% of samples land outside `[0.25·scale, 0.75·scale]` per
+/// axis — but for a well-conditioned MDS init most of those edge points are
+/// far from any reasonable layout (one circle dragged way out, others piled at
+/// the origin). Stratifying within the central box concentrates the LHS budget
+/// on initial conditions that are actually plausible, while still spreading
+/// across `n_restarts` strata. Edge coverage is sacrificed deliberately —
+/// users who need it can fall back to `InitialSampler::Uniform`.
+pub(crate) const LHS_HALF_WIDTH_FRAC: f64 = 0.25;
+
+/// Build a Latin hypercube design of `n_samples` points in `[lo, hi]^n_dims`.
 ///
 /// Returns one row per sample; row `i` is the initial position vector for
 /// restart `i`. Each axis is split into `n_samples` equal strata (width
-/// `scale / n_samples`); the stratum-to-sample assignment is an independent
-/// random permutation per axis, with a uniform jitter inside the chosen
-/// stratum. `n_samples = 1` degenerates to a single uniform draw.
+/// `(hi - lo) / n_samples`); the stratum-to-sample assignment is an
+/// independent random permutation per axis, with a uniform jitter inside the
+/// chosen stratum. `n_samples = 1` degenerates to a single uniform draw on
+/// `[lo, hi]`.
 pub(crate) fn latin_hypercube_rows(
     n_samples: usize,
     n_dims: usize,
-    scale: f64,
+    lo: f64,
+    hi: f64,
     rng: &mut dyn rand::RngCore,
 ) -> Vec<Vec<f64>> {
     debug_assert!(n_samples >= 1);
-    let inv_n = scale / (n_samples as f64);
+    debug_assert!(hi >= lo);
+    let span = hi - lo;
+    let inv_n = span / (n_samples as f64);
     let mut rows = vec![vec![0.0; n_dims]; n_samples];
     for d in 0..n_dims {
         let mut perm: Vec<usize> = (0..n_samples).collect();
         perm.shuffle(rng);
         for (i, row) in rows.iter_mut().enumerate() {
             let u: f64 = rng.random_range(0.0..1.0);
-            row[d] = (perm[i] as f64 + u) * inv_n;
+            row[d] = lo + (perm[i] as f64 + u) * inv_n;
         }
     }
     rows
@@ -791,19 +816,22 @@ mod tests {
     #[test]
     fn latin_hypercube_stratifies_each_axis() {
         // Stratification invariant: for each of the n_dims axes, the n_samples
-        // values must hit every stratum [k/n, (k+1)/n) · scale exactly once.
+        // values must hit every stratum [lo + k·w, lo + (k+1)·w) exactly once,
+        // where w = (hi - lo) / n_samples.
         let mut rng = StdRng::seed_from_u64(7);
         let n_samples = 10;
         let n_dims = 6;
-        let scale = 4.0;
-        let rows = latin_hypercube_rows(n_samples, n_dims, scale, &mut rng);
+        let lo = 1.0;
+        let hi = 5.0;
+        let rows = latin_hypercube_rows(n_samples, n_dims, lo, hi, &mut rng);
         assert_eq!(rows.len(), n_samples);
+        let span = hi - lo;
         for d in 0..n_dims {
             let mut hits = vec![false; n_samples];
             for row in &rows {
                 let v = row[d];
-                assert!((0.0..scale).contains(&v), "axis {d} value {v} out of range");
-                let stratum = ((v / scale) * n_samples as f64).floor() as usize;
+                assert!((lo..hi).contains(&v), "axis {d} value {v} out of range");
+                let stratum = (((v - lo) / span) * n_samples as f64).floor() as usize;
                 let stratum = stratum.min(n_samples - 1);
                 assert!(!hits[stratum], "axis {d}: stratum {stratum} sampled twice");
                 hits[stratum] = true;
@@ -815,7 +843,7 @@ mod tests {
     #[test]
     fn latin_hypercube_n1_is_just_uniform() {
         let mut rng = StdRng::seed_from_u64(0);
-        let rows = latin_hypercube_rows(1, 4, 3.0, &mut rng);
+        let rows = latin_hypercube_rows(1, 4, 0.0, 3.0, &mut rng);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].len(), 4);
         for &v in &rows[0] {

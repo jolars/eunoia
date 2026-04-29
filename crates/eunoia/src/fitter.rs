@@ -565,11 +565,22 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let lhs_rows: Option<Vec<Vec<f64>>> = match self.initial_sampler {
             InitialSampler::Uniform => None,
             InitialSampler::LatinHypercube => {
+                // Stratify on the central `2·LHS_HALF_WIDTH_FRAC` fraction of
+                // the eulerr `[0, scale]` extent (centred at `scale/2`),
+                // not the full extent. The full-extent design over-spreads
+                // into edge regions Uniform sampling rarely visits, which
+                // both wastes restarts on implausible inits and (empirically)
+                // forces some specs into pathological strata that deadlock
+                // L-BFGS-MDS at subset clamps. See `LHS_HALF_WIDTH_FRAC`.
                 let scale = initial_layout::sampling_scale(&spec.set_areas);
+                let half_width = initial_layout::LHS_HALF_WIDTH_FRAC * scale;
+                let lo = 0.5 * scale - half_width;
+                let hi = 0.5 * scale + half_width;
                 Some(initial_layout::latin_hypercube_rows(
                     n_attempts,
                     n_sets * 2,
-                    scale,
+                    lo,
+                    hi,
                     &mut master_rng,
                 ))
             }
