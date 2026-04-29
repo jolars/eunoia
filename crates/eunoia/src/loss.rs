@@ -98,6 +98,46 @@ impl LossType {
         Self::DiagError
     }
 
+    /// Whether this loss is smooth (continuously differentiable) in the
+    /// region areas `f`.
+    ///
+    /// Returns `false` for losses built from `|·|` or `max(·)`: the
+    /// gradient is zero almost everywhere except at a single active
+    /// region (`Max*`) or has a discontinuity at every zero crossing
+    /// (`SumAbsolute`, `DiagError`, `SumAbsoluteRegionError`). On those
+    /// losses, central-difference gradients return mostly zeros and
+    /// L-BFGS thrashes against the line search; the fitter routes
+    /// non-smooth losses to derivative-free Nelder-Mead instead. See
+    /// issue #45.
+    ///
+    /// Smooth: [`SumSquared`], [`RootMeanSquared`], [`Stress`],
+    /// [`SumSquaredRegionError`].
+    /// Non-smooth: [`SumAbsoute`], [`SumAbsoluteRegionError`],
+    /// [`MaxAbsolute`], [`MaxSquared`], [`DiagError`].
+    ///
+    /// [`SumSquared`]: Self::SumSquared
+    /// [`RootMeanSquared`]: Self::RootMeanSquared
+    /// [`Stress`]: Self::Stress
+    /// [`SumSquaredRegionError`]: Self::SumSquaredRegionError
+    /// [`SumAbsoute`]: Self::SumAbsoute
+    /// [`SumAbsoluteRegionError`]: Self::SumAbsoluteRegionError
+    /// [`MaxAbsolute`]: Self::MaxAbsolute
+    /// [`MaxSquared`]: Self::MaxSquared
+    /// [`DiagError`]: Self::DiagError
+    pub fn is_smooth(&self) -> bool {
+        match self {
+            LossType::SumSquared
+            | LossType::RootMeanSquared
+            | LossType::Stress
+            | LossType::SumSquaredRegionError => true,
+            LossType::SumAbsoute
+            | LossType::SumAbsoluteRegionError
+            | LossType::MaxAbsolute
+            | LossType::MaxSquared
+            | LossType::DiagError => false,
+        }
+    }
+
     /// Compute loss between fitted and target region areas
     pub fn compute(
         &self,
@@ -479,5 +519,19 @@ mod tests {
         let loss = LossType::sse();
         let cloned = loss;
         assert_eq!(loss, cloned);
+    }
+
+    #[test]
+    fn test_is_smooth() {
+        assert!(LossType::SumSquared.is_smooth());
+        assert!(LossType::RootMeanSquared.is_smooth());
+        assert!(LossType::Stress.is_smooth());
+        assert!(LossType::SumSquaredRegionError.is_smooth());
+
+        assert!(!LossType::SumAbsoute.is_smooth());
+        assert!(!LossType::SumAbsoluteRegionError.is_smooth());
+        assert!(!LossType::MaxAbsolute.is_smooth());
+        assert!(!LossType::MaxSquared.is_smooth());
+        assert!(!LossType::DiagError.is_smooth());
     }
 }

@@ -25,10 +25,12 @@ use crate::spec::PreprocessedSpec;
 /// Optimizer to use for final layout optimization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Optimizer {
-    /// Levenberg-Marquardt with analytic Jacobian. Default — specialised for
-    /// the (now sole) sum-of-squares loss `LossType::SumSquared`. When
-    /// configured with a non-LSQ loss, the dispatch silently falls back to
-    /// `Lbfgs`.
+    /// Levenberg-Marquardt with analytic Jacobian. Specialised for the
+    /// sum-of-squares loss `LossType::SumSquared`. When configured with a
+    /// non-LSQ loss, the dispatch falls back to `Lbfgs` for smooth losses
+    /// (RMSE, Stress, …) and to `NelderMead` for non-smooth ones (`Max*`,
+    /// `SumAbsolute`, `DiagError`, `SumAbsoluteRegionError`) — the latter
+    /// produce zero/discontinuous gradients that stall L-BFGS (issue #45).
     ///
     /// Uses the existing analytical region-area gradients to assemble a
     /// per-residual Jacobian (one row per region mask), then approximates
@@ -247,48 +249,7 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
     // Choose optimizer and run based on configuration
     let (final_params, loss) = match config.optimizer {
         Optimizer::NelderMead => {
-            // NelderMead needs initial simplex
-            let initial_simplex = {
-                let n_params = initial_param.len();
-                let mut simplex = Vec::with_capacity(n_params + 1);
-                simplex.push(initial_param.clone());
-
-                for i in 0..n_params {
-                    let mut perturbed = initial_param.clone();
-                    let x0_i = initial_param[i];
-
-                    // Check parameter type for ellipses (5 params per shape)
-                    let param_idx = i % params_per_shape;
-                    let is_rotation = params_per_shape == 5 && param_idx == 4;
-
-                    let delta = if x0_i.abs() > 1e-10 {
-                        0.05 * x0_i.abs()
-                    } else if is_rotation {
-                        0.2 // ~11.5 degrees for rotation parameters
-                    } else {
-                        0.00025
-                    };
-                    perturbed[i] += delta;
-                    simplex.push(perturbed);
-                }
-
-                simplex
-            };
-
-            let cost_function = DiagramCost::<S> {
-                spec,
-                loss_type: config.loss_type,
-                params_per_shape,
-                _shape: std::marker::PhantomData,
-            };
-            let solver = NelderMead::new(initial_simplex);
-            let result = Executor::new(cost_function, solver)
-                .configure(|state| state.max_iters(config.max_iterations as u64))
-                .run()?;
-            (
-                result.state().get_best_param().unwrap().clone(),
-                result.state().get_cost(),
-            )
+            run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)?
         }
         Optimizer::Lbfgs => {
             // L-BFGS with numerical gradients
@@ -388,10 +349,17 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
     Ok((final_params, loss))
 }
 
-/// Run Levenberg-Marquardt for sum-of-squares losses, falling back to L-BFGS
-/// (with the analytical-gradient `DiagramCost` path) on losses LM doesn't
-/// support. Shared between `Optimizer::LevenbergMarquardt` and the polish
-/// step of `Optimizer::CmaEsLm` so both go through the same numerical path.
+/// Run Levenberg-Marquardt for `SumSquared`, falling back to L-BFGS on other
+/// smooth losses and to Nelder-Mead on non-smooth ones (`Max*`,
+/// `SumAbsolute`, `DiagError`, `SumAbsoluteRegionError`). Non-smooth losses
+/// produce zero or discontinuous gradients almost everywhere, which makes
+/// L-BFGS thrash against the line search — see issue #45 and
+/// [`LossType::is_smooth`].
+///
+/// Shared between [`Optimizer::LevenbergMarquardt`] and the polish step of
+/// [`Optimizer::CmaEsLm`] so both go through the same numerical path.
+///
+/// [`LossType::is_smooth`]: crate::loss::LossType::is_smooth
 fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
     params_per_shape: usize,
@@ -409,6 +377,9 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
             // LM minimises ½·Σrᵢ²; existing loss is Σrᵢ², so ×2.
             let final_loss = report.objective_function * 2.0;
             Ok((problem_after.params.clone(), final_loss))
+        }
+        Err(_incompatible_loss) if !config.loss_type.is_smooth() => {
+            run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)
         }
         Err(_incompatible_loss) => {
             let cost_function_lbfgs = DiagramCost::<S> {
@@ -434,6 +405,54 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
             ))
         }
     }
+}
+
+/// Run derivative-free Nelder-Mead from the given initial parameters.
+///
+/// Used directly by `Optimizer::NelderMead` and as the non-smooth-loss
+/// fallback inside [`run_lm_or_lbfgs`]. Builds the initial simplex by
+/// perturbing each parameter by 5% of its magnitude (with shape-aware
+/// fallbacks for rotations and near-zero values).
+fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> Result<(DVector<f64>, f64), Error> {
+    let n_params = initial_param.len();
+    let mut simplex = Vec::with_capacity(n_params + 1);
+    simplex.push(initial_param.clone());
+    for i in 0..n_params {
+        let mut perturbed = initial_param.clone();
+        let x0_i = initial_param[i];
+        let param_idx = i % params_per_shape;
+        let is_rotation = params_per_shape == 5 && param_idx == 4;
+
+        let delta = if x0_i.abs() > 1e-10 {
+            0.05 * x0_i.abs()
+        } else if is_rotation {
+            0.2 // ~11.5 degrees for rotation parameters
+        } else {
+            0.00025
+        };
+        perturbed[i] += delta;
+        simplex.push(perturbed);
+    }
+
+    let cost_function = DiagramCost::<S> {
+        spec,
+        loss_type: config.loss_type,
+        params_per_shape,
+        _shape: std::marker::PhantomData,
+    };
+    let solver = NelderMead::new(simplex);
+    let result = Executor::new(cost_function, solver)
+        .configure(|state| state.max_iters(config.max_iterations as u64))
+        .run()?;
+    Ok((
+        result.state().get_best_param().unwrap().clone(),
+        result.state().get_cost(),
+    ))
 }
 
 /// Build per-parameter (lower, upper, initial_std) triples for CMA-ES from
