@@ -11,10 +11,10 @@ default-suite tests are in `crates/eunoia/src/fitter/corpus_quality.rs` and
       (`crates/eunoia/examples/quality_report.rs`). Runs the full corpus ×
       `QUALITY_SEEDS` (16) × {Circle, Ellipse} using the default `Fitter`,
       prints a markdown summary to stdout, and writes a JSON snapshot to
-      `<target>/quality_report.json`. Captures both fit quality
-      (`diag_error`, final loss, iterations) and runtime (per-cell
-      `elapsed_ms`, per-spec aggregates, per-shape totals) so a single report
-      characterises both axes of any optimizer change.
+      `<target>/quality_report.json`. Captures both fit quality (`diag_error`,
+      final loss, iterations) and runtime (per-cell `elapsed_ms`, per-spec
+      aggregates, per-shape totals) so a single report characterises both axes
+      of any optimizer change.
 
       Run with:
 
@@ -73,35 +73,75 @@ they're pre-existing behaviour the harness now exposes.
       as fitter quality improves; treat any loosening of this number as a
       regression.
 
+- [ ] **`test_issue28_four_set_superset_ellipse_regression`slow-test fails under
+      default LM at the test's tightened budget** (`tolerance=1e-10`,
+      `max_iterations=2000`). Default-budget LM at seed=1 reaches `diag_error`
+      well below the test's 1e-6 bar (the `corpus_ellipses_diag_error` fast test
+      passes the same spec at seed=1), but with `patience=2000` LM's
+      `max_fev = patience·(n+1) ≈ 42000` on n=20 lets it drift past the good
+      basin. Pre-existing --- surfaced in the SA-fallback drop. Either tighten
+      LM termination on `with_patience` or relax the tightened budget in the
+      test; the spec itself is fittable.
+
 ## Optimizer work (gated on the harness)
 
-- [x] **Levenberg-Marquardt final stage** — landed as
+- [x] **Levenberg-Marquardt final stage** --- landed as
       `Optimizer::LevenbergMarquardt` (final stage) and
       `MdsSolver::LevenbergMarquardt` (MDS stage), via the
-      `levenberg-marquardt = "0.13"` crate. On the quality_report ellipse
-      sweep, `lm_final` drops median loss from `1.6e-7` (L-BFGS default) to
-      `1.1e-28`, mean diag_error from `7.4e-3` to `4.8e-3`, and total wall
-      time from 4.5 s to 1.55 s — wins 20 of 27 specs vs default's 5. On
-      circles the gain is marginal (already near-optimum). Restricted to
-      `SumSquared` / `NormalizedSumSquared`; rejects other losses at
-      construction.
+      `levenberg-marquardt = "0.13"` crate. On the quality_report ellipse sweep,
+      `lm_final` drops median loss from `1.6e-7` (L-BFGS default) to `1.1e-28`,
+      mean diag_error from `7.4e-3` to `4.8e-3`, and total wall time from 4.5 s
+      to 1.55 s --- wins 20 of 27 specs vs default's 5. On circles the gain is
+      marginal (already near-optimum). Restricted to `SumSquared` /
+      `NormalizedSumSquared`; rejects other losses at construction.
 
 - [ ] **Gauss-Newton final stage** (low-priority bookkeeping after LM landed).
-      argmin ships `GaussNewton` with line search; the LM Jacobian plumbing
-      is already in place, so GN is a one-line solver swap. With LM hitting
-      ~1e-28 median ellipse loss out of the box this is no longer a
-      quality candidate — only worth running to characterise how often the
-      linearisation is good enough that GN's undamped step matches LM.
+      argmin ships `GaussNewton` with line search; the LM Jacobian plumbing is
+      already in place, so GN is a one-line solver swap. With LM hitting \~1e-28
+      median ellipse loss out of the box this is no longer a quality candidate
+      --- only worth running to characterise how often the linearisation is good
+      enough that GN's undamped step matches LM.
 
-- [ ] **CMA-ES global step + LM polish**. Bound-constrained final stage, CMA-ES
-      for global escape, LM polish using the analytical Jacobian. The original
-      motivation (`eulerape_3_set`, issue #28) is partly closed by LM-on-LM
-      already, but a few specs still benefit from a global escape:
-      `issue91_6_set` (~3.5e-1 loss with `lm_full`), `issue44_4_set_inclusive`
-      (~4.4e-3), `issue92_3_set_dropped_pair` (~1.3e-4). Benchmark against
-      `corpus_circles_diag_error` / `corpus_ellipses_diag_error` and the
-      synthetic ground-truth proptest. If CMA-ES closes those, ship it;
-      otherwise consider memetic DE+LM.
+- [x] **CMA-ES global step + LM polish** --- landed as `Optimizer::CmaEsLm`
+      (final stage). Inline purecma-style CMA-ES (`fitter/cmaes.rs`, \~350 LOC,
+      no new deps): bounded box around the MDS init (centroid ± 4·span on
+      positions, `[1e-6·max_r, 5·max_r]` on radii / semi-axes, unbounded on
+      angles), per-dim std for preconditioning, quadratic boundary penalty (no
+      rejection sampling). Each restart runs both plain LM and CMA-ES → LM
+      polish in parallel and keeps the lower-loss result, so the path is
+      strictly non-regressing vs `Optimizer::LevenbergMarquardt`. On the
+      `examples/quality_report` ellipse sweep median loss falls from `1.3e-4` to
+      `~1.5e-29` on `issue92_3_set_dropped_pair` (full escape), from `8.5e-3` to
+      `4.1e-3` on `random_4_set`, marginally on `issue44_4_set_inclusive`
+      (`4.44e-3` → `4.36e-3`), and is unchanged on `issue91_6_set` (`3.86e-1`).
+      Aggregate ellipse mean diag drops from `4.0e-3` to `3.2e-3`; 20 spec wins
+      (median loss) vs 18 for `lm_full`. Promoted to the `Fitter` default after
+      threshold-firing on `Fitter::cmaes_fallback_threshold` (default `1e-3`):
+      plain LM runs first and the global step is skipped when LM lands at or
+      below the threshold, so easy specs pay no extra wall time. Wall-time delta
+      vs `lm_full` on the full `examples/quality_report` ellipse sweep drops
+      from \~7× (always-fire) to \~3.8× (threshold-fired); circle sweep is \~5×.
+      Mean diag improvement (4.0e-3 → 3.4e-3) and the
+      `issue92_3_set_dropped_pair` escape both preserved. Open: `issue91_6_set`
+      is **not closed** --- CMA-ES at default budget can't escape its basin in
+      30 dims. Either bigger budget or pivot to memetic DE+LM. Not blocking;
+      flag as separate follow-up.
+
+- [ ] **Differential Evolution probe (`Optimizer::DeLm`)**. Cheap experiment to
+      decide whether `issue91_6_set` (the one spec CMA-ES can't escape at 30
+      dims and default budget) is reachable by a different population dynamic,
+      or whether it's genuinely outside reach of any non-Jacobian global stage
+      at this budget. Reuse the same threshold-fire scaffolding
+      `Optimizer::CmaEsLm` uses; swap CMA-ES for a basic DE/rand/1/bin (mutation
+      factor `0.5`, crossover `0.9`, population `~10·n`) inline in
+      `fitter/de.rs`, \~150 LOC, no new deps. Benchmark via
+      `examples/quality_report` against `default` (CmaEsLm) on the full corpus +
+      the synthetic-groundtruth proptest. Decision rule: if the `issue91_6_set`
+      median drops below `1e-1`, invest in a memetic DE+LM variant (adaptive
+      `F`/`CR`, archive-based mutation, ...); if it doesn't, close out the
+      global-stage line of work and move on to Latin hypercube starts and the
+      bounded `a/b` reparameterisation below --- both likely worth more
+      diag-error per hour spent than further global-stage tuning at this budget.
 
 - [ ] **Latin hypercube initial starts** instead of uniform random perturbations
       across `n_restarts`. Cheap potential 10-20% best-of-N quality bump; no
@@ -109,6 +149,6 @@ they're pre-existing behaviour the harness now exposes.
 
 - [ ] **Bounded final stage for pathological `a/b` ratios**. With LM as the
       default and L-BFGS-B not in argmin, the cleanest fix is reparameterising
-      semi-axes as `a = exp(u)`, `b = exp(v)` so the unbounded solver stays on
-      a valid manifold. Re-test first — LM's stronger basin coverage may have
+      semi-axes as `a = exp(u)`, `b = exp(v)` so the unbounded solver stays on a
+      valid manifold. Re-test first --- LM's stronger basin coverage may have
       already eliminated the proptest tail failures that motivated this.

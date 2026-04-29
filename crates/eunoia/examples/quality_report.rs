@@ -98,6 +98,18 @@ mod quality_report {
                 f.optimizer(Optimizer::LevenbergMarquardt)
                     .initial_solver(MdsSolver::LevenbergMarquardt)
             }),
+            // Bounded CMA-ES global step + LM polish on the final stage.
+            // Targets the three specs LM-on-LM can't escape (issue91_6_set,
+            // issue44_4_set_inclusive, issue92_3_set_dropped_pair). Expensive
+            // — ~1k–2k extra region-area evals per restart on hard 6-set
+            // ellipse fits.
+            ("cmaes_lm", |f| f.optimizer(Optimizer::CmaEsLm)),
+            // Same plus LM at the MDS stage. Tests whether the global step
+            // benefits from a tighter MDS init.
+            ("cmaes_lm_full", |f| {
+                f.optimizer(Optimizer::CmaEsLm)
+                    .initial_solver(MdsSolver::LevenbergMarquardt)
+            }),
         ]
     }
 

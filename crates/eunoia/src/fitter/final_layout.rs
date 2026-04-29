@@ -35,7 +35,6 @@ pub enum Optimizer {
     /// the Hessian as `JᵀJ`. The Jacobian comes from
     /// [`crate::geometry::traits::DiagramShape::compute_exclusive_regions_with_gradient`];
     /// boundary builders for Circle and Ellipse are documented in `AGENTS.md`.
-    #[default]
     LevenbergMarquardt,
     /// L-BFGS. Used as the non-LSQ fallback under the LM dispatch arm and
     /// available directly for losses where LM doesn't apply (RMSE, Stress,
@@ -47,6 +46,39 @@ pub enum Optimizer {
     /// where neither LM nor a meaningful gradient is available; kept mostly
     /// because the harness still uses it as a quality lower-bound sentinel.
     NelderMead,
+    /// Threshold-fired CMA-ES global escape followed by Levenberg-Marquardt
+    /// polish. Default for [`Fitter`].
+    ///
+    /// Each restart runs plain LM first; if the result is at or below
+    /// `Fitter::cmaes_fallback_threshold` (default `1e-3` on the default
+    /// `NormalizedSumSquared` loss) the CMA-ES step is skipped entirely
+    /// and the LM result is returned.
+    /// Easy specs that LM already crushes pay zero extra wall time.
+    ///
+    /// When LM stalls above the threshold (e.g. `issue92_3_set_dropped_pair`
+    /// at `1.3e-4`, `eulerape_3_set` at `4.4e-4`, `random_4_set` at
+    /// `8.5e-3` under plain LM), CMA-ES fires: it samples in a feasible
+    /// box around the MDS init (centroid ± span on positions,
+    /// `[eps, k·max_radius]` on radii / semi-axes; angles unbounded) and
+    /// hands its best point to the same Levenberg-Marquardt residual
+    /// problem the `LevenbergMarquardt` arm uses, so the analytical
+    /// Jacobian still drives the final tightening. The lower-loss of
+    /// {plain LM, CMA-ES → LM polish} is returned, so the path is
+    /// strictly non-regressing vs `LevenbergMarquardt`.
+    ///
+    /// Restricted to `SumSquared` / `NormalizedSumSquared` losses (the
+    /// LM polish requires it); non-LSQ losses fall back to L-BFGS for the
+    /// polish step.
+    ///
+    /// Cost: when CMA-ES fires, ~λ·max_iters extra function evaluations
+    /// on top of LM, with λ = `4 + floor(3 ln n)` for an n-parameter
+    /// problem and `max_iters = 100`. On `issue91_6_set` (n=30) that's
+    /// ~1400 extra region-area evals per restart. The threshold gate keeps
+    /// this off the easy-spec budget.
+    ///
+    /// [`Fitter`]: crate::Fitter
+    #[default]
+    CmaEsLm,
 }
 
 /// Configuration for final layout optimization.
@@ -75,6 +107,12 @@ pub(crate) struct FinalLayoutConfig {
     /// perturb the circle positions before converting to shape parameters.
     /// Mirrors eulerr's `n_restarts = 10` strategy.
     pub n_restarts: usize,
+    /// Loss threshold above which `Optimizer::CmaEsLm` fires the global
+    /// CMA-ES escape stage. When plain LM lands at or below this value the
+    /// CMA-ES step is skipped entirely, so the easy-spec wall-time cost
+    /// drops to that of `Optimizer::LevenbergMarquardt`. Only the
+    /// `CmaEsLm` arm consults this; other optimizers ignore it.
+    pub cmaes_fallback_threshold: f64,
 }
 
 impl Default for FinalLayoutConfig {
@@ -86,6 +124,14 @@ impl Default for FinalLayoutConfig {
             tolerance: 1e-6,
             seed: 0xDEAD_BEEF,
             n_restarts: 10,
+            // 1e-3 sits well above the ~1e-20 / ~1e-30 floor LM crushes
+            // easy specs to and well below the ~1e-2 / ~1e-1 plateaus the
+            // hard specs (issue91, issue92, eulerape, …) get stuck on.
+            // Picked empirically from `examples/quality_report`: every
+            // spec where lm_full lands at machine precision sits at or
+            // below 1e-20, every spec where it stalls in a wrong basin
+            // sits at or above 1e-4.
+            cmaes_fallback_threshold: 1e-3,
         }
     }
 }
@@ -268,57 +314,229 @@ fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
             )
         }
         Optimizer::LevenbergMarquardt => {
-            // LM only fits sum-of-squares losses. For other losses
-            // (RMSE, Stress, DiagError, …) silently fall back to L-BFGS so
-            // making LM the default doesn't surprise users who change
-            // `loss_type`.
-            match LmDiagramProblem::<S>::new(
-                spec,
-                params_per_shape,
-                config.loss_type,
-                initial_param,
-            ) {
-                Ok(problem) => {
-                    let solver = LevenbergMarquardt::new()
-                        .with_ftol(config.tolerance)
-                        .with_xtol(config.tolerance)
-                        .with_gtol(config.tolerance)
-                        // patience scales the eval budget with parameter
-                        // count (max_fev = patience·(n + 1)).
-                        .with_patience(config.max_iterations.max(1));
-                    let (problem_after, report) = solver.minimize(problem);
-                    // LM minimises ½·Σrᵢ²; existing loss is Σrᵢ², so ×2.
-                    let final_loss = report.objective_function * 2.0;
-                    (problem_after.params.clone(), final_loss)
-                }
-                Err(_incompatible_loss) => {
-                    let cost_function_lbfgs = DiagramCost::<S> {
-                        spec,
-                        loss_type: config.loss_type,
-                        params_per_shape,
-                        _shape: std::marker::PhantomData,
-                    };
-                    let line_search = MoreThuenteLineSearch::new();
-                    let solver = LBFGS::new(line_search, 10)
-                        .with_tolerance_grad(config.tolerance)?
-                        .with_tolerance_cost(config.tolerance)?;
-                    let result = Executor::new(cost_function_lbfgs, solver)
-                        .configure(|state| {
-                            state
-                                .param(initial_param.clone())
-                                .max_iters(config.max_iterations as u64)
-                        })
-                        .run()?;
-                    (
-                        result.state().get_best_param().unwrap().clone(),
-                        result.state().get_cost(),
-                    )
+            run_lm_or_lbfgs::<S>(spec, params_per_shape, initial_param, config)?
+        }
+        Optimizer::CmaEsLm => {
+            // Threshold-fired global escape:
+            //   1. Run plain LM. If it lands at or below
+            //      `config.cmaes_fallback_threshold`, return immediately —
+            //      CMA-ES wouldn't beat that and would only burn ~1k–2k
+            //      extra evals per restart.
+            //   2. Otherwise LM is stuck in a wrong basin (issue92, eulerape,
+            //      …). Run bounded CMA-ES → LM polish, and return the
+            //      lower-loss of {LM, CMA-ES → LM polish}. Keeping the LM
+            //      result around as a guard makes the path strictly
+            //      non-regressing if CMA-ES happens to wander into a worse
+            //      basin (observed empirically on `issue47_3_set_huge_triple`
+            //      before the guard was in place).
+            let lm_only = run_lm_or_lbfgs::<S>(spec, params_per_shape, initial_param, config)?;
+            if lm_only.1 <= config.cmaes_fallback_threshold {
+                lm_only
+            } else {
+                let (lower, upper, initial_std) =
+                    cmaes_bounds_for(initial_param.as_slice(), params_per_shape);
+                let cma_cost = DiagramCost::<S> {
+                    spec,
+                    loss_type: config.loss_type,
+                    params_per_shape,
+                    _shape: std::marker::PhantomData,
+                };
+                let cma_config = crate::fitter::cmaes::CmaEsConfig {
+                    lower,
+                    upper,
+                    initial_mean: initial_param.as_slice().to_vec(),
+                    initial_std,
+                    // 100 generations × default λ ≈ 1k–2k evals on hard
+                    // 6-set ellipse fits. Empirically enough to escape the
+                    // wrong-basin issue92_3_set_dropped_pair / eulerape_3_set
+                    // cases without dominating wall time when the user has
+                    // dialled n_restarts down.
+                    max_iters: 100,
+                    fn_tol: config.tolerance.max(1e-12),
+                    seed: config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                    lambda: None,
+                    max_evals: None,
+                };
+                let cma_result = crate::fitter::cmaes::minimize(&cma_config, |x| {
+                    let p = DVector::from_vec(x.to_vec());
+                    match cma_cost.cost(&p) {
+                        Ok(c) if c.is_finite() => c,
+                        _ => f64::INFINITY,
+                    }
+                });
+                let polish_init = DVector::from_vec(cma_result.best_x);
+                // LM polish reuses the existing dispatch so we get the
+                // analytical Jacobian for free.
+                let cma_lm = run_lm_or_lbfgs::<S>(spec, params_per_shape, &polish_init, config)?;
+                if cma_lm.1 < lm_only.1 {
+                    cma_lm
+                } else {
+                    lm_only
                 }
             }
         }
     };
 
     Ok((final_params, loss))
+}
+
+/// Run Levenberg-Marquardt for sum-of-squares losses, falling back to L-BFGS
+/// (with the analytical-gradient `DiagramCost` path) on losses LM doesn't
+/// support. Shared between `Optimizer::LevenbergMarquardt` and the polish
+/// step of `Optimizer::CmaEsLm` so both go through the same numerical path.
+fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> Result<(DVector<f64>, f64), Error> {
+    match LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type, initial_param) {
+        Ok(problem) => {
+            let solver = LevenbergMarquardt::new()
+                .with_ftol(config.tolerance)
+                .with_xtol(config.tolerance)
+                .with_gtol(config.tolerance)
+                .with_patience(config.max_iterations.max(1));
+            let (problem_after, report) = solver.minimize(problem);
+            // LM minimises ½·Σrᵢ²; existing loss is Σrᵢ², so ×2.
+            let final_loss = report.objective_function * 2.0;
+            Ok((problem_after.params.clone(), final_loss))
+        }
+        Err(_incompatible_loss) => {
+            let cost_function_lbfgs = DiagramCost::<S> {
+                spec,
+                loss_type: config.loss_type,
+                params_per_shape,
+                _shape: std::marker::PhantomData,
+            };
+            let line_search = MoreThuenteLineSearch::new();
+            let solver = LBFGS::new(line_search, 10)
+                .with_tolerance_grad(config.tolerance)?
+                .with_tolerance_cost(config.tolerance)?;
+            let result = Executor::new(cost_function_lbfgs, solver)
+                .configure(|state| {
+                    state
+                        .param(initial_param.clone())
+                        .max_iters(config.max_iterations as u64)
+                })
+                .run()?;
+            Ok((
+                result.state().get_best_param().unwrap().clone(),
+                result.state().get_cost(),
+            ))
+        }
+    }
+}
+
+/// Build per-parameter (lower, upper, initial_std) triples for CMA-ES from
+/// an MDS-initialised parameter vector.
+///
+/// Layout-dependent on the shape:
+/// - Circle (`params_per_shape == 3`): `[x, y, r]` per shape. Positions
+///   bounded to centroid ± `4 · max(span, max_radius)`; radii bounded to
+///   `[1e-6 · max_radius, 5 · max_radius]`. Initial std on x/y is
+///   `max(span, max_radius)/2`, on r it's `max_radius/2`.
+/// - Ellipse (`params_per_shape == 5`): `[x, y, a, b, angle]`. Same x/y
+///   bounds; semi-axes bounded the same way as circle radii; angle is
+///   unbounded with std `π/4` (it's periodic anyway, hard caps would just
+///   force CMA-ES to push against an artificial wall).
+///
+/// Other `params_per_shape` values fall back to wide unbounded bounds with
+/// std proportional to the parameter magnitude — fine for the rest of the
+/// algorithm to run, but new shape kinds should be added here so bounds
+/// reflect their geometry.
+fn cmaes_bounds_for(
+    initial_param: &[f64],
+    params_per_shape: usize,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let n = initial_param.len();
+    let n_shapes = n / params_per_shape.max(1);
+
+    // Pull centroid + spread from the position dims (always indices 0, 1
+    // within each shape's parameter block, by convention shared across
+    // every `DiagramShape` implementation).
+    let mut xs = Vec::with_capacity(n_shapes);
+    let mut ys = Vec::with_capacity(n_shapes);
+    let mut radii = Vec::with_capacity(n_shapes);
+    for k in 0..n_shapes {
+        let base = k * params_per_shape;
+        xs.push(initial_param[base]);
+        ys.push(initial_param[base + 1]);
+        match params_per_shape {
+            3 => radii.push(initial_param[base + 2]),
+            5 => {
+                radii.push(initial_param[base + 2]);
+                radii.push(initial_param[base + 3]);
+            }
+            _ => {}
+        }
+    }
+    let mean_x: f64 = xs.iter().sum::<f64>() / xs.len().max(1) as f64;
+    let mean_y: f64 = ys.iter().sum::<f64>() / ys.len().max(1) as f64;
+    let max_radius: f64 = radii.iter().cloned().fold(0.0_f64, f64::max).max(1e-6);
+    let span_x: f64 = xs
+        .iter()
+        .map(|x| (x - mean_x).abs())
+        .fold(0.0_f64, f64::max);
+    let span_y: f64 = ys
+        .iter()
+        .map(|y| (y - mean_y).abs())
+        .fold(0.0_f64, f64::max);
+    let pos_scale: f64 = span_x.max(span_y).max(max_radius);
+    // Margin: 4× span gives CMA-ES room to globally rearrange shapes
+    // without bumping into the bounds before it has a chance to refine.
+    let pos_margin: f64 = 4.0 * pos_scale;
+
+    let mut lower = Vec::with_capacity(n);
+    let mut upper = Vec::with_capacity(n);
+    let mut std_dev = Vec::with_capacity(n);
+    for k in 0..n_shapes {
+        // x
+        lower.push(mean_x - pos_margin);
+        upper.push(mean_x + pos_margin);
+        std_dev.push((pos_scale * 0.5).max(1e-6));
+        // y
+        lower.push(mean_y - pos_margin);
+        upper.push(mean_y + pos_margin);
+        std_dev.push((pos_scale * 0.5).max(1e-6));
+        // shape-specific dims
+        match params_per_shape {
+            3 => {
+                // r
+                lower.push(1e-6 * max_radius);
+                upper.push(5.0 * max_radius);
+                std_dev.push((max_radius * 0.5).max(1e-6));
+            }
+            5 => {
+                // a (semi-major)
+                lower.push(1e-6 * max_radius);
+                upper.push(5.0 * max_radius);
+                std_dev.push((max_radius * 0.5).max(1e-6));
+                // b (semi-minor)
+                lower.push(1e-6 * max_radius);
+                upper.push(5.0 * max_radius);
+                std_dev.push((max_radius * 0.5).max(1e-6));
+                // angle (periodic; no hard caps)
+                lower.push(f64::NEG_INFINITY);
+                upper.push(f64::INFINITY);
+                std_dev.push(std::f64::consts::FRAC_PI_4);
+            }
+            other => {
+                // Unknown shape kind: leave the trailing dims unbounded and
+                // pick a generic std from the parameter magnitude. New shape
+                // kinds should add an explicit branch above.
+                let extra = other.saturating_sub(2);
+                let _ = (k, extra); // keep `k` live for future per-shape logic
+                for j in 2..other {
+                    let v = initial_param[k * other + j];
+                    lower.push(f64::NEG_INFINITY);
+                    upper.push(f64::INFINITY);
+                    std_dev.push(v.abs().max(0.5));
+                }
+            }
+        }
+    }
+    (lower, upper, std_dev)
 }
 
 /// Cost function for region error optimization.
@@ -689,6 +907,7 @@ mod tests {
             tolerance: 1e-4,
             seed: 0,
             n_restarts: 1,
+            cmaes_fallback_threshold: 1e-3,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -766,6 +985,7 @@ mod tests {
             tolerance: 1e-6,
             seed: 0,
             n_restarts: 1,
+            cmaes_fallback_threshold: 1e-3,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -811,6 +1031,7 @@ mod tests {
             tolerance: 1e-6,
             seed: 0,
             n_restarts: 1,
+            cmaes_fallback_threshold: 1e-3,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -868,6 +1089,7 @@ mod tests {
                 tolerance: 1e-6,
                 seed: 0,
                 n_restarts: 1,
+                cmaes_fallback_threshold: 1e-3,
             };
 
             let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -1509,6 +1731,7 @@ mod tests {
                 tolerance: 1e-6,
                 seed: 0,
                 n_restarts: 1,
+                cmaes_fallback_threshold: 1e-3,
             };
             let t0 = Instant::now();
             let (_p_an, loss_an) =
@@ -1524,6 +1747,7 @@ mod tests {
                 tolerance: 1e-6,
                 seed: 0,
                 n_restarts: 1,
+                cmaes_fallback_threshold: 1e-3,
             };
             let t0 = Instant::now();
             let (_p_fd, loss_fd) =

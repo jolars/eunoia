@@ -1,6 +1,7 @@
 //! Fitter for creating diagram layouts from specifications.
 
 mod clustering;
+mod cmaes;
 pub mod final_layout;
 mod initial_layout;
 mod layout;
@@ -71,6 +72,11 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     /// the pool widens basin coverage (different solvers fall into different
     /// local minima) without raising wall time, since restarts run in parallel.
     initial_solvers: Vec<MdsSolver>,
+    /// Loss threshold above which `Optimizer::CmaEsLm` invokes the global
+    /// CMA-ES escape stage. When plain LM lands at or below this value the
+    /// CMA-ES step is skipped, so easy specs pay no extra wall time. Other
+    /// optimizers ignore this field.
+    cmaes_fallback_threshold: f64,
     _shape: std::marker::PhantomData<S>,
 }
 
@@ -127,7 +133,20 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // L-BFGS in turn (~20 orders of magnitude lower median loss on
             // ellipses, ~3× faster wall time) — see the `lm_final` row in
             // `examples/quality_report`.
-            optimizer_pool: vec![Optimizer::LevenbergMarquardt],
+            // CMA-ES global escape with LM polish, threshold-fired (see
+            // `cmaes_fallback_threshold`) so easy specs pay no extra wall
+            // time. On the `examples/quality_report` ellipse sweep this
+            // closes specs LM-on-LM gets stuck on (`issue92_3_set_dropped_pair`
+            // 1.3e-4 → 1.5e-29, `random_4_set` 8.5e-3 → 4.1e-3) without
+            // regressing the easy ones — every spec where `lm_full` lands
+            // at machine precision sits below the threshold and skips
+            // CMA-ES entirely.
+            optimizer_pool: vec![Optimizer::CmaEsLm],
+            // Default loss threshold below which the CMA-ES global stage
+            // is skipped. Only consulted by `Optimizer::CmaEsLm`. See
+            // `FinalLayoutConfig::cmaes_fallback_threshold` for the
+            // empirical justification of `1e-3`.
+            cmaes_fallback_threshold: 1e-3,
             // Number of full-pipeline restarts (fresh MDS init + final
             // optimizer per attempt, lowest-loss attempt kept). Matches
             // eulerr's `n_restarts = 10`. Each fit does that much work.
@@ -375,6 +394,45 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
+    /// Set the loss threshold above which `Optimizer::CmaEsLm` invokes its
+    /// CMA-ES global escape stage.
+    ///
+    /// `Optimizer::CmaEsLm` always runs plain Levenberg-Marquardt first; if
+    /// that lands at or below `threshold`, the (expensive) CMA-ES step is
+    /// skipped and the LM result is returned. If LM stalls above
+    /// `threshold` — e.g. on `issue92_3_set_dropped_pair` (1.3e-4 across
+    /// every seed under plain LM) or `eulerape_3_set` (4.4e-4) — CMA-ES
+    /// fires and the lower-loss of {LM, CMA-ES → LM polish} is kept.
+    ///
+    /// Default `1e-3` was picked empirically from `examples/quality_report`:
+    /// every spec where `lm_full` lands at machine precision sits well
+    /// below 1e-20, every spec where it stalls in a wrong basin sits at or
+    /// above 1e-4, so 1e-3 cleanly separates the two populations.
+    /// Tightening (e.g. `1e-6`) makes CMA-ES fire on more specs at higher
+    /// wall-time cost; loosening (e.g. `1e-1`) gives back ~all of LM's
+    /// runtime at the price of leaving the few hard-stuck specs in LM's
+    /// suboptimal basin. Other optimizers ignore this setting.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::Ellipse;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // Tighter threshold — fire CMA-ES on more specs.
+    /// let fitter = Fitter::<Ellipse>::new(&spec).cmaes_fallback_threshold(1e-6);
+    /// ```
+    pub fn cmaes_fallback_threshold(mut self, threshold: f64) -> Self {
+        self.cmaes_fallback_threshold = threshold;
+        self
+    }
+
     /// Fit the diagram using circles.
     ///
     /// This creates a layout with circles positioned to match the specification.
@@ -415,6 +473,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let tolerance = self.tolerance;
         let loss_type = self.loss_type;
         let optimizer_pool = self.optimizer_pool.clone();
+        let cmaes_fallback_threshold = self.cmaes_fallback_threshold;
 
         // Master RNG: derives a per-attempt seed for each full-pipeline restart.
         let master_seed = self.seed.unwrap_or_else(|| rand::rng().random());
@@ -487,6 +546,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     // Outer loop already provides full-pipeline diversity via fresh
                     // MDS inits, so each attempt's final stage runs once.
                     n_restarts: 1,
+                    cmaes_fallback_threshold,
                 };
 
                 match final_layout::optimize_layout::<S>(
@@ -996,4 +1056,48 @@ fn test_compare_optimizers() {
     let fitter_default = Fitter::<Ellipse>::new(&spec).seed(42);
     let layout_default = fitter_default.fit().unwrap();
     assert!(layout_default.loss().is_finite());
+}
+
+/// Pins the CMA-ES-on-LM regression-escape for `issue92_3_set_dropped_pair`.
+///
+/// At default `LevenbergMarquardt` settings this spec lands at the same
+/// `1.309e-4` loss / `5.388e-3 diag_error` from every seed in `QUALITY_SEEDS`
+/// — LM gets stuck in a basin where the small `A&B=12` pair sits between
+/// the dominant `A&C=459` / `B&C=703` regions and cannot be moved without
+/// breaking the larger overlaps. CMA-ES's bounded global step escapes this
+/// trap (median ~1e-29 across seeds in `examples/quality_report`). If this
+/// test starts failing the global-escape stage has regressed.
+#[test]
+#[ignore = "slow regression coverage"]
+fn test_cmaes_lm_escapes_issue92_dropped_pair() {
+    use crate::fitter::{Fitter, Optimizer};
+    use crate::geometry::shapes::Ellipse;
+    use crate::spec::{DiagramSpecBuilder, InputType};
+
+    // Same numbers as `corpus::issue92_3_set_dropped_pair`.
+    let spec = DiagramSpecBuilder::new()
+        .set("A", 164.0)
+        .set("B", 561.0)
+        .set("C", 166.0)
+        .intersection(&["A", "B"], 12.0)
+        .intersection(&["A", "C"], 459.0)
+        .intersection(&["B", "C"], 703.0)
+        .intersection(&["A", "B", "C"], 162.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .unwrap();
+
+    let layout = Fitter::<Ellipse>::new(&spec)
+        .optimizer(Optimizer::CmaEsLm)
+        .seed(1)
+        .fit()
+        .unwrap();
+    // Default LM landed at 1.309e-4 across every seed. CMA-ES + LM polish
+    // routinely reaches < 1e-10 on this spec; pin loosely at 1e-6 so
+    // small numerical drift doesn't false-positive.
+    assert!(
+        layout.loss() < 1e-6,
+        "CmaEsLm loss = {:e} (expected < 1e-6 — global step regressed)",
+        layout.loss()
+    );
 }
