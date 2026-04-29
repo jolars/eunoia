@@ -48,8 +48,7 @@ pub enum InitialSampler {
     /// a random per-axis permutation. The central box (vs the full eulerr
     /// `[0, scale]` extent) keeps the LHS budget on initial conditions
     /// downstream LM can refine, and empirically lifts mean `diag_error` ~10%
-    /// on ellipses without hurting circles at `n_restarts=10`. See
-    /// [`LHS_HALF_WIDTH_FRAC`].
+    /// on ellipses without hurting circles at `n_restarts=10`.
     LatinHypercube,
 }
 

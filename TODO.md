@@ -128,13 +128,6 @@ they're pre-existing behaviour the harness now exposes.
       Revisit the default once argmin#357/#497 land and we can wire a
       proper line-search iteration cap.
 
-- [ ] **Gauss-Newton final stage** (low-priority bookkeeping after LM landed).
-      argmin ships `GaussNewton` with line search; the LM Jacobian plumbing is
-      already in place, so GN is a one-line solver swap. With LM hitting \~1e-28
-      median ellipse loss out of the box this is no longer a quality candidate
-      --- only worth running to characterise how often the linearisation is good
-      enough that GN's undamped step matches LM.
-
 - [x] **CMA-ES global step + LM polish** --- landed as `Optimizer::CmaEsLm`
       (final stage). Inline purecma-style CMA-ES (`fitter/cmaes.rs`, \~350 LOC,
       no new deps): bounded box around the MDS init (centroid ± 4·span on

@@ -48,7 +48,8 @@ pub struct CorpusEntry {
     /// Difficulty classification (drives the default ceiling).
     pub category: Category,
     /// Explicit per-shape `diag_error` ceiling. `None` falls back to the
-    /// category default ([`DEFAULT_MAX_DIAG_ERROR_*`]).
+    /// category default ([`DEFAULT_MAX_DIAG_ERROR_EASY`],
+    /// [`DEFAULT_MAX_DIAG_ERROR_MEDIUM`], [`DEFAULT_MAX_DIAG_ERROR_HARD`]).
     pub max_diag_error_circle: Option<f64>,
     /// Explicit per-shape `diag_error` ceiling for ellipses.
     pub max_diag_error_ellipse: Option<f64>,

@@ -1,6 +1,6 @@
 //! Canonical Venn-diagram layouts with ellipses.
 //!
-//! [`VennDiagram::new(n)`] returns a hardcoded n-set ellipse arrangement where
+//! [`VennDiagram::new`] returns a hardcoded n-set ellipse arrangement where
 //! every one of the `2ⁿ − 1` regions is non-empty (i.e. a true Venn diagram).
 //! The arrangements are taken verbatim from the eulerr R package's `venn_spec`
 //! data table, which in turn reproduces the published constructions:
