@@ -766,12 +766,25 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             optimized_shapes.push(S::from_params(&final_params[start..end]));
         }
 
-        #[cfg(debug_assertions)]
+        // Compute the pre-normalize exclusive-region areas. We thread these
+        // into `normalize_layout` so cluster detection uses the same exact-
+        // conic / inclusion-exclusion math the optimizer minimised against —
+        // otherwise the geometric `find_clusters` (built on
+        // `Closed::intersects` quick-rejects + boundary crossings) can
+        // disagree with the optimizer at near-coincident ellipse geometry,
+        // mis-split a cluster, and let `pack_clusters` translate genuinely
+        // overlapping shapes apart. Always computed (not gated on
+        // `debug_assertions`) because the area-based clustering path is now
+        // the production code path.
         let pre_normalize_regions = S::compute_exclusive_regions(&optimized_shapes);
 
         // Step 4: Normalize the non-empty shapes only (zero shapes would confuse
         // clustering/packing). We do this before re-assembly.
-        crate::fitter::normalize::normalize_layout(&mut optimized_shapes, 0.05);
+        crate::fitter::normalize::normalize_layout_with_clusters(
+            &mut optimized_shapes,
+            0.05,
+            Some(&pre_normalize_regions),
+        );
 
         #[cfg(debug_assertions)]
         {
@@ -782,7 +795,10 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // tangent ellipse configurations while still catching real
             // bugs in `normalize_layout` (the `intersects` clustering bug
             // that originally motivated this assert produced perturbations
-            // of ~10% of the largest region).
+            // of ~10% of the largest region). Now backed by area-based
+            // clustering (see the area-pass-through above), so a re-trip
+            // signals an actual `normalize_layout` regression rather than
+            // an `intersects`/`compute_exclusive_regions` agreement gap.
             debug_assert!(
                 exclusive_region_maps_approx_equal(
                     &pre_normalize_regions,

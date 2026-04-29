@@ -14,3 +14,11 @@ repository = "https://github.com/jolars/eunoia"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(test)"] }
+
+# Tests in `eunoia` are dominated by the optimization math
+# (`compute_exclusive_regions`, LM, CMA-ES), which is ~23× slower in debug.
+# Optimise the package itself in test builds while keeping `debug_assertions`
+# on (so the `normalize_layout` post-fit assert and other `debug_assert!`s
+# still fire). Drops a `cargo test -p eunoia --lib` run from ~32s to ~2-3s.
+[profile.test.package.eunoia]
+opt-level = 3

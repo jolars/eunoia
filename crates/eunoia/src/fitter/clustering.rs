@@ -1,5 +1,6 @@
 //! Cluster detection for disjoint groups of shapes.
 
+use crate::geometry::diagram::RegionMask;
 use crate::geometry::traits::Closed;
 
 /// Identifies disjoint clusters of shapes based on region overlap.
@@ -71,43 +72,58 @@ pub fn find_clusters<S: Closed>(shapes: &[S]) -> Vec<Vec<usize>> {
     clusters
 }
 
-/// Groups shapes into clusters based on fitted areas having non-zero intersections.
+/// Cluster shapes from the exclusive-region area map produced by
+/// [`crate::geometry::traits::DiagramShape::compute_exclusive_regions`].
 ///
-/// This is an alternative to geometric intersection testing that uses the
-/// computed region areas to determine connectivity.
-#[allow(dead_code)]
-pub fn find_clusters_from_areas(
+/// Two shapes are connected if any *exclusive* region whose bitmask contains
+/// both of their indices has area greater than `tolerance`. Transitive
+/// closure then groups them. This is the same shared-region notion as the
+/// geometric `find_clusters`, but it consumes the exact-conic area math
+/// the optimizer already runs — eliminating the
+/// `Closed::intersects`-vs-`compute_exclusive_regions` agreement gap that
+/// causes `normalize_layout` to flake on near-coincident ellipse fits
+/// (the `intersects` quick-reject + boundary-crossing path can disagree
+/// with the inclusion-exclusion-derived exclusive areas in floating-point
+/// edge cases). See `crates/eunoia/src/fitter/normalize.rs` and
+/// `crates/eunoia/src/fitter.rs::Fitter::fit`.
+///
+/// `tolerance` is the absolute area threshold below which a region is
+/// treated as empty. The caller should pass something derived from the
+/// global region scale, not a fixed constant — e.g. `1e-10 * max_region`.
+pub fn find_clusters_from_exclusive_regions(
     n_shapes: usize,
-    fitted_areas: &std::collections::HashMap<crate::spec::Combination, f64>,
+    exclusive_areas: &std::collections::HashMap<RegionMask, f64>,
+    tolerance: f64,
 ) -> Vec<Vec<usize>> {
-    let mut adjacency = vec![vec![false; n_shapes]; n_shapes];
+    if n_shapes == 0 {
+        return vec![];
+    }
 
-    // Mark self-connections
+    let mut adjacency = vec![vec![false; n_shapes]; n_shapes];
     #[allow(clippy::needless_range_loop)]
     for i in 0..n_shapes {
         adjacency[i][i] = true;
     }
 
-    // Check all combinations to find intersections
-    for (combo, &area) in fitted_areas {
-        if area > 1e-10 && combo.sets().len() >= 2 {
-            // This combination has positive area, so all pairs in it intersect
-            let indices: Vec<usize> = combo
-                .sets()
-                .iter()
-                .filter_map(|_| None) // We need set names -> indices mapping
-                .collect();
-
-            // Mark all pairs as connected
-            for i in 0..indices.len() {
-                for j in 0..indices.len() {
-                    adjacency[indices[i]][indices[j]] = true;
-                }
+    for (&mask, &area) in exclusive_areas {
+        if !area.is_finite() || area <= tolerance {
+            continue;
+        }
+        // Bits set in `mask` are the shape indices that share this exclusive
+        // region. Anything with at least two participants is a non-trivial
+        // overlap and connects every pair of those participants.
+        if (mask as u64).count_ones() < 2 {
+            continue;
+        }
+        let indices: Vec<usize> = (0..n_shapes).filter(|&i| (mask >> i) & 1 == 1).collect();
+        for &i in &indices {
+            for &j in &indices {
+                adjacency[i][j] = true;
             }
         }
     }
 
-    // Compute transitive closure
+    // Transitive closure (Floyd-Warshall).
     for k in 0..n_shapes {
         for i in 0..n_shapes {
             for j in 0..n_shapes {
@@ -118,15 +134,12 @@ pub fn find_clusters_from_areas(
         }
     }
 
-    // Extract unique clusters
     let mut seen = vec![false; n_shapes];
     let mut clusters = Vec::new();
-
     for i in 0..n_shapes {
         if seen[i] {
             continue;
         }
-
         let mut cluster = Vec::new();
         for (j, &connected) in adjacency[i].iter().enumerate() {
             if connected {
@@ -134,12 +147,10 @@ pub fn find_clusters_from_areas(
                 seen[j] = true;
             }
         }
-
         if !cluster.is_empty() {
             clusters.push(cluster);
         }
     }
-
     clusters
 }
 
@@ -209,6 +220,76 @@ mod tests {
             Circle::new(Point::new(4.0, 0.0), 1.5),
         ];
         let clusters = find_clusters(&shapes);
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].len(), 3);
+    }
+
+    #[test]
+    fn area_based_two_disjoint_shapes() {
+        // Two shapes, no shared region: two separate clusters.
+        let mut areas: std::collections::HashMap<RegionMask, f64> =
+            std::collections::HashMap::new();
+        areas.insert(0b01, 3.0); // only shape 0
+        areas.insert(0b10, 4.0); // only shape 1
+        let clusters = find_clusters_from_exclusive_regions(2, &areas, 1e-12);
+        assert_eq!(clusters.len(), 2);
+    }
+
+    #[test]
+    fn area_based_overlapping_pair() {
+        // Two shapes with a non-empty pairwise region: one cluster.
+        let mut areas: std::collections::HashMap<RegionMask, f64> =
+            std::collections::HashMap::new();
+        areas.insert(0b01, 1.0);
+        areas.insert(0b10, 1.0);
+        areas.insert(0b11, 0.5);
+        let clusters = find_clusters_from_exclusive_regions(2, &areas, 1e-12);
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].len(), 2);
+    }
+
+    #[test]
+    fn area_based_transitive() {
+        // 3 shapes: only {0,1} and {1,2} have non-zero exclusive regions.
+        // Transitive closure should merge all three.
+        let mut areas: std::collections::HashMap<RegionMask, f64> =
+            std::collections::HashMap::new();
+        areas.insert(0b001, 1.0);
+        areas.insert(0b010, 1.0);
+        areas.insert(0b100, 1.0);
+        areas.insert(0b011, 0.5); // shapes 0,1
+        areas.insert(0b110, 0.5); // shapes 1,2
+        let clusters = find_clusters_from_exclusive_regions(3, &areas, 1e-12);
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].len(), 3);
+    }
+
+    #[test]
+    fn area_based_tolerance_rejects_noise() {
+        // A "shared" region of size 1e-15 should NOT connect shapes when
+        // tolerance is 1e-10 — keeps inclusion-exclusion roundoff from
+        // spuriously merging clusters.
+        let mut areas: std::collections::HashMap<RegionMask, f64> =
+            std::collections::HashMap::new();
+        areas.insert(0b01, 5.0);
+        areas.insert(0b10, 5.0);
+        areas.insert(0b11, 1e-15);
+        let clusters = find_clusters_from_exclusive_regions(2, &areas, 1e-10);
+        assert_eq!(clusters.len(), 2);
+    }
+
+    #[test]
+    fn area_based_triple_intersection_connects_all() {
+        // A 3-set Venn shape where ONLY the triple region (0b111) has
+        // positive area — pairwise regions are zero. The triple still
+        // implies all three shapes overlap each other.
+        let mut areas: std::collections::HashMap<RegionMask, f64> =
+            std::collections::HashMap::new();
+        areas.insert(0b001, 1.0);
+        areas.insert(0b010, 1.0);
+        areas.insert(0b100, 1.0);
+        areas.insert(0b111, 2.0); // all three
+        let clusters = find_clusters_from_exclusive_regions(3, &areas, 1e-12);
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].len(), 3);
     }

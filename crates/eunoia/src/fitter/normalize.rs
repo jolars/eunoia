@@ -5,11 +5,13 @@
 //! 2. Centering the overall layout
 //! 3. Packing disjoint clusters compactly
 
-use crate::fitter::clustering::find_clusters;
+use crate::fitter::clustering::{find_clusters, find_clusters_from_exclusive_regions};
 use crate::fitter::packing::skyline_pack;
+use crate::geometry::diagram::RegionMask;
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Rectangle;
 use crate::geometry::traits::DiagramShape;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
 /// Normalize a collection of diagram shapes.
@@ -29,12 +31,57 @@ pub fn normalize_layout<S>(shapes: &mut [S], padding_factor: f64)
 where
     S: DiagramShape + Clone,
 {
+    normalize_layout_with_clusters::<S>(shapes, padding_factor, None);
+}
+
+/// Variant of [`normalize_layout`] that uses the caller-supplied
+/// exclusive-region area map for cluster detection instead of the geometric
+/// `Closed::intersects` test.
+///
+/// Routing clustering through `find_clusters_from_exclusive_regions` keeps
+/// `normalize_layout`'s notion of "which shapes overlap" consistent with the
+/// inclusion-exclusion math the optimizer minimised against — so packing
+/// can't translate apart shapes the optimizer believes overlap (which is
+/// what trips the post-normalize debug_assert on near-coincident ellipse
+/// fits).
+///
+/// `exclusive_areas` should be `S::compute_exclusive_regions(shapes)` from
+/// the caller. Passing `None` falls back to the geometric `find_clusters`
+/// path for backwards compatibility.
+pub fn normalize_layout_with_clusters<S>(
+    shapes: &mut [S],
+    padding_factor: f64,
+    exclusive_areas: Option<&HashMap<RegionMask, f64>>,
+) where
+    S: DiagramShape + Clone,
+{
     if shapes.is_empty() {
         return;
     }
 
-    // Step 1: Find disjoint clusters
-    let clusters = find_clusters(shapes);
+    // Step 1: Find disjoint clusters. Prefer the area-based path when the
+    // caller provides exclusive-region areas — that's the same exact-conic
+    // math the optimizer just minimised, so it's strictly more reliable on
+    // near-coincident geometry than the geometric `Closed::intersects` /
+    // `contains` check.
+    let clusters = match exclusive_areas {
+        Some(areas) => {
+            // Tolerance scales with the largest fitted region: roundoff in
+            // `compute_exclusive_regions` is bounded by `eps * max_region`,
+            // so a region of size `1e-12 * max_region` is below the
+            // numerical floor and shouldn't connect a cluster. `1e-10`
+            // gives a few orders of margin above that floor while still
+            // catching genuine small overlaps.
+            let max_region = areas
+                .values()
+                .copied()
+                .fold(0.0_f64, |a, b| a.max(b.abs()))
+                .max(1.0);
+            let tol = 1e-10 * max_region;
+            find_clusters_from_exclusive_regions(shapes.len(), areas, tol)
+        }
+        None => find_clusters(shapes),
+    };
 
     if clusters.len() == 1 {
         // Single cluster - just rotate and center

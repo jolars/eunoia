@@ -75,6 +75,45 @@ they're pre-existing behaviour the harness now exposes.
       intersection roundoff at near-tangent geometry no longer trips it.
       All 5 previously-skipped corpus entries return to `Fittable::Normal`.
 
+- [x] **`three_inside_fourth`ellipse seed=7 occasionally trips the same
+      assert** (`normalize_layout changed fitted exclusive regions`).
+      The dfbad07 un-skip held for the other five specs but this one
+      flaked across `cargo test` invocations: most converged at
+      `diag ≈ 3.023e-5`, a small fraction tripped the assert. Root cause
+      is the same `find_clusters` / `compute_exclusive_regions`
+      agreement gap dfbad07 partially closed: when the optimizer lands
+      at a near-coincident ellipse configuration whose pairwise
+      `Closed::intersects` quick-reject + boundary-crossing path
+      disagrees with the inclusion-exclusion-derived exclusive areas,
+      `find_clusters` mis-splits the cluster and `pack_clusters`
+      translates genuinely overlapping shapes apart.
+
+      Closed by routing `normalize_layout` through a new area-based
+      clusterer:
+      - `crates/eunoia/src/fitter/clustering.rs::find_clusters_from_exclusive_regions`
+        (replaces the half-stubbed `find_clusters_from_areas`): cluster
+        connectivity = "any exclusive region whose bitmask contains both
+        shapes has area > tolerance". Uses the same exact-conic math
+        the optimizer minimised.
+      - `crates/eunoia/src/fitter/normalize.rs::normalize_layout_with_clusters`:
+        new entry point that takes the pre-normalize `HashMap<RegionMask,
+        f64>` and clusters from it. The geometric path remains as the
+        fallback when no areas are passed (kept for callers that don't
+        compute areas).
+      - `crates/eunoia/src/fitter.rs::Fitter::fit`: now always computes
+        `pre_normalize_regions` (no longer `cfg(debug_assertions)`-only)
+        and threads it into `normalize_layout_with_clusters`.
+
+      Across the `examples/quality_report` ellipse sweep the change is
+      strictly non-regressing: median loss unchanged at machine
+      precision (`2.575e-26`), spec wins held at 22, mean diag in the
+      same `3-4e-3` band as pre-change. 500 in-process repro attempts
+      on `three_inside_fourth` seed=7 with the new path were all clean.
+      Five new unit tests in `clustering.rs::tests` (`area_based_*`)
+      cover disjoint shapes, overlapping pairs, transitive merging,
+      tolerance-noise rejection, and triple-intersection-only
+      connectivity.
+
 - [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. The corpus
       ceiling is tightened to `3e-2` (was `5e-2`) since this basin is a
       deterministic floor across most master seeds. There are at least two
