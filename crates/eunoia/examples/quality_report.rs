@@ -49,7 +49,7 @@ mod quality_report {
     use eunoia::geometry::traits::DiagramShape;
     use eunoia::loss::LossType;
     use eunoia::test_utils::corpus::{all, CorpusEntry, Fittable, QUALITY_SEEDS};
-    use eunoia::{Fitter, MdsSolver, Optimizer};
+    use eunoia::{Fitter, InitialSampler, MdsSolver, Optimizer};
 
     /// Common-across-configs description. Things that vary across configs
     /// (final-stage optimizer, MDS solver pool) are listed per config.
@@ -110,6 +110,13 @@ mod quality_report {
                 f.optimizer(Optimizer::CmaEsLm)
                     .initial_solver(MdsSolver::LevenbergMarquardt)
             }),
+            // Latin-hypercube initial draws across the n_restarts batch
+            // instead of independent uniform draws. Probe: does stratified
+            // coverage of [0, scale]^(2·n_sets) lift best-of-N quality on
+            // specs where multiple uniform attempts collide in the same
+            // basin? Same final-stage as `default` (CmaEsLm) so the diff
+            // is exclusively the initial-position distribution.
+            ("lhs", |f| f.initial_sampler(InitialSampler::LatinHypercube)),
         ]
     }
 

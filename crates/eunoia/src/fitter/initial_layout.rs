@@ -7,9 +7,89 @@ use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
 use nalgebra::storage::Owned;
 use nalgebra::{DMatrix, DVector, Dyn};
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
 use crate::spec::PairwiseRelations;
+
+/// Sampling-scale convention used by every initial-layout sampler.
+/// Side of a square that fits all sets (= `sqrt(Σ set_areas)`), matching
+/// eulerr's `bnd = sqrt(sum(r^2 * pi))`. Falls back to `10.0` when the spec
+/// has no area information (e.g. the unit-test relationship-only callers
+/// that pass `set_areas = &[]`).
+pub(crate) fn sampling_scale(set_areas: &[f64]) -> f64 {
+    let total_area: f64 = set_areas.iter().sum();
+    if total_area > 0.0 {
+        total_area.sqrt()
+    } else {
+        10.0
+    }
+}
+
+/// Initial-position sampler for the per-restart MDS init.
+///
+/// The outer `n_restarts` loop draws random initial positions for each MDS
+/// attempt. Stratifying that draw via Latin hypercube sampling spreads attempts
+/// more evenly across `[0, scale]^(2·n_sets)` than independent uniform draws,
+/// which can pile up multiple attempts in the same basin by chance.
+///
+/// See [`Fitter::initial_sampler`] to switch.
+///
+/// [`Fitter::initial_sampler`]: crate::Fitter::initial_sampler
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InitialSampler {
+    /// Independent uniform draws on `[0, scale]` per attempt — matches eulerr's
+    /// `runif(n*2, 0, sqrt(sum(r^2*pi)))`.
+    #[default]
+    Uniform,
+    /// Latin hypercube sampling: across the batch of `n_restarts` attempts,
+    /// each of the `2·n_sets` axes is split into `n_restarts` equal strata of
+    /// width `scale / n_restarts`, and each stratum is sampled exactly once
+    /// under a random per-axis permutation.
+    LatinHypercube,
+}
+
+/// Build a Latin hypercube design of `n_samples` points in `[0, scale]^n_dims`.
+///
+/// Returns one row per sample; row `i` is the initial position vector for
+/// restart `i`. Each axis is split into `n_samples` equal strata (width
+/// `scale / n_samples`); the stratum-to-sample assignment is an independent
+/// random permutation per axis, with a uniform jitter inside the chosen
+/// stratum. `n_samples = 1` degenerates to a single uniform draw.
+pub(crate) fn latin_hypercube_rows(
+    n_samples: usize,
+    n_dims: usize,
+    scale: f64,
+    rng: &mut dyn rand::RngCore,
+) -> Vec<Vec<f64>> {
+    debug_assert!(n_samples >= 1);
+    let inv_n = scale / (n_samples as f64);
+    let mut rows = vec![vec![0.0; n_dims]; n_samples];
+    for d in 0..n_dims {
+        let mut perm: Vec<usize> = (0..n_samples).collect();
+        perm.shuffle(rng);
+        for (i, row) in rows.iter_mut().enumerate() {
+            let u: f64 = rng.random_range(0.0..1.0);
+            row[d] = (perm[i] as f64 + u) * inv_n;
+        }
+    }
+    rows
+}
+
+/// Sample a single uniform initial position vector in `[0, scale]^(2·n_sets)`.
+fn sample_uniform_init(rng: &mut dyn rand::RngCore, n_sets: usize, scale: f64) -> DVector<f64> {
+    // Derive a fresh per-attempt seed from the supplied rng so the sampling
+    // path is identical to the historical behaviour (compute_initial_layout
+    // → run_attempt seeded a local StdRng before drawing 2·n_sets uniforms),
+    // keeping unit-test outputs stable.
+    let seed: u64 = rng.random();
+    let mut local_rng = StdRng::seed_from_u64(seed);
+    let mut values = vec![0.0; n_sets * 2];
+    for value in &mut values {
+        *value = local_rng.random_range(0.0..scale);
+    }
+    DVector::from_vec(values)
+}
 
 /// Run one MDS optimization from a freshly seeded random initialization.
 ///
@@ -33,33 +113,41 @@ pub(crate) fn compute_initial_layout(
         set_areas,
         rng,
         MdsSolver::default(),
+        None,
     )
 }
 
-/// Run one MDS optimization with the chosen solver from a freshly seeded
-/// random initialization. The production fitter passes [`MdsSolver::default`];
-/// the benchmark harness in `examples/initial_layout_bench.rs` cycles through
-/// the alternatives.
+/// Run one MDS optimization with the chosen solver. If `initial_positions` is
+/// `Some`, those values (length `2·n_sets`) are used as the starting point;
+/// otherwise an independent uniform draw on `[0, sampling_scale(set_areas)]`
+/// is generated from `rng`. The production fitter passes
+/// [`MdsSolver::default`] and supplies pre-sampled positions when running the
+/// Latin-hypercube sampler so all `n_restarts` attempts share one stratified
+/// design; the benchmark harness in `examples/initial_layout_bench.rs`
+/// cycles through the alternative solvers.
 pub(crate) fn compute_initial_layout_with_solver(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     set_areas: &[f64],
     rng: &mut dyn rand::RngCore,
     solver: MdsSolver,
+    initial_positions: Option<&[f64]>,
 ) -> Result<Vec<f64>, Error> {
     let n_sets = distances.len();
 
-    // Sampling scale: side of a square that fits all sets
-    // (= sqrt(Σ set_areas)). Matches eulerr's `bnd = sqrt(sum(r^2 * pi))`.
-    let total_area: f64 = set_areas.iter().sum();
-    let scale = if total_area > 0.0 {
-        total_area.sqrt()
-    } else {
-        10.0
+    let initial_param = match initial_positions {
+        Some(positions) => {
+            debug_assert_eq!(
+                positions.len(),
+                n_sets * 2,
+                "initial_positions length must be 2·n_sets"
+            );
+            DVector::from_column_slice(positions)
+        }
+        None => sample_uniform_init(rng, n_sets, sampling_scale(set_areas)),
     };
 
-    let seed: u64 = rng.random();
-    let (_loss, params) = run_attempt(distances, relationships, n_sets, scale, seed, solver)?;
+    let (_loss, params) = run_attempt(distances, relationships, n_sets, &initial_param, solver)?;
     Ok(params)
 }
 
@@ -79,8 +167,10 @@ pub(crate) fn compute_initial_layout_with_solver(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MdsSolver {
     /// Limited-memory BFGS with More-Thuente line search. Gradient-only and
-    /// cheap per iteration; the strongest single-solver default by wall time.
-    #[default]
+    /// cheap per iteration. Was the historical default; demoted from default
+    /// after the More-Thuente inner line search was observed to deadlock at
+    /// subset-clamp kinks on certain initial conditions (see
+    /// `MdsSolver::LevenbergMarquardt` doc).
     Lbfgs,
     /// Trust region with Steihaug-CG subproblem. Uses the analytic Hessian
     /// and tolerates the indefinite Hessian our MDS objective routinely
@@ -98,33 +188,28 @@ pub enum MdsSolver {
     /// than relying on the analytic Hessian (TrustRegion / NewtonCg) or
     /// gradient history (L-BFGS).
     ///
-    /// Caveat: the disjoint / subset clamps (`max(0, ·)`, `min(0, ·)`) make
-    /// the residuals C¹ rather than C², matching the existing analytic
-    /// gradient. Boundary activations are rare near a converged layout.
+    /// Default solver. The disjoint / subset clamps (`max(0, ·)`,
+    /// `min(0, ·)`) make the residuals C¹ rather than C². L-BFGS' inner
+    /// More-Thuente line search has been observed to deadlock at the
+    /// resulting kinks on certain extreme-scale specs (e.g.
+    /// `issue71_4_set_extreme_scale` when LHS forces a stratum where one
+    /// circle fully encloses the others, activating subset clamps and
+    /// zeroing most of the gradient). LM's trust-region update sidesteps
+    /// the line-search deadlock entirely.
+    #[default]
     LevenbergMarquardt,
 }
 
-/// Run a single MDS attempt from a freshly seeded random initialization,
-/// using the given solver. Returns the final cost and the corresponding best
-/// parameter vector.
+/// Run a single MDS attempt from the supplied initial position, using the
+/// given solver. Returns the final cost and the corresponding best parameter
+/// vector. Sampling is the caller's responsibility.
 fn run_attempt(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     n_sets: usize,
-    scale: f64,
-    seed: u64,
+    initial_param: &DVector<f64>,
     solver: MdsSolver,
 ) -> Result<(f64, Vec<f64>), Error> {
-    let mut local_rng = StdRng::seed_from_u64(seed);
-
-    // Sample positions in [0, scale] — matches eulerr's
-    // `runif(n*2, 0, sqrt(sum(r^2*pi)))` (one-sided, not symmetric).
-    let mut initial_values = vec![0.0; n_sets * 2];
-    for value in &mut initial_values {
-        *value = local_rng.random_range(0.0..scale);
-    }
-    let initial_param = DVector::from_vec(initial_values);
-
     let cost_function = MdsCost {
         distances,
         relationships,
@@ -135,7 +220,7 @@ fn run_attempt(
             let line_search = MoreThuenteLineSearch::new();
             let solver = LBFGS::new(line_search, 10);
             let result = Executor::new(cost_function, solver)
-                .configure(|state| state.param(initial_param).max_iters(200))
+                .configure(|state| state.param(initial_param.clone()).max_iters(200))
                 .run()?;
             Ok((
                 result.state().get_cost(),
@@ -181,7 +266,7 @@ fn run_attempt(
             ))
         }
         MdsSolver::LevenbergMarquardt => {
-            let problem = LmMdsProblem::new(distances, relationships, n_sets, &initial_param);
+            let problem = LmMdsProblem::new(distances, relationships, n_sets, initial_param);
             // Tolerances match the other MDS solvers (default argmin behaviour
             // is `sqrt(EPSILON)`-ish; LM's default `30·EPS` is far stricter
             // than we need). 200 iters mirrors the hardcoded cap on the
@@ -700,6 +785,41 @@ mod tests {
             subset: vec![vec![false; n_sets]; n_sets],
             disjoint: vec![vec![false; n_sets]; n_sets],
             overlap_areas: vec![vec![0.0; n_sets]; n_sets],
+        }
+    }
+
+    #[test]
+    fn latin_hypercube_stratifies_each_axis() {
+        // Stratification invariant: for each of the n_dims axes, the n_samples
+        // values must hit every stratum [k/n, (k+1)/n) · scale exactly once.
+        let mut rng = StdRng::seed_from_u64(7);
+        let n_samples = 10;
+        let n_dims = 6;
+        let scale = 4.0;
+        let rows = latin_hypercube_rows(n_samples, n_dims, scale, &mut rng);
+        assert_eq!(rows.len(), n_samples);
+        for d in 0..n_dims {
+            let mut hits = vec![false; n_samples];
+            for row in &rows {
+                let v = row[d];
+                assert!((0.0..scale).contains(&v), "axis {d} value {v} out of range");
+                let stratum = ((v / scale) * n_samples as f64).floor() as usize;
+                let stratum = stratum.min(n_samples - 1);
+                assert!(!hits[stratum], "axis {d}: stratum {stratum} sampled twice");
+                hits[stratum] = true;
+            }
+            assert!(hits.iter().all(|&h| h));
+        }
+    }
+
+    #[test]
+    fn latin_hypercube_n1_is_just_uniform() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let rows = latin_hypercube_rows(1, 4, 3.0, &mut rng);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].len(), 4);
+        for &v in &rows[0] {
+            assert!((0.0..3.0).contains(&v), "n=1 sample {v} out of range");
         }
     }
 

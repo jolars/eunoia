@@ -15,7 +15,7 @@ mod corpus_quality;
 mod synthetic_groundtruth;
 
 pub use final_layout::Optimizer;
-pub use initial_layout::MdsSolver;
+pub use initial_layout::{InitialSampler, MdsSolver};
 pub use layout::Layout;
 
 use crate::error::DiagramError;
@@ -77,6 +77,11 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     /// CMA-ES step is skipped, so easy specs pay no extra wall time. Other
     /// optimizers ignore this field.
     cmaes_fallback_threshold: f64,
+    /// Strategy for drawing per-restart MDS initial positions. The default
+    /// `Uniform` matches eulerr's `runif`-per-restart behaviour;
+    /// `LatinHypercube` stratifies the batch of `n_restarts` draws across
+    /// `[0, scale]^(2·n_sets)`.
+    initial_sampler: InitialSampler,
     _shape: std::marker::PhantomData<S>,
 }
 
@@ -151,12 +156,23 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // optimizer per attempt, lowest-loss attempt kept). Matches
             // eulerr's `n_restarts = 10`. Each fit does that much work.
             n_restarts: 10,
-            // L-BFGS-only by default. We tried mixing in TrustRegion+Steihaug
-            // (it hits different local basins than L-BFGS on hard ellipse fits
-            // per `benches/initial_layout.rs`), but it caused hangs on real
-            // eulerr-style specs. The mix is still available via
-            // `initial_solver_pool`; the default keeps the proven path.
-            initial_solvers: vec![MdsSolver::Lbfgs],
+            // Levenberg-Marquardt for the MDS init. The previous default was
+            // L-BFGS with More-Thuente line search, which under certain
+            // starting points (e.g. the LHS-induced
+            // `issue71_4_set_extreme_scale` config where one circle fully
+            // contains the others) deadlocked inside argmin's line-search
+            // logic at a subset-clamp kink — argmin's `max_iters` only caps
+            // outer L-BFGS iterations, not the inner line-search loop.
+            // LM's trust-region update sidesteps the line-search deadlock,
+            // and `MdsSolver::LevenbergMarquardt` is already wired with the
+            // analytic per-pair Jacobian. The mix
+            // `initial_solver_pool([Lbfgs, TrustRegion])` is still available
+            // for experimentation.
+            initial_solvers: vec![MdsSolver::LevenbergMarquardt],
+            // Independent uniform draws per restart, matching eulerr. See
+            // `initial_sampler` to switch to a stratified Latin-hypercube
+            // design across the `n_restarts` batch.
+            initial_sampler: InitialSampler::default(),
             _shape: std::marker::PhantomData,
         }
     }
@@ -433,6 +449,39 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
+    /// Set the strategy for drawing initial MDS positions across the
+    /// `n_restarts` batch.
+    ///
+    /// The default [`InitialSampler::Uniform`] preserves eulerr's behaviour
+    /// (independent uniform draws per restart on `[0, sqrt(Σ areas)]`).
+    /// [`InitialSampler::LatinHypercube`] replaces the batch of `n_restarts`
+    /// independent draws with a single stratified design — each of the
+    /// `2·n_sets` axes is split into `n_restarts` equal strata sampled exactly
+    /// once — so attempts cover the search space more evenly. This costs no
+    /// additional MDS work, only a one-time `O(n_restarts · n_sets)` setup,
+    /// and is intended to lift best-of-N quality on hard specs where multiple
+    /// uniform draws happen to land in the same basin.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, InitialSampler};
+    /// use eunoia::geometry::shapes::Ellipse;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let fitter = Fitter::<Ellipse>::new(&spec)
+    ///     .initial_sampler(InitialSampler::LatinHypercube);
+    /// ```
+    pub fn initial_sampler(mut self, sampler: InitialSampler) -> Self {
+        self.initial_sampler = sampler;
+        self
+    }
+
     /// Fit the diagram using circles.
     ///
     /// This creates a layout with circles positioned to match the specification.
@@ -494,18 +543,39 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let n_attempts = if optimize { self.n_restarts.max(1) } else { 1 };
         let attempt_seeds: Vec<u64> = (0..n_attempts).map(|_| master_rng.random()).collect();
 
+        // Pre-compute the Latin-hypercube design from the master RNG (so each
+        // parallel attempt receives a deterministic precomputed initial
+        // position) when LHS is selected. Uniform sampling is left to each
+        // attempt's local rng for behavioural parity with eulerr's
+        // independent-restart `runif`.
+        let lhs_rows: Option<Vec<Vec<f64>>> = match self.initial_sampler {
+            InitialSampler::Uniform => None,
+            InitialSampler::LatinHypercube => {
+                let scale = initial_layout::sampling_scale(&spec.set_areas);
+                Some(initial_layout::latin_hypercube_rows(
+                    n_attempts,
+                    n_sets * 2,
+                    scale,
+                    &mut master_rng,
+                ))
+            }
+        };
+
         let initial_solvers = self.initial_solvers.clone();
         let run_attempt =
             |(attempt_idx, attempt_seed): (usize, u64)| -> Result<(Vec<f64>, f64), DiagramError> {
                 let mut attempt_rng = StdRng::seed_from_u64(attempt_seed);
 
                 let initial_solver = initial_solvers[attempt_idx % initial_solvers.len()];
+                let initial_positions: Option<&[f64]> =
+                    lhs_rows.as_ref().map(|rows| rows[attempt_idx].as_slice());
                 let initial_params = match initial_layout::compute_initial_layout_with_solver(
                     &optimal_distances,
                     &spec.relationships,
                     &spec.set_areas,
                     &mut attempt_rng,
                     initial_solver,
+                    initial_positions,
                 ) {
                     Ok(p) => p,
                     Err(e) => {
