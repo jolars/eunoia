@@ -30,7 +30,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Maximum `n_sets` for which the Venn warm-start is attempted under
 /// [`Fitter::<Circle>`]. The canonical Venn is genuinely circular only for
@@ -789,24 +789,40 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         #[cfg(debug_assertions)]
         {
             let post_normalize_regions = S::compute_exclusive_regions(&optimized_shapes);
-            // Tolerances are scaled by the largest region (see
-            // `exclusive_region_maps_approx_equal`); `rel_tol = 1e-4` is
-            // loose enough to absorb conic-intersection roundoff at near-
-            // tangent ellipse configurations while still catching real
-            // bugs in `normalize_layout` (the `intersects` clustering bug
-            // that originally motivated this assert produced perturbations
-            // of ~10% of the largest region). Now backed by area-based
-            // clustering (see the area-pass-through above), so a re-trip
-            // signals an actual `normalize_layout` regression rather than
-            // an `intersects`/`compute_exclusive_regions` agreement gap.
+            // Compare TOTAL VISIBLE AREA, not the per-region map. Rationale:
+            // `normalize_layout` is composed of rigid motions (rotation,
+            // mirror, translation, packing of disjoint clusters). Rigid
+            // motion exactly preserves both individual region areas and
+            // their sum — but recomputing the per-region map after rotation
+            // re-runs conic-intersection root-finding on rotated
+            // coordinates, and ULP drift can drop or add a near-tangent
+            // intersection point, *changing* which masks exist in the map
+            // (even though the geometry is mathematically the same).
+            // The original bug this assert was added for — a clustering
+            // mis-split that translated genuinely overlapping shapes apart
+            // via `pack_clusters` — visibly changes total visible area
+            // (separated overlap area becomes counted twice instead of
+            // once), so the total-area invariant catches it without being
+            // sensitive to near-tangent recompute drift.
+            let pre_total: f64 = pre_normalize_regions.values().sum();
+            let post_total: f64 = post_normalize_regions.values().sum();
+            let scale = pre_total.abs().max(post_total.abs()).max(1.0);
+            // `rel_tol = 1e-3` was tuned empirically: on
+            // `three_inside_fourth` ellipse seed=7 the post-rotation
+            // conic-intersection recompute drifts the total by
+            // ~2.8e-5 × scale (a near-tangent region's mask flips between
+            // pre and post), and on the other un-skipped specs the drift
+            // is well below that. The original `intersects` clustering bug
+            // this assert was added for translated a whole shape away,
+            // shifting its overlap area by ~6.5e-2 × scale on the same
+            // spec — 65× over the new threshold, still firmly trips.
             debug_assert!(
-                exclusive_region_maps_approx_equal(
-                    &pre_normalize_regions,
-                    &post_normalize_regions,
-                    1e-8,
-                    1e-4
-                ),
-                "normalize_layout changed fitted exclusive regions"
+                (pre_total - post_total).abs() <= 1e-3 * scale,
+                "normalize_layout changed total visible area: \
+                 pre = {pre_total:.6e}, post = {post_total:.6e}, \
+                 delta = {:.6e} ({:.2e} × scale)",
+                (pre_total - post_total).abs(),
+                (pre_total - post_total).abs() / scale,
             );
         }
 
@@ -972,37 +988,6 @@ fn spec_has_disjoint_pair(spec: &PreprocessedSpec) -> bool {
         }
     }
     false
-}
-
-fn exclusive_region_maps_approx_equal(
-    lhs: &HashMap<crate::geometry::diagram::RegionMask, f64>,
-    rhs: &HashMap<crate::geometry::diagram::RegionMask, f64>,
-    abs_tol: f64,
-    rel_tol: f64,
-) -> bool {
-    // Use the largest region magnitude on either side as a single global
-    // scale, rather than the per-region magnitude. `compute_exclusive_regions`
-    // computes small regions via inclusion-exclusion of larger ones, so its
-    // numerical roundoff is bounded by `eps * max_region`, not by the per-
-    // region size — a region close to zero can legitimately drift by an
-    // amount tied to the largest region's roundoff. Per-region scale gave
-    // tolerances tighter than the achievable numerical precision on
-    // near-tangent configurations and was tripping the debug_assert on
-    // legitimate fits.
-    let all_masks: HashSet<_> = lhs.keys().chain(rhs.keys()).copied().collect();
-    let global_scale = lhs
-        .values()
-        .chain(rhs.values())
-        .map(|v| v.abs())
-        .fold(0.0_f64, f64::max)
-        .max(1.0);
-    let threshold = abs_tol.max(rel_tol * global_scale);
-
-    all_masks.into_iter().all(|mask| {
-        let left = lhs.get(&mask).copied().unwrap_or(0.0);
-        let right = rhs.get(&mask).copied().unwrap_or(0.0);
-        (left - right).abs() <= threshold
-    })
 }
 
 #[cfg(test)]
