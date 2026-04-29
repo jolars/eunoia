@@ -363,6 +363,11 @@ mod quality_report {
             LossType::RootMeanSquared => "RootMeanSquared",
             LossType::Stress => "Stress",
             LossType::DiagError => "DiagError",
+            LossType::SmoothSumAbsolute { .. } => "SmoothSumAbsolute",
+            LossType::SmoothSumAbsoluteRegionError { .. } => "SmoothSumAbsoluteRegionError",
+            LossType::SmoothMaxAbsolute { .. } => "SmoothMaxAbsolute",
+            LossType::SmoothMaxSquared { .. } => "SmoothMaxSquared",
+            LossType::SmoothDiagError { .. } => "SmoothDiagError",
         }
     }
 

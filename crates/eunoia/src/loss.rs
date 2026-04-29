@@ -6,6 +6,37 @@
 use crate::geometry::diagram::RegionMask;
 use std::collections::HashMap;
 
+/// Huber-style smooth approximation of `|x|`.
+///
+/// Returns `√(x² + ε²) − ε`. Equals `|x|` in the limit `ε → 0`,
+/// is C¹ everywhere (including at `x = 0`), and matches `|x|` to within
+/// `ε` for all `x`. Subtracting `ε` keeps the surrogate exactly zero at
+/// the origin so the loss can still hit zero.
+#[inline]
+fn smooth_abs(x: f64, eps: f64) -> f64 {
+    (x * x + eps * eps).sqrt() - eps
+}
+
+/// Logsumexp smooth approximation of `max_i x_i`.
+///
+/// Returns `ε · log Σ exp(x_i/ε)` evaluated in the numerically-stable
+/// `m + ε · log Σ exp((x_i − m)/ε)` form (with `m = max_i x_i`). Equals
+/// `max_i x_i` in the limit `ε → 0` and is C¹ in every `x_i`. Returns
+/// `0.0` for an empty input.
+#[inline]
+fn smooth_max(values: &[f64], eps: f64) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let m = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !m.is_finite() {
+        return m;
+    }
+    let inv_eps = 1.0 / eps;
+    let sum: f64 = values.iter().map(|&v| ((v - m) * inv_eps).exp()).sum();
+    m + eps * sum.ln()
+}
+
 /// Loss function type.
 ///
 /// Every variant is **scale-invariant**: the loss magnitude is bounded
@@ -15,6 +46,26 @@ use std::collections::HashMap;
 /// specs from `gene_sets` (areas ~10²) to `issue71_4_set_extreme_scale`
 /// (areas up to 38000). Each variant divides by an appropriate
 /// target-side norm — `Σtᵢ²`, `Σ|tᵢ|`, `max|tᵢ|`, …
+///
+/// # Smooth vs non-smooth losses
+///
+/// Variants built from `|·|` or `max(·)` (`SumAbsoute`,
+/// `SumAbsoluteRegionError`, `MaxAbsolute`, `MaxSquared`, `DiagError`)
+/// are **non-smooth**: their gradients are zero almost everywhere or
+/// discontinuous at every zero crossing, which stalls L-BFGS. The
+/// fitter routes them to derivative-free Nelder-Mead — fast but coarse
+/// (issue #45).
+///
+/// For each non-smooth variant there is a `Smooth*` counterpart with an
+/// `eps` payload that replaces `|·|` with `√(x² + ε²) − ε` (Huber) and
+/// `max(·)` with `ε · log Σ exp(·/ε)` (logsumexp). Those are smooth
+/// surrogates: C¹ everywhere, converging to the true loss as `ε → 0`.
+/// The fitter dispatches them through the L-BFGS path, which converges
+/// to dramatically better minima at higher cost than the NM fallback.
+///
+/// Pick `eps` ~ 1% of typical residual magnitude. Smaller `eps` is closer
+/// to the true loss but inherits more of its gradient pathology; larger
+/// `eps` gives crisper gradients but biases the optimum.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LossType {
     /// Normalised sum of squared errors: `Σ(fitted - target)² / Σtarget²`.
@@ -31,14 +82,27 @@ pub enum LossType {
     #[default]
     SumSquared,
     /// Normalised sum of absolute errors: `Σ|fitted - target| / Σ|target|`.
+    /// Non-smooth — see [`SmoothSumAbsolute`] for the gradient-friendly
+    /// surrogate.
+    ///
+    /// [`SmoothSumAbsolute`]: Self::SmoothSumAbsolute
     SumAbsoute,
-    /// SumRegionError sum(|fitted / sum(fitted) - target / sum(target)|)
+    /// `Σ|fitted/Σfitted - target/Σtarget|`. Non-smooth — see
+    /// [`SmoothSumAbsoluteRegionError`].
+    ///
+    /// [`SmoothSumAbsoluteRegionError`]: Self::SmoothSumAbsoluteRegionError
     SumAbsoluteRegionError,
-    /// SumSquaredRegionError sum((fitted / sum(fitted) - target / sum(target))²)
+    /// `Σ(fitted/Σfitted - target/Σtarget)²`. Smooth.
     SumSquaredRegionError,
     /// Normalised maximum absolute error: `max|fitted - target| / max|target|`.
+    /// Non-smooth — see [`SmoothMaxAbsolute`].
+    ///
+    /// [`SmoothMaxAbsolute`]: Self::SmoothMaxAbsolute
     MaxAbsolute,
     /// Normalised maximum squared error: `max(fitted - target)² / max(target²)`.
+    /// Non-smooth (the `max` aggregator) — see [`SmoothMaxSquared`].
+    ///
+    /// [`SmoothMaxSquared`]: Self::SmoothMaxSquared
     MaxSquared,
     /// Normalised root-mean-squared error:
     /// `sqrt(Σ(fitted - target)² / Σtarget²)` (= sqrt of [`SumSquared`]).
@@ -47,9 +111,59 @@ pub enum LossType {
     RootMeanSquared,
     /// Stress (venneuler-style). Already normalised by `Σf²`.
     Stress,
-    /// DiagError max(|fit / sum(fit) - target / sum(target)|), EulerAPE style.
-    /// Already normalised.
+    /// DiagError `max|fit/Σfit - target/Σtarget|`, EulerAPE style.
+    /// Non-smooth — see [`SmoothDiagError`].
+    ///
+    /// [`SmoothDiagError`]: Self::SmoothDiagError
     DiagError,
+    /// Smooth surrogate of [`SumAbsoute`]:
+    /// `Σ smooth_abs(f - t, ε) / Σ|target|`.
+    ///
+    /// [`SumAbsoute`]: Self::SumAbsoute
+    SmoothSumAbsolute {
+        /// Huber smoothing parameter; converges to true `SumAbsoute` as
+        /// `eps → 0`. Pick ~1% of typical residual magnitude.
+        eps: f64,
+    },
+    /// Smooth surrogate of [`SumAbsoluteRegionError`]:
+    /// `Σ smooth_abs(f/Σf - t/Σt, ε)`.
+    ///
+    /// [`SumAbsoluteRegionError`]: Self::SumAbsoluteRegionError
+    SmoothSumAbsoluteRegionError {
+        /// Huber smoothing parameter; converges to true
+        /// `SumAbsoluteRegionError` as `eps → 0`.
+        eps: f64,
+    },
+    /// Smooth surrogate of [`MaxAbsolute`]:
+    /// `smooth_max(smooth_abs(f - t, ε)) / max|target|`.
+    ///
+    /// [`MaxAbsolute`]: Self::MaxAbsolute
+    SmoothMaxAbsolute {
+        /// Huber/logsumexp smoothing parameter; converges to true
+        /// `MaxAbsolute` as `eps → 0`.
+        eps: f64,
+    },
+    /// Smooth surrogate of [`MaxSquared`]:
+    /// `smooth_max((f - t)²) / max(target²)`.
+    ///
+    /// The squared term is already smooth, so only the `max`
+    /// aggregator is replaced with logsumexp.
+    ///
+    /// [`MaxSquared`]: Self::MaxSquared
+    SmoothMaxSquared {
+        /// Logsumexp smoothing parameter; converges to true
+        /// `MaxSquared` as `eps → 0`.
+        eps: f64,
+    },
+    /// Smooth surrogate of [`DiagError`]:
+    /// `smooth_max(smooth_abs(f/Σf - t/Σt, ε))`.
+    ///
+    /// [`DiagError`]: Self::DiagError
+    SmoothDiagError {
+        /// Huber/logsumexp smoothing parameter; converges to true
+        /// `DiagError` as `eps → 0`.
+        eps: f64,
+    },
 }
 
 impl LossType {
@@ -98,6 +212,42 @@ impl LossType {
         Self::DiagError
     }
 
+    /// Smooth surrogate of [`SumAbsoute`]. Converges to it as `eps → 0`.
+    ///
+    /// [`SumAbsoute`]: Self::SumAbsoute
+    pub fn smooth_sum_absolute(eps: f64) -> Self {
+        Self::SmoothSumAbsolute { eps }
+    }
+
+    /// Smooth surrogate of [`SumAbsoluteRegionError`]. Converges to it as
+    /// `eps → 0`.
+    ///
+    /// [`SumAbsoluteRegionError`]: Self::SumAbsoluteRegionError
+    pub fn smooth_sum_absolute_region_error(eps: f64) -> Self {
+        Self::SmoothSumAbsoluteRegionError { eps }
+    }
+
+    /// Smooth surrogate of [`MaxAbsolute`]. Converges to it as `eps → 0`.
+    ///
+    /// [`MaxAbsolute`]: Self::MaxAbsolute
+    pub fn smooth_max_absolute(eps: f64) -> Self {
+        Self::SmoothMaxAbsolute { eps }
+    }
+
+    /// Smooth surrogate of [`MaxSquared`]. Converges to it as `eps → 0`.
+    ///
+    /// [`MaxSquared`]: Self::MaxSquared
+    pub fn smooth_max_squared(eps: f64) -> Self {
+        Self::SmoothMaxSquared { eps }
+    }
+
+    /// Smooth surrogate of [`DiagError`]. Converges to it as `eps → 0`.
+    ///
+    /// [`DiagError`]: Self::DiagError
+    pub fn smooth_diag_error(eps: f64) -> Self {
+        Self::SmoothDiagError { eps }
+    }
+
     /// Whether this loss is smooth (continuously differentiable) in the
     /// region areas `f`.
     ///
@@ -107,29 +257,20 @@ impl LossType {
     /// (`SumAbsolute`, `DiagError`, `SumAbsoluteRegionError`). On those
     /// losses, central-difference gradients return mostly zeros and
     /// L-BFGS thrashes against the line search; the fitter routes
-    /// non-smooth losses to derivative-free Nelder-Mead instead. See
+    /// non-smooth losses to derivative-free Nelder-Mead instead.
+    /// `Smooth*` variants have C¹ surrogates and report `true`. See
     /// issue #45.
-    ///
-    /// Smooth: [`SumSquared`], [`RootMeanSquared`], [`Stress`],
-    /// [`SumSquaredRegionError`].
-    /// Non-smooth: [`SumAbsoute`], [`SumAbsoluteRegionError`],
-    /// [`MaxAbsolute`], [`MaxSquared`], [`DiagError`].
-    ///
-    /// [`SumSquared`]: Self::SumSquared
-    /// [`RootMeanSquared`]: Self::RootMeanSquared
-    /// [`Stress`]: Self::Stress
-    /// [`SumSquaredRegionError`]: Self::SumSquaredRegionError
-    /// [`SumAbsoute`]: Self::SumAbsoute
-    /// [`SumAbsoluteRegionError`]: Self::SumAbsoluteRegionError
-    /// [`MaxAbsolute`]: Self::MaxAbsolute
-    /// [`MaxSquared`]: Self::MaxSquared
-    /// [`DiagError`]: Self::DiagError
     pub fn is_smooth(&self) -> bool {
         match self {
             LossType::SumSquared
             | LossType::RootMeanSquared
             | LossType::Stress
-            | LossType::SumSquaredRegionError => true,
+            | LossType::SumSquaredRegionError
+            | LossType::SmoothSumAbsolute { .. }
+            | LossType::SmoothSumAbsoluteRegionError { .. }
+            | LossType::SmoothMaxAbsolute { .. }
+            | LossType::SmoothMaxSquared { .. }
+            | LossType::SmoothDiagError { .. } => true,
             LossType::SumAbsoute
             | LossType::SumAbsoluteRegionError
             | LossType::MaxAbsolute
@@ -311,6 +452,87 @@ impl LossType {
                         (f / ssf - t / sst).powi(2)
                     })
                     .sum()
+            }
+            LossType::SmoothSumAbsolute { eps } => {
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let sum_abs_t: f64 = target.values().map(|v| v.abs()).sum();
+                if sum_abs_t < 1e-20 {
+                    return 0.0;
+                }
+                let sum_abs: f64 = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        smooth_abs(f - t, eps)
+                    })
+                    .sum();
+                sum_abs / sum_abs_t
+            }
+            LossType::SmoothSumAbsoluteRegionError { eps } => {
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return f64::MAX;
+                }
+                all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        smooth_abs(f / ssf - t / sst, eps)
+                    })
+                    .sum()
+            }
+            LossType::SmoothMaxAbsolute { eps } => {
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let max_t: f64 = target.values().map(|v| v.abs()).fold(0.0_f64, f64::max);
+                if max_t < 1e-20 {
+                    return 0.0;
+                }
+                let smoothed_abs: Vec<f64> = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        smooth_abs(f - t, eps)
+                    })
+                    .collect();
+                smooth_max(&smoothed_abs, eps) / max_t
+            }
+            LossType::SmoothMaxSquared { eps } => {
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let max_t2: f64 = target.values().map(|v| v * v).fold(0.0_f64, f64::max);
+                if max_t2 < 1e-20 {
+                    return 0.0;
+                }
+                let squared: Vec<f64> = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f - t).powi(2)
+                    })
+                    .collect();
+                smooth_max(&squared, eps) / max_t2
+            }
+            LossType::SmoothDiagError { eps } => {
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return f64::MAX;
+                }
+                let smoothed_abs: Vec<f64> = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        smooth_abs(f / ssf - t / sst, eps)
+                    })
+                    .collect();
+                smooth_max(&smoothed_abs, eps)
             }
         }
     }
@@ -533,5 +755,80 @@ mod tests {
         assert!(!LossType::MaxAbsolute.is_smooth());
         assert!(!LossType::MaxSquared.is_smooth());
         assert!(!LossType::DiagError.is_smooth());
+    }
+
+    #[test]
+    fn test_smooth_abs_basics() {
+        // smooth_abs(x, ε) → |x| as ε → 0; matches |x| within ε.
+        assert!((smooth_abs(0.0, 1e-3) - 0.0).abs() < 1e-3);
+        assert!((smooth_abs(1.0, 1e-6) - 1.0).abs() < 1e-6);
+        assert!((smooth_abs(-2.5, 1e-6) - 2.5).abs() < 1e-6);
+        // Always non-negative.
+        assert!(smooth_abs(0.0, 0.5) >= 0.0);
+        assert!(smooth_abs(-3.0, 0.5) >= 0.0);
+    }
+
+    #[test]
+    fn test_smooth_max_basics() {
+        // smooth_max(xs, ε) → max(xs) as ε → 0.
+        let xs = vec![1.0, 2.0, 3.0];
+        assert!((smooth_max(&xs, 1e-6) - 3.0).abs() < 1e-3);
+        // Empty is 0.
+        assert_eq!(smooth_max(&[], 1.0), 0.0);
+        // Single value: smoothed max equals that value.
+        assert!((smooth_max(&[5.0], 1e-6) - 5.0).abs() < 1e-9);
+        // Numerically stable for large values: m subtracted before exp.
+        let big = vec![1e6, 1e6 - 1.0];
+        let res = smooth_max(&big, 1.0);
+        assert!(res.is_finite());
+        assert!((res - 1e6).abs() < 5.0); // within a few ε
+    }
+
+    #[test]
+    fn test_smooth_variants_converge_to_true_loss() {
+        // Each Smooth* variant must converge to its non-smooth counterpart
+        // as ε → 0.
+        let mut fitted = HashMap::new();
+        fitted.insert(0b001, 10.0);
+        fitted.insert(0b010, 20.0);
+        fitted.insert(0b100, 30.0);
+
+        let mut target = HashMap::new();
+        target.insert(0b001, 8.0);
+        target.insert(0b010, 25.0);
+        target.insert(0b100, 28.0);
+
+        let pairs: &[(LossType, LossType)] = &[
+            (LossType::SumAbsoute, LossType::smooth_sum_absolute(1e-9)),
+            (LossType::MaxAbsolute, LossType::smooth_max_absolute(1e-9)),
+            (LossType::MaxSquared, LossType::smooth_max_squared(1e-9)),
+            (
+                LossType::SumAbsoluteRegionError,
+                LossType::smooth_sum_absolute_region_error(1e-9),
+            ),
+            (LossType::DiagError, LossType::smooth_diag_error(1e-9)),
+        ];
+
+        for &(true_loss, smooth_loss) in pairs {
+            let exact = true_loss.compute(&fitted, &target);
+            let smoothed = smooth_loss.compute(&fitted, &target);
+            assert!(
+                (smoothed - exact).abs() < 1e-3 * exact.abs().max(1e-3),
+                "{:?} vs {:?}: smoothed = {}, exact = {}",
+                true_loss,
+                smooth_loss,
+                smoothed,
+                exact
+            );
+        }
+    }
+
+    #[test]
+    fn test_smooth_variants_are_smooth() {
+        assert!(LossType::smooth_sum_absolute(1e-3).is_smooth());
+        assert!(LossType::smooth_sum_absolute_region_error(1e-3).is_smooth());
+        assert!(LossType::smooth_max_absolute(1e-3).is_smooth());
+        assert!(LossType::smooth_max_squared(1e-3).is_smooth());
+        assert!(LossType::smooth_diag_error(1e-3).is_smooth());
     }
 }

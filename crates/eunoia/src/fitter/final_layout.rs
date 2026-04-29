@@ -252,7 +252,9 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
             run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)?
         }
         Optimizer::Lbfgs => {
-            // L-BFGS with numerical gradients
+            // L-BFGS with numerical gradients. On non-smooth losses
+            // (`MaxAbsolute`, `SumAbsoute`, …) gradients are unreliable —
+            // pick a `LossType::Smooth*` surrogate variant instead.
             let cost_function_lbfgs = DiagramCost::<S> {
                 spec,
                 loss_type: config.loss_type,
@@ -308,6 +310,9 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
                     spec,
                     loss_type: config.loss_type,
                     params_per_shape,
+                    // CMA-ES is derivative-free, but evaluating the smooth
+                    // surrogate keeps the cost landscape consistent with
+                    // the LM polish step that follows.
                     _shape: std::marker::PhantomData,
                 };
                 let cma_config = crate::fitter::cmaes::CmaEsConfig {
@@ -379,9 +384,16 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
             Ok((problem_after.params.clone(), final_loss))
         }
         Err(_incompatible_loss) if !config.loss_type.is_smooth() => {
+            // Non-smooth loss: gradient methods thrash here, so use
+            // derivative-free Nelder-Mead instead. The user can switch
+            // to a `LossType::Smooth*` variant to take the L-BFGS path
+            // through a C¹ surrogate. See issue #45 and `LossType::is_smooth`.
             run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)
         }
         Err(_incompatible_loss) => {
+            // Smooth loss (including `Smooth*` surrogate variants). The
+            // cost landscape is C¹, so L-BFGS with numerical gradients
+            // applies.
             let cost_function_lbfgs = DiagramCost::<S> {
                 spec,
                 loss_type: config.loss_type,
@@ -443,6 +455,9 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
         spec,
         loss_type: config.loss_type,
         params_per_shape,
+        // NM doesn't need smoothing for its own sake, but if the caller
+        // opted into the surrogate we honour it for cost-landscape
+        // consistency with other dispatch arms.
         _shape: std::marker::PhantomData,
     };
     let solver = NelderMead::new(simplex);
@@ -613,7 +628,9 @@ impl<'a, S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
         // Compute exclusive regions using shape-specific exact computation
         let exclusive_areas = S::compute_exclusive_regions(&shapes);
 
-        // Use the configured loss function directly on HashMaps
+        // `LossType::compute` evaluates the right thing for both true and
+        // smooth-surrogate variants — smoothing is now expressed by picking
+        // a `Smooth*` variant rather than via a runtime flag.
         let error = self
             .loss_type
             .compute(&exclusive_areas, &self.spec.exclusive_areas);
