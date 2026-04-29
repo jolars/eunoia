@@ -229,7 +229,16 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
 }
 
 /// Run the configured optimizer once from a given initial parameter vector.
-fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
+///
+/// Exposed `pub(crate)` so the [`Fitter`]'s outer-loop attempts can dispatch
+/// the final-stage solver directly when they have full shape parameters in
+/// hand and want to skip the standard `(positions, radii) → params_from_circle`
+/// path. The Venn warm-start uses this entry point to feed canonical-Venn
+/// shape params (with non-circular ellipses for n ∈ {4, 5}) straight to the
+/// optimizer.
+///
+/// [`Fitter`]: crate::Fitter
+pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
     initial_param: &DVector<f64>,
     config: &FinalLayoutConfig,

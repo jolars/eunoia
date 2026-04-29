@@ -182,43 +182,21 @@ they're pre-existing behaviour the harness now exposes.
       that deadlocked argmin's L-BFGS MDS --- which led to the MDS default
       flip below.
 
-- [ ] **Deterministic Venn-layout warm start** as one of the
-      `n_restarts` initial positions, fed in two flavours: (a) into the
-      MDS stage (so the MDS run polishes a topology-correct layout into
-      something that respects the spec's distances), and (b) directly to
-      the final solver (skip MDS for that attempt entirely, since MDS adds
-      no information when we already have a layout where every set
-      overlaps every other). Targets specs where the random/LHS init
-      consistently lands in a basin with missing intersection regions
-      (issue91-class hard 6-set ellipse fits, `eulerape_3_set`,
-      `random_4_set`). Uses the canonical Venn arrangements: regular
-      n-fold rotational symmetric circles for n ≤ 3, Wilkinson/Edwards
-      ellipse arrangements for n ∈ {4, 5, 6, 7}, fall back to LHS for
-      n ≥ 8 (no clean Venn beyond Edwards-7). Plumb as
-      `InitialSampler::Venn`, or as an additive
-      `InitialSeed::Venn` dimension that overrides one row of whatever
-      sampler is otherwise selected.
-
-      **Caveat to handle**: the Venn topology forces every $2^n - 1$
-      region open. For specs with strict disjoint or empty-intersection
-      pairs (e.g. `three_disjoint`, `two_disjoint`,
-      `one_disjoint_two_intersecting`) the topology is flat-out wrong as
-      a starting point; the final solver may not be able to fully shrink
-      the unwanted overlaps before getting stuck. Two ways to handle:
-      either zero out (or shrink) the overlap regions the spec marks
-      empty before feeding to the solver, or detect "spec has any
-      disjoint pair" and skip the Venn warm start for that spec (use a
-      regular sampler row for that restart slot instead).
-
-      **Probe via `examples/quality_report`**: add a `venn_seed` config
-      that puts the Venn warm start in slot 0 of `n_restarts`, leave
-      remaining slots on the existing default. Decision rule: if median
-      loss on `issue91_6_set` drops below `1e-1` and no easy spec
-      regresses, promote to default (Venn slot is cheap --- a fixed
-      construction per `n`, no extra MDS runs needed in flavour (b)).
-      Likely worth more diag-error per hour than further LHS tuning, and
-      complementary to the global-stage work since it attacks initial
-      basin choice, not search-direction quality.
+- [x] **Deterministic Venn-layout warm start** in slot 0 of `n_restarts`,
+      flavour (b) (skip MDS, hand canonical Venn shape parameters straight
+      to the final-stage optimizer). Replaces slot 0 unconditionally for
+      both `Fitter::<Circle>` and `Fitter::<Ellipse>`; auto-skipped when
+      not applicable (`n_sets > 4` circle / `> 5` ellipse, or any disjoint
+      pair in the spec, or non-circular Venn under `Circle`). See
+      `fitter.rs::venn_warm_start_params`. Probe via the `venn_seed`
+      column in `examples/quality_report` showed: ellipse aggregate
+      median loss 1.142e-25 → 1.077e-26, mean diag 3.622e-3 → 3.433e-3,
+      spec wins 18 → 19; `issue92_3_set_dropped_pair` median collapses
+      from 1.309e-4 (stuck for every other config including `cmaes_lm`)
+      to 1.424e-31 across all 16 seeds. ~2% wall-time cost on ellipses,
+      no-op on circles. Issue91 unchanged (still 3.796e-1) — the Venn
+      arrangement isn't enough for that 6-set basin; revisit alongside
+      the global-stage work below.
 
 - [ ] **Bounded final stage for pathological `a/b` ratios**. With LM as the
       default and L-BFGS-B not in argmin, the cleanest fix is reparameterising

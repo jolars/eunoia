@@ -23,12 +23,26 @@ use crate::geometry::shapes::circle::distance_for_overlap;
 use crate::geometry::shapes::Circle;
 use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
-use crate::spec::DiagramSpec;
+use crate::spec::{DiagramSpec, PreprocessedSpec};
+use crate::venn::VennDiagram;
+use nalgebra::DVector;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
+
+/// Maximum `n_sets` for which the Venn warm-start is attempted under
+/// [`Fitter::<Circle>`]. The canonical Venn is genuinely circular only for
+/// `n ∈ {1, 2, 3}` ([`crate::venn`]); n=4..=5 use Wilkinson/Edwards
+/// ellipse arrangements, so we cap circles slightly above the supported
+/// range and let [`venn_warm_start_params`] return `None` for the
+/// non-circular cases.
+const VENN_SEED_MAX_SETS_CIRCLE: usize = 4;
+/// Maximum `n_sets` for which the Venn warm-start is attempted under
+/// [`Fitter::<Ellipse>`]. Matches the n=1..=5 hardcoded arrangements
+/// in [`crate::venn`]; beyond that no clean Venn ellipse exists.
+const VENN_SEED_MAX_SETS_ELLIPSE: usize = 5;
 
 /// Fitter for creating diagram layouts from specifications.
 ///
@@ -561,9 +575,73 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             }
         };
 
+        // Precompute the Venn warm-start params (full shape parameters,
+        // already at the spec scale) for slot 0. `None` means slot 0 falls
+        // back to the standard MDS path. Only consulted when `optimize`
+        // is true — the no-optimization branch returns the first MDS init
+        // as-is for diagnostic purposes.
+        //
+        // `venn_warm_start_params` returns `None` (so slot 0 stays on the
+        // MDS path) whenever the canonical Venn isn't applicable: n_sets
+        // outside the per-shape support window (≤ 4 circles, ≤ 5 ellipses),
+        // any disjoint pair in the spec (the Venn topology forces every
+        // region positive, so the optimizer would have to undo the
+        // overlap from a basin with little gradient — see TODO.md), or
+        // shapes where `n_params()` is neither 3 nor 5. In every other
+        // case the warm-start replaces slot 0's random MDS init.
+        //
+        // Empirically this closes `issue92_3_set_dropped_pair` from a
+        // basin LM-on-LM gets stuck in (1.309e-4 across every seed) to
+        // ~1.4e-31 across all seeds, lifts ellipse spec-wins from 18 to
+        // 19 in `examples/quality_report`, and is a no-op on circles
+        // (most circle specs are out of range or already at the optimum).
+        // Cost is ~2% wall time when applicable.
+        let venn_initial: Option<Vec<f64>> = if optimize {
+            venn_warm_start_params::<S>(&spec)
+        } else {
+            None
+        };
+
         let initial_solvers = self.initial_solvers.clone();
         let run_attempt =
             |(attempt_idx, attempt_seed): (usize, u64)| -> Result<(Vec<f64>, f64), DiagramError> {
+                let attempt_optimizer = optimizer_pool[attempt_idx % optimizer_pool.len()];
+                let final_config = final_layout::FinalLayoutConfig {
+                    max_iterations,
+                    tolerance,
+                    loss_type,
+                    optimizer: attempt_optimizer,
+                    seed: attempt_seed,
+                    // Outer loop already provides full-pipeline diversity via fresh
+                    // MDS inits, so each attempt's final stage runs once.
+                    n_restarts: 1,
+                    cmaes_fallback_threshold,
+                };
+
+                if attempt_idx == 0 {
+                    if let Some(venn_params) = venn_initial.as_ref() {
+                        // Slot 0 with Venn warm-start: skip MDS entirely and
+                        // hand the canonical-Venn shape parameters straight
+                        // to the final-stage optimizer (flavour (b) in
+                        // TODO.md). MDS adds no information when we already
+                        // have a layout where every set overlaps every
+                        // other.
+                        let initial_param = DVector::from_vec(venn_params.clone());
+                        return final_layout::optimize_from_initial::<S>(
+                            &spec,
+                            &initial_param,
+                            &final_config,
+                        )
+                        .map(|(p, l)| (p.as_slice().to_vec(), l))
+                        .map_err(|e| {
+                            DiagramError::InvalidCombination(format!(
+                                "Venn-seed final optimisation failed: {}",
+                                e
+                            ))
+                        });
+                    }
+                }
+
                 let mut attempt_rng = StdRng::seed_from_u64(attempt_seed);
 
                 let initial_solver = initial_solvers[attempt_idx % initial_solvers.len()];
@@ -606,24 +684,11 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     return Ok((params, 0.0));
                 }
 
-                let attempt_optimizer = optimizer_pool[attempt_idx % optimizer_pool.len()];
-                let config = final_layout::FinalLayoutConfig {
-                    max_iterations,
-                    tolerance,
-                    loss_type,
-                    optimizer: attempt_optimizer,
-                    seed: attempt_seed,
-                    // Outer loop already provides full-pipeline diversity via fresh
-                    // MDS inits, so each attempt's final stage runs once.
-                    n_restarts: 1,
-                    cmaes_fallback_threshold,
-                };
-
                 match final_layout::optimize_layout::<S>(
                     &spec,
                     &initial_positions,
                     &initial_radii,
-                    config,
+                    final_config,
                 ) {
                     Ok((params, loss)) => Ok((params, loss)),
                     Err(e) => Err(DiagramError::InvalidCombination(format!(
@@ -773,6 +838,104 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 
         Ok(optimal_distances)
     }
+}
+
+/// Build full shape-parameter vector for the canonical Venn-diagram layout
+/// of the preprocessed spec, scaled to roughly match the spec's set sizes.
+///
+/// Returns `None` (so the caller falls back to the standard MDS path) when:
+/// - `n_sets` is outside the per-shape support window
+///   ([`VENN_SEED_MAX_SETS_CIRCLE`] / [`VENN_SEED_MAX_SETS_ELLIPSE`]).
+/// - The spec has any disjoint pair (Venn topology forces every region
+///   open; specs with hard-zero overlaps would start in a wrong topology
+///   the optimizer can't easily escape — see TODO.md).
+/// - The shape's `n_params()` is not 3 (Circle) or 5 (Ellipse).
+/// - The canonical Venn for `n_sets` is non-circular and the shape is a
+///   circle (i.e. n_sets ∈ {4, 5} under [`Circle`]); we have no
+///   circular-Venn arrangement for those.
+/// - [`VennDiagram::new`] returns `Err` (n_sets == 0 or ≥ 6).
+///
+/// The canonical Venn arrangements live at unit scale (radii ~1). We scale
+/// by the spec's mean circle radius so the warm-start sits in roughly the
+/// same magnitude as the spec — the loss landscape's gradient is much
+/// healthier when the initial shapes are close to the right size.
+///
+/// [`Circle`]: crate::geometry::shapes::Circle
+fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+) -> Option<Vec<f64>> {
+    let n_sets = spec.n_sets;
+    let pp = S::n_params();
+    let max_n = match pp {
+        3 => VENN_SEED_MAX_SETS_CIRCLE,
+        5 => VENN_SEED_MAX_SETS_ELLIPSE,
+        _ => return None,
+    };
+    if n_sets < 2 || n_sets > max_n {
+        return None;
+    }
+    if spec_has_disjoint_pair(spec) {
+        return None;
+    }
+
+    let venn = VennDiagram::new(n_sets).ok()?;
+
+    // Match the canonical-Venn footprint to the spec's mean circle radius.
+    // Without this, very large-area specs (e.g. issue91-class with sums
+    // ~thousand) would start at unit scale, ~100× too small for the loss
+    // landscape.
+    let mean_radius: f64 = if !spec.set_areas.is_empty() {
+        let total: f64 = spec
+            .set_areas
+            .iter()
+            .map(|a| (a / std::f64::consts::PI).sqrt())
+            .sum();
+        (total / spec.set_areas.len() as f64).max(1e-6)
+    } else {
+        1.0
+    };
+
+    let mut params = Vec::with_capacity(n_sets * pp);
+    for ell in venn.ellipses() {
+        let h = ell.center().x() * mean_radius;
+        let k = ell.center().y() * mean_radius;
+        let a = ell.semi_major() * mean_radius;
+        let b = ell.semi_minor() * mean_radius;
+        let phi = ell.rotation();
+        match pp {
+            3 => {
+                // Circle. Reject when the canonical Venn for this n_sets is
+                // non-circular (n ∈ {4, 5}) — we'd have to drop the
+                // semi-minor axis and lose the topology guarantee, which
+                // defeats the warm-start's purpose.
+                if (a - b).abs() > 1e-9 * mean_radius.max(1.0) {
+                    return None;
+                }
+                params.extend(S::params_from_circle(h, k, a));
+            }
+            5 => {
+                // Ellipse params layout matches `Ellipse::params_from_circle`:
+                // [x, y, a, b, phi].
+                params.extend([h, k, a, b, phi]);
+            }
+            _ => return None,
+        }
+    }
+    Some(params)
+}
+
+/// Returns true iff the preprocessed spec marks at least one pair of sets
+/// as fully disjoint (zero inclusive overlap).
+fn spec_has_disjoint_pair(spec: &PreprocessedSpec) -> bool {
+    let n = spec.n_sets;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if spec.relationships.is_disjoint(i, j) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn exclusive_region_maps_approx_equal(
@@ -1065,6 +1228,182 @@ mod tests {
         // Use best seed for detailed analysis
         let fitter = Fitter::<Ellipse>::new(&spec).seed(best_seed);
         let layout = fitter.fit().unwrap();
+        assert!(layout.loss().is_finite());
+    }
+
+    /// Helper: build a 3-set spec with all pairwise + triple overlaps
+    /// non-zero (no disjoint pairs), so the Venn warm-start is applicable.
+    fn three_set_overlapping_spec() -> DiagramSpec {
+        DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 10.0)
+            .set("C", 10.0)
+            .intersection(&["A", "B"], 4.0)
+            .intersection(&["A", "C"], 4.0)
+            .intersection(&["B", "C"], 4.0)
+            .intersection(&["A", "B", "C"], 2.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn venn_warm_start_returns_some_for_supported_ellipse_n() {
+        use crate::geometry::shapes::Ellipse;
+
+        for n in 2..=5usize {
+            // Build a fully-overlapping n-set spec via DiagramSpecBuilder
+            // with set names "A".."A+n-1".
+            let names: Vec<&str> = ["A", "B", "C", "D", "E"][..n].to_vec();
+            let mut builder = DiagramSpecBuilder::new();
+            for &name in &names {
+                builder = builder.set(name, 10.0);
+            }
+            // A few moderate intersections so all pairs overlap.
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    builder = builder.intersection(&[names[i], names[j]], 1.0);
+                }
+            }
+            let spec = builder
+                .input_type(crate::InputType::Inclusive)
+                .build()
+                .unwrap();
+            let preprocessed = spec.preprocess().unwrap();
+            let params = venn_warm_start_params::<Ellipse>(&preprocessed);
+            assert!(params.is_some(), "ellipse n={} should produce params", n);
+            let params = params.unwrap();
+            assert_eq!(params.len(), n * 5, "ellipse n={} param length", n);
+        }
+    }
+
+    #[test]
+    fn venn_warm_start_returns_some_for_circle_n_2_and_3() {
+        for n in 2..=3usize {
+            let names: Vec<&str> = ["A", "B", "C"][..n].to_vec();
+            let mut builder = DiagramSpecBuilder::new();
+            for &name in &names {
+                builder = builder.set(name, 10.0);
+            }
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    builder = builder.intersection(&[names[i], names[j]], 1.0);
+                }
+            }
+            let spec = builder
+                .input_type(crate::InputType::Inclusive)
+                .build()
+                .unwrap();
+            let preprocessed = spec.preprocess().unwrap();
+            let params = venn_warm_start_params::<Circle>(&preprocessed);
+            assert!(params.is_some(), "circle n={} should produce params", n);
+            assert_eq!(params.unwrap().len(), n * 3);
+        }
+    }
+
+    #[test]
+    fn venn_warm_start_rejects_n4_and_n5_circles() {
+        // Canonical Venn for n=4, 5 is non-circular (Wilkinson/Edwards
+        // ellipse arrangements), so the Circle warm-start path must bail.
+        for n in [4usize, 5] {
+            let names: Vec<&str> = ["A", "B", "C", "D", "E"][..n].to_vec();
+            let mut builder = DiagramSpecBuilder::new();
+            for &name in &names {
+                builder = builder.set(name, 10.0);
+            }
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    builder = builder.intersection(&[names[i], names[j]], 1.0);
+                }
+            }
+            let spec = builder
+                .input_type(crate::InputType::Inclusive)
+                .build()
+                .unwrap();
+            let preprocessed = spec.preprocess().unwrap();
+            assert!(
+                venn_warm_start_params::<Circle>(&preprocessed).is_none(),
+                "circle n={} must reject (Venn is non-circular)",
+                n
+            );
+        }
+    }
+
+    #[test]
+    fn venn_warm_start_rejects_n_above_5_for_ellipses() {
+        use crate::geometry::shapes::Ellipse;
+
+        let names = ["A", "B", "C", "D", "E", "F"];
+        let mut builder = DiagramSpecBuilder::new();
+        for &name in &names {
+            builder = builder.set(name, 10.0);
+        }
+        for i in 0..6 {
+            for j in (i + 1)..6 {
+                builder = builder.intersection(&[names[i], names[j]], 1.0);
+            }
+        }
+        let spec = builder
+            .input_type(crate::InputType::Inclusive)
+            .build()
+            .unwrap();
+        let preprocessed = spec.preprocess().unwrap();
+        assert!(
+            venn_warm_start_params::<Ellipse>(&preprocessed).is_none(),
+            "ellipse n=6 must reject (no canonical Venn)"
+        );
+    }
+
+    #[test]
+    fn venn_warm_start_skips_specs_with_disjoint_pairs() {
+        use crate::geometry::shapes::Ellipse;
+
+        // three_disjoint: all sets fully separate, so the Venn topology
+        // (every region positive) is wrong as a starting point.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 1.0)
+            .set("B", 1.0)
+            .set("C", 1.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+        let preprocessed = spec.preprocess().unwrap();
+        assert!(spec_has_disjoint_pair(&preprocessed));
+        assert!(
+            venn_warm_start_params::<Ellipse>(&preprocessed).is_none(),
+            "ellipse + disjoint spec must skip Venn warm-start"
+        );
+    }
+
+    #[test]
+    fn venn_seed_default_path_yields_finite_loss() {
+        // Sanity-check that the now-default Venn warm-start in slot 0
+        // doesn't break a basic 3-set circle fit.
+        let spec = three_set_overlapping_spec();
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        assert!(layout.loss().is_finite());
+    }
+
+    #[test]
+    fn venn_seed_falls_back_when_n_sets_too_large_for_circle() {
+        // n=4 circle case: canonical Venn for n=4 is non-circular (ellipses),
+        // so `venn_warm_start_params` returns `None` and the fitter must
+        // fall back to the standard MDS path without panicking.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 5.0)
+            .set("C", 5.0)
+            .set("D", 5.0)
+            .intersection(&["A", "B"], 1.0)
+            .intersection(&["A", "C"], 1.0)
+            .intersection(&["A", "D"], 1.0)
+            .intersection(&["B", "C"], 1.0)
+            .intersection(&["B", "D"], 1.0)
+            .intersection(&["C", "D"], 1.0)
+            .input_type(crate::InputType::Inclusive)
+            .build()
+            .unwrap();
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
         assert!(layout.loss().is_finite());
     }
 }
