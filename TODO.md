@@ -75,10 +75,26 @@ they're pre-existing behaviour the harness now exposes.
       intersection roundoff at near-tangent geometry no longer trips it.
       All 5 previously-skipped corpus entries return to `Fittable::Normal`.
 
-- [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. Random area
-      inputs aren't guaranteed to be representable by ellipses, so this may not
-      be improvable without more general shapes --- but it's a data point worth
-      re-checking after any optimizer redesign.
+- [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. The corpus
+      ceiling is tightened to `3e-2` (was `5e-2`) since this basin is a
+      deterministic floor across most master seeds. There are at least two
+      distinct local minima:
+      - **basin A** (loss `7.786e-3`, diag `2.606e-2`) — reached by ~13/16
+        `QUALITY_SEEDS` master seeds at default `n_restarts=10`.
+      - **basin B** (loss `4.335e-3`, diag `1.147e-2`) — reached by the other
+        ~3/16. An even slightly better basin (loss `4.086e-3`) shows up at
+        `n_restarts ≥ 40` but only as the global-min, never the median.
+
+      The basins differ in which ellipse area maps to which set's target
+      (basin A nails `C ≈ 4.24`, `E ≈ 4.56` and undershoots `A`/`B`; basin B
+      spreads the error more evenly). Neither raising `n_restarts` to 100 nor
+      forcing `Optimizer::CmaEsLm` to fire on every restart
+      (`cmaes_fallback_threshold = 1.0`) shifts the median off basin A —
+      CMA-ES at default budget / box doesn't span the basin gap from this
+      MDS init. Probed via a throwaway example (deleted after measurement).
+
+      Worth re-checking after any optimizer redesign that touches the global
+      stage; tighten the ceiling further if a future change closes basin A.
 
 - [ ] **Synthetic-groundtruth threshold is loose** (5e-2). The generating
       configuration is exactly representable by construction, so a healthy

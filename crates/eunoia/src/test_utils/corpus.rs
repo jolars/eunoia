@@ -288,9 +288,14 @@ static CORPUS: [CorpusEntry; 27] = [
         // Hardcoded seeded random values — no expected analytic answer,
         // but a well-formed 4-set with all pairwise + triple + quad
         // intersections. Random area inputs aren't guaranteed to be
-        // representable by any shape, so ceilings are loose for both.
+        // representable by any shape, so the circle ceiling is loose.
+        // The ellipse ceiling is tightened to 3e-2: ~13/16 master seeds
+        // land in a deterministic basin at diag ≈ 2.606e-2 (loss 7.786e-3)
+        // and a better basin at diag ≈ 1.147e-2 (loss 4.335e-3) is
+        // reachable from a minority of MDS inits but not reliably found by
+        // either more restarts or the CMA-ES global stage. See TODO.md.
         max_diag_error_circle: Some(5e-2),
-        max_diag_error_ellipse: Some(5e-2),
+        max_diag_error_ellipse: Some(3e-2),
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
     },
