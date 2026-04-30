@@ -1,9 +1,9 @@
 //! Aggregate quality-report binary.
 //!
 //! Sweeps a list of named [`Fitter`] configurations × the 27-spec corpus ×
-//! `QUALITY_SEEDS` (16 seeds) × {Circle, Ellipse} and reports the *loss being
-//! minimized* (not `diag_error`) as the primary metric, with `diag_error`
-//! and runtime as secondary diagnostics.
+//! `QUALITY_SEEDS` (16 seeds) × {Circle, Ellipse, Square} and reports the
+//! *loss being minimized* (not `diag_error`) as the primary metric, with
+//! `diag_error` and runtime as secondary diagnostics.
 //!
 //! All configs share the same loss type (the `Fitter` default,
 //! `LossType::SumSquared = Σ(f-t)² / Σt²`), so loss values are directly
@@ -46,7 +46,7 @@ mod quality_report {
     use std::path::PathBuf;
     use std::time::Instant;
 
-    use eunoia::geometry::shapes::{Circle, Ellipse};
+    use eunoia::geometry::shapes::{Circle, Ellipse, Square};
     use eunoia::geometry::traits::DiagramShape;
     use eunoia::loss::LossType;
     use eunoia::test_utils::corpus::{all, CorpusEntry, Fittable, QUALITY_SEEDS};
@@ -165,8 +165,9 @@ mod quality_report {
     pub fn run() {
         let circle_configs = shape_configs::<Circle>();
         let ellipse_configs = shape_configs::<Ellipse>();
+        let square_configs = shape_configs::<Square>();
         eprintln!(
-            "Running quality sweep: {} configs × 2 shapes × 27 specs × {} seeds.",
+            "Running quality sweep: {} configs × 3 shapes × 27 specs × {} seeds.",
             circle_configs.len(),
             QUALITY_SEEDS.len()
         );
@@ -193,6 +194,17 @@ mod quality_report {
                 *cfg_fn,
                 "ellipse",
                 |e| e.fittable_ellipse,
+                &mut all_rows,
+            );
+            eprintln!();
+        }
+        for (cfg_name, cfg_fn) in &square_configs {
+            eprintln!("== config: {cfg_name} | shape: square ==");
+            run_config::<Square>(
+                cfg_name,
+                *cfg_fn,
+                "square",
+                |e| e.fittable_square,
                 &mut all_rows,
             );
             eprintln!();
@@ -498,7 +510,7 @@ mod quality_report {
         let _ = writeln!(s, "- Configs swept: `{}`", config_names.join("`, `"));
         let _ = writeln!(s);
 
-        for &shape in &["circle", "ellipse"] {
+        for &shape in &["circle", "ellipse", "square"] {
             render_shape_block(&mut s, rows, config_names, shape, active_loss);
         }
 
@@ -793,8 +805,9 @@ mod quality_report {
             s.push_str("    {\n");
             let _ = writeln!(s, "      \"name\": {},", json_str(cfg));
             s.push_str("      \"shapes\": [\n");
-            for (si, &shape) in ["circle", "ellipse"].iter().enumerate() {
-                let last_shape = si + 1 == 2;
+            let shapes = ["circle", "ellipse", "square"];
+            for (si, &shape) in shapes.iter().enumerate() {
+                let last_shape = si + 1 == shapes.len();
                 write_shape_json(&mut s, rows, cfg, shape, last_shape);
             }
             s.push_str("      ]\n");

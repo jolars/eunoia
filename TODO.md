@@ -123,15 +123,15 @@ Deferred from the axis-aligned `Square` PR (`crates/eunoia/src/geometry/shapes/s
       Gradient-vs-FD tests cover 1-, 2-, 3-square overlap, disjoint, nested,
       and a generic no-ties config (tight 1e-7 tolerance).
 
-- [ ] **Add `Square` to the corpus and `examples/quality_report`**. Requires
-      adding a `fittable_square: Fittable` field to every `CorpusEntry`
-      in `crates/eunoia/src/test_utils/corpus.rs` (27 entries) plus a
-      per-shape ceiling (`max_diag_error_square`, or fall back to the
-      category default), then wiring a third shape pass through
-      `quality_report::run`. Held back from the initial Square PR to keep
-      the diff focused. Without this, Square has no cross-spec quality
-      tracking and regressions in its fits won't surface in the standard
-      sweep.
+- [x] **Add `Square` to the corpus and `examples/quality_report`**. Done:
+      `CorpusEntry` carries `fittable_square: Fittable` and
+      `max_diag_error_square: Option<f64>` with a `ceiling_square()`
+      accessor; all 27 entries are populated. Per-spec ceilings were
+      tightened/loosened against observed default-fitter quality (see
+      inline comments). `corpus_quality.rs` adds
+      `corpus_squares_diag_error`. `examples/quality_report` runs the
+      same config sweep across `Square` as a third shape pass and emits
+      it in both the markdown and JSON outputs.
 
 - [ ] **WASM bindings for `Square`**. `crates/eunoia-wasm/src/lib.rs` exposes
       `WasmCircle` / `WasmEllipse` wrappers and per-shape entry points

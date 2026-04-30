@@ -10,6 +10,7 @@
     cargo-flamegraph
     cargo-audit
     cargo-deny
+    cargo-msrv
     nodejs
     gnuplot
     samply

@@ -2,7 +2,7 @@
 //!
 //! Iterates the 17-spec corpus in [`crate::test_utils::corpus`] across
 //! [`TEST_SEEDS`] and asserts each fit produces a `diag_error` within a
-//! permissive per-spec ceiling. Two test functions (one per shape) so a
+//! permissive per-spec ceiling. Three test functions (one per shape) so a
 //! contributor can run circles only during local iteration.
 //!
 //! All failures are collected into a single panic at the end of each test
@@ -10,7 +10,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::geometry::shapes::{Circle, Ellipse};
+    use crate::geometry::shapes::{Circle, Ellipse, Square};
     use crate::geometry::traits::DiagramShape;
     use crate::test_utils::corpus::{all, CorpusEntry, Fittable, TEST_SEEDS};
     use crate::Fitter;
@@ -176,5 +176,10 @@ mod tests {
     #[test]
     fn corpus_ellipses_diag_error() {
         run::<Ellipse>("ellipse", |e| e.ceiling_ellipse(), |e| e.fittable_ellipse);
+    }
+
+    #[test]
+    fn corpus_squares_diag_error() {
+        run::<Square>("square", |e| e.ceiling_square(), |e| e.fittable_square);
     }
 }
