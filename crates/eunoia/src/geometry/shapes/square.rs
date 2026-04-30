@@ -17,12 +17,14 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use crate::geometry::diagram::{
-    discover_regions, mask_to_indices, to_exclusive_areas, IntersectionPoint, RegionMask,
+    discover_regions, mask_to_indices, to_exclusive_areas, to_exclusive_areas_and_gradients,
+    IntersectionPoint, RegionMask,
 };
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{
-    Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter, Polygonize,
+    Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, ExclusiveRegionsAndGradient,
+    Perimeter, Polygonize,
 };
 
 /// An axis-aligned square defined by a center point and side length.
@@ -204,6 +206,127 @@ fn collect_intersections_square(squares: &[Square], n_sets: usize) -> Vec<Inters
     intersections
 }
 
+/// Companion to [`Square::compute_exclusive_regions`] that also returns the
+/// analytical gradient of each exclusive area w.r.t. the flat parameter
+/// vector `[x₀, y₀, s₀, x₁, …]`.
+///
+/// For each region the n-way intersection is one axis-aligned rectangle
+/// with `dx = x_max − x_min` and `dy = y_max − y_min`; each of the four
+/// extrema is a min/max over the mask. When a single shape strictly binds a
+/// side, that side's contributions go to that shape:
+///
+/// ```text
+/// ∂A/∂x_{i_L} = −dy   ∂A/∂x_{i_R} = +dy
+/// ∂A/∂y_{i_B} = −dx   ∂A/∂y_{i_T} = +dx
+/// ∂A/∂s_{i_L} = dy/2  ∂A/∂s_{i_R} = dy/2
+/// ∂A/∂s_{i_B} = dx/2  ∂A/∂s_{i_T} = dx/2
+/// ```
+///
+/// At a tie (multiple shapes share the extremum on a side, e.g. coincident
+/// edges), the side's contribution is split equally among the tied shapes.
+/// This matches the central-difference average of one-sided derivatives at
+/// the non-smooth point and produces a valid subgradient. Contributions sum
+/// when the same shape binds multiple sides (e.g. the 1-mask case yields
+/// `∂A/∂s_i = 2s`, matching `A = s²`). When `dx ≤ 0` or `dy ≤ 0` the area
+/// is clamped to 0 and the gradient for that region is the zero vector. The
+/// shared inclusion-exclusion combiner [`to_exclusive_areas_and_gradients`]
+/// already zeroes gradients for post-IE clamped-negative areas.
+fn compute_exclusive_regions_with_gradient_squares(
+    shapes: &[Square],
+) -> ExclusiveRegionsAndGradient {
+    let n_sets = shapes.len();
+    let n_params = n_sets * 3;
+
+    let intersections = collect_intersections_square(shapes, n_sets);
+    let regions = discover_regions(shapes, &intersections, n_sets);
+
+    let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
+    let mut overlapping_grads: HashMap<RegionMask, Vec<f64>> = HashMap::new();
+
+    for &mask in &regions {
+        let indices = mask_to_indices(mask, n_sets);
+
+        let mut x_min = f64::NEG_INFINITY;
+        let mut x_max = f64::INFINITY;
+        let mut y_min = f64::NEG_INFINITY;
+        let mut y_max = f64::INFINITY;
+        for &i in &indices {
+            let (a, b, c, d) = shapes[i].bounds();
+            if a > x_min {
+                x_min = a;
+            }
+            if b < x_max {
+                x_max = b;
+            }
+            if c > y_min {
+                y_min = c;
+            }
+            if d < y_max {
+                y_max = d;
+            }
+        }
+
+        let dx_raw = x_max - x_min;
+        let dy_raw = y_max - y_min;
+        let dx = dx_raw.max(0.0);
+        let dy = dy_raw.max(0.0);
+        overlapping_areas.insert(mask, dx * dy);
+
+        let mut grad = vec![0.0; n_params];
+        if dx_raw > 0.0 && dy_raw > 0.0 {
+            // Collect tied binding indices per side. Bounds and the running
+            // extremum are produced by arithmetic on input parameters, so
+            // structural edge coincidences hit exact f64 equality.
+            let mut tied_l: Vec<usize> = Vec::with_capacity(indices.len());
+            let mut tied_r: Vec<usize> = Vec::with_capacity(indices.len());
+            let mut tied_b: Vec<usize> = Vec::with_capacity(indices.len());
+            let mut tied_t: Vec<usize> = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                let (a, b, c, d) = shapes[i].bounds();
+                #[allow(clippy::float_cmp)]
+                {
+                    if a == x_min {
+                        tied_l.push(i);
+                    }
+                    if b == x_max {
+                        tied_r.push(i);
+                    }
+                    if c == y_min {
+                        tied_b.push(i);
+                    }
+                    if d == y_max {
+                        tied_t.push(i);
+                    }
+                }
+            }
+            let w_l = 1.0 / tied_l.len() as f64;
+            let w_r = 1.0 / tied_r.len() as f64;
+            let w_b = 1.0 / tied_b.len() as f64;
+            let w_t = 1.0 / tied_t.len() as f64;
+
+            for &i in &tied_l {
+                grad[3 * i] -= dy * w_l;
+                grad[3 * i + 2] += dy * 0.5 * w_l;
+            }
+            for &i in &tied_r {
+                grad[3 * i] += dy * w_r;
+                grad[3 * i + 2] += dy * 0.5 * w_r;
+            }
+            for &i in &tied_b {
+                grad[3 * i + 1] -= dx * w_b;
+                grad[3 * i + 2] += dx * 0.5 * w_b;
+            }
+            for &i in &tied_t {
+                grad[3 * i + 1] += dx * w_t;
+                grad[3 * i + 2] += dx * 0.5 * w_t;
+            }
+        }
+        overlapping_grads.insert(mask, grad);
+    }
+
+    to_exclusive_areas_and_gradients(&overlapping_areas, &overlapping_grads, n_params)
+}
+
 impl DiagramShape for Square {
     fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
         let n_sets = shapes.len();
@@ -294,6 +417,12 @@ impl DiagramShape for Square {
 
     fn to_params(&self) -> Vec<f64> {
         vec![self.center.x(), self.center.y(), self.side]
+    }
+
+    fn compute_exclusive_regions_with_gradient(
+        shapes: &[Self],
+    ) -> Option<ExclusiveRegionsAndGradient> {
+        Some(compute_exclusive_regions_with_gradient_squares(shapes))
     }
 
     /// Canonical axis-aligned Venn arrangements for `n ∈ {1, 2, 3}`.
@@ -493,6 +622,155 @@ mod tests {
         assert_eq!(regions.get(&0b10).copied().unwrap_or(0.0), 0.0);
     }
 
+    /// Central-difference reference for `compute_exclusive_regions`. Returns a
+    /// HashMap matching the analytical layout: per region, a length-`3·n_sets`
+    /// gradient vector ordered `[x₀, y₀, s₀, x₁, …]`.
+    fn fd_exclusive_region_gradients(shapes: &[Square], h: f64) -> HashMap<RegionMask, Vec<f64>> {
+        let n_sets = shapes.len();
+        let n_params = n_sets * 3;
+        let base = Square::compute_exclusive_regions(shapes);
+
+        let mut grads: HashMap<RegionMask, Vec<f64>> =
+            base.keys().map(|&m| (m, vec![0.0; n_params])).collect();
+
+        for i in 0..n_sets {
+            for k in 0..3 {
+                let perturb = |delta: f64| -> HashMap<RegionMask, f64> {
+                    let mut copy: Vec<Square> = shapes.to_vec();
+                    let (cx, cy, side) =
+                        (copy[i].center().x(), copy[i].center().y(), copy[i].side());
+                    let new = match k {
+                        0 => Square::new(Point::new(cx + delta, cy), side),
+                        1 => Square::new(Point::new(cx, cy + delta), side),
+                        2 => Square::new(Point::new(cx, cy), side + delta),
+                        _ => unreachable!(),
+                    };
+                    copy[i] = new;
+                    Square::compute_exclusive_regions(&copy)
+                };
+                let plus = perturb(h);
+                let minus = perturb(-h);
+                for (&mask, g) in grads.iter_mut() {
+                    let p = plus.get(&mask).copied().unwrap_or(0.0);
+                    let m = minus.get(&mask).copied().unwrap_or(0.0);
+                    g[3 * i + k] = (p - m) / (2.0 * h);
+                }
+            }
+        }
+        grads
+    }
+
+    /// Compare analytical and FD gradient maps mask-by-mask, indexing both by
+    /// the analytical map's masks. Tolerance `tol` is per-component absolute.
+    fn assert_grad_matches_fd(
+        analytical: &HashMap<RegionMask, Vec<f64>>,
+        fd: &HashMap<RegionMask, Vec<f64>>,
+        tol: f64,
+    ) {
+        for (&mask, ag) in analytical.iter() {
+            let fg = fd
+                .get(&mask)
+                .expect("FD missing mask present in analytical");
+            assert_eq!(ag.len(), fg.len(), "param count mismatch for mask {mask:b}");
+            for (k, (&a, &f)) in ag.iter().zip(fg.iter()).enumerate() {
+                assert!(
+                    (a - f).abs() < tol,
+                    "mask {mask:b} param {k}: analytical={a} fd={f} (tol={tol})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_gradient_single_square_matches_2s_on_side() {
+        // A = s²; ∂A/∂s = 2s, ∂A/∂x = ∂A/∂y = 0.
+        let s = 3.0;
+        let sq = Square::new(Point::new(1.5, -2.0), s);
+        let (areas, grads) = Square::compute_exclusive_regions_with_gradient(&[sq]).unwrap();
+        assert!(approx_eq(areas[&0b1], s * s));
+        let g = &grads[&0b1];
+        assert_eq!(g.len(), 3);
+        assert!(approx_eq(g[0], 0.0));
+        assert!(approx_eq(g[1], 0.0));
+        assert!(approx_eq(g[2], 2.0 * s));
+    }
+
+    #[test]
+    fn test_gradient_two_squares_partial_overlap_matches_fd() {
+        // 1×2 overlap rectangle. Edge-coincident on y=±1, so the gradient
+        // exercises the tie-split path; central FD truncation degrades from
+        // O(h²) to O(h) at those kinks, hence a 1e-5 tolerance.
+        let a = Square::new(Point::new(0.0, 0.0), 2.0);
+        let b = Square::new(Point::new(1.0, 0.0), 2.0);
+        let (_, grads) = Square::compute_exclusive_regions_with_gradient(&[a, b]).unwrap();
+        let fd = fd_exclusive_region_gradients(&[a, b], 1e-6);
+        assert_grad_matches_fd(&grads, &fd, 1e-5);
+    }
+
+    #[test]
+    fn test_gradient_three_squares_overlap_matches_fd() {
+        // Triple-overlap configuration with multiple edge ties.
+        let a = Square::new(Point::new(0.0, 0.0), 2.0);
+        let b = Square::new(Point::new(1.0, 0.0), 2.0);
+        let c = Square::new(Point::new(0.5, 1.0), 2.0);
+        let (_, grads) = Square::compute_exclusive_regions_with_gradient(&[a, b, c]).unwrap();
+        let fd = fd_exclusive_region_gradients(&[a, b, c], 1e-6);
+        assert_grad_matches_fd(&grads, &fd, 1e-5);
+    }
+
+    #[test]
+    fn test_gradient_generic_no_ties_matches_fd_tightly() {
+        // Generic configuration with all distinct edges so no tie-split
+        // applies; central FD is O(h²) accurate and the gradient should
+        // match to ~1e-9 with h=1e-5.
+        let a = Square::new(Point::new(0.0, 0.0), 2.3);
+        let b = Square::new(Point::new(1.1, 0.4), 1.7);
+        let c = Square::new(Point::new(0.6, 1.2), 2.1);
+        let (_, grads) = Square::compute_exclusive_regions_with_gradient(&[a, b, c]).unwrap();
+        let fd = fd_exclusive_region_gradients(&[a, b, c], 1e-5);
+        assert_grad_matches_fd(&grads, &fd, 1e-7);
+    }
+
+    #[test]
+    fn test_gradient_disjoint_pair_is_zero_on_intersection() {
+        let a = Square::new(Point::new(0.0, 0.0), 2.0);
+        let b = Square::new(Point::new(10.0, 0.0), 2.0);
+        let (_, grads) = Square::compute_exclusive_regions_with_gradient(&[a, b]).unwrap();
+        // The {a,b} mask might be absent (sparse discovery) or present with
+        // zero area + zero gradient.
+        if let Some(g) = grads.get(&0b11) {
+            for &v in g {
+                assert!(approx_eq(v, 0.0), "expected zero on disjoint pair, got {v}");
+            }
+        }
+        // Singletons must agree with FD.
+        let fd = fd_exclusive_region_gradients(&[a, b], 1e-5);
+        for &mask in &[0b01_usize, 0b10_usize] {
+            let ag = grads.get(&mask).expect("singleton missing");
+            let fg = fd.get(&mask).expect("FD singleton missing");
+            for (k, (&a, &f)) in ag.iter().zip(fg.iter()).enumerate() {
+                assert!(
+                    (a - f).abs() < 1e-6,
+                    "mask {mask:b} param {k}: analytical={a} fd={f}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_gradient_nested_matches_fd() {
+        // Inner square fully inside outer; the inner-only exclusive area is 0.
+        // Edges are not coincident, so this is a smooth point — tight FD parity.
+        let outer = Square::new(Point::new(0.0, 0.0), 4.0);
+        let inner = Square::new(Point::new(0.0, 0.0), 2.0);
+        let (areas, grads) =
+            Square::compute_exclusive_regions_with_gradient(&[outer, inner]).unwrap();
+        let fd = fd_exclusive_region_gradients(&[outer, inner], 1e-5);
+        assert!(approx_eq(areas[&0b11], 4.0));
+        assert!(approx_eq(areas[&0b01], 12.0));
+        assert_grad_matches_fd(&grads, &fd, 1e-7);
+    }
+
     #[test]
     fn test_params_round_trip() {
         let s = Square::new(Point::new(1.5, -2.0), 3.5);
@@ -566,10 +844,9 @@ mod tests {
         // Existence check only: we want to confirm the full
         // Fitter<Square>::fit pipeline runs end-to-end (MDS init via
         // mds_target_distance, final-stage optimisation, layout
-        // construction). The numeric loss is sensitive to the FD-fallback
-        // gradient and the non-smooth `(s - |dx|)·(s - |dy|)` overlap; we
-        // do not pin a specific basin at this stage — analytical gradients
-        // and a tightened tolerance are deferred follow-ups.
+        // construction). The numeric loss is sensitive to the non-smooth
+        // `(s - |dx|)·(s - |dy|)` overlap; we do not pin a specific basin
+        // at this stage.
         let fitted = layout.fitted();
         assert!(
             fitted.values().all(|&v| v.is_finite()),
