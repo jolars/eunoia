@@ -102,6 +102,27 @@ pub trait DiagramShape: Closed {
     where
         Self: Sized;
 
+    /// Center-to-center distance that would yield `target_overlap` between
+    /// two shapes whose set areas are `area_i` and `area_j`. Used by the MDS
+    /// initial-layout phase, which optimises 2D positions against a precomputed
+    /// scalar distance matrix; this method is the shape-specific overlap-to-
+    /// distance inversion that fills that matrix.
+    ///
+    /// Each shape inverts its own pairwise-overlap formula along a canonical
+    /// direction (since axis-aligned squares overlap as a 2D function of
+    /// `(|dx|, |dy|)`, the "distance" interpretation is shape-dependent):
+    /// - Circle: closed-form lens-area inversion.
+    /// - Ellipse: same as Circle (warm-start is a circle of the same area).
+    /// - Square (axis-aligned): inverts overlap along the diagonal `|dx| = |dy|`,
+    ///   giving `d = √2 · ((s_i+s_j)/2 − √target_overlap)`.
+    fn mds_target_distance(
+        area_i: f64,
+        area_j: f64,
+        target_overlap: f64,
+    ) -> Result<f64, crate::error::DiagramError>
+    where
+        Self: Sized;
+
     /// Get the number of parameters needed for this shape type.
     ///
     /// For Circle: 3 (x, y, r)

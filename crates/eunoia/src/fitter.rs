@@ -19,7 +19,6 @@ pub use initial_layout::{InitialSampler, MdsSolver};
 pub use layout::Layout;
 
 use crate::error::DiagramError;
-use crate::geometry::shapes::circle::distance_for_overlap;
 use crate::geometry::shapes::Circle;
 use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
@@ -827,12 +826,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         Ok(layout)
     }
 
-    /// Compute optimal distances between circle centers based on desired overlaps.
+    /// Compute target center-to-center distances per pair for the MDS phase.
     ///
-    /// For each pair of sets, this calculates the distance between circle centers
-    /// that would produce the desired overlap area given their radii.
-    ///
-    /// This always uses circles for initial layout, regardless of final shape type.
+    /// For each pair of sets, asks the shape `S` to invert its own pairwise
+    /// overlap formula along a canonical direction (`DiagramShape::mds_target_distance`).
+    /// Circles and ellipses share the closed-form lens-area inversion (the MDS
+    /// warm-start treats every set as a circle of equal area); axis-aligned
+    /// squares invert along the diagonal `|dx| = |dy|`.
     #[allow(clippy::needless_range_loop)]
     fn compute_optimal_distances(
         spec: &crate::spec::PreprocessedSpec,
@@ -843,16 +843,8 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         for i in 0..n_sets {
             for j in (i + 1)..n_sets {
                 let overlap = spec.relationships.overlap_area(i, j);
-                let r1 = (spec.set_areas[i] / std::f64::consts::PI).sqrt();
-                let r2 = (spec.set_areas[j] / std::f64::consts::PI).sqrt();
-
                 let desired_distance =
-                    distance_for_overlap(r1, r2, overlap, None, None).map_err(|_| {
-                        DiagramError::InvalidCombination(format!(
-                            "Could not compute distance for sets {} and {}",
-                            i, j
-                        ))
-                    })?;
+                    S::mds_target_distance(spec.set_areas[i], spec.set_areas[j], overlap)?;
 
                 optimal_distances[i][j] = desired_distance;
                 optimal_distances[j][i] = desired_distance;
@@ -887,8 +879,23 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
 ) -> Option<Vec<f64>> {
+    use std::any::TypeId;
+
     let n_sets = spec.n_sets;
     let pp = S::n_params();
+    // The canonical-Venn warm-start is parameterised in circle/ellipse terms
+    // and only the Circle / Ellipse implementations of `params_from_circle`
+    // know how to round-trip that into the optimiser's parameter encoding.
+    // Other shapes that happen to share `n_params() == 3` (e.g. Square, whose
+    // params are `[x, y, side]`, not `[x, y, radius]`) would silently
+    // mis-encode the seed; skip them here and let slot 0 fall back to the
+    // standard MDS path.
+    let type_id = TypeId::of::<S>();
+    if type_id != TypeId::of::<Circle>()
+        && type_id != TypeId::of::<crate::geometry::shapes::Ellipse>()
+    {
+        return None;
+    }
     let max_n = match pp {
         3 => VENN_SEED_MAX_SETS_CIRCLE,
         5 => VENN_SEED_MAX_SETS_ELLIPSE,

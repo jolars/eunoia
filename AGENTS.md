@@ -26,8 +26,8 @@ Generate area-proportional Euler and Venn diagrams by:
 
 ## Supported Shapes
 
-- **Current**: Circles, Ellipses
-- **Planned**: Rectangles, triangles
+- **Current**: Circles, Ellipses, Squares (axis-aligned)
+- **Planned**: Rotated squares / general rectangles, triangles
 
 ## Features
 
@@ -82,7 +82,8 @@ Pure Rust library with no platform-specific dependencies.
   - `shapes/`: Shape implementations
     - `circle.rs`: Circle shape implementation
     - `ellipse.rs`: Ellipse shape implementation (exact conic intersections, incl. 3+)
-    - `rectangle.rs`: Rectangle shape implementation (for bounding boxes)
+    - `rectangle.rs`: Rectangle primitive (axis-aligned, used for bounding boxes; not a `DiagramShape`)
+    - `square.rs`: Square shape implementation (axis-aligned, 3 params: `[x, y, side]`; n-way intersections are exact axis-aligned rectangles)
     - `polygon.rs`: Polygon primitive for visualization output
   - `operations/`: Specialized geometric operations (currently `overlaps.rs`)
   - `projective.rs`: Projective geometry helpers
@@ -125,16 +126,19 @@ Interactive diagram viewer built with Svelte + TypeScript.
 
 ### Optimization Strategy
 
-1. **Initial Layout (MDS with circles)**:
+1. **Initial Layout (positional MDS, shape-aware target distances)**:
    - Compute pairwise relationships between sets
-   - Use circles for MDS-based initialization (position + radius for each set)
-   - This produces initial `(x, y, r)` parameters for each set
-   - **Note**: Initial layout always uses circles, regardless of final shape type (this is what eulerr does)
+   - For each pair, ask the shape `S` to invert its own pairwise overlap formula via `DiagramShape::mds_target_distance(area_i, area_j, target_overlap)`. The MDS solver itself optimises 2D positions only; sizes are derived from set areas.
+   - Circle: closed-form lens-area inversion (Brent root-finding on the analytic overlap formula).
+   - Ellipse: same as Circle — the MDS warm-start treats every ellipse as a circle of equal area.
+   - Square (axis-aligned): inverts overlap along the diagonal `|dx| = |dy|`, giving `d = √2 · ((s_i + s_j)/2 − √target_overlap)`.
+   - This produces initial `(x, y)` positions per set, consistent with each shape's own overlap geometry.
 
 2. **Convert to Shape-Specific Parameters**:
-   - Initial circle parameters are converted to target shape parameters via `DiagramShape::params_from_circle()`
+   - MDS positions plus the size derived from the set area are mapped to target shape parameters via `DiagramShape::params_from_circle()`.
    - Circle: `[x, y, r]` → `[x, y, r]` (identity)
-   - Ellipse: `[x, y, r]` → `[x, y, r, r, 0.0]` (semi-major=semi-minor=r, angle=0)
+   - Ellipse: `[x, y, r]` → `[x, y, ln(r), ln(r), 0.0]` (semi-axes in log space for the unbounded LM solver)
+   - Square: `[x, y, r]` → `[x, y, r·√π]` (equal-area mapping — the resulting square has area `πr²`)
 
 3. **Final Optimization (shape-specific)**:
    - Optimizes actual shape parameters (not circles!)
@@ -472,6 +476,7 @@ eulerr's `input` argument is:
 - ✅ Random seed support for reproducible layouts
 - ✅ Stress loss function (venneuler-style) implemented, plus many other loss variants
 - ✅ Ellipse shape implemented with exact 3+ way intersections
+- ✅ Axis-aligned `Square` shape (`[x, y, side]`, 3 params). `compute_exclusive_regions` is exact in closed form: the n-way intersection of axis-aligned squares is itself one axis-aligned rectangle, so per-region areas come from `(max·xs_min, min·xs_max) × (max·ys_min, min·ys_max)` and inclusion-exclusion via the shape-generic `to_exclusive_areas` helper. MDS uses `Square::mds_target_distance`, which inverts overlap along the diagonal direction (`|dx| = |dy|`). Final-stage gradient is currently finite-difference (analytical edge-velocity derivation is a planned follow-up). Not yet wired into `examples/quality_report` (that requires adding `fittable_square` to every CorpusEntry — separate PR). Also not yet exposed via WASM bindings.
 - ✅ Polygon conversion via `Polygonize` trait (+ `plotting` feature for clipping/regions)
 - ✅ Post-fit normalization: clustering, rotation, centering, skyline packing
 - ✅ Selectable final-stage optimizer (`Optimizer`: `CmaEsLm` (default), `LevenbergMarquardt`, `Lbfgs`, `NelderMead`) and selectable initial-layout MDS solver (`MdsSolver`: `Lbfgs` (default), `LevenbergMarquardt`) with cycling pool support via `Fitter::initial_solver_pool` / `Fitter::optimizer_pool`. Default final-stage pool is `[CmaEsLm]`; default MDS pool is `[Lbfgs]`.
@@ -479,6 +484,7 @@ eulerr's `input` argument is:
 - ✅ Named quality metrics on `Layout`: `region_error()`, `diag_error()`, `stress()` (β-scaled venneuler form), `residuals()`.
 - ✅ Canonical Venn warm-start in slot 0 of `n_restarts` (always-on, no opt-in flag). Builds full shape parameters from `crate::venn::VennDiagram::new(n)` (rotationally-symmetric circles for `n ≤ 3`, Wilkinson/Edwards ellipses for `n ∈ {4, 5}`), scales to the spec's mean circle radius, and dispatches the final-stage optimizer directly via `final_layout::optimize_from_initial`. Replaces (does not add to) slot 0; remaining 9 slots run the standard MDS path. Auto-skipped when not applicable: `n_sets > 4` for circles or `> 5` for ellipses, any disjoint pair in the spec (Venn topology forces every region positive), or shapes whose `n_params()` is neither 3 nor 5; in those cases slot 0 stays on the random MDS path. Closes `issue92_3_set_dropped_pair` ellipse fits from a basin LM-on-LM-on-CMA-ES gets stuck at (median 1.309e-4 across all `QUALITY_SEEDS`) to ~1.4e-31 across all seeds; lifts ellipse spec wins from 18 → 19 in `examples/quality_report` at ~2% wall-time cost. No-op on circles (most circle specs are out of range or already at the optimum). Helpers in `fitter.rs::venn_warm_start_params` / `fitter.rs::spec_has_disjoint_pair`.
 - ✅ Analytical final-stage gradient for **circles and ellipses** with `NormalizedSumSquared` and `SumSquared` losses. Derived from boundary-velocity (`dA/dθ = ∮_∂R (v·n) ds`) on a CCW arc decomposition of each region; chained through inclusion-exclusion to exclusive-area gradients. Wired into `DiagramCost::gradient` and used transparently by L-BFGS / CG / TrustRegion. Falls back to central finite differences when the loss doesn't expose an analytical gradient. ~12-32× faster on circles (n=3 → n=8), ~14-32× faster on ellipses (gradient call only). Boundary builders: `geometry/shapes/circle.rs::region_boundary_arcs` (3 params/shape) and `geometry/shapes/ellipse.rs::region_boundary_arcs_ellipse` (5 params/shape, `t = atan2(v·a, u·b)` parameterisation, with index tiebreaker for boundary-coincident ellipses). Shared IE-gradient combiner in `geometry/diagram.rs::to_exclusive_areas_and_gradients`; loss derivative in `loss.rs::LossType::compute_with_gradient`; trait dispatch in `geometry/traits.rs::DiagramShape::compute_exclusive_regions_with_gradient`.
+- ❌ Rotated squares / general rectangles not implemented (axis-aligned `Square` is in)
 - ❌ Triangle shape not implemented
 - ❌ Label placement algorithms not implemented (poles of inaccessibility)
 - ❌ C/FFI or extendr bindings for R not yet started

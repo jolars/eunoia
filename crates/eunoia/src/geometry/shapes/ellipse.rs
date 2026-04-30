@@ -45,7 +45,7 @@ use nalgebra::Matrix2;
 use crate::geometry::diagram::RegionMask;
 use crate::geometry::primitives::Point;
 use crate::geometry::projective::Conic;
-use crate::geometry::shapes::{Polygon, Rectangle};
+use crate::geometry::shapes::{Circle, Polygon, Rectangle};
 use crate::geometry::traits::{
     Area, BoundingBox, Centroid, Closed, DiagramShape, Perimeter, Polygonize,
 };
@@ -1096,6 +1096,16 @@ impl DiagramShape for Ellipse {
         // so `u = v = ln(r)`. Rotation is unconstrained (periodic).
         let log_radius = radius.ln();
         vec![x, y, log_radius, log_radius, 0.0]
+    }
+
+    fn mds_target_distance(
+        area_i: f64,
+        area_j: f64,
+        target_overlap: f64,
+    ) -> Result<f64, crate::error::DiagramError> {
+        // The MDS warm-start treats every ellipse as a circle of equal area
+        // (`r = sqrt(area/π)`), so the distance inversion matches Circle's.
+        Circle::mds_target_distance(area_i, area_j, target_overlap)
     }
 
     fn n_params() -> usize {

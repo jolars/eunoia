@@ -180,6 +180,21 @@ impl DiagramShape for Circle {
         vec![x, y, radius]
     }
 
+    fn mds_target_distance(
+        area_i: f64,
+        area_j: f64,
+        target_overlap: f64,
+    ) -> Result<f64, crate::error::DiagramError> {
+        let r1 = (area_i / PI).sqrt();
+        let r2 = (area_j / PI).sqrt();
+        distance_for_overlap(r1, r2, target_overlap, None, None).map_err(|_| {
+            crate::error::DiagramError::InvalidCombination(format!(
+                "Could not compute target distance for areas {area_i} / {area_j} \
+                 and target overlap {target_overlap}"
+            ))
+        })
+    }
+
     fn n_params() -> usize {
         3 // x, y, radius
     }
