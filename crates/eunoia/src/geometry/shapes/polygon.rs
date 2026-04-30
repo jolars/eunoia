@@ -147,9 +147,22 @@ impl Polygon {
     /// ```
     #[cfg(feature = "plotting")]
     pub fn pole_of_inaccessibility(&self, precision: f64) -> Point {
+        self.pole_of_inaccessibility_with_distance(precision).0
+    }
+
+    /// Like [`pole_of_inaccessibility`], but also returns the distance from
+    /// the pole to the polygon boundary.
+    ///
+    /// The distance is a measure of how much room the polygon has around its
+    /// label anchor — useful when picking among several candidate polygons
+    /// (e.g. the disconnected pieces of a single Euler region) for the one
+    /// that best fits a label.
+    ///
+    /// [`pole_of_inaccessibility`]: Self::pole_of_inaccessibility
+    #[cfg(feature = "plotting")]
+    pub fn pole_of_inaccessibility_with_distance(&self, precision: f64) -> (Point, f64) {
         if self.vertices.len() < 3 {
-            // Degenerate case - return centroid
-            return self.centroid();
+            return (self.centroid(), 0.0);
         }
 
         // polylabel-mini short-circuits and returns (0, 0) when the polygon's
@@ -171,13 +184,11 @@ impl Polygon {
             self.vertices.clone()
         };
 
-        // Convert to polylabel-mini types
         let mut points: Vec<polylabel_mini::Point> = oriented
             .iter()
             .map(|p| polylabel_mini::Point { x: p.x(), y: p.y() })
             .collect();
 
-        // Ensure the polygon is closed (first == last)
         if let (Some(first), Some(last)) = (oriented.first(), oriented.last()) {
             if (first.x() - last.x()).abs() > 1e-10 || (first.y() - last.y()).abs() > 1e-10 {
                 points.push(polylabel_mini::Point {
@@ -190,14 +201,43 @@ impl Polygon {
         let exterior = polylabel_mini::LineString { points };
         let poly = polylabel_mini::Polygon {
             exterior,
-            interiors: vec![], // No holes
+            interiors: vec![],
         };
 
-        // Call polylabel
         let pole = polylabel(&poly, precision);
+        let pole_pt = Point::new(pole.x, pole.y);
 
-        Point::new(pole.x, pole.y)
+        let distance = min_distance_to_boundary(&pole_pt, &oriented);
+        (pole_pt, distance)
     }
+}
+
+#[cfg(feature = "plotting")]
+fn min_distance_to_boundary(point: &Point, vertices: &[Point]) -> f64 {
+    if vertices.len() < 2 {
+        return 0.0;
+    }
+    let n = vertices.len();
+    let mut best = f64::INFINITY;
+    for i in 0..n {
+        let a = vertices[i];
+        let b = vertices[(i + 1) % n];
+        let dx = b.x() - a.x();
+        let dy = b.y() - a.y();
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 > 0.0 {
+            (((point.x() - a.x()) * dx + (point.y() - a.y()) * dy) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let px = a.x() + t * dx;
+        let py = a.y() + t * dy;
+        let d = ((point.x() - px).powi(2) + (point.y() - py).powi(2)).sqrt();
+        if d < best {
+            best = d;
+        }
+    }
+    best
 }
 
 #[cfg(test)]

@@ -68,9 +68,11 @@ impl RegionPolygons {
     ///
     /// For each region, this returns the *pole of inaccessibility* (the
     /// interior point farthest from the polygon boundary — the Polylabel
-    /// algorithm) of the region's largest polygon. This is a good default
-    /// anchor for region-level quantity labels in Euler diagrams because it
-    /// maximizes breathing room between the label and any edge.
+    /// algorithm). When a region is disconnected into several polygons, the
+    /// anchor with the largest pole-to-boundary distance is chosen — i.e. the
+    /// piece with the most breathing room for a label, which is not always
+    /// the piece with the largest area (a thin crescent can have large area
+    /// but no spot wide enough to fit text).
     ///
     /// Regions whose polygons all have zero area (or where the region has no
     /// polygons at all) are omitted from the result.
@@ -109,14 +111,93 @@ impl RegionPolygons {
         self.regions
             .iter()
             .filter_map(|(combo, polys)| {
-                let largest = polys.iter().filter(|p| p.area() > 0.0).max_by(|a, b| {
-                    a.area()
-                        .partial_cmp(&b.area())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })?;
-                Some((combo.clone(), largest.pole_of_inaccessibility(precision)))
+                let best = polys
+                    .iter()
+                    .filter(|p| p.area() > 0.0)
+                    .map(|p| p.pole_of_inaccessibility_with_distance(precision))
+                    .max_by(|(_, da), (_, db)| {
+                        da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal)
+                    })?;
+                Some((combo.clone(), best.0))
             })
             .collect()
+    }
+
+    /// Computes a label anchor point for every set in `set_names`.
+    ///
+    /// For each set, this unions every region polygon that contains the set
+    /// (i.e. all of the set's exclusive regions) into a single shape, splits
+    /// it into connected components, and returns the pole of inaccessibility
+    /// of the component with the largest pole-to-boundary distance. This
+    /// matches eulerr's `locate_centers` strategy for placing per-set labels:
+    /// pick the cluster of regions where the label has the most breathing
+    /// room.
+    ///
+    /// Sets that are absent from every region are omitted from the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `set_names` - The full list of set names in the diagram (typically
+    ///   `spec.set_names()`).
+    /// * `precision` - Polylabel precision, in the same units as the polygon
+    ///   coordinates.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 5.0)
+    ///     .set("B", 3.0)
+    ///     .intersection(&["A", "B"], 1.0)
+    ///     .input_type(InputType::Exclusive)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+    /// let regions = layout.region_polygons(&spec, 64);
+    /// let set_labels = regions.set_label_points(spec.set_names(), 0.01);
+    ///
+    /// assert!(set_labels.contains_key("A"));
+    /// assert!(set_labels.contains_key("B"));
+    /// ```
+    pub fn set_label_points(&self, set_names: &[String], precision: f64) -> HashMap<String, Point> {
+        let mut result = HashMap::new();
+
+        for name in set_names {
+            let mut owned: Vec<Polygon> = self
+                .regions
+                .iter()
+                .filter(|(combo, _)| combo.sets().iter().any(|s| s == name))
+                .flat_map(|(_, polys)| polys.iter().cloned())
+                .collect();
+
+            if owned.is_empty() {
+                continue;
+            }
+
+            let mut merged = vec![owned.remove(0)];
+            for p in owned {
+                merged = polygon_clip_many(&merged, &p, ClipOperation::Union);
+                if merged.is_empty() {
+                    break;
+                }
+            }
+
+            let best = merged
+                .iter()
+                .filter(|p| p.area() > 0.0)
+                .map(|p| p.pole_of_inaccessibility_with_distance(precision))
+                .max_by(|(_, da), (_, db)| da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal));
+
+            if let Some((point, _)) = best {
+                result.insert(name.clone(), point);
+            }
+        }
+
+        result
     }
 }
 
@@ -380,6 +461,54 @@ mod tests {
                 max_y
             );
         }
+    }
+
+    #[test]
+    fn test_set_label_points_two_circles() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|name| *layout.shape_for_set(name).unwrap())
+            .collect();
+
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 128);
+        let set_labels = regions.set_label_points(spec.set_names(), 0.01);
+
+        assert_eq!(set_labels.len(), 2);
+        for name in ["A", "B"] {
+            let label = set_labels.get(name).expect("missing set label");
+            // The set label must lie inside the corresponding circle.
+            let circle = layout.shape_for_set(name).unwrap();
+            let dx = label.x() - circle.center().x();
+            let dy = label.y() - circle.center().y();
+            let r = circle.radius();
+            assert!(
+                dx * dx + dy * dy <= r * r + 1e-6,
+                "set label for {} at ({:.3}, {:.3}) is outside circle (center=({:.3}, {:.3}), r={:.3})",
+                name,
+                label.x(),
+                label.y(),
+                circle.center().x(),
+                circle.center().y(),
+                r,
+            );
+        }
+    }
+
+    #[test]
+    fn test_set_label_points_skips_absent_sets() {
+        let regions = RegionPolygons::new();
+        let names = vec!["A".to_string()];
+        assert!(regions.set_label_points(&names, 0.01).is_empty());
     }
 
     #[test]

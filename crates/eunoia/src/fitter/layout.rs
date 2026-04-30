@@ -273,6 +273,51 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         crate::plotting::decompose_regions(&self.shapes, set_names, spec, n_vertices)
     }
 
+    /// Builds a [`PlotData`] bundle — region polygons, per-region and per-set
+    /// label anchors, and per-set outlines — in one call.
+    ///
+    /// This is the recommended entry point for renderers and language
+    /// bindings: it computes everything a typical Euler-diagram drawing
+    /// routine needs from the fitted layout, with options for
+    /// polygonization resolution and label-anchor precision.
+    ///
+    /// **Requires the `plotting` feature to be enabled.**
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+    /// use eunoia::geometry::shapes::Circle;
+    /// use eunoia::plotting::PlotOptions;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 5.0)
+    ///     .set("B", 3.0)
+    ///     .intersection(&["A", "B"], 1.0)
+    ///     .input_type(InputType::Exclusive)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+    /// let plot = layout.plot_data(&spec, PlotOptions::default());
+    ///
+    /// // Hand `plot.regions`, `plot.region_anchors`, `plot.set_anchors`,
+    /// // `plot.shape_outlines` to the renderer of your choice.
+    /// ```
+    ///
+    /// [`PlotData`]: crate::plotting::PlotData
+    #[cfg(feature = "plotting")]
+    pub fn plot_data(
+        &self,
+        spec: &DiagramSpec,
+        options: crate::plotting::PlotOptions,
+    ) -> crate::plotting::PlotData
+    where
+        S: crate::geometry::traits::Polygonize,
+    {
+        crate::plotting::build_plot_data(&self.shapes, spec, options)
+    }
+
     /// Compute all combination areas from current shapes.
     fn compute_fitted_areas(shapes: &[S], spec: &DiagramSpec) -> HashMap<Combination, f64> {
         let set_names = spec.set_names();
