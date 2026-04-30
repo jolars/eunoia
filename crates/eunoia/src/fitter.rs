@@ -908,7 +908,14 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
         return None;
     }
 
-    let venn = VennDiagram::new(n_sets).ok()?;
+    // The TypeId guard above restricts `S` to `Circle` or `Ellipse`, both of
+    // which encode their warm-start positions in ellipse parameters
+    // `(h, k, a, b, phi)` (a circle is the special case `a == b`). Reach for
+    // the ellipse canonical Venn directly rather than `VennDiagram::<S>::new`,
+    // since circles have no canonical layout for n ∈ {4, 5} and the
+    // circular subset of n ∈ {1, 2, 3} is encoded in the ellipse layout
+    // already.
+    let venn = VennDiagram::<crate::geometry::shapes::Ellipse>::new(n_sets).ok()?;
 
     // Match the canonical-Venn footprint to the spec's mean circle radius.
     // Without this, very large-area specs (e.g. issue91-class with sums
@@ -926,7 +933,7 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
     };
 
     let mut params = Vec::with_capacity(n_sets * pp);
-    for ell in venn.ellipses() {
+    for ell in venn.shapes() {
         let h = ell.center().x() * mean_radius;
         let k = ell.center().y() * mean_radius;
         let a = ell.semi_major() * mean_radius;

@@ -1630,7 +1630,7 @@ pub fn generate_region_polygons_ellipses(
 /// region requested at area `1.0`); they have no optimization meaning.
 #[wasm_bindgen]
 pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResult, JsValue> {
-    let venn = VennDiagram::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let venn = VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
 
@@ -1702,7 +1702,7 @@ pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResu
 /// into per-region exclusive polygons.
 #[wasm_bindgen]
 pub fn generate_venn_regions(n: usize, n_vertices: usize) -> Result<WasmRegionPolygons, JsValue> {
-    let venn = VennDiagram::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let venn = VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
 

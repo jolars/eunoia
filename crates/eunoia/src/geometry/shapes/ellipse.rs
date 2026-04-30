@@ -1141,7 +1141,60 @@ impl DiagramShape for Ellipse {
             self.rotation,
         ]
     }
+
+    fn canonical_venn_layout(n: usize) -> Option<Vec<Self>> {
+        let params: &[CanonicalVennParams] = match n {
+            1 => &VENN_N1,
+            2 => &VENN_N2,
+            3 => &VENN_N3,
+            4 => &VENN_N4,
+            5 => &VENN_N5,
+            _ => return None,
+        };
+        Some(
+            params
+                .iter()
+                .map(|&(h, k, a, b, phi)| Ellipse::new(Point::new(h, k), a, b, phi))
+                .collect(),
+        )
+    }
 }
+
+/// Ellipse parameters as `(h, k, a, b, phi)` for the canonical Venn arrangements.
+type CanonicalVennParams = (f64, f64, f64, f64, f64);
+
+// Canonical Venn-diagram arrangements taken verbatim from the eulerr R
+// package's `venn_spec` data table, which in turn reproduces the published
+// constructions:
+//
+// - n = 1, 2, 3: rotationally symmetric circles.
+// - n = 4: Venn (1880) 4-ellipse arrangement; see Wilkinson (2012),
+//   *JCGS* "Exact Rotational Symmetry in Venn Diagrams".
+// - n = 5: Grünbaum (1975) symmetric 5-ellipse Venn diagram.
+const VENN_N1: [CanonicalVennParams; 1] = [(0.0, 0.0, 1.0, 1.0, 0.0)];
+
+const VENN_N2: [CanonicalVennParams; 2] = [(-0.5, 0.0, 1.0, 1.0, 1.0), (0.5, 0.0, 1.0, 1.0, 1.0)];
+
+const VENN_N3: [CanonicalVennParams; 3] = [
+    (-0.42, -0.36, 1.05, 1.05, 3.76),
+    (0.42, -0.36, 1.05, 1.05, 3.76),
+    (0.00, 0.36, 1.05, 1.05, 3.76),
+];
+
+const VENN_N4: [CanonicalVennParams; 4] = [
+    (-0.8, 0.0, 1.2, 2.0, PI / 4.0),
+    (0.8, 0.0, 1.2, 2.0, -PI / 4.0),
+    (0.0, 1.0, 1.2, 2.0, PI / 4.0),
+    (0.0, 1.0, 1.2, 2.0, -PI / 4.0),
+];
+
+const VENN_N5: [CanonicalVennParams; 5] = [
+    (0.176, 0.096, 1.0, 0.6, 0.000),
+    (-0.037, 0.197, 1.0, 0.6, 1.257),
+    (-0.198, 0.026, 1.0, 0.6, 2.513),
+    (-0.086, -0.181, 1.0, 0.6, 3.770),
+    (0.145, -0.137, 1.0, 0.6, 5.027),
+];
 
 impl Polygonize for Ellipse {
     fn polygonize(&self, n_vertices: usize) -> Polygon {

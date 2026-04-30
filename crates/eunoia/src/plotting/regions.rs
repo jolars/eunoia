@@ -343,6 +343,36 @@ mod tests {
     use crate::spec::{DiagramSpecBuilder, InputType};
 
     #[test]
+    fn test_decompose_two_squares() {
+        // The plotting path is generic over any `DiagramShape + Polygonize`.
+        // Square implements both, so polygon decomposition into per-region
+        // polygons should work without any plotting-side changes.
+        use crate::geometry::shapes::Square;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 4.0)
+            .set("B", 4.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Square>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Square> = spec
+            .set_names()
+            .iter()
+            .map(|name| *layout.shape_for_set(name).unwrap())
+            .collect();
+
+        // n_vertices is ignored by Square::polygonize (always 4 corners).
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+        assert!(!regions.is_empty(), "no regions decomposed");
+        for (combo, polys) in regions.iter() {
+            assert!(!polys.is_empty(), "Region {:?} should have polygons", combo);
+        }
+    }
+
+    #[test]
     fn test_decompose_two_circles() {
         let spec = DiagramSpecBuilder::new()
             .set("A", 5.0)

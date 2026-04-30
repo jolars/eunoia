@@ -295,6 +295,38 @@ impl DiagramShape for Square {
     fn to_params(&self) -> Vec<f64> {
         vec![self.center.x(), self.center.y(), self.side]
     }
+
+    /// Canonical axis-aligned Venn arrangements for `n ∈ {1, 2, 3}`.
+    ///
+    /// `n ≥ 4` returns `None`: there is no axis-aligned-square arrangement
+    /// that opens all `2ⁿ − 1` regions for n ≥ 4. The footprint roughly
+    /// matches `Ellipse::canonical_venn_layout` (radius ~1) so callers
+    /// rescaling by a spec's mean circle radius land in the right magnitude.
+    fn canonical_venn_layout(n: usize) -> Option<Vec<Self>> {
+        // Layouts chosen so every one of the `2ⁿ − 1` non-empty regions has
+        // strictly positive area; verified by the topology test in
+        // `crate::venn` and by `test_canonical_venn_layout_topology` below.
+        let centers_and_side: &[((f64, f64), f64)] = match n {
+            1 => &[((0.0, 0.0), 2.0)],
+            2 => &[((-0.4, 0.0), 1.0), ((0.4, 0.0), 1.0)],
+            // n=3 footprint matches the existing N3 ellipse-Venn vertices
+            // (equilateral-triangle-ish, circumradius ~0.55), with side=1.0
+            // so all three pairwise overlaps and the central 3-way region
+            // remain open.
+            3 => &[
+                ((0.0, 0.36), 1.0),
+                ((0.42, -0.36), 1.0),
+                ((-0.42, -0.36), 1.0),
+            ],
+            _ => return None,
+        };
+        Some(
+            centers_and_side
+                .iter()
+                .map(|&((x, y), s)| Square::new(Point::new(x, y), s))
+                .collect(),
+        )
+    }
 }
 
 impl Polygonize for Square {
@@ -558,5 +590,57 @@ mod tests {
         let b_far = Square::new(Point::new(5.0, 0.0), 2.0);
         assert!(approx_eq(a.distance(&b_overlap), 0.0));
         assert!(approx_eq(a.distance(&b_far), 3.0)); // center gap 5 minus two half-widths 1+1
+    }
+
+    fn assert_square(actual: &Square, x: f64, y: f64, side: f64) {
+        assert!(
+            approx_eq(actual.center().x(), x),
+            "center.x: {} vs {}",
+            actual.center().x(),
+            x
+        );
+        assert!(
+            approx_eq(actual.center().y(), y),
+            "center.y: {} vs {}",
+            actual.center().y(),
+            y
+        );
+        assert!(
+            approx_eq(actual.side(), side),
+            "side: {} vs {}",
+            actual.side(),
+            side
+        );
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_n1() {
+        let shapes = Square::canonical_venn_layout(1).unwrap();
+        assert_eq!(shapes.len(), 1);
+        assert_square(&shapes[0], 0.0, 0.0, 2.0);
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_n2() {
+        let shapes = Square::canonical_venn_layout(2).unwrap();
+        assert_eq!(shapes.len(), 2);
+        assert_square(&shapes[0], -0.4, 0.0, 1.0);
+        assert_square(&shapes[1], 0.4, 0.0, 1.0);
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_n3() {
+        let shapes = Square::canonical_venn_layout(3).unwrap();
+        assert_eq!(shapes.len(), 3);
+        assert_square(&shapes[0], 0.0, 0.36, 1.0);
+        assert_square(&shapes[1], 0.42, -0.36, 1.0);
+        assert_square(&shapes[2], -0.42, -0.36, 1.0);
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_unsupported() {
+        assert!(Square::canonical_venn_layout(0).is_none());
+        assert!(Square::canonical_venn_layout(4).is_none());
+        assert!(Square::canonical_venn_layout(5).is_none());
     }
 }

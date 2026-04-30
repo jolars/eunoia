@@ -160,6 +160,24 @@ pub trait DiagramShape: Closed {
     {
         None
     }
+
+    /// Canonical Venn-diagram layout for `n` sets, or `None` if no canonical
+    /// arrangement exists for this shape at this `n`.
+    ///
+    /// Implementations should return shapes at unit scale (radius/side ~1),
+    /// so callers can rescale the layout to match a spec's footprint.
+    /// A returned layout must be a true Venn diagram: every one of the
+    /// `2ⁿ − 1` non-empty subsets must have positive area.
+    ///
+    /// Used by [`crate::venn::VennDiagram`] to produce canonical layouts
+    /// without invoking the fitter.
+    fn canonical_venn_layout(n: usize) -> Option<Vec<Self>>
+    where
+        Self: Sized,
+    {
+        let _ = n;
+        None
+    }
 }
 
 /// Pair of (exclusive areas, exclusive gradients) returned by

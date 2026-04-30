@@ -161,11 +161,10 @@ Deferred from the axis-aligned `Square` PR (`crates/eunoia/src/geometry/shapes/s
       easy 2- and 3-set Square specs. n ≥ 4 has no clean canonical Venn
       under axis-aligned squares; leave those on the random MDS path.
 
-- [ ] **Generate Venn diagrams with squares** (broader than the warm-start
-      above). `crate::venn::VennDiagram` currently exposes only a
-      circle/ellipse arrangement. Adding a square equivalent — at minimum
-      for n ∈ {2, 3} where an axis-aligned arrangement exists — would let
-      callers ask for a canonical square Venn directly, not just use it as
-      a fitter seed. Useful for Venn-input workflows (no spec, just "give
-      me a 3-set Venn in squares") and for parity with the circle/ellipse
-      Venn API.
+- [x] **Generate Venn diagrams with squares** (broader than the warm-start
+      above). Done: `VennDiagram` is now generic over `S: DiagramShape`
+      (`VennDiagram::<Square>::new(n)` for n ∈ {1, 2, 3}, returning
+      `UnsupportedSetCount` for n ≥ 4). Canonical layouts moved onto each
+      shape via `DiagramShape::canonical_venn_layout`, with the existing
+      ellipse N1..N5 constants colocated in `geometry/shapes/ellipse.rs`.
+      The accessor on `VennDiagram` was renamed `ellipses() → shapes()`.
