@@ -112,18 +112,16 @@ they're pre-existing behaviour the harness now exposes.
 
 Deferred from the axis-aligned `Square` PR (`crates/eunoia/src/geometry/shapes/square.rs`).
 
-- [ ] **Analytical final-stage gradient for `Square`**. Currently
-      `compute_exclusive_regions_with_gradient` returns `None`, so the
-      optimizer falls back to central finite differences. An analytical
-      gradient is closed-form: each n-way intersection rectangle has 4
-      active-constraint edges; for each active edge, `∂(width·height)/∂θ` is
-      a closed-form sum over which `x_i ± side_i/2` and `y_i ± side_i/2`
-      are the binding extrema, then chained through inclusion-exclusion via
-      the existing `to_exclusive_areas_and_gradients` helper
-      (`geometry/diagram.rs`). Should net the same ~10–30× speedup
-      Circle/Ellipse get from their boundary-velocity gradients. Until this
-      lands, `Fitter::<Square>` fits are FD-bound and don't drive loss to
-      machine precision on smooth specs.
+- [x] **Analytical final-stage gradient for `Square`**. Done:
+      `compute_exclusive_regions_with_gradient` overridden in
+      `crates/eunoia/src/geometry/shapes/square.rs`. For each region the
+      n-way intersection rectangle's `dx · dy` decomposes via four binding
+      extrema (`x_min, x_max, y_min, y_max`); each side's contribution goes
+      to the binding shape, with equal split among ties on coincident edges
+      (matches the central-FD subgradient at non-smooth points). Chained
+      through `geometry::diagram::to_exclusive_areas_and_gradients` for IE.
+      Gradient-vs-FD tests cover 1-, 2-, 3-square overlap, disjoint, nested,
+      and a generic no-ties config (tight 1e-7 tolerance).
 
 - [ ] **Add `Square` to the corpus and `examples/quality_report`**. Requires
       adding a `fittable_square: Fittable` field to every `CorpusEntry`
