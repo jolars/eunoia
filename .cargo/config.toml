@@ -1,3 +1,12 @@
+[resolver]
+# Hold transitive deps back to MSRV-compatible versions when the
+# lockfile is regenerated (e.g. by versionary on release PRs).
+# Without this, `cargo generate-lockfile` picks `clap_lex 1.1.0`,
+# `proptest 1.11`, `wasip2 1.0.3`, etc. — all of which need
+# edition 2024 / MSRV ≥ 1.85 and break the 1.84.1 CRAN pin.
+# Stabilized in Rust 1.84; opt-in under resolver = "2".
+incompatible-rust-versions = "fallback"
+
 [target.wasm32-unknown-unknown]
 rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
 
