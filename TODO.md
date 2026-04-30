@@ -150,14 +150,14 @@ Deferred from the axis-aligned `Square` PR (`crates/eunoia/src/geometry/shapes/s
       not a `DiagramShape`); promoting it to `DiagramShape` is a separate
       smaller change.
 
-- [ ] **Venn warm-start for `Square`**. `venn_warm_start_params` in
-      `fitter.rs` currently `TypeId`-skips Square because the canonical-Venn
-      arrangement is parameterised in circle/ellipse terms. A square Venn
-      for n=3 (three squares with centers at the vertices of an equilateral
-      triangle, scaled so adjacent pairs overlap and all three meet at the
-      centroid) is well-defined and would close the slot-0 quality gap on
-      easy 2- and 3-set Square specs. n ≥ 4 has no clean canonical Venn
-      under axis-aligned squares; leave those on the random MDS path.
+- [x] **Venn warm-start for `Square`**. Done: `venn_warm_start_params` in
+      `fitter.rs` now dispatches via `TypeId` to a dedicated Square branch
+      that pulls from `VennDiagram::<Square>::new(n)` for n ∈ {2, 3} and
+      scales by the spec's mean side length (`mean(sqrt(area_i))`) so the
+      seed lands at the right area magnitude. n ≥ 4 returns `None` and
+      stays on the random MDS path (no axis-aligned-square Venn exists).
+      `VENN_SEED_MAX_SETS_SQUARE = 3` is the new cap. With the warm-start
+      slot 0 is now seed-independent for Square fits where it applies.
 
 - [x] **Generate Venn diagrams with squares** (broader than the warm-start
       above). Done: `VennDiagram` is now generic over `S: DiagramShape`

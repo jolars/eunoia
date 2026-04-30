@@ -42,6 +42,11 @@ const VENN_SEED_MAX_SETS_CIRCLE: usize = 4;
 /// [`Fitter::<Ellipse>`]. Matches the n=1..=5 hardcoded arrangements
 /// in [`crate::venn`]; beyond that no clean Venn ellipse exists.
 const VENN_SEED_MAX_SETS_ELLIPSE: usize = 5;
+/// Maximum `n_sets` for which the Venn warm-start is attempted under
+/// [`Fitter::<Square>`]. Matches the n=1..=3 axis-aligned arrangements in
+/// [`crate::venn`] — n ≥ 4 has no axis-aligned-square Venn (any four
+/// axis-aligned rectangles miss at least one of the `2ⁿ − 1` regions).
+const VENN_SEED_MAX_SETS_SQUARE: usize = 3;
 
 /// Fitter for creating diagram layouts from specifications.
 ///
@@ -859,41 +864,82 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 /// of the preprocessed spec, scaled to roughly match the spec's set sizes.
 ///
 /// Returns `None` (so the caller falls back to the standard MDS path) when:
+/// - `n_sets < 2`.
 /// - `n_sets` is outside the per-shape support window
-///   ([`VENN_SEED_MAX_SETS_CIRCLE`] / [`VENN_SEED_MAX_SETS_ELLIPSE`]).
+///   ([`VENN_SEED_MAX_SETS_CIRCLE`] / [`VENN_SEED_MAX_SETS_ELLIPSE`] /
+///   [`VENN_SEED_MAX_SETS_SQUARE`]).
 /// - The spec has any disjoint pair (Venn topology forces every region
 ///   open; specs with hard-zero overlaps would start in a wrong topology
 ///   the optimizer can't easily escape — see TODO.md).
-/// - The shape's `n_params()` is not 3 (Circle) or 5 (Ellipse).
+/// - `S` is not [`Circle`], [`Ellipse`], or [`Square`] — the per-shape
+///   parameter encoding is hard-coded below, and other shapes that happen
+///   to share an `n_params()` count would silently mis-decode.
 /// - The canonical Venn for `n_sets` is non-circular and the shape is a
 ///   circle (i.e. n_sets ∈ {4, 5} under [`Circle`]); we have no
 ///   circular-Venn arrangement for those.
-/// - [`VennDiagram::new`] returns `Err` (n_sets == 0 or ≥ 6).
+/// - The underlying [`VennDiagram::new`] returns `Err`.
 ///
-/// The canonical Venn arrangements live at unit scale (radii ~1). We scale
-/// by the spec's mean circle radius so the warm-start sits in roughly the
-/// same magnitude as the spec — the loss landscape's gradient is much
-/// healthier when the initial shapes are close to the right size.
+/// The canonical Venn arrangements live at unit scale (radii / sides ~1).
+/// We scale by a shape-appropriate factor of the spec's mean set area so
+/// the warm-start sits at the same magnitude as the spec — the loss
+/// landscape's gradient is much healthier when the initial shapes are
+/// close to the right size:
+/// - Circle / Ellipse: scale by `mean(sqrt(area_i / π))` so radii / semi-axes
+///   land at the mean spec radius.
+/// - Square: scale by `mean(sqrt(area_i))` so side lengths land at the mean
+///   spec side, which puts each square's area at the mean spec area.
 ///
 /// [`Circle`]: crate::geometry::shapes::Circle
+/// [`Ellipse`]: crate::geometry::shapes::Ellipse
+/// [`Square`]: crate::geometry::shapes::Square
 fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
 ) -> Option<Vec<f64>> {
+    use crate::geometry::shapes::{Ellipse, Square};
     use std::any::TypeId;
 
     let n_sets = spec.n_sets;
-    let pp = S::n_params();
-    // The canonical-Venn warm-start is parameterised in circle/ellipse terms
-    // and only the Circle / Ellipse implementations of `params_from_circle`
-    // know how to round-trip that into the optimiser's parameter encoding.
-    // Other shapes that happen to share `n_params() == 3` (e.g. Square, whose
-    // params are `[x, y, side]`, not `[x, y, radius]`) would silently
-    // mis-encode the seed; skip them here and let slot 0 fall back to the
-    // standard MDS path.
+    if n_sets < 2 {
+        return None;
+    }
+    if spec_has_disjoint_pair(spec) {
+        return None;
+    }
+
     let type_id = TypeId::of::<S>();
-    if type_id != TypeId::of::<Circle>()
-        && type_id != TypeId::of::<crate::geometry::shapes::Ellipse>()
-    {
+    let pp = S::n_params();
+
+    if type_id == TypeId::of::<Square>() {
+        if n_sets > VENN_SEED_MAX_SETS_SQUARE {
+            return None;
+        }
+        // Match the canonical-Venn square footprint (sides ~1) to the spec's
+        // mean side length. `mean(sqrt(area_i))` lands a unit-side canonical
+        // square at the right area magnitude after scaling.
+        let mean_side: f64 = if !spec.set_areas.is_empty() {
+            let total: f64 = spec.set_areas.iter().map(|a| a.sqrt()).sum();
+            (total / spec.set_areas.len() as f64).max(1e-6)
+        } else {
+            1.0
+        };
+        let venn = VennDiagram::<Square>::new(n_sets).ok()?;
+        let mut params = Vec::with_capacity(n_sets * pp);
+        for sq in venn.shapes() {
+            let c = sq.center();
+            // Square params are `[x, y, side]`; bypass `params_from_circle`
+            // (which would re-encode `side` as `r·√π` and shrink the seed).
+            params.extend([c.x() * mean_side, c.y() * mean_side, sq.side() * mean_side]);
+        }
+        return Some(params);
+    }
+
+    // Circle / Ellipse path. Both encode their warm-start positions in
+    // ellipse parameters `(h, k, a, b, phi)` (a circle is the special case
+    // `a == b`), so reach for the ellipse canonical Venn directly rather
+    // than `VennDiagram::<S>::new` — circles have no canonical layout for
+    // n ∈ {4, 5} and the circular subset of n ∈ {1, 2, 3} is encoded in
+    // the ellipse layout already.
+    if type_id != TypeId::of::<Circle>() && type_id != TypeId::of::<Ellipse>() {
         return None;
     }
     let max_n = match pp {
@@ -901,21 +947,11 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
         5 => VENN_SEED_MAX_SETS_ELLIPSE,
         _ => return None,
     };
-    if n_sets < 2 || n_sets > max_n {
-        return None;
-    }
-    if spec_has_disjoint_pair(spec) {
+    if n_sets > max_n {
         return None;
     }
 
-    // The TypeId guard above restricts `S` to `Circle` or `Ellipse`, both of
-    // which encode their warm-start positions in ellipse parameters
-    // `(h, k, a, b, phi)` (a circle is the special case `a == b`). Reach for
-    // the ellipse canonical Venn directly rather than `VennDiagram::<S>::new`,
-    // since circles have no canonical layout for n ∈ {4, 5} and the
-    // circular subset of n ∈ {1, 2, 3} is encoded in the ellipse layout
-    // already.
-    let venn = VennDiagram::<crate::geometry::shapes::Ellipse>::new(n_sets).ok()?;
+    let venn = VennDiagram::<Ellipse>::new(n_sets).ok()?;
 
     // Match the canonical-Venn footprint to the spec's mean circle radius.
     // Without this, very large-area specs (e.g. issue91-class with sums
@@ -1396,6 +1432,103 @@ mod tests {
             venn_warm_start_params::<Ellipse>(&preprocessed).is_none(),
             "ellipse + disjoint spec must skip Venn warm-start"
         );
+    }
+
+    #[test]
+    fn venn_warm_start_returns_some_for_square_n_2_and_3() {
+        use crate::geometry::shapes::Square;
+
+        for n in 2..=3usize {
+            let names: Vec<&str> = ["A", "B", "C"][..n].to_vec();
+            let mut builder = DiagramSpecBuilder::new();
+            for &name in &names {
+                builder = builder.set(name, 10.0);
+            }
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    builder = builder.intersection(&[names[i], names[j]], 1.0);
+                }
+            }
+            let spec = builder
+                .input_type(crate::InputType::Inclusive)
+                .build()
+                .unwrap();
+            let preprocessed = spec.preprocess().unwrap();
+            let params = venn_warm_start_params::<Square>(&preprocessed);
+            assert!(params.is_some(), "square n={} should produce params", n);
+            let params = params.unwrap();
+            assert_eq!(params.len(), n * 3, "square n={} param length", n);
+            // Sides are scaled by mean(sqrt(area_i)) ≈ √10 ≈ 3.162. Canonical
+            // sides are 1.0 for n ∈ {2, 3}, so every emitted side should be
+            // strictly positive and roughly that magnitude.
+            for i in 0..n {
+                let side = params[3 * i + 2];
+                assert!(side > 0.0, "square n={n} shape {i}: side {side} ≤ 0");
+                assert!(
+                    (1.0..10.0).contains(&side),
+                    "square n={n} shape {i}: side {side} far from expected ≈ √10"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn venn_warm_start_rejects_n4_squares() {
+        use crate::geometry::shapes::Square;
+
+        // Axis-aligned squares cannot form a true Venn for n ≥ 4 (no
+        // canonical layout in `Square::canonical_venn_layout`), so the
+        // warm-start path must bail and let slot 0 fall back to MDS.
+        let names = ["A", "B", "C", "D"];
+        let mut builder = DiagramSpecBuilder::new();
+        for &name in &names {
+            builder = builder.set(name, 10.0);
+        }
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                builder = builder.intersection(&[names[i], names[j]], 1.0);
+            }
+        }
+        let spec = builder
+            .input_type(crate::InputType::Inclusive)
+            .build()
+            .unwrap();
+        let preprocessed = spec.preprocess().unwrap();
+        assert!(
+            venn_warm_start_params::<Square>(&preprocessed).is_none(),
+            "square n=4 must reject (no axis-aligned-square Venn)"
+        );
+    }
+
+    #[test]
+    fn venn_warm_start_skips_squares_for_specs_with_disjoint_pairs() {
+        use crate::geometry::shapes::Square;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 1.0)
+            .set("B", 1.0)
+            .set("C", 1.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+        let preprocessed = spec.preprocess().unwrap();
+        assert!(spec_has_disjoint_pair(&preprocessed));
+        assert!(
+            venn_warm_start_params::<Square>(&preprocessed).is_none(),
+            "square + disjoint spec must skip Venn warm-start"
+        );
+    }
+
+    #[test]
+    fn venn_seed_default_path_yields_finite_loss_for_square() {
+        use crate::geometry::shapes::Square;
+
+        // Confirm the slot-0 Venn warm-start path doesn't break a basic
+        // 3-set square fit end-to-end.
+        let spec = three_set_overlapping_spec();
+        let layout = Fitter::<Square>::new(&spec).seed(42).fit().unwrap();
+        assert!(layout.loss().is_finite());
+        assert_eq!(layout.shapes().len(), 3);
     }
 
     #[test]
