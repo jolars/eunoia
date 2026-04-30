@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/jolars/eunoia/compare/v0.5.0...v0.6.0) (2026-04-30)
+
+### Breaking changes
+- allow generating venn diagrams with squares ([`dc0a84f`](https://github.com/jolars/eunoia/commit/dc0a84fa1e748864bcd84ec4adb7d61b4c6e2314))
+
+### Features
+- allow generating venn diagrams with squares ([`dc0a84f`](https://github.com/jolars/eunoia/commit/dc0a84fa1e748864bcd84ec4adb7d61b4c6e2314))
+- support circles in euler diagrams ([`3da4604`](https://github.com/jolars/eunoia/commit/3da4604cc1db406476b05c1e8ee1b96254a7b486))
+- **plotting:** add unified API for plotting details ([`4355b43`](https://github.com/jolars/eunoia/commit/4355b43a5af8c269d48f8dd4de05099847adbb09))
+- add smooth loss types ([`c9c748d`](https://github.com/jolars/eunoia/commit/c9c748dfae4925d97929e40b5a69288774b2ba32))
+- switch to nelder mead for non-smooth losses ([`74965d8`](https://github.com/jolars/eunoia/commit/74965d8564dd55303eba5935c7e0cea30e16c663))
+- make all loss functions scale-invariant ([`d146587`](https://github.com/jolars/eunoia/commit/d146587aa662bf80e7db1a72f46cf29cf4c2b78b))
+
+### Performance Improvements
+- add analytical gradient computation to square ([`41b5f3a`](https://github.com/jolars/eunoia/commit/41b5f3a6498c60b009cce0b5ea617d4a616e8f7f))
+- prune ellipse intersections too ([`edac17e`](https://github.com/jolars/eunoia/commit/edac17e845bef41764859494c20f1ffe99fdec97))
 ## [0.5.0](https://github.com/jolars/eunoia/compare/v0.4.0...v0.5.0) (2026-04-29)
 
 ### Breaking changes
