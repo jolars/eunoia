@@ -43,6 +43,29 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  msrv:
+    name: MSRV (core crate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust (MSRV)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          # Pinned to R's rextendr MSRV so the core crate stays buildable
+          # by downstream R/Python/Julia packagers. eunoia-wasm legitimately
+          # requires 1.85 (edition 2024) and is excluded from this job.
+          toolchain: 1.84.1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check core crate
+        run: cargo check -p eunoia --all-features --all-targets
+
+      - name: Test core crate
+        run: cargo test -p eunoia --all-features
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
