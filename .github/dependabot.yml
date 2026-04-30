@@ -11,9 +11,11 @@ updates:
     ignore:
       # Pinned below latest to preserve MSRV 1.84.1 / edition 2021
       # (R's rextendr MSRV is 1.84.1). Revisit when the MSRV floor is raised:
-      # nalgebra 0.34 needs 1.87; levenberg-marquardt 0.15, i_overlay 3+,
-      # and rand 0.10 are all edition 2024 (≥1.85).
-      # Revisit when the MSRV floor is raised.
+      # argmin 0.11 uses `is_multiple_of` (1.87); nalgebra 0.33+ needs the
+      # 1.87 RealField shape; levenberg-marquardt 0.14+, i_overlay 3+, and
+      # rand 0.10 are all edition 2024 (≥1.85). The whole project (workflows,
+      # devenv, rust-toolchain.toml) is pinned to 1.84.1; bumping any of
+      # these breaks the build globally, not just MSRV CI.
       - dependency-name: "argmin"
         update-types:
           ["version-update:semver-minor", "version-update:semver-major"]
@@ -21,6 +23,9 @@ updates:
         update-types:
           ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "nalgebra"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "levenberg-marquardt"
         update-types:
           ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "i_overlay"

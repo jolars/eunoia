@@ -25,11 +25,21 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.94.1
+          toolchain: 1.84.1
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Verify cargo is on the pinned toolchain
+        # Self-announcing guard: if `rust-toolchain.toml`, env, or this
+        # workflow ever drifts, fail loudly instead of silently building
+        # on a different compiler than intended. The pinned toolchain
+        # *is* the MSRV, so a mismatch here would mask MSRV regressions.
+        shell: bash
+        run: |
+          v=$(cargo --version | grep -oE '1\.[0-9]+\.[0-9]+' | head -1)
+          [ "$v" = "1.84.1" ] || { echo "::error::cargo is on $v, expected 1.84.1"; exit 1; }
 
       - name: Build
         run: cargo build --workspace --verbose
@@ -43,37 +53,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-  msrv:
-    name: MSRV (core crate)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust (MSRV)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          # Pinned to R's rextendr MSRV so the core crate stays buildable
-          # by downstream R/Python/Julia packagers. eunoia-wasm legitimately
-          # requires 1.85 (edition 2024) and is excluded from this job.
-          toolchain: 1.84.1
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Strip eunoia-wasm from workspace
-        # cargo 1.84.1 cannot parse edition 2024 manifests, and eunoia-wasm
-        # legitimately needs edition 2024 for its WASM-only deps. Drop it
-        # from `[workspace.members]` so the MSRV check sees only the core
-        # crate that downstream packagers actually consume.
-        run: sed -i 's|"crates/eunoia-wasm",\? *||g' Cargo.toml
-
-      - name: Check core crate (no dev-deps)
-        # `cargo check` without `--all-targets` skips test/bench targets and
-        # therefore skips dev-deps. MSRV is a contract with library users,
-        # not test runners — dev-deps (proptest, criterion, tempfile, …) can
-        # outpace MSRV without affecting downstream builds.
-        run: cargo check -p eunoia --all-features
-
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
@@ -85,7 +64,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           components: llvm-tools-preview
-          toolchain: 1.94.1
+          toolchain: 1.84.1
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -114,7 +93,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.94.1
+          toolchain: 1.84.1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -137,7 +116,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.94.1
+          toolchain: 1.84.1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -161,7 +140,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.94.1
+          toolchain: 1.84.1
 
       - id: versionary
         uses: jolars/versionary@v0

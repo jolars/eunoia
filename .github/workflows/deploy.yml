@@ -25,7 +25,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           targets: wasm32-unknown-unknown
-          toolchain: 1.94.1
+          toolchain: 1.84.1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
