@@ -11,6 +11,10 @@
     cargo-audit
     cargo-deny
     nodejs
+    gnuplot
+    samply
+    pprof
+    cargo-show-asm
     wasm-pack
     bashInteractive
     perf

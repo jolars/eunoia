@@ -22,3 +22,21 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(test)"] }
 # still fire). Drops a `cargo test -p eunoia --lib` run from ~32s to ~2-3s.
 [profile.test.package.eunoia]
 opt-level = 3
+
+# Keep line tables in benchmark builds so `perf annotate`, `cargo flamegraph
+# --bench`, and pprof stack samples can resolve to source lines without
+# bloating the binary.
+[profile.bench]
+debug = "line-tables-only"
+strip = false
+
+# Custom profile for line-level profiling: release-grade optimisation plus
+# full debug info and unstripped symbols. Use via:
+#   cargo flamegraph --profile profiling --example fit_profile
+#   cargo build --profile profiling --example fit_profile
+# Kept separate from `release` so production builds stay lean.
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+split-debuginfo = "off"

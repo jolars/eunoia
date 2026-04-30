@@ -65,3 +65,35 @@ tasks:
     dir: web
     cmds:
       - npm run dev
+
+  flamegraph:
+    desc: "Flamegraph of the single-fit example. Args: CASE=3circle|4set|6set (default 6set)"
+    vars:
+      CASE: '{{.CASE | default "6set"}}'
+    cmds:
+      - RAYON_NUM_THREADS=1 cargo flamegraph --profile profiling --example fit_profile -- {{.CASE}}
+
+  perf-record:
+    desc: "perf record on the single-fit example. Args: CASE=3circle|4set|6set (default 6set)"
+    vars:
+      CASE: '{{.CASE | default "6set"}}'
+    cmds:
+      - cargo build --profile profiling --example fit_profile
+      - RAYON_NUM_THREADS=1 perf record --call-graph fp -F 999 -o perf.data -- ./target/profiling/examples/fit_profile {{.CASE}}
+      - 'echo "Inspect with: perf report -i perf.data  (or: perf annotate -i perf.data)"'
+
+  samply:
+    desc: "samply record on the single-fit example (web UI). Args: CASE=3circle|4set|6set, ITERS=200"
+    vars:
+      CASE: '{{.CASE | default "6set"}}'
+      ITERS: "{{.ITERS | default 200}}"
+    cmds:
+      - cargo build --profile profiling --example fit_profile
+      - RAYON_NUM_THREADS=1 samply record ./target/profiling/examples/fit_profile {{.CASE}} {{.ITERS}}
+
+  asm:
+    desc: "Disassemble a function with cargo-show-asm. Args: FUNC=eunoia::geometry::shapes::ellipse::region_boundary_arcs_ellipse"
+    vars:
+      FUNC: '{{.FUNC | default ""}}'
+    cmds:
+      - cargo asm --profile profiling -p eunoia --lib {{.FUNC}}
