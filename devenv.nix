@@ -27,8 +27,8 @@
   languages = {
     rust = {
       enable = true;
-      channel = "nightly";
-      # version = "1.94.1";
+      channel = "stable";
+      version = "1.84.1";
       targets = [ "wasm32-unknown-unknown" ];
     };
 

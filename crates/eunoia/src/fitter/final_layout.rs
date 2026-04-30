@@ -609,7 +609,7 @@ struct DiagramCost<'a, S: DiagramShape + Copy + 'static> {
     _shape: std::marker::PhantomData<S>,
 }
 
-impl<'a, S: DiagramShape + Copy + 'static> DiagramCost<'a, S> {
+impl<S: DiagramShape + Copy + 'static> DiagramCost<'_, S> {
     /// Extract shapes from parameter vector.
     fn params_to_shapes(&self, params: &DVector<f64>) -> Vec<S> {
         let n_sets = self.spec.n_sets;
@@ -624,7 +624,7 @@ impl<'a, S: DiagramShape + Copy + 'static> DiagramCost<'a, S> {
     }
 }
 
-impl<'a, S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
+impl<S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'_, S> {
     type Param = DVector<f64>;
     type Output = f64;
 
@@ -645,7 +645,7 @@ impl<'a, S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'a, S> {
     }
 }
 
-impl<'a, S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'a, S> {
+impl<S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'_, S> {
     type Param = DVector<f64>;
     type Gradient = DVector<f64>;
 
@@ -684,7 +684,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'a, S> {
     }
 }
 
-impl<'a, S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'a, S> {
+impl<S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'_, S> {
     type Param = DVector<f64>;
     type Hessian = Vec<Vec<f64>>;
 
@@ -812,8 +812,8 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
     }
 }
 
-impl<'a, S: DiagramShape + Copy + 'static> LeastSquaresProblem<f64, Dyn, Dyn>
-    for LmDiagramProblem<'a, S>
+impl<S: DiagramShape + Copy + 'static> LeastSquaresProblem<f64, Dyn, Dyn>
+    for LmDiagramProblem<'_, S>
 {
     type ResidualStorage = Owned<f64, Dyn>;
     type JacobianStorage = Owned<f64, Dyn, Dyn>;

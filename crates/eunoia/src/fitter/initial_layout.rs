@@ -315,7 +315,7 @@ struct VecMdsCost<'a> {
     inner: MdsCost<'a>,
 }
 
-impl<'a> CostFunction for VecMdsCost<'a> {
+impl CostFunction for VecMdsCost<'_> {
     type Param = Vec<f64>;
     type Output = f64;
     fn cost(&self, p: &Vec<f64>) -> Result<f64, Error> {
@@ -323,7 +323,7 @@ impl<'a> CostFunction for VecMdsCost<'a> {
     }
 }
 
-impl<'a> Gradient for VecMdsCost<'a> {
+impl Gradient for VecMdsCost<'_> {
     type Param = Vec<f64>;
     type Gradient = Vec<f64>;
     fn gradient(&self, p: &Vec<f64>) -> Result<Vec<f64>, Error> {
@@ -332,7 +332,7 @@ impl<'a> Gradient for VecMdsCost<'a> {
     }
 }
 
-impl<'a> Hessian for VecMdsCost<'a> {
+impl Hessian for VecMdsCost<'_> {
     type Param = Vec<f64>;
     type Hessian = Vec<Vec<f64>>;
     fn hessian(&self, p: &Vec<f64>) -> Result<Vec<Vec<f64>>, Error> {
@@ -372,7 +372,7 @@ struct MdsCost<'a> {
     target_norm: f64,
 }
 
-impl<'a> CostFunction for MdsCost<'a> {
+impl CostFunction for MdsCost<'_> {
     type Param = DVector<f64>;
     type Output = f64;
 
@@ -411,7 +411,7 @@ impl<'a> CostFunction for MdsCost<'a> {
     }
 }
 
-impl<'a> Gradient for MdsCost<'a> {
+impl Gradient for MdsCost<'_> {
     type Param = DVector<f64>;
     type Gradient = DVector<f64>;
 
@@ -457,7 +457,7 @@ impl<'a> Gradient for MdsCost<'a> {
     }
 }
 
-impl<'a> Hessian for MdsCost<'a> {
+impl Hessian for MdsCost<'_> {
     type Param = DVector<f64>;
     type Hessian = Vec<Vec<f64>>;
 
@@ -613,7 +613,7 @@ impl<'a> LmMdsProblem<'a> {
     }
 }
 
-impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for LmMdsProblem<'a> {
+impl LeastSquaresProblem<f64, Dyn, Dyn> for LmMdsProblem<'_> {
     type ResidualStorage = Owned<f64, Dyn>;
     type JacobianStorage = Owned<f64, Dyn, Dyn>;
     type ParameterStorage = Owned<f64, Dyn>;

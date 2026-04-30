@@ -3,11 +3,11 @@
 //! This crate provides WebAssembly bindings for the eunoia library,
 //! enabling Euler and Venn diagram generation in web browsers.
 
-use eunoia::Optimizer;
-use eunoia::VennDiagram;
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::geometry::traits::Polygonize;
 use eunoia::loss::LossType;
+use eunoia::Optimizer;
+use eunoia::VennDiagram;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
