@@ -33,3 +33,15 @@ updates:
           ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "rand"
         update-types: ["version-update:semver-major"]
+      # `getrandom` 0.3+ pulls `wasip2` → `wit-bindgen` 0.57 (edition 2024).
+      # eunoia-wasm is pinned to 0.2 with the `js` feature.
+      - dependency-name: "getrandom"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
+      # `proptest` 1.11+ declares `rust-version = 1.85`.
+      - dependency-name: "proptest"
+        update-types: ["version-update:semver-minor"]
+      # `criterion` 0.6+ has bumped its MSRV past 1.84.1.
+      - dependency-name: "criterion"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-major"]
