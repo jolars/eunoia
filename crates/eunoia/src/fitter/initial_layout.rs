@@ -206,11 +206,13 @@ pub enum MdsSolver {
     /// L-BFGS but ~3× the wall time on small problems.
     NewtonCg,
     /// Levenberg-Marquardt with the analytic per-pair Jacobian. The MDS
-    /// objective `Σ_{i≠j} d_{ij}²` is a textbook nonlinear least-squares
-    /// problem (one residual per ordered pair, post-clamp), so LM gets to
-    /// approximate the Hessian as `JᵀJ` from the residual Jacobian rather
-    /// than relying on the analytic Hessian (TrustRegion / NewtonCg) or
-    /// gradient history (L-BFGS).
+    /// objective `Σ_{i≠j} d_{ij}² / Σ target⁴` is a textbook nonlinear
+    /// least-squares problem (one residual per ordered pair, post-clamp,
+    /// with each residual rescaled by `1/sqrt(Σ target⁴)` so the bulk loss
+    /// stays scale-invariant — see `target_norm`), so LM gets to approximate
+    /// the Hessian as `JᵀJ` from the residual Jacobian rather than relying
+    /// on the analytic Hessian (TrustRegion / NewtonCg) or gradient history
+    /// (L-BFGS).
     ///
     /// Default solver. The disjoint / subset clamps (`max(0, ·)`,
     /// `min(0, ·)`) make the residuals C¹ rather than C². L-BFGS' inner
@@ -237,6 +239,7 @@ fn run_attempt(
     let cost_function = MdsCost {
         distances,
         relationships,
+        target_norm: target_norm(distances),
     };
 
     match solver {
@@ -297,7 +300,8 @@ fn run_attempt(
             // other arms.
             let lm = LevenbergMarquardt::new().with_patience(200);
             let (problem_after, report) = lm.minimize(problem);
-            // LM minimises ½·Σrᵢ²; MdsCost returns Σrᵢ², so multiply by 2.
+            // LM minimises ½·Σrᵢ² with rᵢ = raw_dᵢ / sqrt(target_norm); MdsCost
+            // returns Σ raw_d² / target_norm = Σ rᵢ², so multiply by 2.
             Ok((
                 report.objective_function * 2.0,
                 problem_after.params.iter().copied().collect(),
@@ -336,9 +340,36 @@ impl<'a> Hessian for VecMdsCost<'a> {
     }
 }
 
+/// Sum `d_ij⁴` over ordered pairs `i ≠ j`, used as the spec-constant
+/// denominator that makes the MDS loss scale-invariant. Each residual is
+/// `d² − target²`, so the natural normalizer for `Σ residual²` is
+/// `Σ target⁴` (the magnitude `residual` reaches when one shape is at the
+/// origin and the other is `target` away under any rotation). Falls back to
+/// `1.0` when every target is zero so we never divide by zero.
+fn target_norm(distances: &[Vec<f64>]) -> f64 {
+    let mut s = 0.0;
+    for (i, row) in distances.iter().enumerate() {
+        for (j, &t) in row.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            s += t.powi(4);
+        }
+    }
+    if s > 0.0 {
+        s
+    } else {
+        1.0
+    }
+}
+
 struct MdsCost<'a> {
     distances: &'a Vec<Vec<f64>>,
     relationships: &'a PairwiseRelations,
+    /// Spec-constant divisor that makes the loss scale-invariant. See
+    /// [`target_norm`] for the derivation. Held once per cost so repeated
+    /// `cost` / `gradient` / `hessian` calls don't recompute it.
+    target_norm: f64,
 }
 
 impl<'a> CostFunction for MdsCost<'a> {
@@ -376,7 +407,7 @@ impl<'a> CostFunction for MdsCost<'a> {
             }
         }
 
-        Ok(loss)
+        Ok(loss / self.target_norm)
     }
 }
 
@@ -421,7 +452,8 @@ impl<'a> Gradient for MdsCost<'a> {
             }
         }
 
-        Ok(grad)
+        // The bulk loss divides by `target_norm`, so the gradient does too.
+        Ok(grad / self.target_norm)
     }
 }
 
@@ -439,6 +471,9 @@ impl<'a> Hessian for MdsCost<'a> {
     /// Both ordered iterations (i,j) and (j,i) contribute the same numerical
     /// pattern to the same entries, doubling the per-pair amount — which
     /// matches the loss being a sum over ordered pairs.
+    ///
+    /// The whole Hessian is then divided by `target_norm` to match the
+    /// scale-invariant bulk loss.
     fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
         let n_sets = param.len() / 2;
         let n = 2 * n_sets;
@@ -497,6 +532,14 @@ impl<'a> Hessian for MdsCost<'a> {
             }
         }
 
+        // The bulk loss divides by `target_norm`, so the Hessian does too.
+        let inv = 1.0 / self.target_norm;
+        for row in h.iter_mut() {
+            for entry in row.iter_mut() {
+                *entry *= inv;
+            }
+        }
+
         Ok(h)
     }
 }
@@ -504,11 +547,15 @@ impl<'a> Hessian for MdsCost<'a> {
 /// Levenberg-Marquardt least-squares adapter around the MDS cost.
 ///
 /// One residual per ordered pair `(i, j)` with `i ≠ j`, valued at
-/// `d_ij = (x_i − x_j)² + (y_i − y_j)² − target_ij²` and clamped to zero on
-/// the satisfied side of disjoint / subset constraints. `Σ rᵢ²` matches the
-/// existing `MdsCost::cost`. The Jacobian is sparse — each row depends only
-/// on `(x_i, y_i, x_j, y_j)` — but we store it dense, since `n_sets ≤ 8` in
-/// realistic fits keeps the matrix tiny.
+/// `r_ij = (d²_ij − target²_ij) / sqrt(Σ target⁴)`, where the raw residual
+/// `d²_ij − target²_ij = (x_i − x_j)² + (y_i − y_j)² − target_ij²` is clamped
+/// to zero on the satisfied side of disjoint / subset constraints. The
+/// `1/sqrt(Σ target⁴)` per-residual scale makes `Σ rᵢ²` equal to
+/// `MdsCost::cost`'s scale-invariant bulk loss, so the LM `½·Σ rᵢ²` objective
+/// (after the `*2.0` rescale in `run_attempt`) matches the other solver arms.
+/// The Jacobian is sparse — each row depends only on `(x_i, y_i, x_j, y_j)` —
+/// but we store it dense, since `n_sets ≤ 8` in realistic fits keeps the
+/// matrix tiny.
 struct LmMdsProblem<'a> {
     distances: &'a Vec<Vec<f64>>,
     relationships: &'a PairwiseRelations,
@@ -518,6 +565,9 @@ struct LmMdsProblem<'a> {
     /// Canonical residual ordering: ordered pairs in row-major (i, j) order
     /// with `i ≠ j`, length `n*(n−1)`.
     pairs: Vec<(usize, usize)>,
+    /// Per-residual scale `1/sqrt(target_norm)` — matches the `1/target_norm`
+    /// divisor on `MdsCost::cost` (since `Σ (r/√k)² = (Σ r²)/k`).
+    inv_sqrt_target_norm: f64,
 }
 
 impl<'a> LmMdsProblem<'a> {
@@ -541,6 +591,7 @@ impl<'a> LmMdsProblem<'a> {
             n_sets,
             params: initial_param.clone(),
             pairs,
+            inv_sqrt_target_norm: 1.0 / target_norm(distances).sqrt(),
         }
     }
 
@@ -577,28 +628,31 @@ impl<'a> LeastSquaresProblem<f64, Dyn, Dyn> for LmMdsProblem<'a> {
 
     fn residuals(&self) -> Option<DVector<f64>> {
         let mut residuals = DVector::zeros(self.pairs.len());
+        let s = self.inv_sqrt_target_norm;
         for (k, &(i, j)) in self.pairs.iter().enumerate() {
             let (d, _xd, _yd, active) = self.pair_state(i, j);
-            residuals[k] = if active { d } else { 0.0 };
+            residuals[k] = if active { d * s } else { 0.0 };
         }
         Some(residuals)
     }
 
     fn jacobian(&self) -> Option<DMatrix<f64>> {
         let n = self.n_sets;
+        let s = self.inv_sqrt_target_norm;
         let mut jacobian = DMatrix::zeros(self.pairs.len(), self.params.len());
         for (k, &(i, j)) in self.pairs.iter().enumerate() {
             let (_d, xd, yd, active) = self.pair_state(i, j);
             if !active {
                 continue;
             }
-            // d = (x_i − x_j)² + (y_i − y_j)² − target² ⇒
+            // raw d = (x_i − x_j)² + (y_i − y_j)² − target² ⇒
             //   ∂d/∂x_i = 2·xd, ∂d/∂x_j = −2·xd,
             //   ∂d/∂y_i = 2·yd, ∂d/∂y_j = −2·yd.
-            jacobian[(k, i)] = 2.0 * xd;
-            jacobian[(k, j)] = -2.0 * xd;
-            jacobian[(k, n + i)] = 2.0 * yd;
-            jacobian[(k, n + j)] = -2.0 * yd;
+            // The scaled residual `d·s` carries the same `s` through.
+            jacobian[(k, i)] = 2.0 * xd * s;
+            jacobian[(k, j)] = -2.0 * xd * s;
+            jacobian[(k, n + i)] = 2.0 * yd * s;
+            jacobian[(k, n + j)] = -2.0 * yd * s;
         }
         Some(jacobian)
     }
@@ -665,6 +719,7 @@ mod gradient_check {
         let cost = MdsCost {
             distances: &distances,
             relationships: &relations,
+            target_norm: target_norm(&distances),
         };
         // A point that doesn't trigger the no-penalty branches:
         // A center near origin (so subset penalty zero), B/C/D somewhere unrelated.
@@ -720,6 +775,7 @@ mod gradient_check {
         let cost = MdsCost {
             distances: &distances,
             relationships: &relations,
+            target_norm: target_norm(&distances),
         };
         let p = DVector::from_vec(vec![0.5, 3.0, 3.5, 4.5, 0.3, 1.0, 2.5, 0.8]);
         let analytic = cost.hessian(&p).unwrap();
@@ -766,6 +822,7 @@ mod gradient_check {
         let cost = MdsCost {
             distances: &distances,
             relationships: &relations,
+            target_norm: target_norm(&distances),
         };
         let p = DVector::from_vec(vec![0.5, 3.0, 3.5, 4.5, 0.3, 1.0, 2.5, 0.8]);
         let analytic = cost.gradient(&p).unwrap();

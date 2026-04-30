@@ -60,11 +60,19 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Check core crate
-        run: cargo check -p eunoia --all-features --all-targets
+      - name: Strip eunoia-wasm from workspace
+        # cargo 1.84.1 cannot parse edition 2024 manifests, and eunoia-wasm
+        # legitimately needs edition 2024 for its WASM-only deps. Drop it
+        # from `[workspace.members]` so the MSRV check sees only the core
+        # crate that downstream packagers actually consume.
+        run: sed -i 's|"crates/eunoia-wasm",\? *||g' Cargo.toml
 
-      - name: Test core crate
-        run: cargo test -p eunoia --all-features
+      - name: Check core crate (no dev-deps)
+        # `cargo check` without `--all-targets` skips test/bench targets and
+        # therefore skips dev-deps. MSRV is a contract with library users,
+        # not test runners — dev-deps (proptest, criterion, tempfile, …) can
+        # outpace MSRV without affecting downstream builds.
+        run: cargo check -p eunoia --all-features
 
   coverage:
     name: Code Coverage

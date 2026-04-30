@@ -9,7 +9,10 @@ updates:
     schedule:
       interval: "weekly"
     ignore:
-      # Pinned below latest to preserve MSRV 1.81 / edition 2021.
+      # Pinned below latest to preserve MSRV 1.84.1 / edition 2021
+      # (R's rextendr MSRV is 1.84.1). Revisit when the MSRV floor is raised:
+      # nalgebra 0.34 needs 1.87; levenberg-marquardt 0.15, i_overlay 3+,
+      # and rand 0.10 are all edition 2024 (≥1.85).
       # Revisit when the MSRV floor is raised.
       - dependency-name: "argmin"
         update-types:

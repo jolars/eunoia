@@ -489,7 +489,7 @@ eulerr's `input` argument is:
 
 Core dependencies (platform-independent):
 
-- **`nalgebra`** (0.34.1) - Linear algebra for MDS and matrix operations
+- **`nalgebra`** (0.33) - Linear algebra for MDS and matrix operations
 - **`argmin`** (0.11.0) - Optimization algorithms (gradient-based and
   derivative-free)
 - **`argmin-math`** (0.5.1) - Math support for argmin with nalgebra
@@ -528,12 +528,12 @@ considered for:
 - Maintenance burden
 - License compatibility
 
-**Note**: The core `eunoia` crate uses **Rust Edition 2021** (MSRV 1.81) for
-compatibility with rextendr (R bindings framework). This is set at the
-workspace level in the root `Cargo.toml` and should not be changed without
-consideration for downstream binding compatibility. The `eunoia-wasm` crate
-overrides this with **Edition 2024** (MSRV 1.85) because some transitive
-WASM-only dependencies (e.g. `wit-bindgen`) require it.
+**Note**: The core `eunoia` crate uses **Rust Edition 2021** (MSRV 1.84.1)
+for compatibility with rextendr (R bindings framework — R's MSRV is 1.84.1).
+This is set at the workspace level in the root `Cargo.toml` and should not be
+changed without consideration for downstream binding compatibility. The
+`eunoia-wasm` crate overrides this with **Edition 2024** (MSRV 1.85) because
+some transitive WASM-only dependencies (e.g. `wit-bindgen`) require it.
 
 ## Working with This Codebase
 
@@ -655,7 +655,7 @@ The project uses a Cargo workspace with multiple crates:
 - **Uses Cargo workspace** with `crates/eunoia/` (core) and `crates/eunoia-wasm/` (bindings)
 - Core library is platform-independent Rust with no WASM dependencies
 - WASM bindings are a thin wrapper in a separate crate
-- **Core `eunoia` crate uses Rust Edition 2021** (MSRV 1.81) for compatibility with rextendr (R bindings); `eunoia-wasm` uses Edition 2024 (MSRV 1.85)
+- **Core `eunoia` crate uses Rust Edition 2021** (MSRV 1.84.1) for compatibility with rextendr (R bindings); `eunoia-wasm` uses Edition 2024 (MSRV 1.85)
 - **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0 (alpha)
 - **Breaking changes are acceptable** in pre-1.0.0 versions
 - **Uses Conventional Commits** for clear change history

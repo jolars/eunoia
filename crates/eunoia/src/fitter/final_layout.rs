@@ -91,10 +91,16 @@ pub(crate) struct FinalLayoutConfig {
     pub loss_type: crate::loss::LossType,
     /// Optimizer to use
     pub optimizer: Optimizer,
-    /// Convergence tolerance. Currently honored by L-BFGS only — passed as
-    /// `tol_grad`, with `tol_cost = tolerance²`. Other solvers (Nelder-Mead,
-    /// TrustRegion) don't expose tolerance setters in argmin 0.11 and run to
-    /// `max_iterations`.
+    /// Convergence tolerance. Honored by every solver except Nelder-Mead:
+    /// - **L-BFGS**: passed as both `tol_grad` and `tol_cost`. Squaring the
+    ///   cost tolerance backfires with central-difference gradients (FD noise
+    ///   floor on cost evals is ~`sqrt(EPSILON) × |cost|`), so both share
+    ///   `config.tolerance`.
+    /// - **Levenberg-Marquardt**: passed as `ftol`, `xtol`, and `gtol`.
+    /// - **CmaEsLm**: passed as the CMA-ES `fn_tol` (clamped to `≥ 1e-12`),
+    ///   plus the LM polish step uses it as above.
+    /// - **Nelder-Mead**: ignored — argmin 0.11 doesn't expose a tolerance
+    ///   setter, so it runs to `max_iterations`.
     ///
     /// Default `1e-6` matches eulerr's nlm `gradtol`/`steptol`. Looser than
     /// argmin's L-BFGS defaults (`sqrt(EPSILON)` ≈ 1.5e-8 grad, `EPSILON`
