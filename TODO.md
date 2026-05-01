@@ -106,7 +106,7 @@ they're pre-existing behaviour the harness now exposes.
       shape-aware-MDS refactor anyway for triangles or another shape that
       can't reasonably warm-start as a circle.
 
-- [ ] **Square Venn warm-start** — see "Square shape follow-ups" below.
+- [x] **Square Venn warm-start** — see "Square shape follow-ups" below.
 
 ## Square shape follow-ups
 
