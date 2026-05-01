@@ -74,6 +74,36 @@ they're pre-existing behaviour the harness now exposes.
       LM termination on `with_patience` or relax the tightened budget in the
       test; the spec itself is fittable.
 
+## Spec representation follow-ups
+
+- [ ] **Make `DiagramSpec::inclusive_areas` lazy or drop it**. The eager
+      exclusive→inclusive conversion in
+      `crates/eunoia/src/spec.rs::exclusive_to_inclusive_static` is now sparse
+      in `n` but still `O(Σ 2^|combo|)` per input combination — a single
+      30-way intersection still walks 2³⁰ subsets at build time. The fitter
+      itself only consumes `exclusive_areas` (via `preprocess()`); the
+      inclusive map is stored mainly for the public `get_inclusive` /
+      `inclusive_areas()` accessors and for `compute_pairwise_relations`
+      (which only needs singletons + pairs, not the full power set of
+      every input combination).
+
+      Two options worth comparing:
+
+      1. Compute `inclusive_areas` lazily on demand via a method on
+         `DiagramSpec`, and have `compute_pairwise_relations` ask only for
+         the singleton + pair entries it needs. Keeps the public API
+         backward-compatible at the cost of a `OnceCell`-style cache or
+         per-call recomputation.
+      2. Drop the eager inclusive field entirely. Make `inclusive_areas()` /
+         `get_inclusive` compute on demand. Slightly breaking (returns
+         `HashMap<...>` by value instead of `&HashMap<...>`), but removes
+         the only remaining 2^|combo| work from the build path.
+
+      Audit who reads `inclusive_areas` first (Fitter, WASM bindings, tests,
+      examples). Worth a fresh session — touches `DiagramSpec`'s public
+      surface and every caller. Bundle with a clean follow-up PR after the
+      sparse-spec PR lands.
+
 ## MDS architecture follow-ups
 
 - [ ] **Ellipse MDS still warm-starts as a circle**. `Ellipse::mds_target_distance`
