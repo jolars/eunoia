@@ -13,10 +13,30 @@
       bind:value={appState.advanced.optimizer}
       class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
     >
+      <option value="CmaEsLm">CMA-ES → LM (default)</option>
+      <option value="LevenbergMarquardt">Levenberg-Marquardt</option>
       <option value="Lbfgs">L-BFGS</option>
       <option value="NelderMead">Nelder-Mead</option>
-      <option value="TrustRegion">Trust Region</option>
     </select>
+  </div>
+
+  <div>
+    <label
+      for="tolerance"
+      class="block text-xs font-medium text-gray-600 mb-1"
+    >Tolerance</label>
+    <input
+      id="tolerance"
+      type="number"
+      bind:value={appState.advanced.tolerance}
+      min="0"
+      step="any"
+      placeholder="1e-3"
+      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+    />
+    <p class="mt-1 text-xs text-gray-500">
+      Final-stage cost-change exit. Smaller = tighter fit, slower.
+    </p>
   </div>
 
   <div>

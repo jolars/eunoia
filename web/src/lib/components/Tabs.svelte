@@ -29,7 +29,7 @@
 </script>
 
 <nav class="border-b border-gray-200 bg-white">
-  <div class="max-w-6xl mx-auto px-6 flex items-center justify-between">
+  <div class="max-w-7xl mx-auto px-6 flex items-center justify-between">
     <h1 class="text-2xl font-bold text-gray-900 py-4">Eunoia</h1>
     <ul class="flex">
       {#each tabs as t}

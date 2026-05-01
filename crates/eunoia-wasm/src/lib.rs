@@ -17,6 +17,7 @@ use console_error_panic_hook;
 #[wasm_bindgen]
 #[derive(Clone, Copy)]
 pub enum WasmOptimizer {
+    CmaEsLm,
     LevenbergMarquardt,
     Lbfgs,
     NelderMead,
@@ -25,6 +26,7 @@ pub enum WasmOptimizer {
 impl From<WasmOptimizer> for Optimizer {
     fn from(opt: WasmOptimizer) -> Self {
         match opt {
+            WasmOptimizer::CmaEsLm => Optimizer::CmaEsLm,
             WasmOptimizer::LevenbergMarquardt => Optimizer::LevenbergMarquardt,
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
             WasmOptimizer::NelderMead => Optimizer::NelderMead,
@@ -1327,6 +1329,7 @@ pub fn generate_circles_as_polygons(
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1366,6 +1369,9 @@ pub fn generate_circles_as_polygons(
     }
     if let Some(lt) = loss_type {
         fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
     }
     let layout = fitter
         .fit()
@@ -1446,6 +1452,7 @@ pub fn generate_ellipses_as_polygons(
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1485,6 +1492,9 @@ pub fn generate_ellipses_as_polygons(
     }
     if let Some(lt) = loss_type {
         fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
     }
     let layout = fitter
         .fit()
@@ -1567,6 +1577,7 @@ pub fn generate_squares_as_polygons(
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1606,6 +1617,9 @@ pub fn generate_squares_as_polygons(
     }
     if let Some(lt) = loss_type {
         fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
     }
     let layout = fitter
         .fit()
@@ -1685,6 +1699,7 @@ pub fn generate_region_polygons_circles(
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1724,6 +1739,9 @@ pub fn generate_region_polygons_circles(
     }
     if let Some(lt) = loss_type {
         fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
     }
     let layout = fitter
         .fit()
@@ -1793,6 +1811,7 @@ pub fn generate_region_polygons_ellipses(
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1832,6 +1851,9 @@ pub fn generate_region_polygons_ellipses(
     }
     if let Some(lt) = loss_type {
         fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
     }
     let layout = fitter
         .fit()
@@ -1901,6 +1923,7 @@ pub fn generate_region_polygons_squares(
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
@@ -1940,6 +1963,9 @@ pub fn generate_region_polygons_squares(
     }
     if let Some(lt) = loss_type {
         fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
     }
     let layout = fitter
         .fit()

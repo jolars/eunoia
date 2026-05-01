@@ -158,6 +158,55 @@
     return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
   }
 
+  function polygonArea(p: Polygon): number {
+    const n = p.vertices.length;
+    if (n < 3) return 0;
+    let a = 0;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      a += (p.vertices[j].x + p.vertices[i].x) *
+        (p.vertices[j].y - p.vertices[i].y);
+    }
+    return Math.abs(a) * 0.5;
+  }
+
+  /**
+   * Sets that have no exclusive region of their own (e.g. fully contained in
+   * another set) get a label placed inside the *largest-area* region whose
+   * combination contains them. Scoring by area (not set count) picks the
+   * spacious nested region — `A&B&C` for a fully-contained C — over any tiny
+   * boundary sliver the optimizer might have left.
+   */
+  let fallbackSetLabels: { name: string; x: number; y: number }[] = $derived.by(
+    () => {
+      if (!result || result.shapeMode !== "region") return [];
+      const labeled = new Set<string>();
+      for (const r of result.regions) {
+        if (!r.combination.includes("&")) labeled.add(r.combination.trim());
+      }
+      const fallbacks: { name: string; x: number; y: number }[] = [];
+      for (const name of setLabels) {
+        if (labeled.has(name)) continue;
+        let bestPoly: Polygon | null = null;
+        let bestArea = -1;
+        for (const r of result.regions) {
+          const sets = r.combination.split("&").map((s) => s.trim());
+          if (!sets.includes(name)) continue;
+          for (const p of r.polygons) {
+            const a = polygonArea(p);
+            if (a > bestArea) {
+              bestArea = a;
+              bestPoly = p;
+            }
+          }
+        }
+        if (!bestPoly) continue;
+        const pos = calcLabelPos(bestPoly);
+        fallbacks.push({ name, x: pos.x, y: pos.y });
+      }
+      return fallbacks;
+    },
+  );
+
   let fontWeight = $derived(style.fontBold ? 700 : 400);
   let fontItalic = $derived(style.fontItalic ? "italic" : "normal");
 
@@ -169,6 +218,7 @@
     let ly = minY - PADDING;
     let lw = w + 2 * PADDING;
     let lh = h + 2 * PADDING;
+
 
     // Reserve space for the legend.
     if (result && style.showLegend && setLabels.length > 0) {
@@ -288,26 +338,29 @@
         {/each}
       {/each}
       {#each result.regions as region}
+        {@const isSetRegion = !region.combination.includes("&")}
         {#each region.polygons as poly}
           {@const lp = calcLabelPos(poly)}
-          <text
-            x={lp.x}
-            y={lp.y}
-            text-anchor="middle"
-            dominant-baseline="middle"
-            font-size={style.labelSize}
-            font-weight={fontWeight}
-            font-style={fontItalic}
-            fill="black"
-          >
-            {region.combination}
-          </text>
+          {#if isSetRegion}
+            <text
+              x={lp.x}
+              y={lp.y}
+              text-anchor="middle"
+              dominant-baseline="central"
+              font-size={style.labelSize}
+              font-weight={fontWeight}
+              font-style={fontItalic}
+              fill="black"
+            >
+              {region.combination}
+            </text>
+          {/if}
           {#if style.showCounts}
             <text
               x={lp.x}
-              y={lp.y + style.labelSize}
+              y={isSetRegion ? lp.y + style.labelSize : lp.y}
               text-anchor="middle"
-              dominant-baseline="middle"
+              dominant-baseline="central"
               font-size={style.labelSize * 0.75}
               fill="#374151"
             >
@@ -315,6 +368,20 @@
             </text>
           {/if}
         {/each}
+      {/each}
+      {#each fallbackSetLabels as fb}
+        <text
+          x={fb.x}
+          y={fb.y}
+          text-anchor="middle"
+          dominant-baseline="central"
+          font-size={style.labelSize}
+          font-weight={fontWeight}
+          font-style={fontItalic}
+          fill="black"
+        >
+          {fb.name}
+        </text>
       {/each}
     {:else}
       {#each result.polygons as poly, i}
@@ -372,7 +439,7 @@
           x={lp.x}
           y={lp.y}
           text-anchor="middle"
-          dominant-baseline="middle"
+          dominant-baseline="central"
           font-size={style.labelSize}
           font-weight={fontWeight}
           font-style={fontItalic}
@@ -385,7 +452,7 @@
           x={circle.x}
           y={circle.y}
           text-anchor="middle"
-          dominant-baseline="middle"
+          dominant-baseline="central"
           font-size={style.labelSize}
           font-weight={fontWeight}
           font-style={fontItalic}
@@ -398,7 +465,7 @@
           x={ellipse.x}
           y={ellipse.y}
           text-anchor="middle"
-          dominant-baseline="middle"
+          dominant-baseline="central"
           font-size={style.labelSize}
           font-weight={fontWeight}
           font-style={fontItalic}
@@ -411,7 +478,7 @@
           x={square.x}
           y={square.y}
           text-anchor="middle"
-          dominant-baseline="middle"
+          dominant-baseline="central"
           font-size={style.labelSize}
           font-weight={fontWeight}
           font-style={fontItalic}
@@ -430,7 +497,7 @@
                 x={c.x}
                 y={c.y + style.labelSize}
                 text-anchor="middle"
-                dominant-baseline="middle"
+                dominant-baseline="central"
                 font-size={style.labelSize * 0.75}
                 fill="#374151"
               >
@@ -441,7 +508,7 @@
                 x={e.x}
                 y={e.y + style.labelSize}
                 text-anchor="middle"
-                dominant-baseline="middle"
+                dominant-baseline="central"
                 font-size={style.labelSize * 0.75}
                 fill="#374151"
               >
@@ -452,7 +519,7 @@
                 x={sq.x}
                 y={sq.y + style.labelSize}
                 text-anchor="middle"
-                dominant-baseline="middle"
+                dominant-baseline="central"
                 font-size={style.labelSize * 0.75}
                 fill="#374151"
               >
@@ -482,7 +549,7 @@
           <text
             x={legendBox.x + legendBox.swatch + legendBox.gap}
             y={yi + legendBox.swatch / 2}
-            dominant-baseline="middle"
+            dominant-baseline="central"
             font-size={style.labelSize}
             font-weight={fontWeight}
             font-style={fontItalic}

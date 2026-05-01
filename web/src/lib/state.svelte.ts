@@ -23,21 +23,22 @@ const DEFAULT_ROWS: Row[] = [
 const DEFAULT_STYLE: DiagramStyle = {
   colors: {},
   alpha: 0.5,
-  showLegend: true,
+  showLegend: false,
   legendPosition: "right",
   fontBold: true,
   fontItalic: false,
   strokeWidth: 1,
-  labelSize: 14,
+  labelSize: 10,
   showCounts: false,
 };
 
 const DEFAULT_ADVANCED: AdvancedOptions = {
-  optimizer: "Lbfgs",
+  optimizer: "CmaEsLm",
   lossType: "SumSquared",
-  showRegions: false,
+  showRegions: true,
   seed: 1,
   useSeed: false,
+  tolerance: 1e-3,
 };
 
 const DEFAULT_EXPORT: ExportSettings = {

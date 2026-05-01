@@ -213,6 +213,10 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
       : undefined;
   const optimizer = optimizerEnum(wasm, inputs.advanced.optimizer);
   const lossType = lossEnum(wasm, inputs.advanced.lossType);
+  const tolerance =
+    Number.isFinite(inputs.advanced.tolerance) && inputs.advanced.tolerance > 0
+      ? inputs.advanced.tolerance
+      : undefined;
   const showRegions = inputs.advanced.showRegions;
 
   if (showRegions) {
@@ -229,6 +233,7 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
       seed,
       optimizer,
       lossType,
+      tolerance,
     );
     const rawRegions = Array.from(result.regions) as any[];
     const allVerts = rawRegions.flatMap((r) =>
@@ -288,6 +293,7 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
     seed,
     optimizer,
     lossType,
+    tolerance,
   );
   const polygons = Array.from(result.polygons) as any[];
   const circles = Array.from(result.circles) as any[];

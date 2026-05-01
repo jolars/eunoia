@@ -7,6 +7,7 @@
   import SpecEditor from "../components/SpecEditor.svelte";
   import StyleControls from "../components/StyleControls.svelte";
   import AdvancedControls from "../components/AdvancedControls.svelte";
+  import DebugPanel from "../components/DebugPanel.svelte";
   import ExportToolbar from "../components/ExportToolbar.svelte";
   import MetricsPanel from "../components/MetricsPanel.svelte";
   import FitTable from "../components/FitTable.svelte";
@@ -118,6 +119,9 @@
         </Section>
         <Section title="Advanced" open={false}>
           <AdvancedControls />
+        </Section>
+        <Section title="Debug" open={false}>
+          <DebugPanel />
         </Section>
       </aside>
 

@@ -68,9 +68,10 @@ export type DiagramType = "euler" | "venn";
 export type VennSetCount = 1 | 2 | 3 | 4 | 5;
 export type LegendPosition = "right" | "left" | "top" | "bottom";
 export type OptimizerName =
-  | "NelderMead"
+  | "CmaEsLm"
+  | "LevenbergMarquardt"
   | "Lbfgs"
-  | "TrustRegion";
+  | "NelderMead";
 export type LossName =
   | "SumSquared"
   | "SumAbsolute"
@@ -117,6 +118,8 @@ export interface AdvancedOptions {
   showRegions: boolean;
   seed: number | undefined;
   useSeed: boolean;
+  /** Final-stage cost-change tolerance. Wired to `Fitter::tolerance`. */
+  tolerance: number;
 }
 
 export interface ExportSettings {

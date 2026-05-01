@@ -125,7 +125,7 @@
     <input
       id="labelSize"
       type="range"
-      min="6"
+      min="2"
       max="40"
       step="1"
       bind:value={appState.style.labelSize}
