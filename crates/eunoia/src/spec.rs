@@ -20,7 +20,11 @@ use std::collections::HashMap;
 /// what the diagram should represent. The actual geometric shapes will be
 /// computed during the fitting process.
 ///
-/// Both exclusive and inclusive representations are stored for efficient access.
+/// Only the exclusive view is stored; the inclusive view is computed on
+/// demand by [`DiagramSpec::inclusive_areas`] and
+/// [`DiagramSpec::get_inclusive`]. This keeps build-time cost proportional
+/// to the input size — a single large k-way intersection no longer forces a
+/// `2^k` walk over its subsets at build time.
 ///
 /// The diagram specification is shape-agnostic - the shape type is determined
 /// when fitting the diagram, not when building the specification.
@@ -28,9 +32,6 @@ use std::collections::HashMap;
 pub struct DiagramSpec {
     /// Exclusive areas (unique parts of each combination)
     pub(crate) exclusive_areas: HashMap<Combination, f64>,
-
-    /// Inclusive areas (inclusive of all subsets)
-    pub(crate) inclusive_areas: HashMap<Combination, f64>,
 
     /// How the input values were originally specified.
     pub(crate) input_type: InputType,
@@ -55,202 +56,22 @@ impl DiagramSpec {
         &self.exclusive_areas
     }
 
-    /// Returns the inclusive areas.
-    pub fn inclusive_areas(&self) -> &HashMap<Combination, f64> {
-        &self.inclusive_areas
-    }
-
-    /// Gets the exclusive area for a specific combination.
-    pub fn get_exclusive(&self, combination: &Combination) -> Option<f64> {
-        self.exclusive_areas.get(combination).copied()
-    }
-
-    /// Gets the inclusive area for a specific combination.
-    pub fn get_inclusive(&self, combination: &Combination) -> Option<f64> {
-        self.inclusive_areas.get(combination).copied()
-    }
-
-    /// Preprocess the specification for fitting (internal use).
+    /// Returns the inclusive areas, computed on demand from `exclusive_areas`.
     ///
-    /// This:
-    /// 1. Removes empty sets (area < ε)
-    /// 2. Removes combinations containing empty sets
-    /// 3. Computes pairwise relationships (subset, disjoint)
-    pub(crate) fn preprocess(&self) -> Result<PreprocessedSpec, DiagramError> {
-        const EPSILON: f64 = 1e-10; // sqrt of machine epsilon
-
-        // 1. Find empty sets (use inclusive areas to determine empty sets)
-        let mut non_empty_sets = Vec::new();
-        let mut set_to_idx = HashMap::new();
-
-        for set_name in self.set_names.iter() {
-            let combo = Combination::new(&[set_name]);
-            if let Some(&area) = self.inclusive_areas.get(&combo) {
-                if area >= EPSILON {
-                    let idx = non_empty_sets.len();
-                    non_empty_sets.push(set_name.clone());
-                    set_to_idx.insert(set_name.clone(), idx);
-                }
-            }
-        }
-
-        let n_sets = non_empty_sets.len();
-
-        if n_sets <= 1 {
-            return Err(DiagramError::InvalidCombination(
-                "Need at least 2 non-empty sets".to_string(),
-            ));
-        }
-
-        // 2. Filter combinations to only include non-empty sets
-        let mut filtered_exclusive = HashMap::new();
-        let mut filtered_inclusive = HashMap::new();
-
-        // First, add all combinations from exclusive
-        for (combo, &area) in self.exclusive_areas.iter() {
-            // Check if all sets in this combination are non-empty
-            let all_non_empty = combo.sets().iter().all(|s| set_to_idx.contains_key(s));
-
-            if all_non_empty {
-                filtered_exclusive.insert(combo.clone(), area);
-                if let Some(&inclusive_area) = self.inclusive_areas.get(combo) {
-                    filtered_inclusive.insert(combo.clone(), inclusive_area);
-                }
-            }
-        }
-
-        // Also add combinations from inclusive that might have zero exclusive area
-        for (combo, &inclusive_area) in self.inclusive_areas.iter() {
-            let all_non_empty = combo.sets().iter().all(|s| set_to_idx.contains_key(s));
-
-            if all_non_empty && inclusive_area > 1e-10 && !filtered_inclusive.contains_key(combo) {
-                filtered_inclusive.insert(combo.clone(), inclusive_area);
-                // Add to exclusive with 0 if not already there
-                if !filtered_exclusive.contains_key(combo) {
-                    filtered_exclusive.insert(combo.clone(), 0.0);
-                }
-            }
-        }
-
-        // 3. Compute set areas
-        let mut set_areas = vec![0.0; n_sets];
-        for (i, set_name) in non_empty_sets.iter().enumerate() {
-            let combo = Combination::new(&[set_name]);
-            if let Some(&area) = filtered_inclusive.get(&combo) {
-                set_areas[i] = area;
-            }
-        }
-
-        // 4. Compute pairwise relationships
-        let relationships = Self::compute_pairwise_relations(&non_empty_sets, &filtered_inclusive)?;
-
-        // 5. Convert Combination maps to RegionMask maps for efficient internal use
-        use crate::geometry::diagram;
-        let exclusive_areas_mask = filtered_exclusive
-            .iter()
-            .map(|(combo, &area)| {
-                let mask = diagram::combination_to_mask(combo, &non_empty_sets);
-                (mask, area)
-            })
-            .collect();
-
-        let inclusive_areas_mask = filtered_inclusive
-            .iter()
-            .map(|(combo, &area)| {
-                let mask = diagram::combination_to_mask(combo, &non_empty_sets);
-                (mask, area)
-            })
-            .collect();
-
-        Ok(PreprocessedSpec {
-            set_names: non_empty_sets,
-            set_to_idx,
-            exclusive_areas: exclusive_areas_mask,
-            inclusive_areas: inclusive_areas_mask,
-            n_sets,
-            set_areas,
-            relationships,
-        })
-    }
-
-    fn compute_pairwise_relations(
-        set_names: &[String],
-        inclusive_areas: &HashMap<Combination, f64>,
-    ) -> Result<PairwiseRelations, DiagramError> {
-        let n = set_names.len();
-
-        // Initialize relationship matrices
-        let mut subset = vec![vec![false; n]; n];
-        let mut disjoint = vec![vec![false; n]; n];
-        let mut overlap_areas = vec![vec![0.0; n]; n];
-
-        // Check all pairs
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let set_i = &set_names[i];
-                let set_j = &set_names[j];
-
-                let combo_i = Combination::new(&[set_i]);
-                let combo_j = Combination::new(&[set_j]);
-                let combo_ij = Combination::new(&[set_i, set_j]);
-
-                let area_i = inclusive_areas.get(&combo_i).copied().unwrap_or(0.0);
-                let area_j = inclusive_areas.get(&combo_j).copied().unwrap_or(0.0);
-                let area_ij_inclusive = inclusive_areas.get(&combo_ij).copied().unwrap_or(0.0);
-
-                // Store overlap area - use inclusive intersection
-                // This represents the total geometric intersection including higher-order overlaps
-                overlap_areas[i][j] = area_ij_inclusive;
-                overlap_areas[j][i] = area_ij_inclusive;
-
-                // Check if disjoint (intersection is zero)
-                if area_ij_inclusive < 1e-10 {
-                    disjoint[i][j] = true;
-                    disjoint[j][i] = true;
-                }
-
-                // Check if one is subset of another
-                // j ⊆ i if inclusive area(i ∩ j) == area(j)
-                if (area_ij_inclusive - area_j).abs() < 1e-10 {
-                    subset[i][j] = true; // j is subset of i
-                }
-                if (area_ij_inclusive - area_i).abs() < 1e-10 {
-                    subset[j][i] = true; // i is subset of j
-                }
-            }
-        }
-
-        Ok(PairwiseRelations {
-            n_sets: n,
-            subset,
-            disjoint,
-            overlap_areas,
-        })
-    }
-
-    /// Convert exclusive areas to inclusive areas (static version for builder).
-    ///
-    /// Sparse: iterates only the combinations the caller provided. For each
-    /// input combination C' with exclusive area `a`, every non-empty subset
-    /// `C ⊆ C'` accumulates `a` (since any region inside C' contributes to
-    /// the inclusive area of all of its subsets). Cost is
-    /// `O(Σ 2^|C'|)` over input combinations, not `O(2^n)`. Subsets that no
-    /// input combination contributes to are simply absent from the result —
-    /// matching the documented "missing = zero" convention.
-    fn exclusive_to_inclusive_static(
-        exclusive: &HashMap<Combination, f64>,
-    ) -> Result<HashMap<Combination, f64>, DiagramError> {
+    /// Cost is `O(Σ 2^|c|)` over input combinations — every non-empty subset
+    /// of every input combination is visited. The build path no longer pays
+    /// this; only callers of this method do. For a single-entry lookup, prefer
+    /// [`DiagramSpec::get_inclusive`].
+    pub fn inclusive_areas(&self) -> HashMap<Combination, f64> {
         let mut inclusive: HashMap<Combination, f64> = HashMap::new();
 
-        for (combo_super, &area) in exclusive.iter() {
+        for (combo_super, &area) in self.exclusive_areas.iter() {
             if area.abs() < crate::constants::EPSILON {
-                // Adding zero leaves accumulators unchanged; skip the work.
                 continue;
             }
 
             let sets = combo_super.sets();
             let k = sets.len();
-            // Enumerate non-empty subsets of combo_super via bitmasks.
             for mask in 1u64..(1u64 << k) {
                 let mut subset_sets: Vec<&str> = Vec::with_capacity(k);
                 for (i, name) in sets.iter().enumerate() {
@@ -263,10 +84,189 @@ impl DiagramSpec {
             }
         }
 
-        // Drop tiny accumulators that are only floating-point noise.
         inclusive.retain(|_, area| *area > crate::constants::EPSILON);
+        inclusive
+    }
 
-        Ok(inclusive)
+    /// Gets the exclusive area for a specific combination.
+    pub fn get_exclusive(&self, combination: &Combination) -> Option<f64> {
+        self.exclusive_areas.get(combination).copied()
+    }
+
+    /// Computes the inclusive area for a specific combination on demand.
+    ///
+    /// Returns `Some(area)` if any superset of `combination` in
+    /// `exclusive_areas` contributes a positive area, otherwise `None` —
+    /// matching the documented "missing = zero" convention. Cost is
+    /// `O(|exclusive_areas|)` per call; no `2^k` subset walk.
+    pub fn get_inclusive(&self, combination: &Combination) -> Option<f64> {
+        let mut sum = 0.0;
+        for (combo, &area) in self.exclusive_areas.iter() {
+            if combo.contains_all(combination) {
+                sum += area;
+            }
+        }
+        if sum > crate::constants::EPSILON {
+            Some(sum)
+        } else {
+            None
+        }
+    }
+
+    /// Preprocess the specification for fitting (internal use).
+    ///
+    /// This:
+    /// 1. Removes empty sets (area < ε) — a set is empty iff no input
+    ///    combination containing it has positive exclusive area.
+    /// 2. Removes combinations touching empty sets.
+    /// 3. Computes singleton + pair inclusive areas needed for set sizes
+    ///    and pairwise relationships, directly from `exclusive_areas`. No
+    ///    full `2^|c|` subset walk over input combinations.
+    pub(crate) fn preprocess(&self) -> Result<PreprocessedSpec, DiagramError> {
+        const EPSILON: f64 = 1e-10; // sqrt of machine epsilon
+
+        // 1. Compute singleton inclusive areas in a single pass over the
+        //    exclusive map: for each (c, a), every set s ∈ c gets +a.
+        let mut singleton_inclusive: HashMap<&str, f64> = HashMap::new();
+        for (combo, &area) in self.exclusive_areas.iter() {
+            if area.abs() < EPSILON {
+                continue;
+            }
+            for set_name in combo.sets() {
+                *singleton_inclusive.entry(set_name.as_str()).or_insert(0.0) += area;
+            }
+        }
+
+        // 2. Determine non-empty sets, preserving canonical order from
+        //    `set_names`.
+        let mut non_empty_sets: Vec<String> = Vec::new();
+        let mut set_to_idx: HashMap<String, usize> = HashMap::new();
+        for set_name in self.set_names.iter() {
+            let inclusive = singleton_inclusive
+                .get(set_name.as_str())
+                .copied()
+                .unwrap_or(0.0);
+            if inclusive >= EPSILON {
+                let idx = non_empty_sets.len();
+                non_empty_sets.push(set_name.clone());
+                set_to_idx.insert(set_name.clone(), idx);
+            }
+        }
+
+        let n_sets = non_empty_sets.len();
+        if n_sets <= 1 {
+            return Err(DiagramError::InvalidCombination(
+                "Need at least 2 non-empty sets".to_string(),
+            ));
+        }
+
+        // 3. Filter exclusive areas to combinations whose sets are all
+        //    non-empty, and convert to RegionMask format for the fitter.
+        use crate::geometry::diagram;
+        let mut exclusive_areas_mask = HashMap::new();
+        for (combo, &area) in self.exclusive_areas.iter() {
+            if combo.sets().iter().all(|s| set_to_idx.contains_key(s)) {
+                let mask = diagram::combination_to_mask(combo, &non_empty_sets);
+                exclusive_areas_mask.insert(mask, area);
+            }
+        }
+
+        // 4. Set areas in canonical order.
+        let set_areas: Vec<f64> = non_empty_sets
+            .iter()
+            .map(|s| singleton_inclusive.get(s.as_str()).copied().unwrap_or(0.0))
+            .collect();
+
+        // 5. Pairwise relationships, computed sparsely from `exclusive_areas`.
+        let relationships = Self::compute_pairwise_relations(
+            &non_empty_sets,
+            &set_to_idx,
+            &set_areas,
+            &self.exclusive_areas,
+        );
+
+        Ok(PreprocessedSpec {
+            set_names: non_empty_sets,
+            set_to_idx,
+            exclusive_areas: exclusive_areas_mask,
+            n_sets,
+            set_areas,
+            relationships,
+        })
+    }
+
+    /// Compute pairwise relationships sparsely from exclusive areas.
+    ///
+    /// Pair-inclusive overlap of (i, j) is the sum of exclusive areas across
+    /// every input combination that contains both i and j. One pass over the
+    /// exclusive map populates the full `overlap_areas` matrix in
+    /// `O(Σ |c|²)` — no `2^|c|` subset walk.
+    fn compute_pairwise_relations(
+        set_names: &[String],
+        set_to_idx: &HashMap<String, usize>,
+        set_areas: &[f64],
+        exclusive_areas: &HashMap<Combination, f64>,
+    ) -> PairwiseRelations {
+        const EPSILON: f64 = 1e-10;
+        let n = set_names.len();
+
+        let mut subset = vec![vec![false; n]; n];
+        let mut disjoint = vec![vec![false; n]; n];
+        let mut overlap_areas = vec![vec![0.0; n]; n];
+
+        for (combo, &area) in exclusive_areas.iter() {
+            if area.abs() < EPSILON {
+                continue;
+            }
+            // Translate combo's sets into canonical indices; skip if any set
+            // is empty (and therefore filtered out).
+            let mut indices: Vec<usize> = Vec::with_capacity(combo.sets().len());
+            let mut all_non_empty = true;
+            for s in combo.sets() {
+                match set_to_idx.get(s) {
+                    Some(&idx) => indices.push(idx),
+                    None => {
+                        all_non_empty = false;
+                        break;
+                    }
+                }
+            }
+            if !all_non_empty || indices.len() < 2 {
+                continue;
+            }
+            for a in 0..indices.len() {
+                for b in (a + 1)..indices.len() {
+                    let i = indices[a];
+                    let j = indices[b];
+                    overlap_areas[i][j] += area;
+                    overlap_areas[j][i] += area;
+                }
+            }
+        }
+
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let overlap = overlap_areas[i][j];
+                if overlap < EPSILON {
+                    disjoint[i][j] = true;
+                    disjoint[j][i] = true;
+                }
+                // j ⊆ i iff overlap(i, j) == area(j).
+                if (overlap - set_areas[j]).abs() < EPSILON {
+                    subset[i][j] = true;
+                }
+                if (overlap - set_areas[i]).abs() < EPSILON {
+                    subset[j][i] = true;
+                }
+            }
+        }
+
+        PairwiseRelations {
+            n_sets: n,
+            subset,
+            disjoint,
+            overlap_areas,
+        }
     }
 
     /// Convert inclusive areas to exclusive areas (static version for builder).
@@ -308,11 +308,10 @@ impl DiagramSpec {
 ///
 /// This is created by filtering out empty sets from a DiagramSpec and
 /// computing additional metadata needed for optimization.
-#[allow(dead_code)] // Some fields reserved for future use
-/// Preprocessed specification for diagram fitting (internal).
 #[derive(Clone)]
 pub(crate) struct PreprocessedSpec {
     /// Non-empty set names in canonical order
+    #[allow(dead_code)] // Canonical order is also encoded in `set_to_idx`.
     pub(crate) set_names: Vec<String>,
 
     /// Mapping from set name to index in set_names
@@ -320,9 +319,6 @@ pub(crate) struct PreprocessedSpec {
 
     /// All non-empty combinations with their exclusive areas (internal RegionMask format)
     pub(crate) exclusive_areas: HashMap<crate::geometry::diagram::RegionMask, f64>,
-
-    /// All non-empty combinations with their inclusive areas (internal RegionMask format)
-    pub(crate) inclusive_areas: HashMap<crate::geometry::diagram::RegionMask, f64>,
 
     /// Number of non-empty sets
     pub(crate) n_sets: usize,
@@ -480,5 +476,70 @@ mod tests {
             spec.get_inclusive(&Combination::new(&["A", "B"])),
             Some(1.0)
         );
+    }
+
+    #[test]
+    fn test_get_inclusive_recovers_implicit_subsets() {
+        // 3-way intersection with no explicit pair entries: the lazy
+        // get_inclusive must still report the pair-level inclusive areas
+        // contributed by the higher-order term (matches what the eager
+        // exclusive→inclusive map produced before).
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 0.0)
+            .set("B", 5.0)
+            .intersection(&["A", "B"], 1.0)
+            .intersection(&["A", "B", "C"], 0.1)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        // A∩C inclusive comes only from the 3-way term.
+        assert_eq!(
+            spec.get_inclusive(&Combination::new(&["A", "C"])),
+            Some(0.1)
+        );
+        assert_eq!(
+            spec.get_inclusive(&Combination::new(&["B", "C"])),
+            Some(0.1)
+        );
+        // Singletons sum every superset that touches them.
+        assert!((spec.get_inclusive(&Combination::new(&["A"])).unwrap() - 1.1).abs() < 1e-10);
+        assert!((spec.get_inclusive(&Combination::new(&["B"])).unwrap() - 6.1).abs() < 1e-10);
+        assert!((spec.get_inclusive(&Combination::new(&["C"])).unwrap() - 0.1).abs() < 1e-10);
+
+        // Combinations with no contributing supersets stay None
+        // (matching the "missing = zero" convention).
+        assert_eq!(
+            spec.get_inclusive(&Combination::new(&["A", "B", "C", "D"])),
+            None
+        );
+    }
+
+    #[test]
+    fn test_inclusive_areas_matches_get_inclusive() {
+        // The bulk `inclusive_areas()` accessor must agree with
+        // pointwise `get_inclusive` on every key it produces.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .set("C", 6.0)
+            .intersection(&["A", "B"], 2.0)
+            .intersection(&["A", "C"], 3.0)
+            .intersection(&["B", "C"], 1.0)
+            .intersection(&["A", "B", "C"], 0.5)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let bulk = spec.inclusive_areas();
+        for (combo, &area) in bulk.iter() {
+            let got = spec
+                .get_inclusive(combo)
+                .expect("get_inclusive should agree with inclusive_areas keys");
+            assert!(
+                (got - area).abs() < 1e-10,
+                "mismatch for {combo}: bulk={area}, get_inclusive={got}"
+            );
+        }
     }
 }

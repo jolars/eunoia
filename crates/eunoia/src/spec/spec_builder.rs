@@ -210,24 +210,18 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // Convert to both exclusive and inclusive representations
+        // Reduce input to the canonical exclusive representation. The
+        // inclusive view is computed on demand by `DiagramSpec` and is
+        // never stored in the spec; this keeps build cost proportional to
+        // input size, with no `2^|c|` subset walk per input combination.
         let input_type = self.input_type.unwrap_or_default();
-        let (exclusive_areas, inclusive_areas) = match input_type {
-            InputType::Exclusive => {
-                let exclusive = combinations;
-                let inclusive = DiagramSpec::exclusive_to_inclusive_static(&exclusive)?;
-                (exclusive, inclusive)
-            }
-            InputType::Inclusive => {
-                let inclusive = combinations;
-                let exclusive = DiagramSpec::inclusive_to_exclusive_static(&inclusive)?;
-                (exclusive, inclusive)
-            }
+        let exclusive_areas = match input_type {
+            InputType::Exclusive => combinations,
+            InputType::Inclusive => DiagramSpec::inclusive_to_exclusive_static(&combinations)?,
         };
 
         Ok(DiagramSpec {
             exclusive_areas,
-            inclusive_areas,
             input_type,
             set_names: ordered_set_names,
         })
@@ -507,5 +501,38 @@ mod tests {
 
         let combo_ac = Combination::new(&["A", "C"]);
         assert_eq!(spec.get_inclusive(&combo_ac), None);
+    }
+
+    #[test]
+    fn test_build_scales_with_large_kway_intersection() {
+        // A single 30-way intersection used to walk 2^30 ≈ 1B subsets at
+        // build time via the eager exclusive→inclusive expansion. With the
+        // lazy inclusive view, build cost is bounded by the input size.
+        let n = 30;
+        let names: Vec<String> = (0..n).map(|i| format!("S{i}")).collect();
+        let mut builder = DiagramSpecBuilder::new();
+        for name in &names {
+            builder = builder.set(name.as_str(), 1.0);
+        }
+        let intersection_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let start = std::time::Instant::now();
+        let spec = builder
+            .intersection(&intersection_refs, 0.5)
+            .input_type(InputType::Exclusive)
+            .build()
+            .expect("30-way spec should build");
+        let elapsed = start.elapsed();
+
+        // 30 singletons + 1 thirty-way intersection.
+        assert_eq!(spec.exclusive_areas().len(), n + 1);
+
+        // A loose timing bound — anything under a second proves we're not
+        // walking 2^30 subsets. On a typical dev machine this finishes in
+        // microseconds.
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "30-way build took {:?}; expected sub-second",
+            elapsed
+        );
     }
 }

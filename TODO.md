@@ -76,33 +76,20 @@ they're pre-existing behaviour the harness now exposes.
 
 ## Spec representation follow-ups
 
-- [ ] **Make `DiagramSpec::inclusive_areas` lazy or drop it**. The eager
-      exclusive→inclusive conversion in
-      `crates/eunoia/src/spec.rs::exclusive_to_inclusive_static` is now sparse
-      in `n` but still `O(Σ 2^|combo|)` per input combination — a single
-      30-way intersection still walks 2³⁰ subsets at build time. The fitter
-      itself only consumes `exclusive_areas` (via `preprocess()`); the
-      inclusive map is stored mainly for the public `get_inclusive` /
-      `inclusive_areas()` accessors and for `compute_pairwise_relations`
-      (which only needs singletons + pairs, not the full power set of
-      every input combination).
-
-      Two options worth comparing:
-
-      1. Compute `inclusive_areas` lazily on demand via a method on
-         `DiagramSpec`, and have `compute_pairwise_relations` ask only for
-         the singleton + pair entries it needs. Keeps the public API
-         backward-compatible at the cost of a `OnceCell`-style cache or
-         per-call recomputation.
-      2. Drop the eager inclusive field entirely. Make `inclusive_areas()` /
-         `get_inclusive` compute on demand. Slightly breaking (returns
-         `HashMap<...>` by value instead of `&HashMap<...>`), but removes
-         the only remaining 2^|combo| work from the build path.
-
-      Audit who reads `inclusive_areas` first (Fitter, WASM bindings, tests,
-      examples). Worth a fresh session — touches `DiagramSpec`'s public
-      surface and every caller. Bundle with a clean follow-up PR after the
-      sparse-spec PR lands.
+- [x] **Make `DiagramSpec::inclusive_areas` lazy or drop it**. Done (option 2):
+      `DiagramSpec` now stores only `exclusive_areas`. Build no longer walks
+      the `2^|combo|` subset tree per input combination — a 30-way
+      intersection that previously expanded to 2³⁰ subsets now builds in
+      microseconds (regression test in
+      `spec/spec_builder.rs::test_build_scales_with_large_kway_intersection`).
+      Public API: `inclusive_areas()` returns `HashMap<...>` by value (was
+      `&HashMap<...>` — minor breaking change), and `get_inclusive` sums
+      contributing exclusive entries on demand. `preprocess()` computes
+      singleton inclusive areas and pairwise overlaps directly from
+      `exclusive_areas` in `O(Σ |c|²)` total — the eager full-inclusive
+      map is gone, and `PreprocessedSpec.inclusive_areas` was dropped
+      since nothing outside `spec.rs` consumed it. WASM bindings and the
+      web app use `exclusive_areas()` only and were unaffected.
 
 ## MDS architecture follow-ups
 
