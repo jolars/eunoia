@@ -1,6 +1,7 @@
 //! Builder for constructing diagram specifications.
 
 use super::{Combination, DiagramSpec, InputType};
+use crate::constants::MAX_SETS;
 use crate::error::DiagramError;
 use std::collections::{HashMap, HashSet};
 
@@ -186,6 +187,17 @@ impl DiagramSpecBuilder {
             if !ordered_set_names.contains(set_name) {
                 ordered_set_names.push(set_name.clone());
             }
+        }
+
+        // Enforce the hard cap on set count. The internal RegionMask is a
+        // usize bitset, but we cap well below the bit limit because a fully
+        // overlapping diagram has 2^n - 1 regions — sparse inputs scale fine
+        // up to MAX_SETS, but the worst case is bounded.
+        if ordered_set_names.len() > MAX_SETS {
+            return Err(DiagramError::TooManySets {
+                requested: ordered_set_names.len(),
+                max: MAX_SETS,
+            });
         }
 
         // Validate that all values are non-negative
@@ -395,6 +407,90 @@ mod tests {
         assert_eq!(spec.set_names().len(), 3);
         assert_eq!(spec.exclusive_areas().len(), 7);
         assert_eq!(spec.inclusive_areas().len(), 7);
+    }
+
+    #[test]
+    fn test_too_many_sets_rejected() {
+        // MAX_SETS + 1 distinct singletons should be rejected with TooManySets,
+        // before any 2^n preprocessing step has a chance to allocate.
+        let mut builder = DiagramSpecBuilder::new();
+        for i in 0..(MAX_SETS + 1) {
+            builder = builder.set(format!("S{i}"), 1.0);
+        }
+        let result = builder.build();
+        assert!(
+            matches!(
+                result,
+                Err(DiagramError::TooManySets { requested, max })
+                if requested == MAX_SETS + 1 && max == MAX_SETS
+            ),
+            "expected TooManySets for n = MAX_SETS + 1, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_max_sets_accepted() {
+        // Exactly MAX_SETS singletons should build cleanly. The sparse
+        // exclusive→inclusive path must not blow up at this size.
+        let mut builder = DiagramSpecBuilder::new();
+        for i in 0..MAX_SETS {
+            builder = builder.set(format!("S{i}"), 1.0);
+        }
+        let spec = builder.build().expect("MAX_SETS singletons should build");
+        assert_eq!(spec.set_names().len(), MAX_SETS);
+        // Sparse: exactly one inclusive entry per singleton, no power-set blowup.
+        assert_eq!(spec.inclusive_areas().len(), MAX_SETS);
+    }
+
+    #[test]
+    fn test_sparse_exclusive_to_inclusive_no_power_set_blowup() {
+        // 25 disjoint singletons + one pair. With the old dense
+        // exclusive→inclusive, this would walk 2^25 ≈ 33M masks. The sparse
+        // version touches only the input combinations + their subsets.
+        let mut builder = DiagramSpecBuilder::new();
+        for i in 0..25 {
+            builder = builder.set(format!("S{i}"), 1.0);
+        }
+        let spec = builder
+            .intersection(&["S0", "S1"], 0.5)
+            .input_type(InputType::Exclusive)
+            .build()
+            .expect("sparse 25-set spec should build");
+
+        // S0 inclusive = own exclusive (1.0) + pair (0.5) = 1.5
+        assert!(
+            (spec
+                .get_inclusive(&Combination::new(&["S0"]))
+                .expect("S0 inclusive")
+                - 1.5)
+                .abs()
+                < 1e-10
+        );
+        // Untouched singletons keep their input area as inclusive area.
+        assert!(
+            (spec
+                .get_inclusive(&Combination::new(&["S5"]))
+                .expect("S5 inclusive")
+                - 1.0)
+                .abs()
+                < 1e-10
+        );
+        // The pair appears in the inclusive map exactly once.
+        assert!(
+            (spec
+                .get_inclusive(&Combination::new(&["S0", "S1"]))
+                .expect("S0&S1 inclusive")
+                - 0.5)
+                .abs()
+                < 1e-10
+        );
+        // No spurious 3+ way regions get materialized.
+        assert!(spec
+            .get_inclusive(&Combination::new(&["S0", "S1", "S2"]))
+            .is_none());
+        // Total inclusive entries = 25 singletons + 1 pair = 26 (sparse).
+        assert_eq!(spec.inclusive_areas().len(), 26);
     }
 
     #[test]

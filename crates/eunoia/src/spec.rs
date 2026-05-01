@@ -229,45 +229,42 @@ impl DiagramSpec {
     }
 
     /// Convert exclusive areas to inclusive areas (static version for builder).
+    ///
+    /// Sparse: iterates only the combinations the caller provided. For each
+    /// input combination C' with exclusive area `a`, every non-empty subset
+    /// `C ⊆ C'` accumulates `a` (since any region inside C' contributes to
+    /// the inclusive area of all of its subsets). Cost is
+    /// `O(Σ 2^|C'|)` over input combinations, not `O(2^n)`. Subsets that no
+    /// input combination contributes to are simply absent from the result —
+    /// matching the documented "missing = zero" convention.
     fn exclusive_to_inclusive_static(
         exclusive: &HashMap<Combination, f64>,
     ) -> Result<HashMap<Combination, f64>, DiagramError> {
         let mut inclusive: HashMap<Combination, f64> = HashMap::new();
 
-        // First, collect all unique set names
-        let mut all_sets = std::collections::HashSet::new();
-        for combo in exclusive.keys() {
-            for set_name in combo.sets() {
-                all_sets.insert(set_name.clone());
+        for (combo_super, &area) in exclusive.iter() {
+            if area.abs() < crate::constants::EPSILON {
+                // Adding zero leaves accumulators unchanged; skip the work.
+                continue;
+            }
+
+            let sets = combo_super.sets();
+            let k = sets.len();
+            // Enumerate non-empty subsets of combo_super via bitmasks.
+            for mask in 1u64..(1u64 << k) {
+                let mut subset_sets: Vec<&str> = Vec::with_capacity(k);
+                for (i, name) in sets.iter().enumerate() {
+                    if (mask >> i) & 1 == 1 {
+                        subset_sets.push(name.as_str());
+                    }
+                }
+                let subset_combo = Combination::new(&subset_sets);
+                *inclusive.entry(subset_combo).or_insert(0.0) += area;
             }
         }
-        let all_sets: Vec<String> = all_sets.into_iter().collect();
-        let n_sets = all_sets.len();
 
-        // Generate all possible combinations (power set excluding empty)
-        for mask in 1..(1 << n_sets) {
-            let mut combo_sets = Vec::new();
-            for (i, set_name) in all_sets.iter().enumerate() {
-                if (mask & (1 << i)) != 0 {
-                    combo_sets.push(set_name.as_str());
-                }
-            }
-            let combo = Combination::new(&combo_sets);
-
-            // Compute inclusive area = sum of exclusive areas of this combo and all its supersets
-            let mut inclusive_area = 0.0;
-            for (other_combo, &other_excl) in exclusive.iter() {
-                // Include if other_combo contains all sets in combo
-                if other_combo.contains_all(&combo) {
-                    inclusive_area += other_excl;
-                }
-            }
-
-            // Only include if non-zero
-            if inclusive_area > 1e-10 {
-                inclusive.insert(combo, inclusive_area);
-            }
-        }
+        // Drop tiny accumulators that are only floating-point noise.
+        inclusive.retain(|_, area| *area > crate::constants::EPSILON);
 
         Ok(inclusive)
     }

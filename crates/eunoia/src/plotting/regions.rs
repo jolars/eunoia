@@ -3,9 +3,10 @@
 //! This module provides utilities for decomposing fitted shapes into
 //! exclusive regions (one per set combination) for plotting.
 
+use crate::geometry::diagram::{discover_regions, IntersectionPoint};
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Polygon;
-use crate::geometry::traits::{DiagramShape, Polygonize};
+use crate::geometry::traits::{Closed, DiagramShape, Polygonize};
 use crate::plotting::clip::{polygon_clip_many, ClipOperation};
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
@@ -215,16 +216,21 @@ impl Default for RegionPolygons {
 ///
 /// The algorithm:
 /// 1. Convert each shape to a polygon
-/// 2. For each possible combination of sets (power set):
+/// 2. Discover candidate regions sparsely from the actual fitted geometry (via
+///    the shape boundary intersection points), instead of enumerating the full
+///    `2^n - 1` power set. Only regions that can geometrically be non-empty
+///    are considered.
+/// 3. For each candidate region:
 ///    a. Start with polygons of sets that should be present
 ///    b. Intersect them together
 ///    c. Subtract polygons of sets that should NOT be present
-/// 3. Only include regions with non-empty polygon results
+/// 4. Only include regions with non-empty polygon results
 ///
-/// **Note**: Unlike previous versions, this function generates regions for ALL possible
-/// set combinations, not just those mentioned in the spec. This ensures that if the
-/// optimizer produces shapes with unexpected overlaps or exclusive regions, they will
-/// still be visualized correctly.
+/// **Note**: This function generates regions based on the actual fitted shapes,
+/// not the spec — so if the optimizer produces shapes with unexpected overlaps
+/// or exclusive regions, they will still be visualized. Unlike a power-set
+/// scan, the cost scales with the number of geometrically real regions, which
+/// keeps large `n` tractable on sparse layouts.
 ///
 /// # Arguments
 ///
@@ -270,15 +276,18 @@ pub fn decompose_regions<S: DiagramShape + Polygonize>(
 
     let mut result = RegionPolygons::new();
 
-    // Generate all possible combinations (power set of sets, excluding empty set)
-    // This ensures we compute regions even if they have zero area in the spec
-    // but non-zero area in the fitted layout
     let n = shapes.len();
-    let all_combinations: Vec<Vec<usize>> = (1..(1 << n))
-        .map(|mask| (0..n).filter(|&i| (mask & (1 << i)) != 0).collect())
-        .collect();
 
-    for set_indices_in_combo in all_combinations {
+    // Sparse region discovery: walk only candidate masks the actual fitted
+    // geometry can populate. Avoids the 2^n power-set scan that the previous
+    // implementation required and that put a hard practical ceiling on `n`.
+    let intersections = collect_intersections_generic(shapes, n);
+    let mut region_masks = discover_regions(shapes, &intersections, n);
+    region_masks.sort_unstable();
+
+    for mask in region_masks {
+        let set_indices_in_combo: Vec<usize> = (0..n).filter(|&i| (mask >> i) & 1 == 1).collect();
+
         if set_indices_in_combo.is_empty() {
             continue;
         }
@@ -335,12 +344,95 @@ pub fn decompose_regions<S: DiagramShape + Polygonize>(
     result
 }
 
+/// Collect pairwise boundary intersection points across arbitrary closed
+/// shapes. Uses only the `Closed` trait, so it works for any `DiagramShape`
+/// implementor — including future shapes that don't have a hand-rolled
+/// `collect_intersections_*` helper.
+///
+/// The resulting `IntersectionPoint` list is what `discover_regions` consumes
+/// to figure out which region masks the geometry can actually populate.
+fn collect_intersections_generic<S: Closed>(shapes: &[S], n_sets: usize) -> Vec<IntersectionPoint> {
+    let mut intersections = Vec::new();
+
+    for i in 0..n_sets {
+        for j in (i + 1)..n_sets {
+            let pts = shapes[i].intersection_points(&shapes[j]);
+            for point in pts {
+                let mut adopters = vec![i, j];
+                for (k, shape) in shapes.iter().enumerate() {
+                    if k != i && k != j && shape.contains_point(&point) {
+                        adopters.push(k);
+                    }
+                }
+                adopters.sort_unstable();
+
+                intersections.push(IntersectionPoint::new(point, (i, j), adopters));
+            }
+        }
+    }
+
+    intersections
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::fitter::Fitter;
     use crate::geometry::shapes::Circle;
     use crate::spec::{DiagramSpecBuilder, InputType};
+
+    #[test]
+    fn test_decompose_disjoint_circles_skips_pairwise() {
+        // Two disjoint circles. The previous power-set scanner would still
+        // walk the {A,B} mask and only discover emptiness via polygon
+        // clipping. The sparse path should skip {A,B} entirely (no boundary
+        // intersection points, no containment), keeping cost proportional to
+        // the number of geometrically real regions.
+        let circles = [
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+            Circle::new(Point::new(10.0, 0.0), 1.0),
+        ];
+        let set_names = vec!["A".to_string(), "B".to_string()];
+        let spec = DiagramSpecBuilder::new()
+            .set("A", std::f64::consts::PI)
+            .set("B", std::f64::consts::PI)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let regions = decompose_regions(&circles, &set_names, &spec, 64);
+
+        // Exactly the two singleton regions, never the pair.
+        assert_eq!(regions.len(), 2, "expected only A-only and B-only regions");
+        assert!(regions.get(&Combination::new(&["A"])).is_some());
+        assert!(regions.get(&Combination::new(&["B"])).is_some());
+        assert!(
+            regions.get(&Combination::new(&["A", "B"])).is_none(),
+            "disjoint pair should not appear in region polygons"
+        );
+    }
+
+    #[test]
+    fn test_decompose_many_disjoint_circles_scales_sparsely() {
+        // 20 disjoint circles in a row. Power-set decomposition would walk
+        // 2^20 - 1 ≈ 1M masks; the sparse path walks only the 20 singletons.
+        // This test asserts both correctness (only singletons appear) and
+        // implicitly that the call returns in well under a second.
+        let n = 20;
+        let circles: Vec<Circle> = (0..n)
+            .map(|i| Circle::new(Point::new(10.0 * i as f64, 0.0), 1.0))
+            .collect();
+        let set_names: Vec<String> = (0..n).map(|i| format!("S{i}")).collect();
+
+        let mut builder = DiagramSpecBuilder::new();
+        for name in &set_names {
+            builder = builder.set(name.clone(), std::f64::consts::PI);
+        }
+        let spec = builder.input_type(InputType::Exclusive).build().unwrap();
+
+        let regions = decompose_regions(&circles, &set_names, &spec, 32);
+        assert_eq!(regions.len(), n, "expected one region per disjoint circle");
+    }
 
     #[test]
     fn test_decompose_two_squares() {

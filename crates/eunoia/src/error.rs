@@ -26,6 +26,11 @@ pub enum DiagramError {
     /// `n ∈ 1..=5`; higher `n` requires non-ellipse curves (Edwards's
     /// cogwheels) which eunoia does not support.
     UnsupportedSetCount(usize),
+
+    /// Diagram specification exceeds the supported number of sets
+    /// ([`crate::constants::MAX_SETS`]). The first field is the requested
+    /// count, the second is the supported maximum.
+    TooManySets { requested: usize, max: usize },
 }
 
 impl Display for DiagramError {
@@ -52,6 +57,13 @@ impl Display for DiagramError {
             }
             DiagramError::UnsupportedSetCount(n) => {
                 write!(f, "Unsupported set count: {}", n)
+            }
+            DiagramError::TooManySets { requested, max } => {
+                write!(
+                    f,
+                    "Too many sets: {} requested, but maximum supported is {}",
+                    requested, max
+                )
             }
         }
     }
