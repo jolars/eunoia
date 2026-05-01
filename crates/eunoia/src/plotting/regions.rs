@@ -126,13 +126,16 @@ impl RegionPolygons {
 
     /// Computes a label anchor point for every set in `set_names`.
     ///
+    /// **Note:** when sets are fully nested (e.g. `B, C, D ⊆ A`) the
+    /// exclusive region polygons stored in this `RegionPolygons` lose their
+    /// hole structure during clipping, so this method may return a poor
+    /// anchor (e.g. A's geometric centre, overlapping the inner shapes).
+    /// For correct nested-set behaviour use [`PlotData::set_anchors`] which
+    /// is computed from the shape outlines directly with hole handling.
+    ///
     /// For each set, this unions every region polygon that contains the set
-    /// (i.e. all of the set's exclusive regions) into a single shape, splits
-    /// it into connected components, and returns the pole of inaccessibility
-    /// of the component with the largest pole-to-boundary distance. This
-    /// matches eulerr's `locate_centers` strategy for placing per-set labels:
-    /// pick the cluster of regions where the label has the most breathing
-    /// room.
+    /// into a single shape and returns the pole of inaccessibility of the
+    /// component with the largest pole-to-boundary distance.
     ///
     /// Sets that are absent from every region are omitted from the result.
     ///
@@ -200,6 +203,283 @@ impl RegionPolygons {
 
         result
     }
+}
+
+/// Compute the pole of inaccessibility of a region whose polygons may include
+/// holes (CW rings interleaved with CCW outer rings, as produced by the
+/// clipper when one shape sits inside another).
+///
+/// Each ring is classified by its signed area: positive (CCW) is treated as
+/// an outer contour, negative (CW) as a hole. Holes are assigned to the
+/// smallest enclosing outer that geometrically contains them. The pole
+/// returned is the one with the largest minimum distance to every boundary
+/// (outer rim and assigned holes), found by quad-tree refinement of the
+/// bounding box.
+///
+/// Implemented in-house rather than via `polylabel-mini` because the latter
+/// scores cells using distance to the exterior ring only — it ignores hole
+/// boundaries when ranking candidates, so a point sitting right next to a
+/// hole gets credited with the same clearance as a point far from any hole.
+///
+/// Returns `None` when the polygon list contains no positive-area outer
+/// contour.
+#[cfg(feature = "plotting")]
+pub(crate) fn poi_with_holes(polys: &[Polygon], precision: f64) -> Option<(Point, f64)> {
+    fn signed_area(verts: &[Point]) -> f64 {
+        if verts.len() < 3 {
+            return 0.0;
+        }
+        let n = verts.len();
+        let mut s = 0.0;
+        for i in 0..n {
+            let j = (i + 1) % n;
+            s += verts[i].x() * verts[j].y() - verts[j].x() * verts[i].y();
+        }
+        0.5 * s
+    }
+
+    fn point_in_ring(p: &Point, verts: &[Point]) -> bool {
+        let n = verts.len();
+        if n < 3 {
+            return false;
+        }
+        let mut inside = false;
+        let mut j = n - 1;
+        for i in 0..n {
+            let (xi, yi) = (verts[i].x(), verts[i].y());
+            let (xj, yj) = (verts[j].x(), verts[j].y());
+            let intersect = ((yi > p.y()) != (yj > p.y()))
+                && (p.x() < (xj - xi) * (p.y() - yi) / (yj - yi + f64::EPSILON) + xi);
+            if intersect {
+                inside = !inside;
+            }
+            j = i;
+        }
+        inside
+    }
+
+    fn min_dist_to_rings(px: f64, py: f64, rings: &[&[Point]]) -> f64 {
+        let mut best = f64::INFINITY;
+        for ring in rings {
+            let n = ring.len();
+            if n < 2 {
+                continue;
+            }
+            for i in 0..n {
+                let a = ring[i];
+                let b = ring[(i + 1) % n];
+                let dx = b.x() - a.x();
+                let dy = b.y() - a.y();
+                let len2 = dx * dx + dy * dy;
+                let t = if len2 > 0.0 {
+                    (((px - a.x()) * dx + (py - a.y()) * dy) / len2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let qx = a.x() + t * dx;
+                let qy = a.y() + t * dy;
+                let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
+                if d < best {
+                    best = d;
+                }
+            }
+        }
+        best
+    }
+
+    /// Signed distance: positive when (px, py) is inside `outer` and outside
+    /// every hole; negative otherwise. Magnitude is min distance to any ring.
+    fn signed_clearance(px: f64, py: f64, outer: &[Point], holes: &[Vec<Point>]) -> f64 {
+        let mut all: Vec<&[Point]> = Vec::with_capacity(1 + holes.len());
+        all.push(outer);
+        for h in holes {
+            all.push(h.as_slice());
+        }
+        let dist = min_dist_to_rings(px, py, &all);
+
+        let in_outer = point_in_ring(&Point::new(px, py), outer);
+        let in_any_hole = holes.iter().any(|h| point_in_ring(&Point::new(px, py), h));
+        if in_outer && !in_any_hole {
+            dist
+        } else {
+            -dist
+        }
+    }
+
+    // Collect non-degenerate rings. We don't trust the winding order to
+    // distinguish outer from hole — i_overlay outputs the outer ring with
+    // the opposite signed-area sign from the geographic convention, and
+    // depending on the chain of operations it can vary. Instead, classify
+    // by topological containment: a ring is a hole iff some other ring
+    // strictly contains a sample point of it; otherwise it's an outer. The
+    // hole is assigned to its smallest enclosing outer.
+    let rings: Vec<(Vec<Point>, f64)> = polys
+        .iter()
+        .filter_map(|p| {
+            let v = p.vertices().to_vec();
+            let sa = signed_area(&v).abs();
+            if sa < 1e-12 || v.len() < 3 {
+                None
+            } else {
+                Some((v, sa))
+            }
+        })
+        .collect();
+    if rings.is_empty() {
+        return None;
+    }
+
+    let n = rings.len();
+    // For each ring, count how many other rings contain its first vertex.
+    let mut containment_depth = vec![0usize; n];
+    let mut smallest_container: Vec<Option<usize>> = vec![None; n];
+    for i in 0..n {
+        let probe = match rings[i].0.first() {
+            Some(p) => *p,
+            None => continue,
+        };
+        for (j, (other, area_j)) in rings.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            if point_in_ring(&probe, other) {
+                containment_depth[i] += 1;
+                let cur_area = smallest_container[i]
+                    .and_then(|k| rings.get(k).map(|(_, a)| *a))
+                    .unwrap_or(f64::INFINITY);
+                if *area_j < cur_area {
+                    smallest_container[i] = Some(j);
+                }
+            }
+        }
+    }
+
+    // Outers: even depth (0, 2, …). Holes: odd depth (1, 3, …). For each
+    // outer we collect the holes whose smallest container is this outer.
+    let mut outers: Vec<(Vec<Point>, f64)> = Vec::new();
+    let mut outer_idx_map: Vec<Option<usize>> = vec![None; n];
+    for (i, ring) in rings.iter().enumerate() {
+        if containment_depth[i] % 2 == 0 {
+            outer_idx_map[i] = Some(outers.len());
+            outers.push(ring.clone());
+        }
+    }
+    if outers.is_empty() {
+        return None;
+    }
+    let mut outer_holes: Vec<Vec<Vec<Point>>> = vec![Vec::new(); outers.len()];
+    for (i, ring) in rings.iter().enumerate() {
+        if containment_depth[i] % 2 == 1 {
+            if let Some(parent) = smallest_container[i].and_then(|k| outer_idx_map[k]) {
+                outer_holes[parent].push(ring.0.clone());
+            }
+        }
+    }
+
+    // Quad-tree refinement (the polylabel algorithm), but with a clearance
+    // metric that respects holes. For each outer + its assigned holes, find
+    // the cell whose centre maximises signed_clearance.
+    let mut best_overall: Option<(Point, f64)> = None;
+    for (i, (outer, _)) in outers.iter().enumerate() {
+        let assigned = &outer_holes[i];
+
+        // Bounding box of the outer ring.
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for p in outer {
+            min_x = min_x.min(p.x());
+            max_x = max_x.max(p.x());
+            min_y = min_y.min(p.y());
+            max_y = max_y.max(p.y());
+        }
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+        if width <= 0.0 || height <= 0.0 {
+            continue;
+        }
+        let cell_size = width.min(height);
+
+        // Priority queue keyed by upper bound on a cell's clearance.
+        #[derive(Copy, Clone)]
+        struct Cell {
+            x: f64,
+            y: f64,
+            h: f64,
+            d: f64,  // signed clearance at the centre
+            ub: f64, // upper bound on clearance anywhere in the cell
+        }
+        impl Eq for Cell {}
+        impl PartialEq for Cell {
+            fn eq(&self, other: &Self) -> bool {
+                self.ub == other.ub
+            }
+        }
+        impl PartialOrd for Cell {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for Cell {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.ub
+                    .partial_cmp(&other.ub)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }
+        }
+
+        let make_cell = |x: f64, y: f64, h: f64| -> Cell {
+            let d = signed_clearance(x, y, outer, assigned);
+            Cell {
+                x,
+                y,
+                h,
+                d,
+                ub: d + h * std::f64::consts::SQRT_2,
+            }
+        };
+
+        let mut queue: std::collections::BinaryHeap<Cell> = std::collections::BinaryHeap::new();
+
+        // Seed with the bounding-box grid at half-cell extent.
+        let mut x = min_x;
+        let h0 = cell_size / 2.0;
+        while x < max_x {
+            let mut y = min_y;
+            while y < max_y {
+                queue.push(make_cell(x + h0, y + h0, h0));
+                y += cell_size;
+            }
+            x += cell_size;
+        }
+        // Also try the centroid as an initial guess.
+        let cx = (min_x + max_x) / 2.0;
+        let cy = (min_y + max_y) / 2.0;
+        let mut best = make_cell(cx, cy, 0.0);
+
+        while let Some(cell) = queue.pop() {
+            if cell.d > best.d {
+                best = cell;
+            }
+            if cell.ub - best.d <= precision {
+                continue;
+            }
+            let nh = cell.h / 2.0;
+            queue.push(make_cell(cell.x - nh, cell.y - nh, nh));
+            queue.push(make_cell(cell.x + nh, cell.y - nh, nh));
+            queue.push(make_cell(cell.x - nh, cell.y + nh, nh));
+            queue.push(make_cell(cell.x + nh, cell.y + nh, nh));
+        }
+
+        if best.d > 0.0 {
+            let pt = Point::new(best.x, best.y);
+            if best_overall.map(|(_, d)| best.d > d).unwrap_or(true) {
+                best_overall = Some((pt, best.d));
+            }
+        }
+    }
+    best_overall
 }
 
 impl Default for RegionPolygons {
