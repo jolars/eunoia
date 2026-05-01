@@ -7,17 +7,12 @@ file. The corpus lives at `crates/eunoia/src/test_utils/corpus.rs`; the
 default-suite tests are in `crates/eunoia/src/fitter/corpus_quality.rs` and
 `crates/eunoia/src/fitter/synthetic_groundtruth.rs`.
 
-- [ ] **Bench dedupe**: move the 4 helpers in
-      `crates/eunoia/benches/initial_layout.rs` (`three_circle_easy`,
-      `three_circle_user_case`, `issue28_four_set_superset`, `issue28_six_set`)
-      into the corpus and have the bench import from there. They overlap with
-      the corpus entries `eulerape_3_set` (-ish), `wilkinson_6_set`, and
-      `three_inside_fourth`. PR 1 left the bench alone to keep the diff small.
-
-- [ ] **eulerr cross-comparison**: capture R-side `diagError` per spec (eulerr)
-      and compare against the Rust corpus output. Useful baseline ahead of
-      optimizer redesigns, but needs an R-output capture script and a stable
-      harness in eulerr --- out of scope for the eunoia PR.
+- [x] **Bench dedupe**: `benches/initial_layout.rs` now imports specs via
+      `corpus::get(...)`. The two issue-#28 helpers reuse the existing
+      `wilkinson_6_set` / `three_inside_fourth` entries; the two unique
+      probes were promoted to corpus entries `three_set_small_overlaps`
+      and `three_set_triple_only`. The bench is now gated on
+      `required-features = ["corpus"]`.
 
 ## Surfaced fitter issues (regressions to investigate)
 

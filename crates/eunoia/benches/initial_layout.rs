@@ -11,14 +11,15 @@
 //! are the primary signal for "is this solver fast enough?", and the quality
 //! report tells you "does it actually find the basin?".
 //!
-//! Run with: `cargo bench -p eunoia --bench initial_layout`
-//! Filter:   `cargo bench -p eunoia --bench initial_layout -- 3-circle`
+//! Run with: `cargo bench -p eunoia --bench initial_layout --features corpus`
+//! Filter:   `cargo bench -p eunoia --bench initial_layout --features corpus -- 3-circle`
 
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use eunoia::geometry::shapes::{Circle, Ellipse};
-use eunoia::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
+use eunoia::spec::DiagramSpec;
+use eunoia::test_utils::corpus::{self, QUALITY_SEEDS};
 use eunoia::{Fitter, MdsSolver};
 
 const SOLVERS: [(MdsSolver, &str); 3] = [
@@ -32,68 +33,9 @@ const SOLVERS: [(MdsSolver, &str); 3] = [
 /// across-seed variance is a separate question handled by the quality report.
 const TIMING_SEED: u64 = 42;
 
-/// Seeds swept by the quality report (printed to stdout once per `cargo bench`
-/// invocation). Wide enough to catch unlucky basins without dominating runtime.
-const QUALITY_SEEDS: [u64; 16] = [1, 2, 3, 7, 13, 17, 23, 29, 31, 37, 41, 42, 47, 53, 59, 61];
-
-fn three_circle_easy() -> DiagramSpec {
-    DiagramSpecBuilder::new()
-        .set("A", 10.0)
-        .set("B", 10.0)
-        .set("C", 10.0)
-        .intersection(&["A", "B"], 2.0)
-        .intersection(&["B", "C"], 2.0)
-        .intersection(&["A", "C"], 2.0)
-        .intersection(&["A", "B", "C"], 0.5)
-        .build()
-        .unwrap()
-}
-
-fn three_circle_user_case() -> DiagramSpec {
-    DiagramSpecBuilder::new()
-        .set("A", 2.2)
-        .set("B", 2.0)
-        .set("C", 3.0)
-        .intersection(&["A", "B", "C"], 1.0)
-        .input_type(InputType::Exclusive)
-        .build()
-        .unwrap()
-}
-
-fn issue28_four_set_superset() -> DiagramSpec {
-    DiagramSpecBuilder::new()
-        .set("A", 30.0)
-        .intersection(&["A", "B"], 3.0)
-        .intersection(&["A", "C"], 3.0)
-        .intersection(&["A", "D"], 3.0)
-        .intersection(&["A", "B", "C"], 2.0)
-        .intersection(&["A", "B", "D"], 2.0)
-        .intersection(&["A", "C", "D"], 2.0)
-        .intersection(&["A", "B", "C", "D"], 1.0)
-        .build()
-        .unwrap()
-}
-
-fn issue28_six_set() -> DiagramSpec {
-    DiagramSpecBuilder::new()
-        .set("A", 4.0)
-        .set("B", 6.0)
-        .set("C", 3.0)
-        .set("D", 2.0)
-        .set("E", 7.0)
-        .set("F", 3.0)
-        .intersection(&["A", "B"], 2.0)
-        .intersection(&["A", "F"], 2.0)
-        .intersection(&["B", "C"], 2.0)
-        .intersection(&["B", "D"], 1.0)
-        .intersection(&["B", "F"], 2.0)
-        .intersection(&["C", "D"], 1.0)
-        .intersection(&["D", "E"], 1.0)
-        .intersection(&["E", "F"], 1.0)
-        .intersection(&["A", "B", "F"], 1.0)
-        .intersection(&["B", "C", "D"], 1.0)
-        .build()
-        .unwrap()
+fn corpus_spec(name: &'static str) -> DiagramSpec {
+    let entry = corpus::get(name).expect("corpus entry");
+    (entry.build)()
 }
 
 fn fit_circle(spec: &DiagramSpec, solver: MdsSolver, seed: u64) -> Option<f64> {
@@ -146,22 +88,22 @@ fn cases() -> Vec<Case> {
     vec![
         Case {
             name: "3circle_easy",
-            spec: three_circle_easy(),
+            spec: corpus_spec("three_set_small_overlaps"),
             runner: fit_circle,
         },
         Case {
             name: "3circle_user",
-            spec: three_circle_user_case(),
+            spec: corpus_spec("three_set_triple_only"),
             runner: fit_circle,
         },
         Case {
             name: "issue28_4set_superset_ellipse",
-            spec: issue28_four_set_superset(),
+            spec: corpus_spec("three_inside_fourth"),
             runner: fit_ellipse,
         },
         Case {
             name: "issue28_6set_ellipse",
-            spec: issue28_six_set(),
+            spec: corpus_spec("wilkinson_6_set"),
             runner: fit_ellipse,
         },
     ]
@@ -253,17 +195,17 @@ fn pool_cases() -> Vec<PoolCase> {
     vec![
         PoolCase {
             name: "issue28_4set_superset_ellipse",
-            spec: issue28_four_set_superset(),
+            spec: corpus_spec("three_inside_fourth"),
             runner: fit_ellipse_pool,
         },
         PoolCase {
             name: "issue28_6set_ellipse",
-            spec: issue28_six_set(),
+            spec: corpus_spec("wilkinson_6_set"),
             runner: fit_ellipse_pool,
         },
         PoolCase {
             name: "3circle_user",
-            spec: three_circle_user_case(),
+            spec: corpus_spec("three_set_triple_only"),
             runner: fit_circle_pool,
         },
     ]

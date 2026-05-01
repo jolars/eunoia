@@ -129,8 +129,9 @@ pub const QUALITY_SEEDS: [u64; 16] = [1, 2, 3, 7, 13, 17, 23, 29, 31, 37, 41, 42
 /// quality-report binary.
 pub const TEST_SEEDS: [u64; 3] = [1, 42, 7];
 
-/// All 17 corpus specs in a deterministic order matching
-/// `eulerr/tests/testthat/test-reproducibility.R:1-188`.
+/// All corpus specs in a deterministic order. Entries 0-16 mirror
+/// `eulerr/tests/testthat/test-reproducibility.R:1-188`; subsequent
+/// entries are issue-derived and bench-shared probes.
 pub fn all() -> &'static [CorpusEntry] {
     &CORPUS
 }
@@ -147,7 +148,7 @@ pub fn get(name: &str) -> Option<&'static CorpusEntry> {
 // that can't be fit at all (single-set #16) are marked `SanityOnly`.
 
 #[allow(clippy::too_many_lines)]
-static CORPUS: [CorpusEntry; 27] = [
+static CORPUS: [CorpusEntry; 29] = [
     CorpusEntry {
         name: "uniform_3_set",
         build: spec_uniform_3_set,
@@ -511,6 +512,37 @@ static CORPUS: [CorpusEntry; 27] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: Some(2e-2),
         max_diag_error_square: Some(5e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+        fittable_square: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "three_set_small_overlaps",
+        build: spec_three_set_small_overlaps,
+        category: Category::Easy,
+        // Uniform 3-set with small overlap fractions (~14% pairwise).
+        // Same rotational-symmetry obstruction as `uniform_3_set` for
+        // circles and squares, but the small overlap magnitude makes the
+        // residual error proportionally smaller. Ellipses fit it cleanly.
+        max_diag_error_circle: Some(3e-2),
+        max_diag_error_ellipse: None,
+        max_diag_error_square: Some(5e-2),
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+        fittable_square: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "three_set_triple_only",
+        build: spec_three_set_triple_only,
+        category: Category::Hard,
+        // 3-set where every pairwise overlap equals the triple (no
+        // pairwise-only regions). Circles and axis-aligned squares cannot
+        // represent this exactly — `A∩B = A∩B∩C` forces a degenerate
+        // configuration in either family — and land at `~1.22e-1` across
+        // `TEST_SEEDS`. Ellipses fit it to `~3.3e-3`.
+        max_diag_error_circle: Some(1.5e-1),
+        max_diag_error_ellipse: Some(2e-2),
+        max_diag_error_square: Some(1.5e-1),
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
@@ -1074,14 +1106,43 @@ fn spec_issue111_3_set_asymmetric() -> DiagramSpec {
         .expect("issue111_3_set_asymmetric")
 }
 
+// Uniform 3-set with small overlap fractions. Used as the easy 3-circle
+// case in `benches/initial_layout.rs`.
+fn spec_three_set_small_overlaps() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 10.0)
+        .set("B", 10.0)
+        .set("C", 10.0)
+        .intersection(&["A", "B"], 2.0)
+        .intersection(&["B", "C"], 2.0)
+        .intersection(&["A", "C"], 2.0)
+        .intersection(&["A", "B", "C"], 0.5)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("three_set_small_overlaps")
+}
+
+// 3-set with only a triple intersection — pairwise-only regions are zero.
+// User-reported case kept as a fitter probe in `benches/initial_layout.rs`.
+fn spec_three_set_triple_only() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("A", 2.2)
+        .set("B", 2.0)
+        .set("C", 3.0)
+        .intersection(&["A", "B", "C"], 1.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("three_set_triple_only")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn corpus_has_27_unique_named_entries() {
+    fn corpus_has_29_unique_named_entries() {
         let entries = all();
-        assert_eq!(entries.len(), 27);
+        assert_eq!(entries.len(), 29);
         let mut names: Vec<&str> = entries.iter().map(|e| e.name).collect();
         names.sort();
         let mut deduped = names.clone();
