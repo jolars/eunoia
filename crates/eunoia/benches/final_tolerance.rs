@@ -147,7 +147,7 @@ impl Knob {
 
 const BASELINE_TOL: f64 = 1e-6;
 
-fn apply_tol_circle<'a>(fitter: Fitter<'a, Circle>, knob: Knob, tol: f64) -> Fitter<'a, Circle> {
+fn apply_tol_circle(fitter: Fitter<'_, Circle>, knob: Knob, tol: f64) -> Fitter<'_, Circle> {
     match knob {
         Knob::Joint => fitter.tolerance(tol),
         // For per-knob sweeps, the other two knobs are pinned at the default
@@ -158,7 +158,7 @@ fn apply_tol_circle<'a>(fitter: Fitter<'a, Circle>, knob: Knob, tol: f64) -> Fit
     }
 }
 
-fn apply_tol_ellipse<'a>(fitter: Fitter<'a, Ellipse>, knob: Knob, tol: f64) -> Fitter<'a, Ellipse> {
+fn apply_tol_ellipse(fitter: Fitter<'_, Ellipse>, knob: Knob, tol: f64) -> Fitter<'_, Ellipse> {
     match knob {
         Knob::Joint => fitter.tolerance(tol),
         Knob::Xtol => fitter.tolerance(BASELINE_TOL).xtol(tol),
