@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/jolars/eunoia/compare/v0.7.0...v0.8.0) (2026-05-01)
+
+### Breaking changes
+- make inclusive_areas lazy ([`36a4b47`](https://github.com/jolars/eunoia/commit/36a4b477190231b1f2960528d3a785ef92d5c41b))
+- return geometric params for ellipses, add optim-spec one ([`36f3325`](https://github.com/jolars/eunoia/commit/36f3325bf9910f5e9c08564cd5fa0dbcececcf26))
+
+### Features
+- return geometric params for ellipses, add optim-spec one ([`36f3325`](https://github.com/jolars/eunoia/commit/36f3325bf9910f5e9c08564cd5fa0dbcececcf26))
+
+### Performance Improvements
+- make inclusive_areas lazy ([`36a4b47`](https://github.com/jolars/eunoia/commit/36a4b477190231b1f2960528d3a785ef92d5c41b))
+- don't map out all 2^n - 1 areas ([`64a64d1`](https://github.com/jolars/eunoia/commit/64a64d11e2bc944c78e1d504591b34cc683ced11))
 ## [0.7.0](https://github.com/jolars/eunoia/compare/v0.6.0...v0.7.0) (2026-05-01)
 
 ### Features
