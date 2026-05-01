@@ -25,6 +25,13 @@ export interface EllipseShape {
   label: string;
 }
 
+export interface SquareShape {
+  x: number;
+  y: number;
+  side: number;
+  label: string;
+}
+
 export interface RegionPolygon {
   combination: string;
   polygons: Polygon[];
@@ -44,17 +51,18 @@ export interface FitMetrics {
 
 export interface FitResult {
   shapeMode: "outline" | "region";
-  shapeType: "circle" | "ellipse";
+  shapeType: "circle" | "ellipse" | "square";
   polygons: Polygon[];
   circles: CircleShape[];
   ellipses: EllipseShape[];
+  squares: SquareShape[];
   regions: RegionPolygon[];
   metrics: FitMetrics;
 }
 
 export type Row = { input: string; size: number };
 export type InputType = "exclusive" | "inclusive";
-export type ShapeType = "circle" | "ellipse";
+export type ShapeType = "circle" | "ellipse" | "square";
 export type DiagramType = "euler" | "venn";
 /** Set count for canonical Venn diagrams. Limited to the range supported by `VennDiagram::new` (1..=5). */
 export type VennSetCount = 1 | 2 | 3 | 4 | 5;

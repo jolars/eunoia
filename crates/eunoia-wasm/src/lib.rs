@@ -3,7 +3,7 @@
 //! This crate provides WebAssembly bindings for the eunoia library,
 //! enabling Euler and Venn diagram generation in web browsers.
 
-use eunoia::geometry::shapes::{Circle, Ellipse};
+use eunoia::geometry::shapes::{Circle, Ellipse, Square};
 use eunoia::geometry::traits::Polygonize;
 use eunoia::loss::LossType;
 use eunoia::Optimizer;
@@ -164,6 +164,29 @@ impl WasmEllipse {
             rotation,
             label,
         }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn label(&self) -> String {
+        self.label.clone()
+    }
+}
+
+/// An axis-aligned square representation for WASM with label
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmSquare {
+    pub x: f64,
+    pub y: f64,
+    pub side: f64,
+    label: String,
+}
+
+#[wasm_bindgen]
+impl WasmSquare {
+    #[wasm_bindgen(constructor)]
+    pub fn new(x: f64, y: f64, side: f64, label: String) -> Self {
+        Self { x, y, side, label }
     }
 
     #[wasm_bindgen(getter)]
@@ -376,12 +399,45 @@ impl EllipseResult {
     }
 }
 
+/// Result with squares and debug info
+#[wasm_bindgen]
+pub struct SquareResult {
+    squares: Vec<WasmSquare>,
+    loss: f64,
+    target_areas_json: String,
+    fitted_areas_json: String,
+}
+
+#[wasm_bindgen]
+impl SquareResult {
+    #[wasm_bindgen(getter)]
+    pub fn squares(&self) -> Vec<WasmSquare> {
+        self.squares.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn loss(&self) -> f64 {
+        self.loss
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target_areas_json(&self) -> String {
+        self.target_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fitted_areas_json(&self) -> String {
+        self.fitted_areas_json.clone()
+    }
+}
+
 /// Result with polygons and debug info
 #[wasm_bindgen]
 pub struct PolygonResult {
     polygons: Vec<WasmPolygon>,
     circles: Vec<WasmCircle>,
     ellipses: Vec<WasmEllipse>,
+    squares: Vec<WasmSquare>,
     pub loss: f64,
     pub stress: f64,
     pub diag_error: f64,
@@ -407,6 +463,11 @@ impl PolygonResult {
     #[wasm_bindgen(getter)]
     pub fn ellipses(&self) -> Vec<WasmEllipse> {
         self.ellipses.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn squares(&self) -> Vec<WasmSquare> {
+        self.squares.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -1168,6 +1229,95 @@ pub fn generate_ellipses_from_spec(
     })
 }
 
+/// Generate square layout from diagram specification.
+///
+/// Mirrors [`generate_from_spec`] (circles) and [`generate_ellipses_from_spec`]
+/// for axis-aligned [`Square`]s. Each fitted square is parameterised as
+/// `[x, y, side]`.
+#[wasm_bindgen]
+pub fn generate_from_spec_square(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+) -> Result<SquareResult, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let mut fitter = Fitter::<Square>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let wasm_squares: Vec<WasmSquare> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|shape: &Square| {
+                WasmSquare::new(
+                    shape.center().x(),
+                    shape.center().y(),
+                    shape.side(),
+                    name.to_string(),
+                )
+            })
+        })
+        .collect();
+
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(SquareResult {
+        squares: wasm_squares,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+    })
+}
+
 /// Generate circle layout and convert to polygons for rendering
 #[wasm_bindgen]
 pub fn generate_circles_as_polygons(
@@ -1273,6 +1423,7 @@ pub fn generate_circles_as_polygons(
         polygons: wasm_polygons,
         circles: wasm_circles,
         ellipses: vec![],
+        squares: vec![],
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -1393,6 +1544,125 @@ pub fn generate_ellipses_as_polygons(
         polygons: wasm_polygons,
         circles: vec![],
         ellipses: wasm_ellipses,
+        squares: vec![],
+        loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
+    })
+}
+
+/// Generate square layout and convert to polygons for rendering
+#[wasm_bindgen]
+pub fn generate_squares_as_polygons(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
+) -> Result<PolygonResult, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let mut fitter = Fitter::<Square>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagnostics = extract_diagnostics(&layout)?;
+
+    let wasm_squares: Vec<WasmSquare> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|square: &Square| {
+                WasmSquare::new(
+                    square.center().x(),
+                    square.center().y(),
+                    square.side(),
+                    name.to_string(),
+                )
+            })
+        })
+        .collect();
+
+    let wasm_polygons: Vec<WasmPolygon> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|square: &Square| {
+                let polygon = square.polygonize(n_vertices);
+                let vertices: Vec<WasmPoint> = polygon
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: name.to_string(),
+                }
+            })
+        })
+        .collect();
+
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(PolygonResult {
+        polygons: wasm_polygons,
+        circles: vec![],
+        ellipses: vec![],
+        squares: wasm_squares,
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -1622,6 +1892,111 @@ pub fn generate_region_polygons_ellipses(
     })
 }
 
+/// Generate region polygons from squares (for filled diagram visualization)
+#[wasm_bindgen]
+pub fn generate_region_polygons_squares(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    use eunoia::fitter::Fitter;
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type = match input_type.as_str() {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => return Err(JsValue::from_str("Invalid input type")),
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in &specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
+    }
+
+    let diagram_spec = builder
+        .input_type(input_type)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
+    let mut fitter = Fitter::<Square>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagnostics = extract_diagnostics(&layout)?;
+
+    let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
+
+    let mut wasm_regions = Vec::new();
+    for (combination, polygons) in region_polygons.iter() {
+        let wasm_polygons: Vec<WasmPolygon> = polygons
+            .iter()
+            .map(|poly| {
+                let vertices: Vec<WasmPoint> = poly
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: combination.to_string(),
+                }
+            })
+            .collect();
+
+        wasm_regions.push(WasmRegion {
+            combination: combination.to_string(),
+            polygons: wasm_polygons,
+        });
+    }
+
+    let target_areas: std::collections::HashMap<String, f64> = layout
+        .requested()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+
+    Ok(WasmRegionPolygons {
+        regions: wasm_regions,
+        loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
+    })
+}
+
 /// Build a canonical n-set Venn diagram (1 ≤ n ≤ 5) and return per-set
 /// ellipse outlines as polygons.
 ///
@@ -1685,6 +2060,7 @@ pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResu
         polygons: wasm_polygons,
         circles: vec![],
         ellipses: wasm_ellipses,
+        squares: vec![],
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,

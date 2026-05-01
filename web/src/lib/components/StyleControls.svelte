@@ -7,6 +7,7 @@
     if (r) {
       if (r.circles.length > 0) return r.circles.map((c) => c.label);
       if (r.ellipses.length > 0) return r.ellipses.map((e) => e.label);
+      if (r.squares.length > 0) return r.squares.map((s) => s.label);
       if (r.polygons.length > 0) return r.polygons.map((p) => p.label);
       const seen = new Set<string>();
       for (const region of r.regions) {

@@ -137,6 +137,7 @@ function runVennFit(wasm: any, inputs: FitInputs): FitResult {
       polygons: [],
       circles: [],
       ellipses: [],
+      squares: [],
       regions,
       metrics: {
         loss: result.loss,
@@ -185,6 +186,7 @@ function runVennFit(wasm: any, inputs: FitInputs): FitResult {
     polygons: normPolygons,
     circles: [],
     ellipses: normEllipses,
+    squares: [],
     regions: [],
     metrics: {
       loss: result.loss,
@@ -217,7 +219,9 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
     const fn =
       inputs.shapeType === "circle"
         ? wasm.generate_region_polygons_circles
-        : wasm.generate_region_polygons_ellipses;
+        : inputs.shapeType === "square"
+          ? wasm.generate_region_polygons_squares
+          : wasm.generate_region_polygons_ellipses;
     const result = fn(
       specs,
       inputs.inputType,
@@ -256,6 +260,7 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
       polygons: [],
       circles: [],
       ellipses: [],
+      squares: [],
       regions,
       metrics: {
         loss: result.loss,
@@ -273,7 +278,9 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
   const fn =
     inputs.shapeType === "circle"
       ? wasm.generate_circles_as_polygons
-      : wasm.generate_ellipses_as_polygons;
+      : inputs.shapeType === "square"
+        ? wasm.generate_squares_as_polygons
+        : wasm.generate_ellipses_as_polygons;
   const result = fn(
     specs,
     inputs.inputType,
@@ -285,6 +292,7 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
   const polygons = Array.from(result.polygons) as any[];
   const circles = Array.from(result.circles) as any[];
   const ellipses = Array.from(result.ellipses) as any[];
+  const squares = Array.from(result.squares) as any[];
 
   const polyVerts = polygons.map(
     (p) => Array.from(p.vertices) as { x: number; y: number }[],
@@ -315,6 +323,12 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
     semi_minor: e.semi_minor * ctx.scale,
     rotation: e.rotation,
   }));
+  const normSquares = squares.map((s: any) => ({
+    label: s.label as string,
+    x: (s.x - ctx.minX) * ctx.scale,
+    y: (s.y - ctx.minY) * ctx.scale,
+    side: s.side * ctx.scale,
+  }));
 
   return {
     shapeMode: "outline",
@@ -322,6 +336,7 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
     polygons: normPolygons,
     circles: normCircles,
     ellipses: normEllipses,
+    squares: normSquares,
     regions: [],
     metrics: {
       loss: result.loss,

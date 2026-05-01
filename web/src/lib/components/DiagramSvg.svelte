@@ -71,6 +71,11 @@
         consume({ x: e.x - dx, y: e.y - dy });
         consume({ x: e.x + dx, y: e.y + dy });
       }
+      for (const s of result.squares) {
+        const h = s.side / 2;
+        consume({ x: s.x - h, y: s.y - h });
+        consume({ x: s.x + h, y: s.y + h });
+      }
     }
 
     if (!isFinite(minX)) {
@@ -93,6 +98,7 @@
     }
     if (result.circles.length > 0) return result.circles.map((c) => c.label);
     if (result.ellipses.length > 0) return result.ellipses.map((e) => e.label);
+    if (result.squares.length > 0) return result.squares.map((s) => s.label);
     return result.polygons.map((p) => p.label);
   });
 
@@ -347,6 +353,19 @@
           stroke-width={strokeW}
         />
       {/each}
+      {#each result.squares as square, i}
+        {@const color = setColorMap.get(square.label) || defaultColorFor(i)}
+        <rect
+          x={square.x - square.side / 2}
+          y={square.y - square.side / 2}
+          width={square.side}
+          height={square.side}
+          fill={color}
+          fill-opacity={style.alpha}
+          stroke={showStroke ? color : "none"}
+          stroke-width={strokeW}
+        />
+      {/each}
       {#each result.polygons as poly}
         {@const lp = calcLabelPos(poly)}
         <text
@@ -387,11 +406,25 @@
           {ellipse.label}
         </text>
       {/each}
+      {#each result.squares as square}
+        <text
+          x={square.x}
+          y={square.y}
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-size={style.labelSize}
+          font-weight={fontWeight}
+          font-style={fontItalic}
+        >
+          {square.label}
+        </text>
+      {/each}
       {#if style.showCounts && result.shapeMode === "outline"}
         {#each Object.entries(result.metrics?.fitted ?? {}) as [combo, area]}
           {#if combo.indexOf("&") < 0}
             {@const c = result.circles.find((c) => c.label === combo)}
             {@const e = result.ellipses.find((e) => e.label === combo)}
+            {@const sq = result.squares.find((s) => s.label === combo)}
             {#if c}
               <text
                 x={c.x}
@@ -407,6 +440,17 @@
               <text
                 x={e.x}
                 y={e.y + style.labelSize}
+                text-anchor="middle"
+                dominant-baseline="middle"
+                font-size={style.labelSize * 0.75}
+                fill="#374151"
+              >
+                {fmt(area)}
+              </text>
+            {:else if sq}
+              <text
+                x={sq.x}
+                y={sq.y + style.labelSize}
                 text-anchor="middle"
                 dominant-baseline="middle"
                 font-size={style.labelSize * 0.75}

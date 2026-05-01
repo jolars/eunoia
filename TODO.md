@@ -133,12 +133,14 @@ Deferred from the axis-aligned `Square` PR (`crates/eunoia/src/geometry/shapes/s
       same config sweep across `Square` as a third shape pass and emits
       it in both the markdown and JSON outputs.
 
-- [ ] **WASM bindings for `Square`**. `crates/eunoia-wasm/src/lib.rs` exposes
-      `WasmCircle` / `WasmEllipse` wrappers and per-shape entry points
-      (`generate_from_spec_circle`, `generate_from_spec_ellipse`); add the
-      analogous `WasmSquare`, `SquareResult`, and `generate_from_spec_square`,
-      and surface the new shape in the web app's shape selector
-      (`web/src/lib/DiagramViewer.svelte`).
+- [x] **WASM bindings for `Square`**. `crates/eunoia-wasm/src/lib.rs` exposes
+      `WasmSquare`, `SquareResult`, `generate_from_spec_square`,
+      `generate_squares_as_polygons`, and `generate_region_polygons_squares`
+      (parallel to the circle/ellipse paths). `PolygonResult` carries an
+      additional `squares` field. The web app surfaces a third "Square"
+      option in `SpecEditor.svelte`; `fit.ts` dispatches to the
+      square-specific WASM entry points and `DiagramSvg.svelte` renders
+      `<rect>` outlines and labels.
 
 - [ ] **Rotated squares / general axis-aligned rectangles**. Axis-aligned
       `Square` keeps n-way intersections trivially axis-aligned. Rotation
