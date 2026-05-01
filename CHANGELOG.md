@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/jolars/eunoia/compare/v0.6.0...v0.7.0) (2026-05-01)
+
+### Features
+- **wasm:** add square as a shape ([`36856e2`](https://github.com/jolars/eunoia/commit/36856e262efa242ea5454783a34773a91abfb73c))
+- lower tolerance to 1e-3 ([`54c58ad`](https://github.com/jolars/eunoia/commit/54c58adf24e571fe655d02ffd8c6fc2e61a6773c))
+- use venn warm start for squares too ([`ac80e07`](https://github.com/jolars/eunoia/commit/ac80e0752ad727cc8d676d1ed86530c1130be210))
+
+### Bug Fixes
+- handle lifetiime issues ([`caa29fe`](https://github.com/jolars/eunoia/commit/caa29fe07dedf42273650531b38734829c9f0a24))
 ## [0.6.0](https://github.com/jolars/eunoia/compare/v0.5.0...v0.6.0) (2026-04-30)
 
 ### Breaking changes
