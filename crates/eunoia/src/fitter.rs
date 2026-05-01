@@ -72,6 +72,15 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     spec: &'a DiagramSpec,
     max_iterations: usize,
     tolerance: f64,
+    /// Per-knob LM stopping overrides. `None` inherits `tolerance`. Only
+    /// `Optimizer::LevenbergMarquardt` (and the LM polish step inside
+    /// `Optimizer::CmaEsLm`) honours these — other optimizers don't expose
+    /// the underlying knobs separately. See `tolerance` for default
+    /// rationale; per-knob overrides exist for benchmarking / tuning the
+    /// LM stopping behaviour without touching the shared `tolerance`.
+    xtol: Option<f64>,
+    ftol: Option<f64>,
+    gtol: Option<f64>,
     seed: Option<u64>,
     loss_type: LossType,
     /// Pool of final-stage optimizers cycled across outer-loop restarts:
@@ -123,19 +132,27 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     pub fn new(spec: &'a DiagramSpec) -> Self {
         Fitter {
             spec,
-            // 200 iters × tolerance 1e-6 (wired into L-BFGS' grad/cost tolerances
-            // in `final_layout.rs`) tracks eulerr's nlm budget. The previous
-            // 50_000-iter cap combined with argmin's default `sqrt(EPSILON)`/
-            // `EPSILON` tolerances meant L-BFGS routinely ran tens of thousands
-            // of iterations past any useful convergence on every restart.
-            // With the default loss `SumSquared` (scale-invariant
-            // SSE — see `LossType`), the loss magnitude is bounded ~`[0, 1]`
-            // regardless of input area scale, so tolerance behavior is
-            // consistent across specs. 1e-6 sits well above the central-diff
-            // FD noise floor on the normalized cost yet pushes typical 3-set
-            // ellipse fits to near-machine quality.
+            // 200 iters × tolerance 1e-3 tracks eulerr's nlm budget for the
+            // iter cap; the cost tolerance was tuned via the `final_tolerance`
+            // bench (see `crates/eunoia/benches/final_tolerance.rs`). With the
+            // default loss `SumSquared` (scale-invariant SSE — see `LossType`)
+            // the loss magnitude is bounded ~`[0, 1]` regardless of input area
+            // scale, so cost-tolerance behaviour is consistent across specs.
+            // `tolerance` is wired as the LM `ftol` (cost-change exit) and as
+            // L-BFGS' grad+cost tolerance; the LM `xtol`/`gtol` knobs keep
+            // their own fixed `1e-6` defaults so loosening `tolerance` only
+            // shortens the cost-converged tail without trading off
+            // parameter-space precision. The corpus validation pass over all
+            // 27 specs × 16 seeds × {Circle, Ellipse} showed zero regressions
+            // at `tolerance = 1e-3` versus the previous `1e-6`, with up to
+            // ~170× wall-time wins on the slow ellipse specs (`gene_sets`
+            // 91.9 ms → 0.54 ms). Tighten via `Fitter::tolerance(_)` if a
+            // future spec needs a sharper cost tail.
             max_iterations: 200,
-            tolerance: 1e-6,
+            tolerance: 1e-3,
+            xtol: None,
+            ftol: None,
+            gtol: None,
             seed: None,
             // `SumSquared` is the scale-invariant `Σ(f-t)² / Σt²`. The
             // bounded-`[0, 1]` magnitude keeps `tolerance` and
@@ -290,17 +307,26 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
-    /// Set the convergence tolerance for the final-stage optimizer.
+    /// Set the cost-change convergence tolerance for the final-stage
+    /// optimizer.
     ///
-    /// Currently honored by L-BFGS only — passed as `tol_grad`, with
-    /// `tol_cost = tolerance²`. Other solvers (Nelder-Mead, TrustRegion) do
-    /// not expose tolerance setters in argmin 0.11 and run until
-    /// `max_iterations`.
+    /// - **Levenberg-Marquardt** (incl. the LM polish step of
+    ///   [`Optimizer::CmaEsLm`]): wired as `with_ftol`, the relative-cost
+    ///   exit. The LM parameter-change (`xtol`) and gradient (`gtol`) knobs
+    ///   keep their own fixed `1e-6` defaults; override them independently
+    ///   via [`xtol`] / [`gtol`].
+    /// - **L-BFGS**: wired as both `tol_grad` and `tol_cost`.
+    /// - **Nelder-Mead / TrustRegion**: no tolerance setter is exposed in
+    ///   argmin 0.11, so these run until `max_iterations`.
     ///
-    /// The default is `1e-6`, matching eulerr's nlm `gradtol`/`steptol`.
-    /// Tightening this (e.g. `1e-9`) gives a sharper fit at the cost of more
-    /// iterations; loosening it (e.g. `1e-3`) speeds up fits where coarse
-    /// convergence is acceptable.
+    /// The default is `1e-3`, chosen to maximise the timing win on
+    /// cost-converged fits without regressing the corpus (validated across
+    /// all 27 specs × 16 seeds × {Circle, Ellipse} via the `final_tolerance`
+    /// bench). Tighten this (e.g. `1e-6`) if a spec needs a sharper cost
+    /// tail; loosen it (e.g. `1e-2`) for even faster coarse fits.
+    ///
+    /// [`xtol`]: Self::xtol
+    /// [`gtol`]: Self::gtol
     ///
     /// # Examples
     ///
@@ -317,6 +343,47 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// ```
     pub fn tolerance(mut self, tolerance: f64) -> Self {
         self.tolerance = tolerance;
+        self
+    }
+
+    /// Override the LM parameter-change tolerance (`with_xtol`).
+    ///
+    /// Only honoured by [`Optimizer::LevenbergMarquardt`] and the LM polish
+    /// step of [`Optimizer::CmaEsLm`]. `None` (the default) uses the fixed
+    /// LM `xtol` default of `1e-6` — independent of [`tolerance`], which
+    /// targets only the LM `ftol` (cost) knob. LM stops when
+    /// `‖Δp‖ ≤ xtol·‖p‖`.
+    ///
+    /// [`tolerance`]: Self::tolerance
+    pub fn xtol(mut self, xtol: f64) -> Self {
+        self.xtol = Some(xtol);
+        self
+    }
+
+    /// Override the LM cost-change tolerance (`with_ftol`).
+    ///
+    /// Only honoured by [`Optimizer::LevenbergMarquardt`] and the LM polish
+    /// step of [`Optimizer::CmaEsLm`]. `None` (the default) inherits
+    /// [`tolerance`] (the unified cost-tolerance setter). LM stops when
+    /// relative cost change drops below `ftol`.
+    ///
+    /// [`tolerance`]: Self::tolerance
+    pub fn ftol(mut self, ftol: f64) -> Self {
+        self.ftol = Some(ftol);
+        self
+    }
+
+    /// Override the LM gradient tolerance (`with_gtol`).
+    ///
+    /// Only honoured by [`Optimizer::LevenbergMarquardt`] and the LM polish
+    /// step of [`Optimizer::CmaEsLm`]. `None` (the default) uses the fixed
+    /// LM `gtol` default of `1e-6` — independent of [`tolerance`], which
+    /// targets only the LM `ftol` (cost) knob. LM stops when the ∞-norm of
+    /// `Jᵀr` drops below `gtol`.
+    ///
+    /// [`tolerance`]: Self::tolerance
+    pub fn gtol(mut self, gtol: f64) -> Self {
+        self.gtol = Some(gtol);
         self
     }
 
@@ -535,6 +602,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let n_sets = spec.n_sets;
         let max_iterations = self.max_iterations;
         let tolerance = self.tolerance;
+        let xtol = self.xtol;
+        let ftol = self.ftol;
+        let gtol = self.gtol;
         let loss_type = self.loss_type;
         let optimizer_pool = self.optimizer_pool.clone();
         let cmaes_fallback_threshold = self.cmaes_fallback_threshold;
@@ -621,6 +691,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                 let final_config = final_layout::FinalLayoutConfig {
                     max_iterations,
                     tolerance,
+                    xtol,
+                    ftol,
+                    gtol,
                     loss_type,
                     optimizer: attempt_optimizer,
                     seed: attempt_seed,

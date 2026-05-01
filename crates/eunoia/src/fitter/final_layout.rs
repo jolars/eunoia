@@ -91,21 +91,35 @@ pub(crate) struct FinalLayoutConfig {
     pub loss_type: crate::loss::LossType,
     /// Optimizer to use
     pub optimizer: Optimizer,
-    /// Convergence tolerance. Honored by every solver except Nelder-Mead:
+    /// Cost-change convergence tolerance. Honored by every solver except
+    /// Nelder-Mead:
     /// - **L-BFGS**: passed as both `tol_grad` and `tol_cost`. Squaring the
     ///   cost tolerance backfires with central-difference gradients (FD noise
     ///   floor on cost evals is ~`sqrt(EPSILON) × |cost|`), so both share
     ///   `config.tolerance`.
-    /// - **Levenberg-Marquardt**: passed as `ftol`, `xtol`, and `gtol`.
+    /// - **Levenberg-Marquardt**: passed as `ftol` (cost-change exit) only.
+    ///   `xtol` and `gtol` use the fixed `1e-6` defaults from the
+    ///   per-knob fields below.
     /// - **CmaEsLm**: passed as the CMA-ES `fn_tol` (clamped to `≥ 1e-12`),
     ///   plus the LM polish step uses it as above.
     /// - **Nelder-Mead**: ignored — argmin 0.11 doesn't expose a tolerance
     ///   setter, so it runs to `max_iterations`.
     ///
-    /// Default `1e-6` matches eulerr's nlm `gradtol`/`steptol`. Looser than
-    /// argmin's L-BFGS defaults (`sqrt(EPSILON)` ≈ 1.5e-8 grad, `EPSILON`
-    /// ≈ 2.2e-16 cost), which had L-BFGS grinding far past useful convergence.
+    /// Default `1e-3`, validated against the full 27-spec corpus × 16 seeds
+    /// × {Circle, Ellipse} via the `final_tolerance` bench (zero regressions
+    /// vs. the prior `1e-6`, with up to ~170× wall-time wins on slow ellipse
+    /// specs because LM was previously cost-converged but still grinding the
+    /// `xtol`/`gtol` tail). The LM `xtol`/`gtol` knobs stay at `1e-6` to
+    /// preserve parameter-space precision.
     pub tolerance: f64,
+    /// Per-knob LM stopping tolerance overrides. `None` falls back to the
+    /// LM-specific defaults: `xtol = 1e-6`, `ftol = config.tolerance`,
+    /// `gtol = 1e-6`. Only honoured by `Optimizer::LevenbergMarquardt` and
+    /// the LM polish step of `Optimizer::CmaEsLm`; other optimizers ignore
+    /// these.
+    pub xtol: Option<f64>,
+    pub ftol: Option<f64>,
+    pub gtol: Option<f64>,
     /// Seed used for stochastic operations: simulated annealing, and
     /// position-perturbation restarts.
     pub seed: u64,
@@ -128,7 +142,10 @@ impl Default for FinalLayoutConfig {
             max_iterations: 200,
             loss_type: crate::loss::LossType::default(),
             optimizer: Optimizer::LevenbergMarquardt,
-            tolerance: 1e-6,
+            tolerance: 1e-3,
+            xtol: None,
+            ftol: None,
+            gtol: None,
             seed: 0xDEAD_BEEF,
             n_restarts: 10,
             // 1e-3 sits well above the ~1e-20 / ~1e-30 floor LM crushes
@@ -379,10 +396,16 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
 ) -> Result<(DVector<f64>, f64), Error> {
     match LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type, initial_param) {
         Ok(problem) => {
+            // `tolerance` targets the LM `ftol` knob exclusively. `xtol` and
+            // `gtol` keep their own fixed `1e-6` defaults so loosening
+            // `tolerance` only shortens the cost-converged tail (where
+            // ~170× wall-time wins live on slow ellipse specs) without
+            // trading off parameter-space or gradient precision. Override
+            // either independently via `Fitter::xtol` / `Fitter::gtol`.
             let solver = LevenbergMarquardt::new()
-                .with_ftol(config.tolerance)
-                .with_xtol(config.tolerance)
-                .with_gtol(config.tolerance)
+                .with_ftol(config.ftol.unwrap_or(config.tolerance))
+                .with_xtol(config.xtol.unwrap_or(1e-6))
+                .with_gtol(config.gtol.unwrap_or(1e-6))
                 .with_patience(config.max_iterations.max(1));
             let (problem_after, report) = solver.minimize(problem);
             // LM minimises ½·Σrᵢ²; existing loss is Σrᵢ², so ×2.
@@ -967,6 +990,9 @@ mod tests {
             seed: 0,
             n_restarts: 1,
             cmaes_fallback_threshold: 1e-3,
+            xtol: None,
+            ftol: None,
+            gtol: None,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -1045,6 +1071,9 @@ mod tests {
             seed: 0,
             n_restarts: 1,
             cmaes_fallback_threshold: 1e-3,
+            xtol: None,
+            ftol: None,
+            gtol: None,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -1091,6 +1120,9 @@ mod tests {
             seed: 0,
             n_restarts: 1,
             cmaes_fallback_threshold: 1e-3,
+            xtol: None,
+            ftol: None,
+            gtol: None,
         };
 
         let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -1149,6 +1181,9 @@ mod tests {
                 seed: 0,
                 n_restarts: 1,
                 cmaes_fallback_threshold: 1e-3,
+                xtol: None,
+                ftol: None,
+                gtol: None,
             };
 
             let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
@@ -1786,6 +1821,9 @@ mod tests {
                 seed: 0,
                 n_restarts: 1,
                 cmaes_fallback_threshold: 1e-3,
+                xtol: None,
+                ftol: None,
+                gtol: None,
             };
             let t0 = Instant::now();
             let (_p_an, loss_an) =
@@ -1802,6 +1840,9 @@ mod tests {
                 seed: 0,
                 n_restarts: 1,
                 cmaes_fallback_threshold: 1e-3,
+                xtol: None,
+                ftol: None,
+                gtol: None,
             };
             let t0 = Instant::now();
             let (_p_fd, loss_fd) =

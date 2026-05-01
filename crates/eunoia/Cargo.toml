@@ -47,3 +47,8 @@ proptest = "1"
 [[bench]]
 name = "initial_layout"
 harness = false
+
+[[bench]]
+name = "final_tolerance"
+harness = false
+required-features = ["corpus"]
