@@ -1089,11 +1089,12 @@ impl DiagramShape for Ellipse {
         ))
     }
 
-    fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
+    fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
         // Semi-axes are stored in log space (`u = ln(a)`, `v = ln(b)`) so the
-        // unbounded LM solver stays on the positive-axis manifold without
-        // a clamp; `from_params` exponentiates back. For a circle, `a = b = r`,
-        // so `u = v = ln(r)`. Rotation is unconstrained (periodic).
+        // unbounded LM solver stays on the positive-axis manifold without a
+        // clamp; `from_optimizer_params` exponentiates back. For a circle,
+        // `a = b = r`, so `u = v = ln(r)`. Rotation is unconstrained
+        // (periodic).
         let log_radius = radius.ln();
         vec![x, y, log_radius, log_radius, 0.0]
     }
@@ -1116,6 +1117,30 @@ impl DiagramShape for Ellipse {
         assert_eq!(
             params.len(),
             5,
+            "Ellipse requires 5 parameters: x, y, semi_major, semi_minor, rotation"
+        );
+        Ellipse::new(
+            Point::new(params[0], params[1]),
+            params[2],
+            params[3],
+            params[4],
+        )
+    }
+
+    fn to_params(&self) -> Vec<f64> {
+        vec![
+            self.center.x(),
+            self.center.y(),
+            self.semi_major,
+            self.semi_minor,
+            self.rotation,
+        ]
+    }
+
+    fn from_optimizer_params(params: &[f64]) -> Self {
+        assert_eq!(
+            params.len(),
+            5,
             "Ellipse requires 5 parameters: x, y, ln(semi_major), ln(semi_minor), rotation"
         );
 
@@ -1132,7 +1157,7 @@ impl DiagramShape for Ellipse {
         )
     }
 
-    fn to_params(&self) -> Vec<f64> {
+    fn to_optimizer_params(&self) -> Vec<f64> {
         vec![
             self.center.x(),
             self.center.y(),
@@ -1675,7 +1700,7 @@ mod tests {
     fn test_intersects_when_semi_minor_greater_than_semi_major() {
         // Regression for a fitter bug where the optimizer produces an ellipse
         // with `semi_minor > semi_major` (the field names are labels, not an
-        // ordering invariant — `from_params` just exponentiates the two log
+        // ordering invariant — `from_optimizer_params` just exponentiates the two log
         // params). The old quick-reject in `intersects` used `semi_major` as
         // the max reach, so two such ellipses whose actual long axes overlap
         // could be falsely reported as non-intersecting, breaking
@@ -2137,11 +2162,35 @@ mod tests {
     }
 
     #[test]
-    fn test_diagram_shape_params_from_circle() {
+    fn test_diagram_shape_to_params_is_geometric() {
+        // Regression: `to_params` is the *geometric* encoding (linear
+        // semi-axes), not the optimizer encoding. FFI consumers (e.g. the
+        // eulerr R shim) rely on this — see eulerr#179.
         use crate::geometry::traits::DiagramShape;
 
-        // params_from_circle stores semi-axes in log space.
-        let params = Ellipse::params_from_circle(1.0, 2.0, 3.0);
+        let e = Ellipse::new(Point::new(0.5, -1.5), 2.0, 0.5, 0.25);
+        let params = e.to_params();
+        assert_eq!(params.len(), 5);
+        assert_eq!(params[0], 0.5); // x
+        assert_eq!(params[1], -1.5); // y
+        assert_eq!(params[2], 2.0); // semi_major (linear, NOT ln)
+        assert_eq!(params[3], 0.5); // semi_minor (linear, NOT ln)
+        assert_eq!(params[4], 0.25); // rotation
+
+        // Round-trip through the geometric pair preserves the shape.
+        let back = Ellipse::from_params(&params);
+        assert_eq!(back.center(), e.center());
+        assert!((back.semi_major() - e.semi_major()).abs() < 1e-12);
+        assert!((back.semi_minor() - e.semi_minor()).abs() < 1e-12);
+        assert!((back.rotation() - e.rotation()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_diagram_shape_optimizer_params_from_circle() {
+        use crate::geometry::traits::DiagramShape;
+
+        // optimizer_params_from_circle stores semi-axes in log space.
+        let params = Ellipse::optimizer_params_from_circle(1.0, 2.0, 3.0);
         let log3 = 3.0_f64.ln();
         assert_eq!(params.len(), 5);
         assert_eq!(params[0], 1.0); // x
@@ -2150,8 +2199,8 @@ mod tests {
         assert!((params[3] - log3).abs() < 1e-12); // ln(semi_minor)
         assert_eq!(params[4], 0.0); // rotation
 
-        // from_params should reconstruct a circle (exp roundtrip).
-        let e = Ellipse::from_params(&params);
+        // from_optimizer_params should reconstruct a circle (exp roundtrip).
+        let e = Ellipse::from_optimizer_params(&params);
         assert!((e.semi_major() - 3.0).abs() < 1e-10);
         assert!((e.semi_minor() - 3.0).abs() < 1e-10);
     }

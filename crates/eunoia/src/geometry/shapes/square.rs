@@ -365,7 +365,7 @@ impl DiagramShape for Square {
         to_exclusive_areas(&overlapping_areas)
     }
 
-    fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
+    fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
         // Map the circle warm-start (area = π·r²) to a square of equal area
         // (`side = r·√π`). The optimiser refines from there; this just
         // minimises the global rescaling needed before overlap targets bite.
@@ -772,20 +772,20 @@ mod tests {
     }
 
     #[test]
-    fn test_params_round_trip() {
+    fn test_optimizer_params_round_trip() {
         let s = Square::new(Point::new(1.5, -2.0), 3.5);
-        let p = s.to_params();
-        let back = Square::from_params(&p);
+        let p = s.to_optimizer_params();
+        let back = Square::from_optimizer_params(&p);
         assert_eq!(s, back);
     }
 
     #[test]
-    fn test_params_from_circle_equal_area() {
-        // params_from_circle should produce a square of the same area as the
-        // seed circle (πr²).
+    fn test_optimizer_params_from_circle_equal_area() {
+        // optimizer_params_from_circle should produce a square of the same
+        // area as the seed circle (πr²).
         let r = 2.0;
-        let p = Square::params_from_circle(0.0, 0.0, r);
-        let s = Square::from_params(&p);
+        let p = Square::optimizer_params_from_circle(0.0, 0.0, r);
+        let s = Square::from_optimizer_params(&p);
         assert!(approx_eq(s.area(), PI * r * r));
     }
 

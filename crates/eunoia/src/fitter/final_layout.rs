@@ -215,7 +215,7 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
             let x = positions[i * 2];
             let y = positions[i * 2 + 1];
             let r = initial_radii[i];
-            initial_params.extend(S::params_from_circle(x, y, r));
+            initial_params.extend(S::optimizer_params_from_circle(x, y, r));
         }
         let initial_param = DVector::from_vec(initial_params);
 
@@ -256,7 +256,7 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
 ///
 /// Exposed `pub(crate)` so the [`Fitter`]'s outer-loop attempts can dispatch
 /// the final-stage solver directly when they have full shape parameters in
-/// hand and want to skip the standard `(positions, radii) → params_from_circle`
+/// hand and want to skip the standard `(positions, radii) → optimizer_params_from_circle`
 /// path. The Venn warm-start uses this entry point to feed canonical-Venn
 /// shape params (with non-circular ellipses for n ∈ {4, 5}) straight to the
 /// optimizer.
@@ -641,7 +641,7 @@ impl<S: DiagramShape + Copy + 'static> DiagramCost<'_, S> {
             .map(|i| {
                 let start = i * self.params_per_shape;
                 let end = start + self.params_per_shape;
-                S::from_params(&params.as_slice()[start..end])
+                S::from_optimizer_params(&params.as_slice()[start..end])
             })
             .collect()
     }
@@ -813,7 +813,7 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
             .map(|i| {
                 let start = i * self.params_per_shape;
                 let end = start + self.params_per_shape;
-                S::from_params(&self.params.as_slice()[start..end])
+                S::from_optimizer_params(&self.params.as_slice()[start..end])
             })
             .collect();
         let (fitted, fitted_grads) = match S::compute_exclusive_regions_with_gradient(&shapes) {

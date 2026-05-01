@@ -134,10 +134,10 @@ Interactive diagram viewer built with Svelte + TypeScript.
    - Square (axis-aligned): inverts overlap along the diagonal `|dx| = |dy|`, giving `d = √2 · ((s_i + s_j)/2 − √target_overlap)`.
    - This produces initial `(x, y)` positions per set, consistent with each shape's own overlap geometry.
 
-2. **Convert to Shape-Specific Parameters**:
-   - MDS positions plus the size derived from the set area are mapped to target shape parameters via `DiagramShape::params_from_circle()`.
-   - Circle: `[x, y, r]` → `[x, y, r]` (identity)
-   - Ellipse: `[x, y, r]` → `[x, y, ln(r), ln(r), 0.0]` (semi-axes in log space for the unbounded LM solver)
+2. **Convert to Shape-Specific Optimizer Parameters**:
+   - MDS positions plus the size derived from the set area are mapped to target shape parameters via `DiagramShape::optimizer_params_from_circle()`. The output is the *optimizer* encoding (per-impl, possibly non-geometric), **not** geometric values — see the `DiagramShape` rustdoc.
+   - Circle: `[x, y, r]` → `[x, y, r]` (identity, linear)
+   - Ellipse: `[x, y, r]` → `[x, y, ln(r), ln(r), 0.0]` (semi-axes in **log space** for the unbounded LM solver)
    - Square: `[x, y, r]` → `[x, y, r·√π]` (equal-area mapping — the resulting square has area `πr²`)
 
 3. **Final Optimization (shape-specific)**:
@@ -146,7 +146,7 @@ Interactive diagram viewer built with Svelte + TypeScript.
      (exact conic/polysegments for circles and ellipses, including 3+ way)
    - Minimizes a selectable loss function via argmin
      (Nelder-Mead, L-BFGS, TrustRegion)
-   - Constructs final shapes via `DiagramShape::from_params()`
+   - Constructs final shapes via `DiagramShape::from_optimizer_params()`. FFI / downstream consumers that want **geometric** values should use the per-shape accessors (`Ellipse::semi_major`, `Ellipse::semi_minor`, `Circle::radius`, …), **not** `to_optimizer_params()`.
 
 4. **Layout Finalization**:
    - Return fitted shapes with computed areas
@@ -325,22 +325,35 @@ To add a new shape type (e.g., Ellipse):
            // fallback for numerically pathological cases.
        }
        
-       fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
-           vec![x, y, radius, radius, 0.0]  // a=b=r, angle=0 (circle is special ellipse)
+       fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
+           // Returns the optimizer encoding. Identical to the geometric
+           // encoding here (linear); the real `Ellipse` impl wraps the
+           // semi-axes with `ln` instead.
+           vec![x, y, radius, radius, 0.0]
        }
-       
+
        fn n_params() -> usize {
            5  // x, y, semi_major, semi_minor, angle
        }
-       
+
        fn from_params(params: &[f64]) -> Self {
+           // Geometric encoding — what FFI / external callers see.
            Ellipse::new(
                Point::new(params[0], params[1]),
-               params[2],  // semi_major
-               params[3],  // semi_minor
+               params[2],  // semi_major (linear)
+               params[3],  // semi_minor (linear)
                params[4],  // angle
            )
        }
+
+       fn to_params(&self) -> Vec<f64> {
+           vec![self.center.x(), self.center.y(),
+                self.semi_major, self.semi_minor, self.rotation]
+       }
+
+       // `from_optimizer_params` / `to_optimizer_params` default to the
+       // geometric pair. Override only if your shape needs a distinct
+       // optimizer encoding (e.g. log-space semi-axes for Ellipse).
    }
    ```
 
@@ -353,10 +366,10 @@ To add a new shape type (e.g., Ellipse):
 
 5. **Done!** The fitter will automatically:
    - Use circles for initial MDS layout
-   - Convert circle parameters to ellipse parameters via `params_from_circle()`
+   - Convert circle parameters to ellipse parameters via `optimizer_params_from_circle()`
    - Optimize ellipse-specific parameters (x, y, a, b, angle)
    - Use exact ellipse geometry via `compute_exclusive_regions()`
-   - Construct final ellipses via `from_params()`
+   - Construct final ellipses via `from_optimizer_params()`
 
 The entire optimization pipeline is **shape-generic** - no changes needed to fitter code!
 
@@ -455,9 +468,9 @@ eulerr's `input` argument is:
 - ✅ Line and LineSegment primitives
 - ✅ **Trait-based design with generic `Shape` trait**
   - `compute_exclusive_regions()` - Shape-specific exact area computation
-  - `params_from_circle()` - Convert initial circle params to shape params
-  - `n_params()` - Number of parameters per shape
-  - `from_params()` - Construct shape from parameters
+  - `to_params()` / `from_params()` - Round-trip the shape through its **geometric** parameter encoding (linear values throughout — what FFI / external callers want)
+  - `to_optimizer_params()` / `from_optimizer_params()` / `optimizer_params_from_circle()` - The optimizer-internal encoding (identical to geometric for Circle/Square; **log-space semi-axes** for Ellipse). Default impls delegate to the geometric pair, so most shapes only implement `to_params`/`from_params`.
+  - `n_params()` - Number of parameters per shape (same length in both encodings)
 - ✅ DiagramSpecBuilder with fluent API for input (shape-agnostic)
 - ✅ **Shape-generic fitter with two-phase optimization**
   - Specification is shape-agnostic (no type parameter on DiagramSpec)

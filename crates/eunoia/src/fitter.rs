@@ -764,7 +764,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                         let xi = initial_positions[i * 2];
                         let yi = initial_positions[i * 2 + 1];
                         let r = initial_radii[i];
-                        params.extend(S::params_from_circle(xi, yi, r));
+                        params.extend(S::optimizer_params_from_circle(xi, yi, r));
                     }
                     return Ok((params, 0.0));
                 }
@@ -837,7 +837,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         for i in 0..n_sets {
             let start = i * params_per_shape;
             let end = start + params_per_shape;
-            optimized_shapes.push(S::from_params(&final_params[start..end]));
+            optimized_shapes.push(S::from_optimizer_params(&final_params[start..end]));
         }
 
         // Compute the pre-normalize exclusive-region areas and thread them
@@ -886,7 +886,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         for (original_idx, set_name) in self.spec.set_names().iter().enumerate() {
             let shape = match spec.set_to_idx.get(set_name) {
                 Some(&preproc_idx) => optimized_shapes[preproc_idx],
-                None => S::from_params(&zero_params),
+                None => S::from_optimizer_params(&zero_params),
             };
             shapes.push(shape);
             set_to_shape.insert(set_name.clone(), original_idx);
@@ -999,7 +999,7 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
         let mut params = Vec::with_capacity(n_sets * pp);
         for sq in venn.shapes() {
             let c = sq.center();
-            // Square params are `[x, y, side]`; bypass `params_from_circle`
+            // Square params are `[x, y, side]`; bypass `optimizer_params_from_circle`
             // (which would re-encode `side` as `r·√π` and shrink the seed).
             params.extend([c.x() * mean_side, c.y() * mean_side, sq.side() * mean_side]);
         }
@@ -1057,10 +1057,10 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
                 if (a - b).abs() > 1e-9 * mean_radius.max(1.0) {
                     return None;
                 }
-                params.extend(S::params_from_circle(h, k, a));
+                params.extend(S::optimizer_params_from_circle(h, k, a));
             }
             5 => {
-                // Ellipse params layout matches `Ellipse::params_from_circle`:
+                // Ellipse params layout matches `Ellipse::optimizer_params_from_circle`:
                 // [x, y, ln(a), ln(b), phi]. Semi-axes are stored in log
                 // space so the unbounded LM solver stays on the positive-
                 // axis manifold.

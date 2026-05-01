@@ -71,13 +71,39 @@ pub trait Closed: Sized + Area + BoundingBox + Perimeter + Centroid {
 /// diagram construction and optimization. Types implementing this trait can be used
 /// with the diagram fitter.
 ///
+/// # Two parameter encodings
+///
+/// Each shape exposes its parameters in two encodings:
+///
+/// - **Geometric** (`to_params` / `from_params`): the human-readable, FFI-friendly
+///   encoding. Linear values throughout.
+///   - Circle: `[x, y, r]`
+///   - Square: `[x, y, side]`
+///   - Ellipse: `[x, y, a, b, phi]` (semi-axes in **linear** space)
+///
+///   This is what almost every external consumer wants. `to_params()` returns
+///   the same numbers a human would write down, and `from_params()` accepts
+///   the same.
+///
+/// - **Optimizer** (`to_optimizer_params` / `from_optimizer_params` /
+///   `optimizer_params_from_circle`): the encoding the unconstrained LM solver
+///   consumes. Identical to the geometric encoding for circles and squares;
+///   for ellipses, the semi-axes are stored in **log space**
+///   (`[x, y, ln(a), ln(b), phi]`) so the optimizer can range freely without
+///   a clamp on the positive-axis manifold.
+///
+///   Most callers should not need this — it exists for the fitter and for
+///   experiments that plug straight into argmin.
+///
 /// # Type Parameters
 ///
 /// The associated methods for parameter conversion enable the optimization process:
 /// 1. Initial layout uses circles (MDS algorithm)
-/// 2. Circle parameters are converted to shape-specific parameters via `params_from_circle`
-/// 3. Final optimization operates on shape-specific parameters
-/// 4. Shapes are constructed from optimized parameters via `from_params`
+/// 2. Circle parameters are converted to shape-specific optimizer parameters via
+///    `optimizer_params_from_circle`
+/// 3. Final optimization operates on shape-specific optimizer parameters
+/// 4. Shapes are constructed from optimized parameters via `from_optimizer_params`
+///    (or, for external callers, `from_params` after converting to geometric)
 pub trait DiagramShape: Closed {
     /// Compute all exclusive regions and their areas from a collection of shapes.
     ///
@@ -91,14 +117,17 @@ pub trait DiagramShape: Closed {
     where
         Self: Sized;
 
-    /// Convert initial circle parameters to shape-specific parameters.
+    /// Convert initial circle parameters to shape-specific optimizer parameters.
     ///
-    /// Takes circle parameters (x, y, radius) and converts them to whatever
-    /// parameters this shape type needs for optimization.
+    /// Takes circle parameters `(x, y, radius)` (always linear) and returns the
+    /// optimizer-encoded parameter vector for this shape. See the trait docs
+    /// for the per-shape encoding — in particular, ellipse semi-axes are
+    /// returned in **log space**.
     ///
-    /// For Circle: returns [x, y, r]
-    /// For Ellipse: might return [x, y, a, b, angle] where a=b=r initially
-    fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64>
+    /// - Circle: `[x, y, r]`
+    /// - Square: `[x, y, r·√π]` (equal-area mapping)
+    /// - Ellipse: `[x, y, ln(r), ln(r), 0.0]` (circle ≡ a=b=r in log space)
+    fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64>
     where
         Self: Sized;
 
@@ -123,35 +152,82 @@ pub trait DiagramShape: Closed {
     where
         Self: Sized;
 
-    /// Get the number of parameters needed for this shape type.
+    /// Get the number of parameters needed for this shape type. The same
+    /// length applies to both the geometric and optimizer encodings.
     ///
-    /// For Circle: 3 (x, y, r)
-    /// For Ellipse: 5 (x, y, a, b, angle)
+    /// - Circle: 3 (x, y, r)
+    /// - Square: 3 (x, y, side)
+    /// - Ellipse: 5 (x, y, a, b, phi)
     fn n_params() -> usize
     where
         Self: Sized;
 
-    /// Construct a shape from optimized parameters.
+    /// Construct a shape from its **geometric** parameter representation.
     ///
-    /// Takes a slice of parameters specific to this shape and constructs the shape.
-    /// The parameters should match what params_from_circle produces.
+    /// Inverse of [`to_params`](Self::to_params). The encoding is the
+    /// human-readable one — linear semi-axes for ellipses, linear radius for
+    /// circles, linear side for squares. See the trait docs for the per-shape
+    /// layout.
+    ///
+    /// This is the entry point external callers (FFI, tests, examples) should
+    /// reach for. The optimizer uses [`from_optimizer_params`](Self::from_optimizer_params)
+    /// instead.
     fn from_params(params: &[f64]) -> Self
     where
         Self: Sized;
 
-    /// Convert the shape back to its parameter representation.
+    /// Convert the shape to its **geometric** parameter representation.
     ///
-    /// This is the inverse of `from_params`. Returns the parameters that can
-    /// reconstruct this shape.
+    /// Inverse of [`from_params`](Self::from_params). The encoding matches the
+    /// per-shape geometric accessors:
+    ///
+    /// - Circle: `[x, y, r]`
+    /// - Square: `[x, y, side]`
+    /// - Ellipse: `[x, y, a, b, phi]` (semi-axes in linear space)
+    ///
+    /// External callers (FFI bindings, tests, anything that wants values it
+    /// can show a user) should use this — **not** `to_optimizer_params`.
     fn to_params(&self) -> Vec<f64>;
+
+    /// Construct a shape from optimizer-encoded parameters.
+    ///
+    /// The optimizer encoding is identical to the geometric encoding for
+    /// Circle and Square; for Ellipse the semi-axes are in log space
+    /// (`[x, y, ln(a), ln(b), phi]`). External callers should generally use
+    /// [`from_params`](Self::from_params) instead — this method is for the
+    /// fitter and for callers that have raw optimizer state in hand.
+    ///
+    /// The default implementation delegates to `from_params`, which is
+    /// correct for any shape whose two encodings coincide; shapes with a
+    /// distinct optimizer encoding (e.g. Ellipse) override.
+    fn from_optimizer_params(params: &[f64]) -> Self
+    where
+        Self: Sized,
+    {
+        Self::from_params(params)
+    }
+
+    /// Convert the shape to its optimizer parameter representation.
+    ///
+    /// Inverse of [`from_optimizer_params`](Self::from_optimizer_params); see
+    /// that method for encoding details. External callers should generally
+    /// use [`to_params`](Self::to_params) instead.
+    ///
+    /// The default implementation delegates to `to_params`, which is correct
+    /// for any shape whose two encodings coincide; shapes with a distinct
+    /// optimizer encoding (e.g. Ellipse) override.
+    fn to_optimizer_params(&self) -> Vec<f64> {
+        self.to_params()
+    }
 
     /// Optional analytical gradient companion to `compute_exclusive_regions`.
     ///
     /// Returns `Some((exclusive_areas, gradients))` where each `gradients[mask]`
     /// is a length-`n_sets · Self::n_params()` vector of `∂A_excl[mask]/∂θ`,
     /// with `θ` ordered to match the flat parameter vector consumed by
-    /// `from_params`. The default implementation returns `None`, signalling to
-    /// the optimiser that finite differences should be used instead.
+    /// `from_optimizer_params`. The default implementation returns `None`,
+    /// signalling to the optimiser that finite differences should be used
+    /// instead.
     fn compute_exclusive_regions_with_gradient(
         _shapes: &[Self],
     ) -> Option<ExclusiveRegionsAndGradient>

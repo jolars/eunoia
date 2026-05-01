@@ -176,7 +176,7 @@ impl DiagramShape for Circle {
         crate::geometry::diagram::compute_exclusive_regions(shapes)
     }
 
-    fn params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
+    fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
         vec![x, y, radius]
     }
 
