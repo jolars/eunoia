@@ -423,6 +423,64 @@ pub(crate) fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
     pieces
 }
 
+/// Minimum Euclidean distance from `(px, py)` to any segment in any of the
+/// given polygon rings. Returns `f64::INFINITY` when every ring is degenerate
+/// (fewer than two vertices).
+///
+/// Shared between [`poi_with_holes`] and the inscribed-rectangle search in
+/// [`crate::plotting::inscribed`]; both need the same per-point clearance
+/// calculation against an outer ring plus its holes.
+#[cfg(feature = "plotting")]
+pub(crate) fn min_dist_to_rings(px: f64, py: f64, rings: &[&[Point]]) -> f64 {
+    let mut best = f64::INFINITY;
+    for ring in rings {
+        let n = ring.len();
+        if n < 2 {
+            continue;
+        }
+        for i in 0..n {
+            let a = ring[i];
+            let b = ring[(i + 1) % n];
+            let dx = b.x() - a.x();
+            let dy = b.y() - a.y();
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 > 0.0 {
+                (((px - a.x()) * dx + (py - a.y()) * dy) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let qx = a.x() + t * dx;
+            let qy = a.y() + t * dy;
+            let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
+            if d < best {
+                best = d;
+            }
+        }
+    }
+    best
+}
+
+/// Signed clearance of `(px, py)` to a region piece. Positive when the point
+/// lies inside `piece.outer` and outside every hole; negative otherwise.
+/// Magnitude is the minimum Euclidean distance to any ring.
+#[cfg(feature = "plotting")]
+pub(crate) fn signed_clearance(px: f64, py: f64, piece: &RegionPiece) -> f64 {
+    let mut all: Vec<&[Point]> = Vec::with_capacity(1 + piece.holes.len());
+    all.push(piece.outer.vertices());
+    for h in &piece.holes {
+        all.push(h.vertices());
+    }
+    let dist = min_dist_to_rings(px, py, &all);
+    let probe = Point::new(px, py);
+    let in_outer = point_in_polygon(&probe, &piece.outer);
+    let in_any_hole = piece.holes.iter().any(|h| point_in_polygon(&probe, h));
+    if in_outer && !in_any_hole {
+        dist
+    } else {
+        -dist
+    }
+}
+
 /// Compute the pole of inaccessibility of a region described as a list of
 /// already-classified [`RegionPiece`]s (one outer + holes per connected
 /// component). Returns the (point, clearance) of the piece whose POI has
@@ -437,54 +495,6 @@ pub(crate) fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
 /// search-cell clearance comes out non-positive (degenerate input).
 #[cfg(feature = "plotting")]
 pub(crate) fn poi_with_holes(pieces: &[RegionPiece], precision: f64) -> Option<(Point, f64)> {
-    fn min_dist_to_rings(px: f64, py: f64, rings: &[&[Point]]) -> f64 {
-        let mut best = f64::INFINITY;
-        for ring in rings {
-            let n = ring.len();
-            if n < 2 {
-                continue;
-            }
-            for i in 0..n {
-                let a = ring[i];
-                let b = ring[(i + 1) % n];
-                let dx = b.x() - a.x();
-                let dy = b.y() - a.y();
-                let len2 = dx * dx + dy * dy;
-                let t = if len2 > 0.0 {
-                    (((px - a.x()) * dx + (py - a.y()) * dy) / len2).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                let qx = a.x() + t * dx;
-                let qy = a.y() + t * dy;
-                let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
-                if d < best {
-                    best = d;
-                }
-            }
-        }
-        best
-    }
-
-    /// Signed distance: positive when (px, py) is inside `outer` and outside
-    /// every hole; negative otherwise. Magnitude is min distance to any ring.
-    fn signed_clearance(px: f64, py: f64, piece: &RegionPiece) -> f64 {
-        let mut all: Vec<&[Point]> = Vec::with_capacity(1 + piece.holes.len());
-        all.push(piece.outer.vertices());
-        for h in &piece.holes {
-            all.push(h.vertices());
-        }
-        let dist = min_dist_to_rings(px, py, &all);
-        let probe = Point::new(px, py);
-        let in_outer = point_in_polygon(&probe, &piece.outer);
-        let in_any_hole = piece.holes.iter().any(|h| point_in_polygon(&probe, h));
-        if in_outer && !in_any_hole {
-            dist
-        } else {
-            -dist
-        }
-    }
-
     let mut best_overall: Option<(Point, f64)> = None;
     for piece in pieces {
         let outer_verts = piece.outer.vertices();

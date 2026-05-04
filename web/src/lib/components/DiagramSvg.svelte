@@ -413,19 +413,17 @@
         />
       {/each}
       {#if showStroke}
-        {#each result.circles as circle, i}
-          {@const color = setColorMap.get(circle.label) || defaultColorFor(i)}
+        {#each result.circles as circle}
           <circle
             cx={circle.x}
             cy={circle.y}
             r={circle.radius}
             fill="none"
-            stroke={color}
+            stroke="black"
             stroke-width={strokeW}
           />
         {/each}
-        {#each result.ellipses as ellipse, i}
-          {@const color = setColorMap.get(ellipse.label) || defaultColorFor(i)}
+        {#each result.ellipses as ellipse}
           <ellipse
             cx={ellipse.x}
             cy={ellipse.y}
@@ -433,19 +431,18 @@
             ry={ellipse.semi_minor}
             transform={`rotate(${(ellipse.rotation * 180) / Math.PI} ${ellipse.x} ${ellipse.y})`}
             fill="none"
-            stroke={color}
+            stroke="black"
             stroke-width={strokeW}
           />
         {/each}
-        {#each result.squares as square, i}
-          {@const color = setColorMap.get(square.label) || defaultColorFor(i)}
+        {#each result.squares as square}
           <rect
             x={square.x - square.side / 2}
             y={square.y - square.side / 2}
             width={square.side}
             height={square.side}
             fill="none"
-            stroke={color}
+            stroke="black"
             stroke-width={strokeW}
           />
         {/each}

@@ -28,7 +28,7 @@ const DEFAULT_STYLE: DiagramStyle = {
   fontBold: true,
   fontItalic: false,
   strokeWidth: 1,
-  labelSize: 10,
+  labelSize: 6,
   showCounts: false,
 };
 
@@ -37,7 +37,7 @@ const DEFAULT_ADVANCED: AdvancedOptions = {
   lossType: "SumSquared",
   showRegions: true,
   seed: 1,
-  useSeed: false,
+  useSeed: true,
   tolerance: 1e-3,
 };
 

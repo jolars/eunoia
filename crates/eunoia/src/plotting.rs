@@ -14,12 +14,16 @@
 #[cfg(feature = "plotting")]
 mod clip;
 #[cfg(feature = "plotting")]
+mod inscribed;
+#[cfg(feature = "plotting")]
 mod plot_data;
 #[cfg(feature = "plotting")]
 mod regions;
 
 #[cfg(feature = "plotting")]
 pub use clip::{polygon_clip, ClipOperation};
+#[cfg(feature = "plotting")]
+pub use inscribed::{largest_inscribed_rect, principal_axis};
 #[cfg(feature = "plotting")]
 pub(crate) use plot_data::build_plot_data;
 #[cfg(feature = "plotting")]
