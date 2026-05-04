@@ -1,7 +1,56 @@
 {
-  "name": "eunoia-wasm-wrapper",
+  "name": "@jolars/eunoia",
+  "version": "0.10.0",
+  "description": "Area-proportional Euler and Venn diagrams",
   "private": true,
-  "description": "TypeScript wrapper source for the @jolars/eunoia npm package. Compiled into npm/ by crates/eunoia-wasm/prepare-package.mjs.",
+  "license": "MIT",
+  "author": "Johan Larsson",
+  "homepage": "https://github.com/jolars/eunoia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jolars/eunoia.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jolars/eunoia/issues"
+  },
+  "keywords": [
+    "euler",
+    "venn",
+    "diagram",
+    "visualization",
+    "wasm",
+    "webassembly"
+  ],
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./raw": {
+      "types": "./eunoia_wasm.d.ts",
+      "default": "./eunoia_wasm.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "eunoia_wasm.js",
+    "eunoia_wasm.d.ts",
+    "eunoia_wasm_bg.js",
+    "eunoia_wasm_bg.wasm",
+    "eunoia_wasm_bg.wasm.d.ts"
+  ],
+  "sideEffects": [
+    "./eunoia_wasm.js",
+    "./snippets/*"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "packageManager": "pnpm@10.33.2",
   "devDependencies": {
     "typescript": "~5.9.3"
