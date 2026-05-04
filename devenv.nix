@@ -22,6 +22,7 @@
     go-task
     quartoMinimal
     shfmt
+    biome
   ];
 
   languages = {
@@ -34,6 +35,8 @@
 
     javascript = {
       enable = true;
+
+      corepack.enable = true;
     };
 
     typescript = {
@@ -74,6 +77,10 @@
       };
 
       rustfmt = {
+        enable = true;
+      };
+
+      biome = {
         enable = true;
       };
     };

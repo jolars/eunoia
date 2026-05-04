@@ -33,23 +33,36 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Build WASM
-        run: |
-          wasm-pack build crates/eunoia-wasm --target web --out-dir ${{ github.workspace }}/web/pkg
-          ls -la web/pkg/
-
-      - name: Setup Node.js
+      # First setup-node call: just to get Node on PATH so corepack can run.
+      - name: Setup Node.js (bootstrap)
         uses: actions/setup-node@v6
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      # Second call: now pnpm is on PATH, so cache: "pnpm" works.
+      - name: Setup Node.js (with pnpm cache)
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Build WASM and prepare npm package
+        run: |
+          wasm-pack build crates/eunoia-wasm --target bundler --out-dir ${{ github.workspace }}/npm
+          node ts/prepare-package.mjs
+          ls -la npm/
 
       - name: Install web dependencies
-        run: cd web && npm ci
+        run: pnpm install --frozen-lockfile
+        working-directory: web
 
       - name: Build web app
-        run: cd web && npm run build
+        run: pnpm run build
+        working-directory: web
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

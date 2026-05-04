@@ -1,0 +1,20 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!.devenv",
+      "!.direnv",
+      "!crates",
+      "!.claude",
+      "!.cargo",
+      "!dist",
+      "!node_modules",
+      "!.pre-commit-config.yaml",
+      "!.versionary-manifest.json"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space"
+  }
+}

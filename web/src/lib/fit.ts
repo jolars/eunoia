@@ -1,8 +1,20 @@
+import {
+  type Layout,
+  type LossType,
+  type Optimizer,
+  type Point,
+  fit as runFitWrapper,
+  venn,
+  type Polygon as WrapperPolygon,
+  type Region as WrapperRegion,
+} from "@jolars/eunoia";
 import type {
   AdvancedOptions,
   DiagramType,
   FitResult,
   InputType,
+  LossName,
+  OptimizerName,
   Row,
   ShapeType,
   VennSetCount,
@@ -10,52 +22,44 @@ import type {
 
 const POLYGON_VERTICES = 256;
 
-function buildSpecs(wasm: any, rows: Row[]): any[] {
-  return rows
-    .filter((r) => {
-      const input = r.input.trim();
-      if (input === "" || r.size <= 0) return false;
-      if (input.endsWith("&") || input.endsWith("|")) return false;
-      return true;
-    })
-    .map((r) => new wasm.DiagramSpec(r.input.trim(), r.size));
-}
+const OPTIMIZER_MAP: Record<OptimizerName, Optimizer> = {
+  CmaEsLm: "cmaEsLm",
+  LevenbergMarquardt: "levenbergMarquardt",
+  Lbfgs: "lbfgs",
+  NelderMead: "nelderMead",
+};
 
-function optimizerEnum(wasm: any, name: AdvancedOptions["optimizer"]): any {
-  return wasm.WasmOptimizer[name];
-}
+const LOSS_MAP: Record<LossName, LossType> = {
+  SumSquared: "sumSquared",
+  SumAbsolute: "sumAbsolute",
+  SumAbsoluteRegionError: "sumAbsoluteRegionError",
+  SumSquaredRegionError: "sumSquaredRegionError",
+  MaxAbsolute: "maxAbsolute",
+  MaxSquared: "maxSquared",
+  RootMeanSquared: "rootMeanSquared",
+  Stress: "stress",
+  DiagError: "diagError",
+};
 
-function lossEnum(wasm: any, name: AdvancedOptions["lossType"]): any {
-  return wasm.WasmLossType[name];
-}
-
-function parseRecord(json: string): Record<string, number> {
-  if (!json) return {};
-  try {
-    return JSON.parse(json) as Record<string, number>;
-  } catch {
-    return {};
+function buildSets(rows: Row[]): Record<string, number> {
+  const sets: Record<string, number> = {};
+  for (const r of rows) {
+    const input = r.input.trim();
+    if (input === "" || r.size <= 0) continue;
+    if (input.endsWith("&") || input.endsWith("|")) continue;
+    sets[input] = r.size;
   }
+  return sets;
 }
 
-function parseAnchors(
-  json: string | undefined,
-  ctx: NormalizationContext,
-): Record<string, { x: number; y: number }> {
-  if (!json) return {};
-  try {
-    const raw = JSON.parse(json) as Record<string, [number, number]>;
-    const out: Record<string, { x: number; y: number }> = {};
-    for (const [name, [x, y]] of Object.entries(raw)) {
-      out[name] = { x: (x - ctx.minX) * ctx.scale, y: (y - ctx.minY) * ctx.scale };
-    }
-    return out;
-  } catch {
-    return {};
-  }
+interface NormalizationContext {
+  scale: number;
+  minX: number;
+  minY: number;
+  precision: number;
 }
 
-function normalizeBounds(boundsItems: { x: number; y: number }[][]): {
+function normalizeBounds(boundsItems: Point[][]): {
   minX: number;
   minY: number;
   maxX: number;
@@ -82,50 +86,50 @@ function normalizeBounds(boundsItems: { x: number; y: number }[][]): {
   return { minX, minY, maxX, maxY };
 }
 
-interface NormalizationContext {
-  scale: number;
-  minX: number;
-  minY: number;
-  precision: number;
-}
-
-function buildContext(boundsItems: { x: number; y: number }[][]): NormalizationContext {
+function buildContext(boundsItems: Point[][]): NormalizationContext {
   const { minX, minY, maxX, maxY } = normalizeBounds(boundsItems);
   const maxDim = Math.max(maxX - minX, maxY - minY) || 1;
   const scale = 100 / maxDim;
   return { scale, minX, minY, precision: maxDim * 0.001 };
 }
 
-function normPoint(p: { x: number; y: number }, ctx: NormalizationContext) {
+function normPoint(p: Point, ctx: NormalizationContext): Point {
   return { x: (p.x - ctx.minX) * ctx.scale, y: (p.y - ctx.minY) * ctx.scale };
 }
 
-function normPolygon(p: any, label: string, ctx: NormalizationContext) {
+function normPolygon(p: WrapperPolygon, ctx: NormalizationContext) {
   return {
-    label,
-    vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map((v) =>
-      normPoint(v, ctx),
-    ),
+    label: p.label,
+    vertices: p.vertices.map((v) => normPoint(v, ctx)),
   };
 }
 
-function normPiece(piece: any, label: string, ctx: NormalizationContext) {
-  return {
-    outer: normPolygon(piece.outer, label, ctx),
-    holes: (Array.from(piece.holes) as any[]).map((h) => normPolygon(h, label, ctx)),
-  };
+function pieceVerts(piece: WrapperRegion["pieces"][number]): Point[] {
+  const out: Point[] = [];
+  out.push(...piece.outer.vertices);
+  for (const h of piece.holes) out.push(...h.vertices);
+  return out;
 }
 
-function pieceVerts(piece: any): { x: number; y: number }[] {
-  const out: { x: number; y: number }[] = [];
-  for (const v of Array.from(piece.outer.vertices) as { x: number; y: number }[]) {
-    out.push(v);
-  }
-  for (const h of Array.from(piece.holes) as any[]) {
-    for (const v of Array.from(h.vertices) as { x: number; y: number }[]) {
-      out.push(v);
-    }
-  }
+function normRegions(regions: WrapperRegion[], ctx: NormalizationContext) {
+  return regions.map((r) => ({
+    combination: r.combination,
+    totalArea: r.totalArea,
+    pieces: r.pieces.map((piece) => ({
+      outer: normPolygon(piece.outer, ctx),
+      holes: piece.holes.map((h) => normPolygon(h, ctx)),
+    })),
+    labelX: (r.labelAnchor.x - ctx.minX) * ctx.scale,
+    labelY: (r.labelAnchor.y - ctx.minY) * ctx.scale,
+  }));
+}
+
+function normSetAnchors(
+  anchors: Record<string, Point>,
+  ctx: NormalizationContext,
+): Record<string, Point> {
+  const out: Record<string, Point> = {};
+  for (const [k, v] of Object.entries(anchors)) out[k] = normPoint(v, ctx);
   return out;
 }
 
@@ -138,257 +142,136 @@ export interface FitInputs {
   advanced: AdvancedOptions;
 }
 
-// Re-export so the worker can import the type from a single place.
 export type {
-  Row,
-  InputType,
-  ShapeType,
   AdvancedOptions,
   DiagramType,
+  InputType,
+  Row,
+  ShapeType,
   VennSetCount,
 };
 
-function runVennFit(wasm: any, inputs: FitInputs): FitResult {
-  const showRegions = inputs.advanced.showRegions;
+function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
+  const m = layout.metrics;
+  const metrics = {
+    loss: m.loss,
+    stress: m.stress,
+    diagError: m.diagError,
+    iterations: m.iterations,
+    target: m.targetAreas,
+    fitted: m.fittedAreas,
+    regionError: m.regionError,
+    residuals: m.residuals,
+  };
 
-  if (showRegions) {
-    const result = wasm.generate_venn_regions(inputs.vennN, POLYGON_VERTICES);
-    const rawRegions = Array.from(result.regions) as any[];
-    const allVerts = rawRegions.flatMap((r) =>
-      Array.from(r.pieces).flatMap((p: any) => pieceVerts(p)),
+  if (layout.mode === "regions") {
+    const allVerts = layout.regions.flatMap((r) =>
+      r.pieces.flatMap((p) => pieceVerts(p)),
     );
     const ctx = buildContext([allVerts]);
-    const regions = rawRegions.map((r: any) => {
-      const pieces = Array.from(r.pieces).map((piece: any) =>
-        normPiece(piece, r.combination as string, ctx),
-      );
-      return {
-        combination: r.combination as string,
-        totalArea: r.total_area as number,
-        pieces,
-        labelX: (r.label_x - ctx.minX) * ctx.scale,
-        labelY: (r.label_y - ctx.minY) * ctx.scale,
-      };
-    });
     return {
       shapeMode: "region",
-      shapeType: "ellipse",
+      shapeType,
       polygons: [],
       circles: [],
       ellipses: [],
       squares: [],
-      regions,
-      setAnchors: parseAnchors(result.set_anchors_json, ctx),
-      metrics: {
-        loss: result.loss,
-        stress: result.stress,
-        diagError: result.diag_error,
-        iterations: result.iterations,
-        target: parseRecord(result.target_areas_json),
-        fitted: parseRecord(result.fitted_areas_json),
-        regionError: parseRecord(result.region_error_json),
-        residuals: parseRecord(result.residuals_json),
-      },
+      regions: normRegions(layout.regions, ctx),
+      setAnchors: normSetAnchors(layout.setAnchors, ctx),
+      metrics,
     };
   }
 
-  const result = wasm.generate_venn_polygons(inputs.vennN, POLYGON_VERTICES);
-  const polygons = Array.from(result.polygons) as any[];
-  const ellipses = Array.from(result.ellipses) as any[];
+  if (layout.mode !== "polygons") {
+    throw new Error(`unexpected layout mode: ${layout.mode}`);
+  }
 
-  const polyVerts = polygons.map(
-    (p) => Array.from(p.vertices) as { x: number; y: number }[],
-  );
+  const polyVerts = layout.polygons.map((p) => p.vertices);
   const ctx = buildContext(polyVerts);
 
-  const normPolygons = polygons.map((p: any) => ({
-    label: p.label as string,
-    vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map((v) =>
-      normPoint(v, ctx),
-    ),
-  }));
-  const normEllipses = ellipses.map((e: any) => ({
-    label: e.label as string,
-    x: (e.x - ctx.minX) * ctx.scale,
-    y: (e.y - ctx.minY) * ctx.scale,
-    semi_major: e.semi_major * ctx.scale,
-    semi_minor: e.semi_minor * ctx.scale,
-    rotation: e.rotation,
-    labelX: (e.label_x - ctx.minX) * ctx.scale,
-    labelY: (e.label_y - ctx.minY) * ctx.scale,
+  const normPolygons = layout.polygons.map((p) => ({
+    label: p.label,
+    vertices: p.vertices.map((v) => normPoint(v, ctx)),
   }));
 
-  return {
+  const result: FitResult = {
     shapeMode: "outline",
-    shapeType: "ellipse",
+    shapeType,
     polygons: normPolygons,
     circles: [],
-    ellipses: normEllipses,
+    ellipses: [],
     squares: [],
     regions: [],
     setAnchors: {},
-    metrics: {
-      loss: result.loss,
-      stress: result.stress,
-      diagError: result.diag_error,
-      iterations: result.iterations,
-      target: parseRecord(result.target_areas_json),
-      fitted: parseRecord(result.fitted_areas_json),
-      regionError: parseRecord(result.region_error_json),
-      residuals: parseRecord(result.residuals_json),
-    },
+    metrics,
   };
+
+  if (layout.shape === "circle") {
+    result.circles = layout.circles.map((c) => ({
+      label: c.label,
+      x: (c.x - ctx.minX) * ctx.scale,
+      y: (c.y - ctx.minY) * ctx.scale,
+      radius: c.radius * ctx.scale,
+      labelX: (c.labelAnchor.x - ctx.minX) * ctx.scale,
+      labelY: (c.labelAnchor.y - ctx.minY) * ctx.scale,
+    }));
+  } else if (layout.shape === "ellipse") {
+    result.ellipses = layout.ellipses.map((e) => ({
+      label: e.label,
+      x: (e.x - ctx.minX) * ctx.scale,
+      y: (e.y - ctx.minY) * ctx.scale,
+      semi_major: e.semiMajor * ctx.scale,
+      semi_minor: e.semiMinor * ctx.scale,
+      rotation: e.rotation,
+      labelX: (e.labelAnchor.x - ctx.minX) * ctx.scale,
+      labelY: (e.labelAnchor.y - ctx.minY) * ctx.scale,
+    }));
+  } else if (layout.shape === "square") {
+    result.squares = layout.squares.map((s) => ({
+      label: s.label,
+      x: (s.x - ctx.minX) * ctx.scale,
+      y: (s.y - ctx.minY) * ctx.scale,
+      side: s.side * ctx.scale,
+      labelX: (s.labelAnchor.x - ctx.minX) * ctx.scale,
+      labelY: (s.labelAnchor.y - ctx.minY) * ctx.scale,
+    }));
+  }
+
+  return result;
 }
 
-export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
+export function runFit(inputs: FitInputs): FitResult | null {
   if (inputs.diagramType === "venn") {
-    return runVennFit(wasm, inputs);
+    const layout = venn({
+      n: inputs.vennN,
+      output: inputs.advanced.showRegions ? "regions" : "polygons",
+      polygonVertices: POLYGON_VERTICES,
+    });
+    return layoutToFitResult(layout, "ellipse");
   }
-  const specs = buildSpecs(wasm, inputs.rows);
-  if (specs.length === 0) return null;
-  const seed =
-    inputs.advanced.useSeed && inputs.advanced.seed !== undefined
-      ? BigInt(inputs.advanced.seed)
-      : undefined;
-  const optimizer = optimizerEnum(wasm, inputs.advanced.optimizer);
-  const lossType = lossEnum(wasm, inputs.advanced.lossType);
+
+  const sets = buildSets(inputs.rows);
+  if (Object.keys(sets).length === 0) return null;
+
   const tolerance =
     Number.isFinite(inputs.advanced.tolerance) && inputs.advanced.tolerance > 0
       ? inputs.advanced.tolerance
       : undefined;
-  const showRegions = inputs.advanced.showRegions;
 
-  if (showRegions) {
-    const fn =
-      inputs.shapeType === "circle"
-        ? wasm.generate_region_polygons_circles
-        : inputs.shapeType === "square"
-          ? wasm.generate_region_polygons_squares
-          : wasm.generate_region_polygons_ellipses;
-    const result = fn(
-      specs,
-      inputs.inputType,
-      POLYGON_VERTICES,
-      seed,
-      optimizer,
-      lossType,
-      tolerance,
-    );
-    const rawRegions = Array.from(result.regions) as any[];
-    const allVerts = rawRegions.flatMap((r) =>
-      Array.from(r.pieces).flatMap((p: any) => pieceVerts(p)),
-    );
-    const ctx = buildContext([allVerts]);
-    const regions = rawRegions.map((r: any) => {
-      const pieces = Array.from(r.pieces).map((piece: any) =>
-        normPiece(piece, r.combination as string, ctx),
-      );
-      return {
-        combination: r.combination as string,
-        totalArea: r.total_area as number,
-        pieces,
-        labelX: (r.label_x - ctx.minX) * ctx.scale,
-        labelY: (r.label_y - ctx.minY) * ctx.scale,
-      };
-    });
-    return {
-      shapeMode: "region",
-      shapeType: inputs.shapeType,
-      polygons: [],
-      circles: [],
-      ellipses: [],
-      squares: [],
-      regions,
-      setAnchors: parseAnchors(result.set_anchors_json, ctx),
-      metrics: {
-        loss: result.loss,
-        stress: result.stress,
-        diagError: result.diag_error,
-        iterations: result.iterations,
-        target: parseRecord(result.target_areas_json),
-        fitted: parseRecord(result.fitted_areas_json),
-        regionError: parseRecord(result.region_error_json),
-        residuals: parseRecord(result.residuals_json),
-      },
-    };
-  }
-
-  const fn =
-    inputs.shapeType === "circle"
-      ? wasm.generate_circles_as_polygons
-      : inputs.shapeType === "square"
-        ? wasm.generate_squares_as_polygons
-        : wasm.generate_ellipses_as_polygons;
-  const result = fn(
-    specs,
-    inputs.inputType,
-    POLYGON_VERTICES,
-    seed,
-    optimizer,
-    lossType,
+  const layout = runFitWrapper({
+    sets,
+    inputType: inputs.inputType,
+    shape: inputs.shapeType,
+    output: inputs.advanced.showRegions ? "regions" : "polygons",
+    seed:
+      inputs.advanced.useSeed && inputs.advanced.seed !== undefined
+        ? inputs.advanced.seed
+        : undefined,
+    optimizer: OPTIMIZER_MAP[inputs.advanced.optimizer],
+    loss: LOSS_MAP[inputs.advanced.lossType],
     tolerance,
-  );
-  const polygons = Array.from(result.polygons) as any[];
-  const circles = Array.from(result.circles) as any[];
-  const ellipses = Array.from(result.ellipses) as any[];
-  const squares = Array.from(result.squares) as any[];
+    polygonVertices: POLYGON_VERTICES,
+  });
 
-  const polyVerts = polygons.map(
-    (p) => Array.from(p.vertices) as { x: number; y: number }[],
-  );
-  const ctx = buildContext(polyVerts);
-
-  const normPolygons = polygons.map((p: any) => ({
-    label: p.label as string,
-    vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map((v) =>
-      normPoint(v, ctx),
-    ),
-  }));
-  const normCircles = circles.map((c: any) => ({
-    label: c.label as string,
-    x: (c.x - ctx.minX) * ctx.scale,
-    y: (c.y - ctx.minY) * ctx.scale,
-    radius: c.radius * ctx.scale,
-    labelX: (c.label_x - ctx.minX) * ctx.scale,
-    labelY: (c.label_y - ctx.minY) * ctx.scale,
-  }));
-  const normEllipses = ellipses.map((e: any) => ({
-    label: e.label as string,
-    x: (e.x - ctx.minX) * ctx.scale,
-    y: (e.y - ctx.minY) * ctx.scale,
-    semi_major: e.semi_major * ctx.scale,
-    semi_minor: e.semi_minor * ctx.scale,
-    rotation: e.rotation,
-    labelX: (e.label_x - ctx.minX) * ctx.scale,
-    labelY: (e.label_y - ctx.minY) * ctx.scale,
-  }));
-  const normSquares = squares.map((s: any) => ({
-    label: s.label as string,
-    x: (s.x - ctx.minX) * ctx.scale,
-    y: (s.y - ctx.minY) * ctx.scale,
-    side: s.side * ctx.scale,
-    labelX: (s.label_x - ctx.minX) * ctx.scale,
-    labelY: (s.label_y - ctx.minY) * ctx.scale,
-  }));
-
-  return {
-    shapeMode: "outline",
-    shapeType: inputs.shapeType,
-    polygons: normPolygons,
-    circles: normCircles,
-    ellipses: normEllipses,
-    squares: normSquares,
-    regions: [],
-    setAnchors: {},
-    metrics: {
-      loss: result.loss,
-      stress: result.stress,
-      diagError: result.diag_error,
-      iterations: result.iterations,
-      target: parseRecord(result.target_areas_json),
-      fitted: parseRecord(result.fitted_areas_json),
-      regionError: parseRecord(result.region_error_json),
-      residuals: parseRecord(result.residuals_json),
-    },
-  };
+  return layoutToFitResult(layout, inputs.shapeType);
 }

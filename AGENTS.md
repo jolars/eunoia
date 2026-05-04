@@ -45,16 +45,18 @@ Generate area-proportional Euler and Venn diagrams by:
 
 To enable: Add `features = ["plotting"]` to your Cargo.toml or use `--features plotting`
 
-## Target Bindings (Future)
+## Target Bindings
 
-- **WebAssembly (WASM)** for web applications - will be part of this repository
-- **R package** (thin wrapper) - separate repository
-- **Python package** (thin wrapper) - separate repository
-- **Julia package** (thin wrapper) - separate repository
+- **WebAssembly (WASM)** — published as
+  [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) on npm; built
+  from `crates/eunoia-wasm/` via `task pack-npm` and lives in this repository
+- **R package** (thin wrapper) - separate repository (planned)
+- **Python package** (thin wrapper) - separate repository (planned)
+- **Julia package** (thin wrapper) - separate repository (planned)
 
-**Note**: Only WASM bindings will be maintained in this repository.
-Language-specific bindings (R, Python, Julia) will be maintained in their own
-dedicated repositories as thin wrappers around this core library.
+**Note**: Only WASM/npm bindings are maintained in this repository.
+Language-specific bindings (R, Python, Julia) live in their own dedicated
+repositories as thin wrappers around this core library.
 
 ## Architecture
 
@@ -576,14 +578,34 @@ You can run these instead of manual cargo commands for convenience.
 
 ### WASM and Web App Development
 
-Building WASM:
+The npm package is published as `@jolars/eunoia` and the build output lives in
+the top-level `npm/` directory (gitignored — purely generated). The public
+TypeScript surface (`fit`, `venn`, `Layout`, …) is hand-written in
+`ts/index.ts` and compiled into `npm/index.{js,d.ts}` by
+`ts/prepare-package.mjs` (which also patches `npm/package.json`). The raw
+wasm-bindgen surface remains accessible via `@jolars/eunoia/raw`. The Svelte
+web app consumes the package via a `file:../npm` dependency. Both the web app
+and the `ts/` build pin pnpm via `packageManager` and are driven through
+corepack — run `corepack enable` once locally to opt in.
+
+Building WASM and preparing the npm package:
 
 ```bash
-# Using Task
+# Using Task (recommended)
+task pack-npm                # build-wasm + prepare-package.mjs
+
+# Just the wasm-pack build (no package.json fixup)
 task build-wasm
 
 # Or directly with wasm-pack
-wasm-pack build crates/eunoia-wasm --target web --out-dir ../../web/pkg
+wasm-pack build crates/eunoia-wasm --target bundler --out-dir ../../npm
+```
+
+Publishing (handled by `.github/workflows/publish-npm.yml` on `v*` tags):
+
+```bash
+task pack-npm
+cd npm && npm publish --access public
 ```
 
 Running web dev server:

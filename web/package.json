@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -29,6 +30,7 @@
     "vite-plugin-wasm": "^3.5.0"
   },
   "dependencies": {
+    "@jolars/eunoia": "file:../npm",
     "@tailwindcss/postcss": "^4.1.17",
     "esbuild": "^0.25.12",
     "jspdf": "^4.2.1",

@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
-import { runFit, type FitInputs } from "./fit";
 import type { FitResult } from "../types/diagram";
+import { type FitInputs, runFit } from "./fit";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -16,13 +16,9 @@ type Response =
 
 let wasmPromise: Promise<unknown> | null = null;
 
-async function loadWasm() {
+async function ensureWasm() {
   if (!wasmPromise) {
-    wasmPromise = (async () => {
-      const wasm = await import("../../pkg/eunoia_wasm.js");
-      await (wasm as { default: () => Promise<unknown> }).default();
-      return wasm;
-    })();
+    wasmPromise = import("@jolars/eunoia");
   }
   return wasmPromise;
 }
@@ -30,13 +26,13 @@ async function loadWasm() {
 self.onmessage = async (e: MessageEvent<Request>) => {
   const msg = e.data;
   try {
-    const wasm = await loadWasm();
+    await ensureWasm();
     if (msg.type === "init") {
       const reply: Response = { id: msg.id, ready: true };
       self.postMessage(reply);
       return;
     }
-    const result = runFit(wasm, msg.inputs);
+    const result = runFit(msg.inputs);
     const reply: Response = { id: msg.id, result };
     self.postMessage(reply);
   } catch (err) {

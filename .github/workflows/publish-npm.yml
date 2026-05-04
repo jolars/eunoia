@@ -1,0 +1,53 @@
+name: Publish npm Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # OIDC for npm provenance
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          targets: wasm32-unknown-unknown
+          toolchain: 1.84.1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Build WASM and prepare npm package
+        run: |
+          wasm-pack build crates/eunoia-wasm --target bundler --out-dir ${{ github.workspace }}/npm
+          node ts/prepare-package.mjs
+
+      - name: Publish to npm
+        working-directory: npm
+        run: pnpm publish --provenance --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

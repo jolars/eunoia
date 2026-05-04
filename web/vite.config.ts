@@ -1,9 +1,9 @@
-import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
-import wasm from "vite-plugin-wasm";
+import { defineConfig } from "vite";
+import viteCompression from "vite-plugin-compression";
 import Sitemap from "vite-plugin-sitemap";
 import topLevelAwait from "vite-plugin-top-level-await";
-import viteCompression from "vite-plugin-compression";
+import wasm from "vite-plugin-wasm";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -15,6 +15,10 @@ export default defineConfig({
     Sitemap({ hostname: "https://eunoia.fit" }),
     viteCompression({ algorithm: "brotliCompress" }),
   ],
+  worker: {
+    format: "es",
+    plugins: () => [wasm(), topLevelAwait()],
+  },
   build: {
     target: "esnext",
     minify: "esbuild",

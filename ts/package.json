@@ -1,0 +1,9 @@
+{
+  "name": "eunoia-wasm-wrapper",
+  "private": true,
+  "description": "TypeScript wrapper source for the @jolars/eunoia npm package. Compiled into npm/ by crates/eunoia-wasm/prepare-package.mjs.",
+  "packageManager": "pnpm@10.33.2",
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

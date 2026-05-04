@@ -185,3 +185,14 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# wasm-pack output for the npm package (purely generated)
+/npm/
+
+# Legacy wasm-pack output for the web app (now consumed via npm/)
+/web/pkg/
+
+# TS source build state
+/ts/node_modules/
+/ts/eunoia_wasm.d.ts
+/ts/package-lock.json
