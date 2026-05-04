@@ -13,7 +13,7 @@ use crate::geometry::shapes::Polygon;
 use crate::geometry::traits::{DiagramShape, Polygonize};
 use crate::plotting::clip::{polygon_clip_many, ClipOperation};
 use crate::plotting::regions::{
-    classify_into_pieces, decompose_regions, poi_with_holes, RegionPolygons,
+    classify_into_pieces, decompose_regions_with, poi_with_holes, RegionPolygons,
 };
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
@@ -21,7 +21,24 @@ use std::collections::HashMap;
 /// Options controlling [`PlotData`] construction.
 ///
 /// Use [`PlotOptions::default`] for sensible defaults (`n_vertices = 200`,
-/// `label_precision = 0.01`).
+/// `label_precision = 0.01`, `sliver_threshold = 1e-3`).
+///
+/// # Polygonal output, not analytical
+///
+/// Every boundary in the resulting [`PlotData`] is a polygon at
+/// `n_vertices` resolution — including the per-set
+/// [`shape_outlines`](PlotData::shape_outlines) and the per-region
+/// [`pieces`](crate::plotting::RegionPiece). This is intentional: a single
+/// uniform polygonal representation lets language bindings (R, Python,
+/// Julia, web) round-trip the data through any standard polygon library
+/// without needing analytical curve support.
+///
+/// The trade-off is that high-DPI vector exports (large SVG / PDF) may
+/// show faceting on circular boundaries at low `n_vertices`. Raise
+/// `n_vertices` (eulerr's default is 200) for smoother edges; or, for
+/// crispest set boundaries specifically, render strokes from the
+/// analytical shape via [`crate::geometry::traits::Polygonize`] at a
+/// higher resolution than the region decomposition uses.
 #[derive(Debug, Clone, Copy)]
 pub struct PlotOptions {
     /// Number of vertices used when polygonizing each shape (both for region
@@ -34,6 +51,21 @@ pub struct PlotOptions {
     /// the polygon coordinates. Smaller values yield more accurate anchors
     /// at higher cost.
     pub label_precision: f64,
+
+    /// Minimum net area for a region piece, expressed as a fraction of the
+    /// largest piece in the diagram. Pieces below this fraction are
+    /// rejected as polygonization artifacts during
+    /// [`decompose_regions`](crate::plotting::decompose_regions). Set to
+    /// `0.0` to disable filtering.
+    ///
+    /// Default `1e-3` is calibrated against 200-vertex polygonization seam
+    /// slivers (which come in around 0.02 % of the largest piece). Raise
+    /// it if you see numerical noise; lower it (or zero it) if you have
+    /// legitimate small regions that risk being filtered.
+    ///
+    /// Scale-invariant: the threshold is a *fraction* of the largest piece,
+    /// so it behaves the same on diagrams with radius 1 and radius 1000.
+    pub sliver_threshold: f64,
 }
 
 impl Default for PlotOptions {
@@ -41,6 +73,7 @@ impl Default for PlotOptions {
         Self {
             n_vertices: 200,
             label_precision: 0.01,
+            sliver_threshold: 1e-3,
         }
     }
 }
@@ -52,6 +85,15 @@ impl Default for PlotOptions {
 /// transform). See [`crate::Layout::plot_data`] for construction and
 /// [`crate::plotting::RegionPiece`] for the rendering contract on
 /// `regions`.
+///
+/// # Region keys
+///
+/// Region-keyed maps (`region_anchors`, `region_areas`) use the canonical
+/// `"A&B&C"` string form (the `Display` impl on
+/// [`crate::spec::Combination`]) so binding authors can serialise without
+/// round-tripping through the [`Combination`] type.
+/// Use [`PlotData::pieces_for`] when you need to look up the underlying
+/// region pieces by the same string.
 #[derive(Debug, Clone)]
 pub struct PlotData {
     /// Per-region pieces (outer + holes per connected component) keyed by
@@ -65,7 +107,13 @@ pub struct PlotData {
     /// [`RegionPolygons::label_points`] — the pole of inaccessibility of
     /// the highest-clearance piece. Use these for per-region labels such
     /// as element counts.
-    pub region_anchors: HashMap<Combination, Point>,
+    pub region_anchors: HashMap<String, Point>,
+
+    /// Net area for every non-empty region — sum of piece areas (each
+    /// piece's outer minus its holes). Same coordinate units as the
+    /// fitted shapes. Use these for printing fitted-area labels alongside
+    /// region anchors without calling [`RegionPolygons::areas`] yourself.
+    pub region_areas: HashMap<String, f64>,
     /// Label anchor for every set, with the eulerr-style fallback chain:
     ///
     /// 1. **Hole-aware POI of `shape_i \ ⋃_{j≠i} shape_j`** — the natural
@@ -82,35 +130,83 @@ pub struct PlotData {
     /// [`RegionPolygons::set_label_points`].
     pub set_anchors: HashMap<String, Point>,
 
-    /// Polygonised outline of each set's shape, in the order of
-    /// `spec.set_names()`. Use these to draw set boundaries (edges)
-    /// directly from the analytical shape rather than from the unioned
-    /// regions — avoids visible seams where exclusive regions meet under
-    /// stroke rendering.
-    pub shape_outlines: Vec<Polygon>,
+    /// Polygonised outline of each set's shape, keyed by set name (so
+    /// bindings don't have to rely on positional ordering with
+    /// `spec.set_names()`).
+    ///
+    /// These are produced by polygonizing each analytical shape at
+    /// `PlotOptions::n_vertices` — there's no clipping involved, so they
+    /// don't have the seam slivers that region decomposition can leave
+    /// behind. Use them to draw set strokes directly without visible
+    /// seams between exclusive regions, or when you want to overlay the
+    /// "outline" view on top of a "filled regions" view.
+    pub shape_outlines: HashMap<String, Polygon>,
+}
+
+impl PlotData {
+    /// Look up the [`RegionPiece`](crate::plotting::RegionPiece)s for a
+    /// region by its canonical combination string (the same key used by
+    /// `region_anchors` and `region_areas`). Returns `None` for combos
+    /// that correspond to no fitted area.
+    ///
+    /// Use this to keep all per-region state on a single string key:
+    ///
+    /// ```ignore
+    /// for (combo, anchor) in &plot.region_anchors {
+    ///     let pieces = plot.pieces_for(combo).unwrap();
+    ///     // … render pieces, place label at anchor …
+    /// }
+    /// ```
+    pub fn pieces_for(&self, combination: &str) -> Option<&Vec<crate::plotting::RegionPiece>> {
+        let parts: Vec<&str> = combination.split('&').map(|s| s.trim()).collect();
+        let combo = Combination::new(&parts);
+        self.regions.get(&combo)
+    }
 }
 
 pub(crate) fn build_plot_data<S>(shapes: &[S], spec: &DiagramSpec, options: PlotOptions) -> PlotData
 where
     S: DiagramShape + Polygonize,
 {
-    let regions = decompose_regions(shapes, spec.set_names(), spec, options.n_vertices);
-    let region_anchors = regions.label_points(options.label_precision);
-    let shape_outlines: Vec<Polygon> = shapes
+    let regions = decompose_regions_with(
+        shapes,
+        spec.set_names(),
+        spec,
+        options.n_vertices,
+        options.sliver_threshold,
+    );
+    let region_anchors_combo = regions.label_points(options.label_precision);
+    let region_anchors: HashMap<String, Point> = region_anchors_combo
+        .iter()
+        .map(|(combo, p)| (combo.to_string(), *p))
+        .collect();
+    let region_areas: HashMap<String, f64> = regions
+        .areas()
+        .into_iter()
+        .map(|(combo, a)| (combo.to_string(), a))
+        .collect();
+    let outline_vec: Vec<Polygon> = shapes
         .iter()
         .map(|s| s.polygonize(options.n_vertices))
         .collect();
     let set_anchors = compute_set_anchors(
-        &shape_outlines,
+        &outline_vec,
         spec.set_names(),
         &regions,
-        &region_anchors,
+        &region_anchors_combo,
         options.label_precision,
     );
+    let shape_outlines: HashMap<String, Polygon> = spec
+        .set_names()
+        .iter()
+        .zip(outline_vec.iter())
+        .map(|(name, poly)| (name.clone(), poly.clone()))
+        .collect();
 
     PlotData {
         regions,
         region_anchors,
+        region_areas,
         set_anchors,
         shape_outlines,
     }
@@ -354,7 +450,7 @@ mod tests {
 
         // Region polygons + region anchors should agree on which regions exist.
         for combo in plot.regions.iter().map(|(c, _)| c) {
-            assert!(plot.region_anchors.contains_key(combo));
+            assert!(plot.region_anchors.contains_key(&combo.to_string()));
         }
         // One outline per set.
         assert_eq!(plot.shape_outlines.len(), spec.set_names().len());

@@ -615,16 +615,13 @@ fn polygon_to_wasm(poly: &eunoia::geometry::shapes::Polygon, label: &str) -> Was
     }
 }
 
-/// Convert a core `RegionPiece` into a `WasmRegionPiece`, propagating the
-/// region's combination string as a label on each underlying ring polygon.
-fn region_piece_to_wasm(piece: &eunoia::plotting::RegionPiece, label: &str) -> WasmRegionPiece {
+/// Convert a core `RegionPiece` into a `WasmRegionPiece`. The ring-level
+/// `WasmPolygon::label` is left empty: the meaningful label for a region
+/// piece is the region's combination, which lives on `WasmRegion`.
+fn region_piece_to_wasm(piece: &eunoia::plotting::RegionPiece) -> WasmRegionPiece {
     WasmRegionPiece {
-        outer: polygon_to_wasm(&piece.outer, label),
-        holes: piece
-            .holes
-            .iter()
-            .map(|h| polygon_to_wasm(h, label))
-            .collect(),
+        outer: polygon_to_wasm(&piece.outer, ""),
+        holes: piece.holes.iter().map(|h| polygon_to_wasm(h, "")).collect(),
     }
 }
 
@@ -700,7 +697,7 @@ where
     let region_anchors = plot
         .region_anchors
         .into_iter()
-        .map(|(combo, p)| (combo.to_string(), (p.x(), p.y())))
+        .map(|(combo, p)| (combo, (p.x(), p.y())))
         .collect();
     let set_anchors = plot
         .set_anchors
@@ -1920,10 +1917,7 @@ pub fn generate_region_polygons_circles(
     let mut wasm_regions = Vec::new();
     for (combination, pieces) in region_polygons.iter() {
         let combo_key = combination.to_string();
-        let wasm_pieces: Vec<WasmRegionPiece> = pieces
-            .iter()
-            .map(|piece| region_piece_to_wasm(piece, &combo_key))
-            .collect();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces.iter().map(region_piece_to_wasm).collect();
         let (label_x, label_y) = region_anchors_map
             .get(&combo_key)
             .copied()
@@ -2033,10 +2027,7 @@ pub fn generate_region_polygons_ellipses(
     let mut wasm_regions = Vec::new();
     for (combination, pieces) in region_polygons.iter() {
         let combo_key = combination.to_string();
-        let wasm_pieces: Vec<WasmRegionPiece> = pieces
-            .iter()
-            .map(|piece| region_piece_to_wasm(piece, &combo_key))
-            .collect();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces.iter().map(region_piece_to_wasm).collect();
         let (label_x, label_y) = region_anchors_map
             .get(&combo_key)
             .copied()
@@ -2143,10 +2134,7 @@ pub fn generate_region_polygons_squares(
     let mut wasm_regions = Vec::new();
     for (combination, pieces) in region_polygons.iter() {
         let combo_key = combination.to_string();
-        let wasm_pieces: Vec<WasmRegionPiece> = pieces
-            .iter()
-            .map(|piece| region_piece_to_wasm(piece, &combo_key))
-            .collect();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces.iter().map(region_piece_to_wasm).collect();
         let (label_x, label_y) = region_anchors_map
             .get(&combo_key)
             .copied()
@@ -2285,10 +2273,7 @@ pub fn generate_venn_regions(n: usize, n_vertices: usize) -> Result<WasmRegionPo
     let mut wasm_regions = Vec::new();
     for (combination, pieces) in region_polygons.iter() {
         let combo_key = combination.to_string();
-        let wasm_pieces: Vec<WasmRegionPiece> = pieces
-            .iter()
-            .map(|piece| region_piece_to_wasm(piece, &combo_key))
-            .collect();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces.iter().map(region_piece_to_wasm).collect();
         let (label_x, label_y) = region_anchors_map
             .get(&combo_key)
             .copied()

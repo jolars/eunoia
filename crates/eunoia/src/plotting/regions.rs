@@ -90,20 +90,23 @@ pub struct RegionPolygons {
 }
 
 impl RegionPolygons {
-    /// Creates a new empty `RegionPolygons` collection. Most callers should
-    /// instead use [`decompose_regions`] (or [`crate::Layout::region_polygons`])
-    /// to populate one from fitted shapes.
-    pub fn new() -> Self {
+    /// Creates a new empty `RegionPolygons` collection.
+    ///
+    /// `pub(crate)` on purpose: the only sound way to populate one is via
+    /// [`decompose_regions`] (or [`crate::Layout::region_polygons`]), which
+    /// guarantees the [`RegionPiece`] orientation and topology contract.
+    /// Hand-built collections would let callers violate those invariants
+    /// silently.
+    pub(crate) fn new() -> Self {
         Self {
             regions: HashMap::new(),
         }
     }
 
-    /// Adds pieces for a given region, replacing any previous entry for
-    /// `combination`. The caller is responsible for ensuring the pieces
-    /// satisfy the [`RegionPiece`] orientation contract — typically only
-    /// useful for tests; production code should rely on [`decompose_regions`].
-    pub fn insert(&mut self, combination: Combination, pieces: Vec<RegionPiece>) {
+    /// Adds pieces for a given region. `pub(crate)` to keep the orientation
+    /// contract on [`RegionPiece`] enforceable — production code should use
+    /// [`decompose_regions`].
+    pub(crate) fn insert(&mut self, combination: Combination, pieces: Vec<RegionPiece>) {
         self.regions.insert(combination, pieces);
     }
 
@@ -155,6 +158,15 @@ impl RegionPolygons {
     ///
     /// Regions with no pieces (or whose pieces are degenerate) are omitted.
     ///
+    /// # When to use this vs [`crate::plotting::PlotData::region_anchors`]
+    ///
+    /// They compute the same thing. Use this method when you've built a
+    /// `RegionPolygons` directly (e.g. via [`decompose_regions`]) and want
+    /// region anchors without going through `PlotData`. Use
+    /// [`PlotData::region_anchors`](crate::plotting::PlotData::region_anchors)
+    /// if you're already constructing a [`crate::plotting::PlotData`] for
+    /// rendering — the anchors are precomputed there.
+    ///
     /// # Arguments
     ///
     /// * `precision` - Polylabel precision, in the same units as the polygon
@@ -195,18 +207,19 @@ impl RegionPolygons {
             .collect()
     }
 
-    /// Computes a label anchor point for every set in `set_names`, by
-    /// unioning every region containing the set, reclassifying the union
-    /// into [`RegionPiece`]s, and returning the hole-aware pole of
-    /// inaccessibility of the highest-clearance piece.
+    /// **Raw** per-set label anchors — the hole-aware pole of inaccessibility
+    /// of the union of every region containing the set. No fallback is
+    /// applied: a set with no exclusive area of its own will land at the
+    /// best POI of whatever pieces it appears in (which may be a thin
+    /// intersection sliver), or be omitted entirely if it appears in no
+    /// region.
     ///
-    /// This works for nested sets in the same way it works for overlapping
-    /// ones — but if you also want the eulerr-style fallback ("if a set has
-    /// no exclusive region of its own, place its label inside the largest
-    /// containing intersection"), use [`crate::plotting::PlotData::set_anchors`]
-    /// instead. That builds anchors directly from the shape outlines and
-    /// applies the fallback automatically; this method only sees the region
-    /// decomposition.
+    /// Most callers want
+    /// [`PlotData::set_anchors`](crate::plotting::PlotData::set_anchors)
+    /// instead, which adds the eulerr-style fallback chain (largest
+    /// containing region → shape POI). Use this method only when you want
+    /// the raw region-derived anchor without fallback — e.g. if you're
+    /// implementing a different placement policy on top.
     ///
     /// Sets that are absent from every region are omitted from the result.
     ///
@@ -575,11 +588,10 @@ pub(crate) fn poi_with_holes(pieces: &[RegionPiece], precision: f64) -> Option<(
     best_overall
 }
 
-impl Default for RegionPolygons {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Intentionally no `Default` impl: an empty `RegionPolygons` is not a
+// meaningful default for a fitted diagram, and exposing one would let
+// callers bypass the [`decompose_regions`] invariants. Construct via
+// [`decompose_regions`] (or [`crate::Layout::region_polygons`]).
 
 /// Decomposes fitted shapes into exclusive [`RegionPiece`]s, one entry per
 /// non-empty set combination.
@@ -661,16 +673,33 @@ impl Default for RegionPolygons {
 pub fn decompose_regions<S: DiagramShape + Polygonize>(
     shapes: &[S],
     set_names: &[String],
-    _spec: &DiagramSpec,
+    spec: &DiagramSpec,
     n_vertices: usize,
 ) -> RegionPolygons {
-    /// Pieces whose net area is below this fraction of the largest piece in
-    /// the diagram are treated as polygonization artifacts and dropped.
-    /// Calibrated against the eulerr-comparison case (B/C/D nested in A,
-    /// 200-vertex polygonization) where seam slivers come in at ~0.02% of
-    /// the largest piece.
-    const SLIVER_RELATIVE_THRESHOLD: f64 = 1e-3;
+    decompose_regions_with(
+        shapes,
+        set_names,
+        spec,
+        n_vertices,
+        DEFAULT_SLIVER_THRESHOLD,
+    )
+}
 
+/// Default sliver threshold used by [`decompose_regions`] when called
+/// without an explicit override. Mirrors `PlotOptions::default().sliver_threshold`.
+pub const DEFAULT_SLIVER_THRESHOLD: f64 = 1e-3;
+
+/// Like [`decompose_regions`] but with explicit control over the sliver
+/// filter. `sliver_threshold` is the minimum net piece area relative to
+/// the largest piece in the diagram; pieces below it are dropped. Set to
+/// `0.0` to disable filtering.
+pub fn decompose_regions_with<S: DiagramShape + Polygonize>(
+    shapes: &[S],
+    set_names: &[String],
+    _spec: &DiagramSpec,
+    n_vertices: usize,
+    sliver_threshold: f64,
+) -> RegionPolygons {
     if shapes.is_empty() {
         return RegionPolygons::new();
     }
@@ -748,17 +777,20 @@ pub fn decompose_regions<S: DiagramShape + Polygonize>(
         raw.push((combination, pieces));
     }
 
-    // Sliver filtering: drop pieces below `SLIVER_RELATIVE_THRESHOLD` of the
-    // largest piece anywhere in the diagram. This eliminates the tiny
-    // "B-only" shards produced by 200-vertex polygonization where B is
-    // geometrically nested in A (their boundaries don't agree exactly along
-    // the seam at B's right edge), which would otherwise mislead label
-    // anchors and stroke rendering.
+    // Sliver filtering: drop pieces below `sliver_threshold` of the largest
+    // piece anywhere in the diagram. Eliminates tiny shards produced by
+    // 200-vertex polygonization along seams between geometrically tangent
+    // shapes, which would otherwise mislead label anchors and stroke
+    // rendering. `sliver_threshold == 0.0` disables filtering.
     let max_piece_area = raw
         .iter()
         .flat_map(|(_, pieces)| pieces.iter().map(|p| p.area()))
         .fold(0.0_f64, f64::max);
-    let min_keep = max_piece_area * SLIVER_RELATIVE_THRESHOLD;
+    let min_keep = if sliver_threshold > 0.0 {
+        max_piece_area * sliver_threshold
+    } else {
+        0.0
+    };
 
     let mut result = RegionPolygons::new();
     for (combo, pieces) in raw {
