@@ -38,6 +38,23 @@ function parseRecord(json: string): Record<string, number> {
   }
 }
 
+function parseAnchors(
+  json: string | undefined,
+  ctx: NormalizationContext,
+): Record<string, { x: number; y: number }> {
+  if (!json) return {};
+  try {
+    const raw = JSON.parse(json) as Record<string, [number, number]>;
+    const out: Record<string, { x: number; y: number }> = {};
+    for (const [name, [x, y]] of Object.entries(raw)) {
+      out[name] = { x: (x - ctx.minX) * ctx.scale, y: (y - ctx.minY) * ctx.scale };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 function normalizeBounds(boundsItems: { x: number; y: number }[][]): {
   minX: number;
   minY: number;
@@ -83,6 +100,35 @@ function normPoint(p: { x: number; y: number }, ctx: NormalizationContext) {
   return { x: (p.x - ctx.minX) * ctx.scale, y: (p.y - ctx.minY) * ctx.scale };
 }
 
+function normPolygon(p: any, label: string, ctx: NormalizationContext) {
+  return {
+    label,
+    vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map((v) =>
+      normPoint(v, ctx),
+    ),
+  };
+}
+
+function normPiece(piece: any, label: string, ctx: NormalizationContext) {
+  return {
+    outer: normPolygon(piece.outer, label, ctx),
+    holes: (Array.from(piece.holes) as any[]).map((h) => normPolygon(h, label, ctx)),
+  };
+}
+
+function pieceVerts(piece: any): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (const v of Array.from(piece.outer.vertices) as { x: number; y: number }[]) {
+    out.push(v);
+  }
+  for (const h of Array.from(piece.holes) as any[]) {
+    for (const v of Array.from(h.vertices) as { x: number; y: number }[]) {
+      out.push(v);
+    }
+  }
+  return out;
+}
+
 export interface FitInputs {
   rows: Row[];
   inputType: InputType;
@@ -109,26 +155,19 @@ function runVennFit(wasm: any, inputs: FitInputs): FitResult {
     const result = wasm.generate_venn_regions(inputs.vennN, POLYGON_VERTICES);
     const rawRegions = Array.from(result.regions) as any[];
     const allVerts = rawRegions.flatMap((r) =>
-      Array.from(r.polygons).flatMap((p: any) =>
-        Array.from(p.vertices) as { x: number; y: number }[],
-      ),
+      Array.from(r.pieces).flatMap((p: any) => pieceVerts(p)),
     );
     const ctx = buildContext([allVerts]);
     const regions = rawRegions.map((r: any) => {
-      const polys = Array.from(r.polygons).map((p: any) => {
-        const pole = p.pole_of_inaccessibility(ctx.precision);
-        return {
-          label: r.combination as string,
-          vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map(
-            (v) => normPoint(v, ctx),
-          ),
-          labelPosition: normPoint(pole, ctx),
-        };
-      });
+      const pieces = Array.from(r.pieces).map((piece: any) =>
+        normPiece(piece, r.combination as string, ctx),
+      );
       return {
         combination: r.combination as string,
         totalArea: r.total_area as number,
-        polygons: polys,
+        pieces,
+        labelX: (r.label_x - ctx.minX) * ctx.scale,
+        labelY: (r.label_y - ctx.minY) * ctx.scale,
       };
     });
     return {
@@ -139,6 +178,7 @@ function runVennFit(wasm: any, inputs: FitInputs): FitResult {
       ellipses: [],
       squares: [],
       regions,
+      setAnchors: parseAnchors(result.set_anchors_json, ctx),
       metrics: {
         loss: result.loss,
         stress: result.stress,
@@ -161,16 +201,12 @@ function runVennFit(wasm: any, inputs: FitInputs): FitResult {
   );
   const ctx = buildContext(polyVerts);
 
-  const normPolygons = polygons.map((p: any) => {
-    const pole = p.pole_of_inaccessibility(ctx.precision);
-    return {
-      label: p.label as string,
-      vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map(
-        (v) => normPoint(v, ctx),
-      ),
-      labelPosition: normPoint(pole, ctx),
-    };
-  });
+  const normPolygons = polygons.map((p: any) => ({
+    label: p.label as string,
+    vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map((v) =>
+      normPoint(v, ctx),
+    ),
+  }));
   const normEllipses = ellipses.map((e: any) => ({
     label: e.label as string,
     x: (e.x - ctx.minX) * ctx.scale,
@@ -178,6 +214,8 @@ function runVennFit(wasm: any, inputs: FitInputs): FitResult {
     semi_major: e.semi_major * ctx.scale,
     semi_minor: e.semi_minor * ctx.scale,
     rotation: e.rotation,
+    labelX: (e.label_x - ctx.minX) * ctx.scale,
+    labelY: (e.label_y - ctx.minY) * ctx.scale,
   }));
 
   return {
@@ -188,6 +226,7 @@ function runVennFit(wasm: any, inputs: FitInputs): FitResult {
     ellipses: normEllipses,
     squares: [],
     regions: [],
+    setAnchors: {},
     metrics: {
       loss: result.loss,
       stress: result.stress,
@@ -237,26 +276,19 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
     );
     const rawRegions = Array.from(result.regions) as any[];
     const allVerts = rawRegions.flatMap((r) =>
-      Array.from(r.polygons).flatMap((p: any) =>
-        Array.from(p.vertices) as { x: number; y: number }[],
-      ),
+      Array.from(r.pieces).flatMap((p: any) => pieceVerts(p)),
     );
     const ctx = buildContext([allVerts]);
     const regions = rawRegions.map((r: any) => {
-      const polys = Array.from(r.polygons).map((p: any) => {
-        const pole = p.pole_of_inaccessibility(ctx.precision);
-        return {
-          label: r.combination as string,
-          vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map(
-            (v) => normPoint(v, ctx),
-          ),
-          labelPosition: normPoint(pole, ctx),
-        };
-      });
+      const pieces = Array.from(r.pieces).map((piece: any) =>
+        normPiece(piece, r.combination as string, ctx),
+      );
       return {
         combination: r.combination as string,
         totalArea: r.total_area as number,
-        polygons: polys,
+        pieces,
+        labelX: (r.label_x - ctx.minX) * ctx.scale,
+        labelY: (r.label_y - ctx.minY) * ctx.scale,
       };
     });
     return {
@@ -267,6 +299,7 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
       ellipses: [],
       squares: [],
       regions,
+      setAnchors: parseAnchors(result.set_anchors_json, ctx),
       metrics: {
         loss: result.loss,
         stress: result.stress,
@@ -305,21 +338,19 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
   );
   const ctx = buildContext(polyVerts);
 
-  const normPolygons = polygons.map((p: any) => {
-    const pole = p.pole_of_inaccessibility(ctx.precision);
-    return {
-      label: p.label as string,
-      vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map(
-        (v) => normPoint(v, ctx),
-      ),
-      labelPosition: normPoint(pole, ctx),
-    };
-  });
+  const normPolygons = polygons.map((p: any) => ({
+    label: p.label as string,
+    vertices: (Array.from(p.vertices) as { x: number; y: number }[]).map((v) =>
+      normPoint(v, ctx),
+    ),
+  }));
   const normCircles = circles.map((c: any) => ({
     label: c.label as string,
     x: (c.x - ctx.minX) * ctx.scale,
     y: (c.y - ctx.minY) * ctx.scale,
     radius: c.radius * ctx.scale,
+    labelX: (c.label_x - ctx.minX) * ctx.scale,
+    labelY: (c.label_y - ctx.minY) * ctx.scale,
   }));
   const normEllipses = ellipses.map((e: any) => ({
     label: e.label as string,
@@ -328,12 +359,16 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
     semi_major: e.semi_major * ctx.scale,
     semi_minor: e.semi_minor * ctx.scale,
     rotation: e.rotation,
+    labelX: (e.label_x - ctx.minX) * ctx.scale,
+    labelY: (e.label_y - ctx.minY) * ctx.scale,
   }));
   const normSquares = squares.map((s: any) => ({
     label: s.label as string,
     x: (s.x - ctx.minX) * ctx.scale,
     y: (s.y - ctx.minY) * ctx.scale,
     side: s.side * ctx.scale,
+    labelX: (s.label_x - ctx.minX) * ctx.scale,
+    labelY: (s.label_y - ctx.minY) * ctx.scale,
   }));
 
   return {
@@ -344,6 +379,7 @@ export function runFit(wasm: any, inputs: FitInputs): FitResult | null {
     ellipses: normEllipses,
     squares: normSquares,
     regions: [],
+    setAnchors: {},
     metrics: {
       loss: result.loss,
       stress: result.stress,

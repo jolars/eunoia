@@ -2,6 +2,17 @@
 //!
 //! This module provides utilities for decomposing fitted shapes into
 //! exclusive regions (one per set combination) for plotting.
+//!
+//! # Output structure
+//!
+//! [`RegionPolygons`] stores each region as a list of [`RegionPiece`]s, where
+//! a *piece* is a single connected component with one outer boundary and
+//! zero or more interior holes. Disconnected regions (e.g. an "A only"
+//! region split by other sets cutting across A) produce multiple pieces.
+//!
+//! Outer rings are normalised to **CCW** (positive signed area) and holes
+//! to **CW** (negative signed area) so renderers can draw each piece with
+//! `fill-rule: nonzero` (the SVG default) without further bookkeeping.
 
 use crate::geometry::diagram::{discover_regions, IntersectionPoint};
 use crate::geometry::primitives::Point;
@@ -11,14 +22,43 @@ use crate::plotting::clip::{polygon_clip_many, ClipOperation};
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
 
-/// Collection of polygons for each exclusive region in a diagram.
+/// A connected component of a region: one outer boundary plus zero or more
+/// interior holes (other regions or shapes cutting through this piece).
+///
+/// Orientation is normalised so consumers can render each piece with the
+/// SVG default `fill-rule: nonzero`:
+///
+/// * `outer` — CCW (positive signed area).
+/// * `holes` — CW (negative signed area), each fully contained in `outer`.
+///
+/// Use [`RegionPiece::area`] for the piece's net area (outer minus holes).
+#[derive(Debug, Clone)]
+pub struct RegionPiece {
+    /// CCW outer boundary of the piece.
+    pub outer: Polygon,
+    /// CW hole rings, each strictly inside `outer`.
+    pub holes: Vec<Polygon>,
+}
+
+impl RegionPiece {
+    /// Net area of the piece — `outer` minus the sum of `holes`. Always
+    /// non-negative because orientations are normalised.
+    pub fn area(&self) -> f64 {
+        let outer_area = self.outer.area();
+        let hole_area: f64 = self.holes.iter().map(|h| h.area()).sum();
+        (outer_area - hole_area).max(0.0)
+    }
+}
+
+/// Collection of region pieces for each exclusive region in a diagram.
 ///
 /// Each key is a combination of set names, and the value is a list of
-/// polygons that together represent that exclusive region. Multiple polygons
-/// can occur when a region is disconnected.
+/// [`RegionPiece`]s that together represent that exclusive region. Multiple
+/// pieces occur when a region is disconnected (e.g. an "A only" lobe split
+/// by an intersection cutting across A).
 #[derive(Debug, Clone)]
 pub struct RegionPolygons {
-    regions: HashMap<Combination, Vec<Polygon>>,
+    regions: HashMap<Combination, Vec<RegionPiece>>,
 }
 
 impl RegionPolygons {
@@ -29,18 +69,18 @@ impl RegionPolygons {
         }
     }
 
-    /// Adds polygons for a given region.
-    pub fn insert(&mut self, combination: Combination, polygons: Vec<Polygon>) {
-        self.regions.insert(combination, polygons);
+    /// Adds pieces for a given region.
+    pub fn insert(&mut self, combination: Combination, pieces: Vec<RegionPiece>) {
+        self.regions.insert(combination, pieces);
     }
 
-    /// Gets polygons for a given region.
-    pub fn get(&self, combination: &Combination) -> Option<&Vec<Polygon>> {
+    /// Gets pieces for a given region.
+    pub fn get(&self, combination: &Combination) -> Option<&Vec<RegionPiece>> {
         self.regions.get(combination)
     }
 
-    /// Returns an iterator over all regions and their polygons.
-    pub fn iter(&self) -> impl Iterator<Item = (&Combination, &Vec<Polygon>)> {
+    /// Returns an iterator over all regions and their pieces.
+    pub fn iter(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
         self.regions.iter()
     }
 
@@ -54,12 +94,13 @@ impl RegionPolygons {
         self.regions.is_empty()
     }
 
-    /// Computes the total area for each region.
+    /// Computes the total (net) area for each region — sum of piece areas,
+    /// where each piece's area is its outer area minus its holes.
     pub fn areas(&self) -> HashMap<Combination, f64> {
         self.regions
             .iter()
-            .map(|(combo, polys)| {
-                let area = polys.iter().map(|p| p.area()).sum();
+            .map(|(combo, pieces)| {
+                let area = pieces.iter().map(|p| p.area()).sum();
                 (combo.clone(), area)
             })
             .collect()
@@ -111,15 +152,9 @@ impl RegionPolygons {
     pub fn label_points(&self, precision: f64) -> HashMap<Combination, Point> {
         self.regions
             .iter()
-            .filter_map(|(combo, polys)| {
-                let best = polys
-                    .iter()
-                    .filter(|p| p.area() > 0.0)
-                    .map(|p| p.pole_of_inaccessibility_with_distance(precision))
-                    .max_by(|(_, da), (_, db)| {
-                        da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal)
-                    })?;
-                Some((combo.clone(), best.0))
+            .filter_map(|(combo, pieces)| {
+                let (point, _) = poi_with_holes(pieces, precision)?;
+                Some((combo.clone(), point))
             })
             .collect()
     }
@@ -171,12 +206,19 @@ impl RegionPolygons {
         let mut result = HashMap::new();
 
         for name in set_names {
-            let mut owned: Vec<Polygon> = self
-                .regions
-                .iter()
-                .filter(|(combo, _)| combo.sets().iter().any(|s| s == name))
-                .flat_map(|(_, polys)| polys.iter().cloned())
-                .collect();
+            // Flatten every piece (outer + holes) of every region containing
+            // this set into a single ring list, union them, and reclassify
+            // into pieces — gives the hole-aware POI of the unioned coverage.
+            let mut owned: Vec<Polygon> = Vec::new();
+            for (combo, pieces) in self.regions.iter() {
+                if !combo.sets().iter().any(|s| s == name) {
+                    continue;
+                }
+                for piece in pieces {
+                    owned.push(piece.outer.clone());
+                    owned.extend(piece.holes.iter().cloned());
+                }
+            }
 
             if owned.is_empty() {
                 continue;
@@ -190,13 +232,8 @@ impl RegionPolygons {
                 }
             }
 
-            let best = merged
-                .iter()
-                .filter(|p| p.area() > 0.0)
-                .map(|p| p.pole_of_inaccessibility_with_distance(precision))
-                .max_by(|(_, da), (_, db)| da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal));
-
-            if let Some((point, _)) = best {
+            let pieces = classify_into_pieces(merged);
+            if let Some((point, _)) = poi_with_holes(&pieces, precision) {
                 result.insert(name.clone(), point);
             }
         }
@@ -205,59 +242,152 @@ impl RegionPolygons {
     }
 }
 
-/// Compute the pole of inaccessibility of a region whose polygons may include
-/// holes (CW rings interleaved with CCW outer rings, as produced by the
-/// clipper when one shape sits inside another).
+/// Signed area of a polygon ring via the shoelace formula. Positive = CCW,
+/// negative = CW.
+fn signed_polygon_area(p: &Polygon) -> f64 {
+    let v = p.vertices();
+    let n = v.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut s = 0.0;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        s += v[i].x() * v[j].y() - v[j].x() * v[i].y();
+    }
+    0.5 * s
+}
+
+fn point_in_polygon(p: &Point, poly: &Polygon) -> bool {
+    let v = poly.vertices();
+    let n = v.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let (xi, yi) = (v[i].x(), v[i].y());
+        let (xj, yj) = (v[j].x(), v[j].y());
+        let intersect = ((yi > p.y()) != (yj > p.y()))
+            && (p.x() < (xj - xi) * (p.y() - yi) / (yj - yi + f64::EPSILON) + xi);
+        if intersect {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+/// Reverse the vertex order of a polygon, flipping its winding.
+fn reverse_polygon(p: &Polygon) -> Polygon {
+    let mut v = p.vertices().to_vec();
+    v.reverse();
+    Polygon::new(v)
+}
+
+/// Classify a flat list of clipper-output rings into [`RegionPiece`]s by
+/// topological containment. Each ring's depth is the number of other rings
+/// strictly containing one of its vertices: even depth → outer, odd depth →
+/// hole. Holes are assigned to the smallest enclosing outer.
 ///
-/// Each ring is classified by its signed area: positive (CCW) is treated as
-/// an outer contour, negative (CW) as a hole. Holes are assigned to the
-/// smallest enclosing outer that geometrically contains them. The pole
-/// returned is the one with the largest minimum distance to every boundary
-/// (outer rim and assigned holes), found by quad-tree refinement of the
-/// bounding box.
+/// Outputs are normalised so `outer` is CCW (positive signed area) and every
+/// `hole` is CW (negative signed area). Degenerate rings (fewer than three
+/// vertices, or near-zero area) are dropped.
+///
+/// We classify by containment rather than winding because i_overlay's output
+/// orientation is not stable across operations — relying on the sign of the
+/// signed area to identify outers vs holes silently breaks for chained
+/// difference/union operations.
+pub(crate) fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
+    // Drop degenerate rings.
+    let kept: Vec<(Polygon, f64)> = rings
+        .into_iter()
+        .filter_map(|p| {
+            let area = signed_polygon_area(&p).abs();
+            if p.vertices().len() < 3 || area < 1e-12 {
+                None
+            } else {
+                Some((p, area))
+            }
+        })
+        .collect();
+    if kept.is_empty() {
+        return Vec::new();
+    }
+
+    let n = kept.len();
+    let mut containment_depth = vec![0usize; n];
+    let mut smallest_container: Vec<Option<usize>> = vec![None; n];
+    for i in 0..n {
+        let probe = match kept[i].0.vertices().first() {
+            Some(p) => *p,
+            None => continue,
+        };
+        for (j, (other, area_j)) in kept.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            if point_in_polygon(&probe, other) {
+                containment_depth[i] += 1;
+                let cur_area = smallest_container[i]
+                    .and_then(|k| kept.get(k).map(|(_, a)| *a))
+                    .unwrap_or(f64::INFINITY);
+                if *area_j < cur_area {
+                    smallest_container[i] = Some(j);
+                }
+            }
+        }
+    }
+
+    let mut outer_idx_to_piece_idx: Vec<Option<usize>> = vec![None; n];
+    let mut pieces: Vec<RegionPiece> = Vec::new();
+    for (i, (ring, _)) in kept.iter().enumerate() {
+        if containment_depth[i] % 2 == 0 {
+            outer_idx_to_piece_idx[i] = Some(pieces.len());
+            // Normalise outer to CCW (positive signed area).
+            let outer = if signed_polygon_area(ring) >= 0.0 {
+                ring.clone()
+            } else {
+                reverse_polygon(ring)
+            };
+            pieces.push(RegionPiece {
+                outer,
+                holes: Vec::new(),
+            });
+        }
+    }
+    for (i, (ring, _)) in kept.iter().enumerate() {
+        if containment_depth[i] % 2 == 1 {
+            if let Some(parent_idx) = smallest_container[i].and_then(|k| outer_idx_to_piece_idx[k])
+            {
+                // Normalise holes to CW (negative signed area).
+                let hole = if signed_polygon_area(ring) <= 0.0 {
+                    ring.clone()
+                } else {
+                    reverse_polygon(ring)
+                };
+                pieces[parent_idx].holes.push(hole);
+            }
+        }
+    }
+    pieces
+}
+
+/// Compute the pole of inaccessibility of a region described as a list of
+/// already-classified [`RegionPiece`]s (one outer + holes per connected
+/// component). Returns the (point, clearance) of the piece whose POI has
+/// the largest minimum distance to its outer boundary and any of its holes.
 ///
 /// Implemented in-house rather than via `polylabel-mini` because the latter
 /// scores cells using distance to the exterior ring only — it ignores hole
 /// boundaries when ranking candidates, so a point sitting right next to a
 /// hole gets credited with the same clearance as a point far from any hole.
 ///
-/// Returns `None` when the polygon list contains no positive-area outer
-/// contour.
+/// Returns `None` when there are no pieces with positive area or every
+/// search-cell clearance comes out non-positive (degenerate input).
 #[cfg(feature = "plotting")]
-pub(crate) fn poi_with_holes(polys: &[Polygon], precision: f64) -> Option<(Point, f64)> {
-    fn signed_area(verts: &[Point]) -> f64 {
-        if verts.len() < 3 {
-            return 0.0;
-        }
-        let n = verts.len();
-        let mut s = 0.0;
-        for i in 0..n {
-            let j = (i + 1) % n;
-            s += verts[i].x() * verts[j].y() - verts[j].x() * verts[i].y();
-        }
-        0.5 * s
-    }
-
-    fn point_in_ring(p: &Point, verts: &[Point]) -> bool {
-        let n = verts.len();
-        if n < 3 {
-            return false;
-        }
-        let mut inside = false;
-        let mut j = n - 1;
-        for i in 0..n {
-            let (xi, yi) = (verts[i].x(), verts[i].y());
-            let (xj, yj) = (verts[j].x(), verts[j].y());
-            let intersect = ((yi > p.y()) != (yj > p.y()))
-                && (p.x() < (xj - xi) * (p.y() - yi) / (yj - yi + f64::EPSILON) + xi);
-            if intersect {
-                inside = !inside;
-            }
-            j = i;
-        }
-        inside
-    }
-
+pub(crate) fn poi_with_holes(pieces: &[RegionPiece], precision: f64) -> Option<(Point, f64)> {
     fn min_dist_to_rings(px: f64, py: f64, rings: &[&[Point]]) -> f64 {
         let mut best = f64::INFINITY;
         for ring in rings {
@@ -289,16 +419,16 @@ pub(crate) fn poi_with_holes(polys: &[Polygon], precision: f64) -> Option<(Point
 
     /// Signed distance: positive when (px, py) is inside `outer` and outside
     /// every hole; negative otherwise. Magnitude is min distance to any ring.
-    fn signed_clearance(px: f64, py: f64, outer: &[Point], holes: &[Vec<Point>]) -> f64 {
-        let mut all: Vec<&[Point]> = Vec::with_capacity(1 + holes.len());
-        all.push(outer);
-        for h in holes {
-            all.push(h.as_slice());
+    fn signed_clearance(px: f64, py: f64, piece: &RegionPiece) -> f64 {
+        let mut all: Vec<&[Point]> = Vec::with_capacity(1 + piece.holes.len());
+        all.push(piece.outer.vertices());
+        for h in &piece.holes {
+            all.push(h.vertices());
         }
         let dist = min_dist_to_rings(px, py, &all);
-
-        let in_outer = point_in_ring(&Point::new(px, py), outer);
-        let in_any_hole = holes.iter().any(|h| point_in_ring(&Point::new(px, py), h));
+        let probe = Point::new(px, py);
+        let in_outer = point_in_polygon(&probe, &piece.outer);
+        let in_any_hole = piece.holes.iter().any(|h| point_in_polygon(&probe, h));
         if in_outer && !in_any_hole {
             dist
         } else {
@@ -306,89 +436,19 @@ pub(crate) fn poi_with_holes(polys: &[Polygon], precision: f64) -> Option<(Point
         }
     }
 
-    // Collect non-degenerate rings. We don't trust the winding order to
-    // distinguish outer from hole — i_overlay outputs the outer ring with
-    // the opposite signed-area sign from the geographic convention, and
-    // depending on the chain of operations it can vary. Instead, classify
-    // by topological containment: a ring is a hole iff some other ring
-    // strictly contains a sample point of it; otherwise it's an outer. The
-    // hole is assigned to its smallest enclosing outer.
-    let rings: Vec<(Vec<Point>, f64)> = polys
-        .iter()
-        .filter_map(|p| {
-            let v = p.vertices().to_vec();
-            let sa = signed_area(&v).abs();
-            if sa < 1e-12 || v.len() < 3 {
-                None
-            } else {
-                Some((v, sa))
-            }
-        })
-        .collect();
-    if rings.is_empty() {
-        return None;
-    }
-
-    let n = rings.len();
-    // For each ring, count how many other rings contain its first vertex.
-    let mut containment_depth = vec![0usize; n];
-    let mut smallest_container: Vec<Option<usize>> = vec![None; n];
-    for i in 0..n {
-        let probe = match rings[i].0.first() {
-            Some(p) => *p,
-            None => continue,
-        };
-        for (j, (other, area_j)) in rings.iter().enumerate() {
-            if i == j {
-                continue;
-            }
-            if point_in_ring(&probe, other) {
-                containment_depth[i] += 1;
-                let cur_area = smallest_container[i]
-                    .and_then(|k| rings.get(k).map(|(_, a)| *a))
-                    .unwrap_or(f64::INFINITY);
-                if *area_j < cur_area {
-                    smallest_container[i] = Some(j);
-                }
-            }
-        }
-    }
-
-    // Outers: even depth (0, 2, …). Holes: odd depth (1, 3, …). For each
-    // outer we collect the holes whose smallest container is this outer.
-    let mut outers: Vec<(Vec<Point>, f64)> = Vec::new();
-    let mut outer_idx_map: Vec<Option<usize>> = vec![None; n];
-    for (i, ring) in rings.iter().enumerate() {
-        if containment_depth[i] % 2 == 0 {
-            outer_idx_map[i] = Some(outers.len());
-            outers.push(ring.clone());
-        }
-    }
-    if outers.is_empty() {
-        return None;
-    }
-    let mut outer_holes: Vec<Vec<Vec<Point>>> = vec![Vec::new(); outers.len()];
-    for (i, ring) in rings.iter().enumerate() {
-        if containment_depth[i] % 2 == 1 {
-            if let Some(parent) = smallest_container[i].and_then(|k| outer_idx_map[k]) {
-                outer_holes[parent].push(ring.0.clone());
-            }
-        }
-    }
-
-    // Quad-tree refinement (the polylabel algorithm), but with a clearance
-    // metric that respects holes. For each outer + its assigned holes, find
-    // the cell whose centre maximises signed_clearance.
     let mut best_overall: Option<(Point, f64)> = None;
-    for (i, (outer, _)) in outers.iter().enumerate() {
-        let assigned = &outer_holes[i];
+    for piece in pieces {
+        let outer_verts = piece.outer.vertices();
+        if outer_verts.len() < 3 {
+            continue;
+        }
 
         // Bounding box of the outer ring.
         let mut min_x = f64::INFINITY;
         let mut min_y = f64::INFINITY;
         let mut max_x = f64::NEG_INFINITY;
         let mut max_y = f64::NEG_INFINITY;
-        for p in outer {
+        for p in outer_verts {
             min_x = min_x.min(p.x());
             max_x = max_x.max(p.x());
             min_y = min_y.min(p.y());
@@ -430,7 +490,7 @@ pub(crate) fn poi_with_holes(polys: &[Polygon], precision: f64) -> Option<(Point
         }
 
         let make_cell = |x: f64, y: f64, h: f64| -> Cell {
-            let d = signed_clearance(x, y, outer, assigned);
+            let d = signed_clearance(x, y, piece);
             Cell {
                 x,
                 y,
@@ -441,8 +501,6 @@ pub(crate) fn poi_with_holes(polys: &[Polygon], precision: f64) -> Option<(Point
         };
 
         let mut queue: std::collections::BinaryHeap<Cell> = std::collections::BinaryHeap::new();
-
-        // Seed with the bounding-box grid at half-cell extent.
         let mut x = min_x;
         let h0 = cell_size / 2.0;
         while x < max_x {
@@ -453,7 +511,6 @@ pub(crate) fn poi_with_holes(polys: &[Polygon], precision: f64) -> Option<(Point
             }
             x += cell_size;
         }
-        // Also try the centroid as an initial guess.
         let cx = (min_x + max_x) / 2.0;
         let cy = (min_y + max_y) / 2.0;
         let mut best = make_cell(cx, cy, 0.0);
@@ -547,6 +604,13 @@ pub fn decompose_regions<S: DiagramShape + Polygonize>(
     _spec: &DiagramSpec,
     n_vertices: usize,
 ) -> RegionPolygons {
+    /// Pieces whose net area is below this fraction of the largest piece in
+    /// the diagram are treated as polygonization artifacts and dropped.
+    /// Calibrated against the eulerr-comparison case (B/C/D nested in A,
+    /// 200-vertex polygonization) where seam slivers come in at ~0.02% of
+    /// the largest piece.
+    const SLIVER_RELATIVE_THRESHOLD: f64 = 1e-3;
+
     if shapes.is_empty() {
         return RegionPolygons::new();
     }
@@ -554,7 +618,7 @@ pub fn decompose_regions<S: DiagramShape + Polygonize>(
     // Convert all shapes to polygons
     let shape_polygons: Vec<Polygon> = shapes.iter().map(|s| s.polygonize(n_vertices)).collect();
 
-    let mut result = RegionPolygons::new();
+    let mut raw: Vec<(Combination, Vec<RegionPiece>)> = Vec::new();
 
     let n = shapes.len();
 
@@ -608,16 +672,42 @@ pub fn decompose_regions<S: DiagramShape + Polygonize>(
             }
         }
 
-        // Add to result if non-empty
-        if !current_polygons.is_empty() {
-            // Create combination from set indices
-            let combo_sets: Vec<&str> = set_indices_in_combo
-                .iter()
-                .map(|&i| set_names[i].as_str())
-                .collect();
-            let combination = Combination::new(&combo_sets);
+        // Classify the clipper output (flat list of rings) into connected
+        // pieces with explicit outer + holes structure. Skip empty.
+        let pieces = classify_into_pieces(current_polygons);
+        if pieces.is_empty() {
+            continue;
+        }
 
-            result.insert(combination, current_polygons);
+        let combo_sets: Vec<&str> = set_indices_in_combo
+            .iter()
+            .map(|&i| set_names[i].as_str())
+            .collect();
+        let combination = Combination::new(&combo_sets);
+
+        raw.push((combination, pieces));
+    }
+
+    // Sliver filtering: drop pieces below `SLIVER_RELATIVE_THRESHOLD` of the
+    // largest piece anywhere in the diagram. This eliminates the tiny
+    // "B-only" shards produced by 200-vertex polygonization where B is
+    // geometrically nested in A (their boundaries don't agree exactly along
+    // the seam at B's right edge), which would otherwise mislead label
+    // anchors and stroke rendering.
+    let max_piece_area = raw
+        .iter()
+        .flat_map(|(_, pieces)| pieces.iter().map(|p| p.area()))
+        .fold(0.0_f64, f64::max);
+    let min_keep = max_piece_area * SLIVER_RELATIVE_THRESHOLD;
+
+    let mut result = RegionPolygons::new();
+    for (combo, pieces) in raw {
+        let kept: Vec<RegionPiece> = pieces
+            .into_iter()
+            .filter(|p| p.area() >= min_keep)
+            .collect();
+        if !kept.is_empty() {
+            result.insert(combo, kept);
         }
     }
 
@@ -833,16 +923,16 @@ mod tests {
         }
 
         // Each label point must sit inside the axis-aligned bounding box of
-        // its region's largest polygon.
-        for (combo, polys) in regions.iter() {
+        // its region's largest piece's outer ring.
+        for (combo, pieces) in regions.iter() {
             let label = labels.get(combo).unwrap();
-            let largest = polys
+            let largest = pieces
                 .iter()
                 .max_by(|a, b| a.area().partial_cmp(&b.area()).unwrap())
                 .unwrap();
             let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
             let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
-            for v in largest.vertices() {
+            for v in largest.outer.vertices() {
                 min_x = min_x.min(v.x());
                 min_y = min_y.min(v.y());
                 max_x = max_x.max(v.x());
@@ -921,7 +1011,7 @@ mod tests {
 
     #[test]
     fn test_label_points_skips_zero_area_regions() {
-        // A region composed only of degenerate (zero-area) polygons should be
+        // A region composed only of a degenerate (zero-area) outer should be
         // omitted from the label map.
         let mut regions = RegionPolygons::new();
         let degenerate = Polygon::new(vec![
@@ -929,7 +1019,11 @@ mod tests {
             Point::new(1.0, 0.0),
             Point::new(0.5, 0.0), // collinear → zero area
         ]);
-        regions.insert(Combination::new(&["X"]), vec![degenerate]);
+        let piece = RegionPiece {
+            outer: degenerate,
+            holes: Vec::new(),
+        };
+        regions.insert(Combination::new(&["X"]), vec![piece]);
 
         assert!(regions.label_points(0.01).is_empty());
     }

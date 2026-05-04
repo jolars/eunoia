@@ -6,7 +6,16 @@ export interface Point {
 export interface Polygon {
   vertices: Point[];
   label: string;
-  labelPosition?: Point;
+}
+
+/**
+ * One connected component of a region: a CCW outer ring plus zero or more
+ * CW hole rings (other regions cutting through this piece). Orientations
+ * are normalised by the core library so renderers can use `fill-rule: nonzero`.
+ */
+export interface RegionPiece {
+  outer: Polygon;
+  holes: Polygon[];
 }
 
 export interface CircleShape {
@@ -14,6 +23,9 @@ export interface CircleShape {
   y: number;
   radius: number;
   label: string;
+  /** Label anchor — pole of inaccessibility of `shape \ ⋃ others`. Defaults to (x, y). */
+  labelX: number;
+  labelY: number;
 }
 
 export interface EllipseShape {
@@ -23,6 +35,8 @@ export interface EllipseShape {
   semi_minor: number;
   rotation: number;
   label: string;
+  labelX: number;
+  labelY: number;
 }
 
 export interface SquareShape {
@@ -30,12 +44,17 @@ export interface SquareShape {
   y: number;
   side: number;
   label: string;
+  labelX: number;
+  labelY: number;
 }
 
 export interface RegionPolygon {
   combination: string;
-  polygons: Polygon[];
+  pieces: RegionPiece[];
   totalArea: number;
+  /** Hole-aware label anchor for this region — one point per region, even when fragmented across multiple pieces. */
+  labelX: number;
+  labelY: number;
 }
 
 export interface FitMetrics {
@@ -57,6 +76,8 @@ export interface FitResult {
   ellipses: EllipseShape[];
   squares: SquareShape[];
   regions: RegionPolygon[];
+  /** Per-set label anchors keyed by set name. Populated in region mode from `PlotData::set_anchors`; empty in outline mode (use shape `labelX/labelY` instead). */
+  setAnchors: Record<string, { x: number; y: number }>;
   metrics: FitMetrics;
 }
 

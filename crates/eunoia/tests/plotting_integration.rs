@@ -59,15 +59,13 @@ fn test_region_decomposition_three_sets() {
     // Should have multiple regions
     assert!(regions.len() >= 3);
 
-    // Verify each region has polygons
-    for (combo, polys) in regions.iter() {
-        assert!(!polys.is_empty(), "Region {:?} should have polygons", combo);
-
-        // Verify each polygon has vertices
-        for poly in polys {
+    // Verify each region has pieces with non-degenerate outer rings.
+    for (combo, pieces) in regions.iter() {
+        assert!(!pieces.is_empty(), "Region {:?} should have pieces", combo);
+        for piece in pieces {
             assert!(
-                poly.vertices().len() >= 3,
-                "Polygon should have at least 3 vertices"
+                piece.outer.vertices().len() >= 3,
+                "Outer ring should have at least 3 vertices"
             );
         }
     }

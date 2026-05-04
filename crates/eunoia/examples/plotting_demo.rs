@@ -45,24 +45,27 @@ fn main() {
     let mut sorted_regions: Vec<_> = regions.iter().collect();
     sorted_regions.sort_by_key(|(combo, _)| combo.to_string());
 
-    for (combination, polygons) in sorted_regions {
-        let total_area: f64 = polygons.iter().map(|p| p.area()).sum();
-        let num_pieces = polygons.len();
-        let avg_vertices: f64 =
-            polygons.iter().map(|p| p.vertices().len()).sum::<usize>() as f64 / num_pieces as f64;
+    for (combination, pieces) in sorted_regions {
+        let total_area: f64 = pieces.iter().map(|p| p.area()).sum();
+        let num_pieces = pieces.len();
+        let avg_outer_vertices: f64 = pieces
+            .iter()
+            .map(|p| p.outer.vertices().len())
+            .sum::<usize>() as f64
+            / num_pieces as f64;
 
         println!("  Region: {}", combination);
-        println!("    Area: {:.3}", total_area);
+        println!("    Net area: {:.3}", total_area);
         println!("    Pieces: {}", num_pieces);
-        println!("    Avg vertices per piece: {:.1}", avg_vertices);
+        println!("    Avg outer vertices: {:.1}", avg_outer_vertices);
 
-        // Show centroid of first piece
-        if let Some(first_poly) = polygons.first() {
-            let centroid = first_poly.centroid();
+        if let Some(first_piece) = pieces.first() {
+            let centroid = first_piece.outer.centroid();
             println!(
-                "    First piece centroid: ({:.3}, {:.3})",
+                "    First piece outer centroid: ({:.3}, {:.3}); holes: {}",
                 centroid.x(),
-                centroid.y()
+                centroid.y(),
+                first_piece.holes.len()
             );
         }
         println!();

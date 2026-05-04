@@ -82,6 +82,26 @@ struct LayoutDiagnostics {
     residuals_json: String,
 }
 
+/// Compute one `(label_x, label_y)` per set via the canonical
+/// [`PlotData::set_anchors`] entry point, returning a map from set name to
+/// the hole-aware pole of inaccessibility of that set's exclusive region.
+///
+/// Returns the empty map if the build is missing the `plotting` feature; the
+/// caller should fall back to the shape's centre in that case.
+fn compute_set_label_anchors<S>(
+    layout: &eunoia::Layout<S>,
+    spec: &eunoia::spec::DiagramSpec,
+) -> std::collections::HashMap<String, (f64, f64)>
+where
+    S: eunoia::geometry::traits::DiagramShape + Polygonize + Copy + 'static,
+{
+    let plot = layout.plot_data(spec, eunoia::plotting::PlotOptions::default());
+    plot.set_anchors
+        .into_iter()
+        .map(|(name, point)| (name, (point.x(), point.y())))
+        .collect()
+}
+
 fn extract_diagnostics<S>(layout: &eunoia::Layout<S>) -> Result<LayoutDiagnostics, JsValue>
 where
     S: eunoia::geometry::traits::DiagramShape + Copy + 'static,
@@ -107,13 +127,20 @@ where
     })
 }
 
-/// A circle representation for WASM with label
+/// A circle representation for WASM with label.
+///
+/// `label_x` / `label_y` carry the per-set label anchor (the pole of
+/// inaccessibility of `shape \ ⋃ others`, computed via [`PlotData::set_anchors`]).
+/// They default to the shape centre when no anchor is provided — for example
+/// when constructed directly from JS via [`WasmCircle::new`].
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmCircle {
     pub x: f64,
     pub y: f64,
     pub radius: f64,
+    pub label_x: f64,
+    pub label_y: f64,
     label: String,
 }
 
@@ -125,6 +152,8 @@ impl WasmCircle {
             x,
             y,
             radius,
+            label_x: x,
+            label_y: y,
             label,
         }
     }
@@ -135,7 +164,9 @@ impl WasmCircle {
     }
 }
 
-/// An ellipse representation for WASM with label
+/// An ellipse representation for WASM with label.
+///
+/// See [`WasmCircle`] for `label_x` / `label_y` semantics.
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmEllipse {
@@ -144,6 +175,8 @@ pub struct WasmEllipse {
     pub semi_major: f64,
     pub semi_minor: f64,
     pub rotation: f64,
+    pub label_x: f64,
+    pub label_y: f64,
     label: String,
 }
 
@@ -164,6 +197,8 @@ impl WasmEllipse {
             semi_major,
             semi_minor,
             rotation,
+            label_x: x,
+            label_y: y,
             label,
         }
     }
@@ -174,13 +209,17 @@ impl WasmEllipse {
     }
 }
 
-/// An axis-aligned square representation for WASM with label
+/// An axis-aligned square representation for WASM with label.
+///
+/// See [`WasmCircle`] for `label_x` / `label_y` semantics.
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmSquare {
     pub x: f64,
     pub y: f64,
     pub side: f64,
+    pub label_x: f64,
+    pub label_y: f64,
     label: String,
 }
 
@@ -188,7 +227,14 @@ pub struct WasmSquare {
 impl WasmSquare {
     #[wasm_bindgen(constructor)]
     pub fn new(x: f64, y: f64, side: f64, label: String) -> Self {
-        Self { x, y, side, label }
+        Self {
+            x,
+            y,
+            side,
+            label_x: x,
+            label_y: y,
+            label,
+        }
     }
 
     #[wasm_bindgen(getter)]
@@ -493,12 +539,49 @@ impl PolygonResult {
     }
 }
 
-/// A single region with its polygons
+/// A connected component of a region: one CCW outer boundary and zero or
+/// more CW hole rings (other regions cutting through this piece).
+///
+/// Orientations are normalised by the core library so renderers can draw
+/// each piece with `fill-rule: nonzero` (the SVG default) without further
+/// classification on the consumer side.
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmRegionPiece {
+    outer: WasmPolygon,
+    holes: Vec<WasmPolygon>,
+}
+
+#[wasm_bindgen]
+impl WasmRegionPiece {
+    #[wasm_bindgen(getter)]
+    pub fn outer(&self) -> WasmPolygon {
+        self.outer.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn holes(&self) -> Vec<WasmPolygon> {
+        self.holes.clone()
+    }
+
+    /// Net area of the piece — outer area minus hole areas.
+    #[wasm_bindgen(getter)]
+    pub fn area(&self) -> f64 {
+        let outer_area = self.outer.area();
+        let hole_area: f64 = self.holes.iter().map(|h| h.area()).sum();
+        (outer_area - hole_area).max(0.0)
+    }
+}
+
+/// A single region as a list of connected [`WasmRegionPiece`]s plus a
+/// hole-aware label anchor for the region as a whole.
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmRegion {
+    pub label_x: f64,
+    pub label_y: f64,
     combination: String,
-    polygons: Vec<WasmPolygon>,
+    pieces: Vec<WasmRegionPiece>,
 }
 
 #[wasm_bindgen]
@@ -509,17 +592,47 @@ impl WasmRegion {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn polygons(&self) -> Vec<WasmPolygon> {
-        self.polygons.clone()
+    pub fn pieces(&self) -> Vec<WasmRegionPiece> {
+        self.pieces.clone()
     }
 
     #[wasm_bindgen(getter)]
     pub fn total_area(&self) -> f64 {
-        self.polygons.iter().map(|p| p.area()).sum()
+        self.pieces.iter().map(|p| p.area()).sum()
     }
 }
 
-/// Collection of region polygons for visualization
+/// Convert a core `Polygon` into a `WasmPolygon` with the given label.
+fn polygon_to_wasm(poly: &eunoia::geometry::shapes::Polygon, label: &str) -> WasmPolygon {
+    let vertices: Vec<WasmPoint> = poly
+        .vertices()
+        .iter()
+        .map(|p| WasmPoint::new(p.x(), p.y()))
+        .collect();
+    WasmPolygon {
+        vertices,
+        label: label.to_string(),
+    }
+}
+
+/// Convert a core `RegionPiece` into a `WasmRegionPiece`, propagating the
+/// region's combination string as a label on each underlying ring polygon.
+fn region_piece_to_wasm(piece: &eunoia::plotting::RegionPiece, label: &str) -> WasmRegionPiece {
+    WasmRegionPiece {
+        outer: polygon_to_wasm(&piece.outer, label),
+        holes: piece
+            .holes
+            .iter()
+            .map(|h| polygon_to_wasm(h, label))
+            .collect(),
+    }
+}
+
+/// Collection of region polygons for visualization.
+///
+/// `set_anchors_json` is a JSON string mapping set name → `[x, y]`, computed
+/// from [`PlotData::set_anchors`]. Use it for per-set labels in region-mode
+/// rendering (e.g. when a set has no exclusive region of its own).
 #[wasm_bindgen]
 pub struct WasmRegionPolygons {
     regions: Vec<WasmRegion>,
@@ -531,6 +644,7 @@ pub struct WasmRegionPolygons {
     fitted_areas_json: String,
     region_error_json: String,
     residuals_json: String,
+    set_anchors_json: String,
 }
 
 #[wasm_bindgen]
@@ -564,6 +678,36 @@ impl WasmRegionPolygons {
     pub fn count(&self) -> usize {
         self.regions.len()
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn set_anchors_json(&self) -> String {
+        self.set_anchors_json.clone()
+    }
+}
+
+type AnchorMap = std::collections::HashMap<String, (f64, f64)>;
+
+/// Compute one `(label_x, label_y)` per region (hole-aware) plus a name → `(x, y)`
+/// map for per-set labels, both sourced from [`eunoia::plotting::PlotData`].
+fn compute_region_label_anchors<S>(
+    layout: &eunoia::Layout<S>,
+    spec: &eunoia::spec::DiagramSpec,
+) -> (AnchorMap, AnchorMap)
+where
+    S: eunoia::geometry::traits::DiagramShape + Polygonize + Copy + 'static,
+{
+    let plot = layout.plot_data(spec, eunoia::plotting::PlotOptions::default());
+    let region_anchors = plot
+        .region_anchors
+        .into_iter()
+        .map(|(combo, p)| (combo.to_string(), (p.x(), p.y())))
+        .collect();
+    let set_anchors = plot
+        .set_anchors
+        .into_iter()
+        .map(|(name, p)| (name, (p.x(), p.y())))
+        .collect();
+    (region_anchors, set_anchors)
 }
 
 /// Generate a simple test layout for debugging
@@ -1377,18 +1521,24 @@ pub fn generate_circles_as_polygons(
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let diagnostics = extract_diagnostics(&layout)?;
+    let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
     let wasm_circles: Vec<WasmCircle> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| {
             layout.shape_for_set(name).map(|circle: &Circle| {
-                WasmCircle::new(
-                    circle.center().x(),
-                    circle.center().y(),
-                    circle.radius(),
-                    name.to_string(),
-                )
+                let cx = circle.center().x();
+                let cy = circle.center().y();
+                let (label_x, label_y) = set_anchors.get(name).copied().unwrap_or((cx, cy));
+                WasmCircle {
+                    x: cx,
+                    y: cy,
+                    radius: circle.radius(),
+                    label_x,
+                    label_y,
+                    label: name.to_string(),
+                }
             })
         })
         .collect();
@@ -1500,20 +1650,26 @@ pub fn generate_ellipses_as_polygons(
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let diagnostics = extract_diagnostics(&layout)?;
+    let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
     let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| {
             layout.shape_for_set(name).map(|ellipse: &Ellipse| {
-                WasmEllipse::new(
-                    ellipse.center().x(),
-                    ellipse.center().y(),
-                    ellipse.semi_major(),
-                    ellipse.semi_minor(),
-                    ellipse.rotation(),
-                    name.to_string(),
-                )
+                let cx = ellipse.center().x();
+                let cy = ellipse.center().y();
+                let (label_x, label_y) = set_anchors.get(name).copied().unwrap_or((cx, cy));
+                WasmEllipse {
+                    x: cx,
+                    y: cy,
+                    semi_major: ellipse.semi_major(),
+                    semi_minor: ellipse.semi_minor(),
+                    rotation: ellipse.rotation(),
+                    label_x,
+                    label_y,
+                    label: name.to_string(),
+                }
             })
         })
         .collect();
@@ -1625,18 +1781,24 @@ pub fn generate_squares_as_polygons(
         .fit()
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let diagnostics = extract_diagnostics(&layout)?;
+    let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
     let wasm_squares: Vec<WasmSquare> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| {
             layout.shape_for_set(name).map(|square: &Square| {
-                WasmSquare::new(
-                    square.center().x(),
-                    square.center().y(),
-                    square.side(),
-                    name.to_string(),
-                )
+                let cx = square.center().x();
+                let cy = square.center().y();
+                let (label_x, label_y) = set_anchors.get(name).copied().unwrap_or((cx, cy));
+                WasmSquare {
+                    x: cx,
+                    y: cy,
+                    side: square.side(),
+                    label_x,
+                    label_y,
+                    label: name.to_string(),
+                }
             })
         })
         .collect();
@@ -1749,29 +1911,28 @@ pub fn generate_region_polygons_circles(
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons using the plotting feature
+    let (region_anchors_map, set_anchors_map) =
+        compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
-    // Convert to WASM types
+    // Convert to WASM types: each region carries explicit outer + holes
+    // pieces and the hole-aware label anchor for the region as a whole.
     let mut wasm_regions = Vec::new();
-    for (combination, polygons) in region_polygons.iter() {
-        let wasm_polygons: Vec<WasmPolygon> = polygons
+    for (combination, pieces) in region_polygons.iter() {
+        let combo_key = combination.to_string();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces
             .iter()
-            .map(|poly| {
-                let vertices: Vec<WasmPoint> = poly
-                    .vertices()
-                    .iter()
-                    .map(|p| WasmPoint::new(p.x(), p.y()))
-                    .collect();
-                WasmPolygon {
-                    vertices,
-                    label: combination.to_string(),
-                }
-            })
+            .map(|piece| region_piece_to_wasm(piece, &combo_key))
             .collect();
-
+        let (label_x, label_y) = region_anchors_map
+            .get(&combo_key)
+            .copied()
+            .unwrap_or((0.0, 0.0));
         wasm_regions.push(WasmRegion {
-            combination: combination.to_string(),
-            polygons: wasm_polygons,
+            label_x,
+            label_y,
+            combination: combo_key,
+            pieces: wasm_pieces,
         });
     }
 
@@ -1799,6 +1960,8 @@ pub fn generate_region_polygons_circles(
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
+        set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
     })
 }
 
@@ -1861,29 +2024,28 @@ pub fn generate_region_polygons_ellipses(
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons using the plotting feature
+    let (region_anchors_map, set_anchors_map) =
+        compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
-    // Convert to WASM types
+    // Convert to WASM types: each region carries explicit outer + holes
+    // pieces and the hole-aware label anchor for the region as a whole.
     let mut wasm_regions = Vec::new();
-    for (combination, polygons) in region_polygons.iter() {
-        let wasm_polygons: Vec<WasmPolygon> = polygons
+    for (combination, pieces) in region_polygons.iter() {
+        let combo_key = combination.to_string();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces
             .iter()
-            .map(|poly| {
-                let vertices: Vec<WasmPoint> = poly
-                    .vertices()
-                    .iter()
-                    .map(|p| WasmPoint::new(p.x(), p.y()))
-                    .collect();
-                WasmPolygon {
-                    vertices,
-                    label: combination.to_string(),
-                }
-            })
+            .map(|piece| region_piece_to_wasm(piece, &combo_key))
             .collect();
-
+        let (label_x, label_y) = region_anchors_map
+            .get(&combo_key)
+            .copied()
+            .unwrap_or((0.0, 0.0));
         wasm_regions.push(WasmRegion {
-            combination: combination.to_string(),
-            polygons: wasm_polygons,
+            label_x,
+            label_y,
+            combination: combo_key,
+            pieces: wasm_pieces,
         });
     }
 
@@ -1911,6 +2073,8 @@ pub fn generate_region_polygons_ellipses(
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
+        set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
     })
 }
 
@@ -1972,28 +2136,26 @@ pub fn generate_region_polygons_squares(
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
+    let (region_anchors_map, set_anchors_map) =
+        compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
     let mut wasm_regions = Vec::new();
-    for (combination, polygons) in region_polygons.iter() {
-        let wasm_polygons: Vec<WasmPolygon> = polygons
+    for (combination, pieces) in region_polygons.iter() {
+        let combo_key = combination.to_string();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces
             .iter()
-            .map(|poly| {
-                let vertices: Vec<WasmPoint> = poly
-                    .vertices()
-                    .iter()
-                    .map(|p| WasmPoint::new(p.x(), p.y()))
-                    .collect();
-                WasmPolygon {
-                    vertices,
-                    label: combination.to_string(),
-                }
-            })
+            .map(|piece| region_piece_to_wasm(piece, &combo_key))
             .collect();
-
+        let (label_x, label_y) = region_anchors_map
+            .get(&combo_key)
+            .copied()
+            .unwrap_or((0.0, 0.0));
         wasm_regions.push(WasmRegion {
-            combination: combination.to_string(),
-            polygons: wasm_polygons,
+            label_x,
+            label_y,
+            combination: combo_key,
+            pieces: wasm_pieces,
         });
     }
 
@@ -2020,6 +2182,8 @@ pub fn generate_region_polygons_squares(
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
+        set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
     })
 }
 
@@ -2034,20 +2198,26 @@ pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResu
     let venn = VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
+    let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
     let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| {
             layout.shape_for_set(name).map(|ellipse: &Ellipse| {
-                WasmEllipse::new(
-                    ellipse.center().x(),
-                    ellipse.center().y(),
-                    ellipse.semi_major(),
-                    ellipse.semi_minor(),
-                    ellipse.rotation(),
-                    name.to_string(),
-                )
+                let cx = ellipse.center().x();
+                let cy = ellipse.center().y();
+                let (label_x, label_y) = set_anchors.get(name).copied().unwrap_or((cx, cy));
+                WasmEllipse {
+                    x: cx,
+                    y: cy,
+                    semi_major: ellipse.semi_major(),
+                    semi_minor: ellipse.semi_minor(),
+                    rotation: ellipse.rotation(),
+                    label_x,
+                    label_y,
+                    label: name.to_string(),
+                }
             })
         })
         .collect();
@@ -2108,28 +2278,26 @@ pub fn generate_venn_regions(n: usize, n_vertices: usize) -> Result<WasmRegionPo
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
 
+    let (region_anchors_map, set_anchors_map) =
+        compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
     let mut wasm_regions = Vec::new();
-    for (combination, polygons) in region_polygons.iter() {
-        let wasm_polygons: Vec<WasmPolygon> = polygons
+    for (combination, pieces) in region_polygons.iter() {
+        let combo_key = combination.to_string();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces
             .iter()
-            .map(|poly| {
-                let vertices: Vec<WasmPoint> = poly
-                    .vertices()
-                    .iter()
-                    .map(|p| WasmPoint::new(p.x(), p.y()))
-                    .collect();
-                WasmPolygon {
-                    vertices,
-                    label: combination.to_string(),
-                }
-            })
+            .map(|piece| region_piece_to_wasm(piece, &combo_key))
             .collect();
-
+        let (label_x, label_y) = region_anchors_map
+            .get(&combo_key)
+            .copied()
+            .unwrap_or((0.0, 0.0));
         wasm_regions.push(WasmRegion {
-            combination: combination.to_string(),
-            polygons: wasm_polygons,
+            label_x,
+            label_y,
+            combination: combo_key,
+            pieces: wasm_pieces,
         });
     }
 
@@ -2156,5 +2324,7 @@ pub fn generate_venn_regions(n: usize, n_vertices: usize) -> Result<WasmRegionPo
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
+        set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
     })
 }

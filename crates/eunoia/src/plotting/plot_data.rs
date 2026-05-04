@@ -12,7 +12,9 @@ use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Polygon;
 use crate::geometry::traits::{DiagramShape, Polygonize};
 use crate::plotting::clip::{polygon_clip_many, ClipOperation};
-use crate::plotting::regions::{decompose_regions, poi_with_holes, RegionPolygons};
+use crate::plotting::regions::{
+    classify_into_pieces, decompose_regions, poi_with_holes, RegionPolygons,
+};
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
 
@@ -80,8 +82,13 @@ where
         .iter()
         .map(|s| s.polygonize(options.n_vertices))
         .collect();
-    let set_anchors =
-        compute_set_anchors(&shape_outlines, spec.set_names(), options.label_precision);
+    let set_anchors = compute_set_anchors(
+        &shape_outlines,
+        spec.set_names(),
+        &regions,
+        &region_anchors,
+        options.label_precision,
+    );
 
     PlotData {
         regions,
@@ -92,14 +99,19 @@ where
 }
 
 /// Computes a label anchor for each set by finding the pole of inaccessibility
-/// of `shape_i \ ⋃_{j≠i} shape_j`, using i_overlay's polygon difference. This
-/// preserves hole structure (a CCW outer ring with CW hole rings), so when
-/// other sets nest inside set `i` they are treated as holes rather than being
-/// flattened away — producing a correct "S only" anchor instead of `S`'s
-/// geometric centre.
+/// of `shape_i \ ⋃_{j≠i} shape_j`, using i_overlay's polygon difference and
+/// the same piece classifier the region decomposition uses. So an "A only"
+/// region with B/C/D as holes gets a hole-aware POI in the donut, and a
+/// fully-nested B falls back to the largest containing region (e.g. `A&B`).
+///
+/// Sliver filtering is handled inside the classifier-and-clipper pipeline:
+/// pieces below the relative-area threshold are rejected during piece
+/// construction, so callers don't need a separate threshold here.
 fn compute_set_anchors(
     shape_outlines: &[Polygon],
     set_names: &[String],
+    regions: &RegionPolygons,
+    region_anchors: &HashMap<Combination, Point>,
     precision: f64,
 ) -> HashMap<String, Point> {
     let mut result = HashMap::new();
@@ -126,8 +138,9 @@ fn compute_set_anchors(
             }
         }
 
-        // shape_i minus the union of the rest. If others_union is empty
-        // (single-set diagram), the result is shape_i itself.
+        // shape_i minus the union of the rest, then classify the resulting
+        // ring set into outer-with-holes pieces. If `others_union` is empty
+        // (single-set diagram) the result is just `shape_i`.
         let exclusive_rings: Vec<Polygon> = if others_union.is_empty() {
             vec![shape_outlines[i].clone()]
         } else {
@@ -141,15 +154,27 @@ fn compute_set_anchors(
             acc
         };
 
-        // Try the proper hole-aware POI first.
-        let anchor = poi_with_holes(&exclusive_rings, precision).map(|(p, _)| p);
+        let pieces = classify_into_pieces(exclusive_rings);
 
-        // Fallback: set is fully covered by others. Use the shape's own POI —
-        // not ideal, but the only sensible default with no exclusive area to
-        // place a label in.
+        // Drop pieces that are tiny relative to the shape itself — these are
+        // polygonization seam artifacts when the set is geometrically nested
+        // inside another, and would otherwise drag the label onto a sliver.
+        let shape_area = shape_outlines[i].area();
+        let max_piece_area = pieces.iter().map(|p| p.area()).fold(0.0_f64, f64::max);
+        let kept: Vec<_> = if shape_area > 0.0 && max_piece_area < shape_area * 1e-3 {
+            Vec::new()
+        } else {
+            pieces.into_iter().filter(|p| p.area() > 0.0).collect()
+        };
+
+        // Hole-aware POI on the (possibly hole-bearing) exclusive pieces.
+        let anchor = poi_with_holes(&kept, precision).map(|(p, _)| p);
+
+        // Fallback chain: largest-area containing region (eulerr behaviour
+        // for nested sets), then the shape's own POI as a last resort.
+        let anchor =
+            anchor.or_else(|| largest_containing_region_anchor(name, regions, region_anchors));
         let anchor = anchor.or_else(|| {
-            // Try non-empty regions containing the set in any combo. This is
-            // a last-ditch placeholder; callers can provide their own logic.
             let (p, _) = shape_outlines[i].pole_of_inaccessibility_with_distance(precision);
             Some(p)
         });
@@ -160,6 +185,28 @@ fn compute_set_anchors(
     }
 
     result
+}
+
+/// Picks the anchor of the largest-area region whose combination contains
+/// `name`, or `None` if the set never appears in any non-empty region.
+/// "Largest area" sums the absolute polygon areas of every piece in the
+/// region — matches the JS `fallbackSetLabels` heuristic this replaces.
+fn largest_containing_region_anchor(
+    name: &str,
+    regions: &RegionPolygons,
+    region_anchors: &HashMap<Combination, Point>,
+) -> Option<Point> {
+    let mut best: Option<(&Combination, f64)> = None;
+    for (combo, polys) in regions.iter() {
+        if !combo.sets().iter().any(|s| s == name) {
+            continue;
+        }
+        let area: f64 = polys.iter().map(|p| p.area()).sum();
+        if best.map(|(_, a)| area > a).unwrap_or(true) {
+            best = Some((combo, area));
+        }
+    }
+    best.and_then(|(combo, _)| region_anchors.get(combo).copied())
 }
 
 #[cfg(test)]

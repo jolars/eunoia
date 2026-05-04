@@ -3,6 +3,7 @@
     DiagramStyle,
     FitResult,
     Polygon,
+    RegionPiece,
   } from "../../types/diagram";
   import { defaultColorFor } from "../colors";
 
@@ -45,8 +46,11 @@
 
     if (result.shapeMode === "region") {
       for (const r of result.regions) {
-        for (const p of r.polygons) {
-          for (const v of p.vertices) consume(v);
+        for (const piece of r.pieces) {
+          for (const v of piece.outer.vertices) consume(v);
+          for (const h of piece.holes) {
+            for (const v of h.vertices) consume(v);
+          }
         }
       }
     } else {
@@ -158,52 +162,28 @@
     return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
   }
 
-  function polygonArea(p: Polygon): number {
-    const n = p.vertices.length;
-    if (n < 3) return 0;
-    let a = 0;
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      a += (p.vertices[j].x + p.vertices[i].x) *
-        (p.vertices[j].y - p.vertices[i].y);
-    }
-    return Math.abs(a) * 0.5;
-  }
-
   /**
-   * Sets that have no exclusive region of their own (e.g. fully contained in
-   * another set) get a label placed inside the *largest-area* region whose
-   * combination contains them. Scoring by area (not set count) picks the
-   * spacious nested region — `A&B&C` for a fully-contained C — over any tiny
-   * boundary sliver the optimizer might have left.
+   * Per-set labels for sets that have no exclusive single-set region (e.g.
+   * a fully-nested B inside A). Read from `result.setAnchors` — the WASM
+   * layer populates this from `PlotData::set_anchors`, which uses
+   * hole-aware POI on `shape_i \ ⋃ others` and falls back to the shape's
+   * own POI when the set is fully covered. This matches eulerr's behaviour.
    */
-  let fallbackSetLabels: { name: string; x: number; y: number }[] = $derived.by(
+  let nestedSetLabels: { name: string; x: number; y: number }[] = $derived.by(
     () => {
       if (!result || result.shapeMode !== "region") return [];
       const labeled = new Set<string>();
       for (const r of result.regions) {
         if (!r.combination.includes("&")) labeled.add(r.combination.trim());
       }
-      const fallbacks: { name: string; x: number; y: number }[] = [];
+      const out: { name: string; x: number; y: number }[] = [];
       for (const name of setLabels) {
         if (labeled.has(name)) continue;
-        let bestPoly: Polygon | null = null;
-        let bestArea = -1;
-        for (const r of result.regions) {
-          const sets = r.combination.split("&").map((s) => s.trim());
-          if (!sets.includes(name)) continue;
-          for (const p of r.polygons) {
-            const a = polygonArea(p);
-            if (a > bestArea) {
-              bestArea = a;
-              bestPoly = p;
-            }
-          }
-        }
-        if (!bestPoly) continue;
-        const pos = calcLabelPos(bestPoly);
-        fallbacks.push({ name, x: pos.x, y: pos.y });
+        const anchor = result.setAnchors?.[name];
+        if (!anchor) continue;
+        out.push({ name, x: anchor.x, y: anchor.y });
       }
-      return fallbacks;
+      return out;
     },
   );
 
@@ -261,16 +241,20 @@
     return d;
   }
 
-  function calcLabelPos(p: Polygon): { x: number; y: number } {
-    if (p.labelPosition) return p.labelPosition;
-    let cx = 0,
-      cy = 0;
-    for (const v of p.vertices) {
-      cx += v.x;
-      cy += v.y;
+  /**
+   * One SVG `d` string for a region piece — its outer ring plus any hole
+   * rings concatenated. The core library normalises orientations (CCW
+   * outer, CW holes), so the SVG default `fill-rule: nonzero` fills only
+   * the donut/cookie shape correctly without further bookkeeping.
+   */
+  function piecePath(piece: RegionPiece): string {
+    let d = polygonPath(piece.outer);
+    for (const h of piece.holes) {
+      d += " " + polygonPath(h);
     }
-    return { x: cx / p.vertices.length, y: cy / p.vertices.length };
+    return d;
   }
+
 
   function fmt(v: number): string {
     if (Math.abs(v) >= 100) return v.toFixed(0);
@@ -327,49 +311,57 @@
     {#if result.shapeMode === "region"}
       {#each result.regions as region}
         {@const fill = regionFill(region.combination)}
-        {#each region.polygons as poly}
+        {#each region.pieces as piece}
           <path
-            d={polygonPath(poly)}
+            d={piecePath(piece)}
             fill={fill}
             fill-opacity={style.alpha}
-            stroke={showStroke ? "black" : "none"}
-            stroke-width={strokeW}
+            stroke="none"
           />
         {/each}
       {/each}
+      {#if showStroke}
+        {#each result.regions as region}
+          {#each region.pieces as piece}
+            <path
+              d={piecePath(piece)}
+              fill="none"
+              stroke="black"
+              stroke-width={strokeW}
+            />
+          {/each}
+        {/each}
+      {/if}
       {#each result.regions as region}
         {@const isSetRegion = !region.combination.includes("&")}
-        {#each region.polygons as poly}
-          {@const lp = calcLabelPos(poly)}
-          {#if isSetRegion}
-            <text
-              x={lp.x}
-              y={lp.y}
-              text-anchor="middle"
-              dominant-baseline="central"
-              font-size={style.labelSize}
-              font-weight={fontWeight}
-              font-style={fontItalic}
-              fill="black"
-            >
-              {region.combination}
-            </text>
-          {/if}
-          {#if style.showCounts}
-            <text
-              x={lp.x}
-              y={isSetRegion ? lp.y + style.labelSize : lp.y}
-              text-anchor="middle"
-              dominant-baseline="central"
-              font-size={style.labelSize * 0.75}
-              fill="#374151"
-            >
-              {fmt(region.totalArea)}
-            </text>
-          {/if}
-        {/each}
+        {#if isSetRegion}
+          <text
+            x={region.labelX}
+            y={region.labelY}
+            text-anchor="middle"
+            dominant-baseline="central"
+            font-size={style.labelSize}
+            font-weight={fontWeight}
+            font-style={fontItalic}
+            fill="black"
+          >
+            {region.combination}
+          </text>
+        {/if}
+        {#if style.showCounts}
+          <text
+            x={region.labelX}
+            y={isSetRegion ? region.labelY + style.labelSize : region.labelY}
+            text-anchor="middle"
+            dominant-baseline="central"
+            font-size={style.labelSize * 0.75}
+            fill="#374151"
+          >
+            {fmt(region.totalArea)}
+          </text>
+        {/if}
       {/each}
-      {#each fallbackSetLabels as fb}
+      {#each nestedSetLabels as fb}
         <text
           x={fb.x}
           y={fb.y}
@@ -384,16 +376,6 @@
         </text>
       {/each}
     {:else}
-      {#each result.polygons as poly, i}
-        {@const color = setColorMap.get(poly.label) || defaultColorFor(i)}
-        <path
-          d={polygonPath(poly)}
-          fill={color}
-          fill-opacity={style.alpha}
-          stroke={showStroke ? color : "none"}
-          stroke-width={strokeW}
-        />
-      {/each}
       {#each result.circles as circle, i}
         {@const color = setColorMap.get(circle.label) || defaultColorFor(i)}
         <circle
@@ -402,8 +384,7 @@
           r={circle.radius}
           fill={color}
           fill-opacity={style.alpha}
-          stroke={showStroke ? color : "none"}
-          stroke-width={strokeW}
+          stroke="none"
         />
       {/each}
       {#each result.ellipses as ellipse, i}
@@ -416,8 +397,7 @@
           transform={`rotate(${(ellipse.rotation * 180) / Math.PI} ${ellipse.x} ${ellipse.y})`}
           fill={color}
           fill-opacity={style.alpha}
-          stroke={showStroke ? color : "none"}
-          stroke-width={strokeW}
+          stroke="none"
         />
       {/each}
       {#each result.squares as square, i}
@@ -429,28 +409,51 @@
           height={square.side}
           fill={color}
           fill-opacity={style.alpha}
-          stroke={showStroke ? color : "none"}
-          stroke-width={strokeW}
+          stroke="none"
         />
       {/each}
-      {#each result.polygons as poly}
-        {@const lp = calcLabelPos(poly)}
-        <text
-          x={lp.x}
-          y={lp.y}
-          text-anchor="middle"
-          dominant-baseline="central"
-          font-size={style.labelSize}
-          font-weight={fontWeight}
-          font-style={fontItalic}
-        >
-          {poly.label}
-        </text>
-      {/each}
+      {#if showStroke}
+        {#each result.circles as circle, i}
+          {@const color = setColorMap.get(circle.label) || defaultColorFor(i)}
+          <circle
+            cx={circle.x}
+            cy={circle.y}
+            r={circle.radius}
+            fill="none"
+            stroke={color}
+            stroke-width={strokeW}
+          />
+        {/each}
+        {#each result.ellipses as ellipse, i}
+          {@const color = setColorMap.get(ellipse.label) || defaultColorFor(i)}
+          <ellipse
+            cx={ellipse.x}
+            cy={ellipse.y}
+            rx={ellipse.semi_major}
+            ry={ellipse.semi_minor}
+            transform={`rotate(${(ellipse.rotation * 180) / Math.PI} ${ellipse.x} ${ellipse.y})`}
+            fill="none"
+            stroke={color}
+            stroke-width={strokeW}
+          />
+        {/each}
+        {#each result.squares as square, i}
+          {@const color = setColorMap.get(square.label) || defaultColorFor(i)}
+          <rect
+            x={square.x - square.side / 2}
+            y={square.y - square.side / 2}
+            width={square.side}
+            height={square.side}
+            fill="none"
+            stroke={color}
+            stroke-width={strokeW}
+          />
+        {/each}
+      {/if}
       {#each result.circles as circle}
         <text
-          x={circle.x}
-          y={circle.y}
+          x={circle.labelX ?? circle.x}
+          y={circle.labelY ?? circle.y}
           text-anchor="middle"
           dominant-baseline="central"
           font-size={style.labelSize}
@@ -462,8 +465,8 @@
       {/each}
       {#each result.ellipses as ellipse}
         <text
-          x={ellipse.x}
-          y={ellipse.y}
+          x={ellipse.labelX ?? ellipse.x}
+          y={ellipse.labelY ?? ellipse.y}
           text-anchor="middle"
           dominant-baseline="central"
           font-size={style.labelSize}
@@ -475,8 +478,8 @@
       {/each}
       {#each result.squares as square}
         <text
-          x={square.x}
-          y={square.y}
+          x={square.labelX ?? square.x}
+          y={square.labelY ?? square.y}
           text-anchor="middle"
           dominant-baseline="central"
           font-size={style.labelSize}
@@ -494,8 +497,8 @@
             {@const sq = result.squares.find((s) => s.label === combo)}
             {#if c}
               <text
-                x={c.x}
-                y={c.y + style.labelSize}
+                x={c.labelX ?? c.x}
+                y={(c.labelY ?? c.y) + style.labelSize}
                 text-anchor="middle"
                 dominant-baseline="central"
                 font-size={style.labelSize * 0.75}
@@ -505,8 +508,8 @@
               </text>
             {:else if e}
               <text
-                x={e.x}
-                y={e.y + style.labelSize}
+                x={e.labelX ?? e.x}
+                y={(e.labelY ?? e.y) + style.labelSize}
                 text-anchor="middle"
                 dominant-baseline="central"
                 font-size={style.labelSize * 0.75}
@@ -516,8 +519,8 @@
               </text>
             {:else if sq}
               <text
-                x={sq.x}
-                y={sq.y + style.labelSize}
+                x={sq.labelX ?? sq.x}
+                y={(sq.labelY ?? sq.y) + style.labelSize}
                 text-anchor="middle"
                 dominant-baseline="central"
                 font-size={style.labelSize * 0.75}
