@@ -37,6 +37,29 @@ fn smooth_max(values: &[f64], eps: f64) -> f64 {
     m + eps * sum.ln()
 }
 
+/// Softmax weights `p_k = exp((x_k − m)/ε) / Σ exp((x_j − m)/ε)`.
+///
+/// These are the per-element gradients of [`smooth_max`] with respect to
+/// each input: `∂smooth_max/∂x_k = p_k`. Sum to 1.0; uses the same
+/// numerically-stable `m`-shifted form as `smooth_max`. Returns an empty
+/// vector for empty input.
+#[inline]
+fn softmax_weights(values: &[f64], eps: f64) -> Vec<f64> {
+    if values.is_empty() {
+        return Vec::new();
+    }
+    let m = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !m.is_finite() {
+        // All -inf or all +inf — fall back to a uniform distribution so the
+        // chain rule doesn't blow up. In practice we never hit this.
+        return vec![1.0 / values.len() as f64; values.len()];
+    }
+    let inv_eps = 1.0 / eps;
+    let exps: Vec<f64> = values.iter().map(|&v| ((v - m) * inv_eps).exp()).collect();
+    let sum: f64 = exps.iter().sum();
+    exps.into_iter().map(|e| e / sum).collect()
+}
+
 /// Loss function type.
 ///
 /// Every variant is **scale-invariant**: the loss magnitude is bounded
@@ -570,8 +593,242 @@ impl LossType {
                 }
                 Some((total / sum_t2, grad))
             }
-            // Other loss variants don't yet have analytical gradients; the
-            // optimiser falls back to central finite differences.
+            LossType::RootMeanSquared => {
+                // L = sqrt(SSE / Σt²). ∂L/∂f_m = (f_m − t_m) / (L · Σt²).
+                let sum_t2: f64 = target.values().map(|&v| v * v).sum();
+                if sum_t2 < 1e-20 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut sse = 0.0;
+                let diffs: Vec<(RegionMask, f64)> = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        let d = f - t;
+                        sse += d * d;
+                        (mask, d)
+                    })
+                    .collect();
+                let loss = (sse / sum_t2).sqrt();
+                if loss < 1e-20 {
+                    // At L=0 the gradient is the subgradient {0}; report it
+                    // as zero so the optimiser sees a stationary point.
+                    return Some((0.0, HashMap::new()));
+                }
+                let denom = loss * sum_t2;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(diffs.len());
+                for (mask, d) in diffs {
+                    grad.insert(mask, d / denom);
+                }
+                Some((loss, grad))
+            }
+            LossType::Stress => {
+                // L = Σ(f − β·t)² / Σf², β = Σ(f·t)/Σt². β minimises the
+                // numerator, so ∂N/∂β = 0 and the envelope theorem gives
+                // ∂L/∂f_m = 2[(f_m − β·t_m) − L·f_m] / Σf².
+                let mut sum_ft = 0.0;
+                let mut sum_t2 = 0.0;
+                let mut sum_f2 = 0.0;
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    sum_ft += f * t;
+                    sum_t2 += t * t;
+                    sum_f2 += f * f;
+                }
+                if sum_t2 < 1e-20 || sum_f2 < 1e-20 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let beta = sum_ft / sum_t2;
+                let mut numerator = 0.0;
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let r = f - beta * t;
+                    numerator += r * r;
+                }
+                let loss = numerator / sum_f2;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let g = 2.0 * ((f - beta * t) - loss * f) / sum_f2;
+                    grad.insert(mask, g);
+                }
+                Some((loss, grad))
+            }
+            LossType::SumSquaredRegionError => {
+                // L = Σ r_k² with r_k = f_k/Σf − t_k/Σt. Then
+                // ∂L/∂f_m = (2/Σf)(r_m − c) where c = (1/Σf) Σ_k r_k f_k.
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut residuals: HashMap<RegionMask, f64> =
+                    HashMap::with_capacity(all_masks.len());
+                let mut loss = 0.0;
+                let mut c_num = 0.0;
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let r = f / ssf - t / sst;
+                    loss += r * r;
+                    c_num += r * f;
+                    residuals.insert(mask, r);
+                }
+                let c = c_num / ssf;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let r = residuals[&mask];
+                    grad.insert(mask, (2.0 / ssf) * (r - c));
+                }
+                Some((loss, grad))
+            }
+            LossType::SmoothSumAbsolute { eps } => {
+                // L = Σ smooth_abs(f_m − t_m, ε) / Σ|t|.
+                // ∂L/∂f_m = (f_m − t_m) / [√((f_m−t_m)² + ε²) · Σ|t|].
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let sum_abs_t: f64 = target.values().map(|v| v.abs()).sum();
+                if sum_abs_t < 1e-20 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut loss = 0.0;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let d = f - t;
+                    let denom = (d * d + eps * eps).sqrt();
+                    loss += denom - eps;
+                    grad.insert(mask, d / (denom * sum_abs_t));
+                }
+                Some((loss / sum_abs_t, grad))
+            }
+            LossType::SmoothSumAbsoluteRegionError { eps } => {
+                // L = Σ smooth_abs(r_k, ε), r_k = f_k/Σf − t_k/Σt.
+                // w_k = r_k / √(r_k² + ε²); ∂L/∂f_m = (1/Σf)[w_m − (1/Σf) Σ_k w_k f_k].
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut loss = 0.0;
+                let mut weights: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                let mut wf_sum = 0.0;
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let r = f / ssf - t / sst;
+                    let denom = (r * r + eps * eps).sqrt();
+                    loss += denom - eps;
+                    let w = r / denom;
+                    wf_sum += w * f;
+                    weights.insert(mask, w);
+                }
+                let c = wf_sum / ssf;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let w = weights[&mask];
+                    grad.insert(mask, (w - c) / ssf);
+                }
+                Some((loss, grad))
+            }
+            LossType::SmoothMaxAbsolute { eps } => {
+                // L = smooth_max([smooth_abs(f_m − t_m, ε)]) / max|t|.
+                // Let p_k be softmax weights; ∂L/∂f_m =
+                // p_m · (f_m − t_m) / √((f_m−t_m)² + ε²) / max|t|.
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let max_t: f64 = target.values().map(|v| v.abs()).fold(0.0_f64, f64::max);
+                if max_t < 1e-20 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut diffs: Vec<f64> = Vec::with_capacity(all_masks.len());
+                let mut smoothed: Vec<f64> = Vec::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let d = f - t;
+                    diffs.push(d);
+                    smoothed.push(smooth_abs(d, eps));
+                }
+                let p = softmax_weights(&smoothed, eps);
+                let loss = smooth_max(&smoothed, eps) / max_t;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for (i, &mask) in all_masks.iter().enumerate() {
+                    let d = diffs[i];
+                    let denom = (d * d + eps * eps).sqrt();
+                    grad.insert(mask, p[i] * d / denom / max_t);
+                }
+                Some((loss, grad))
+            }
+            LossType::SmoothMaxSquared { eps } => {
+                // L = smooth_max([(f_m − t_m)²]) / max(t²).
+                // ∂L/∂f_m = p_m · 2(f_m − t_m) / max(t²).
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let max_t2: f64 = target.values().map(|v| v * v).fold(0.0_f64, f64::max);
+                if max_t2 < 1e-20 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut diffs: Vec<f64> = Vec::with_capacity(all_masks.len());
+                let mut squared: Vec<f64> = Vec::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let d = f - t;
+                    diffs.push(d);
+                    squared.push(d * d);
+                }
+                let p = softmax_weights(&squared, eps);
+                let loss = smooth_max(&squared, eps) / max_t2;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for (i, &mask) in all_masks.iter().enumerate() {
+                    grad.insert(mask, p[i] * 2.0 * diffs[i] / max_t2);
+                }
+                Some((loss, grad))
+            }
+            LossType::SmoothDiagError { eps } => {
+                // L = smooth_max([smooth_abs(r_k, ε)]) where r_k = f_k/Σf − t_k/Σt.
+                // ∂L/∂f_m = (1/Σf)[p_m·w_m − (1/Σf) Σ_k p_k·w_k·f_k],
+                // with w_k = r_k / √(r_k² + ε²) and p_k softmax over σ_k.
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let ssf = fitted.values().sum::<f64>();
+                let sst = target.values().sum::<f64>();
+                if ssf.abs() < 1e-10 || sst.abs() < 1e-10 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut weights: Vec<f64> = Vec::with_capacity(all_masks.len());
+                let mut smoothed: Vec<f64> = Vec::with_capacity(all_masks.len());
+                let mut fs: Vec<f64> = Vec::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let r = f / ssf - t / sst;
+                    let denom = (r * r + eps * eps).sqrt();
+                    smoothed.push(denom - eps);
+                    weights.push(r / denom);
+                    fs.push(f);
+                }
+                let p = softmax_weights(&smoothed, eps);
+                let loss = smooth_max(&smoothed, eps);
+                let pwf_sum: f64 = (0..all_masks.len())
+                    .map(|i| p[i] * weights[i] * fs[i])
+                    .sum();
+                let c = pwf_sum / ssf;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for (i, &mask) in all_masks.iter().enumerate() {
+                    grad.insert(mask, (p[i] * weights[i] - c) / ssf);
+                }
+                Some((loss, grad))
+            }
+            // Non-smooth variants (`SumAbsoute`, `SumAbsoluteRegionError`,
+            // `MaxAbsolute`, `MaxSquared`, `DiagError`) deliberately fall
+            // back to FD here. Their gradients are zero almost everywhere
+            // or discontinuous at every zero crossing, so a subgradient
+            // would mislead L-BFGS more than help it. Use the matching
+            // `Smooth*` variant if you want the analytic path.
             _ => None,
         }
     }
@@ -830,5 +1087,165 @@ mod tests {
         assert!(LossType::smooth_max_absolute(1e-3).is_smooth());
         assert!(LossType::smooth_max_squared(1e-3).is_smooth());
         assert!(LossType::smooth_diag_error(1e-3).is_smooth());
+    }
+
+    /// Build the synthetic 4-region (f, t) input used by every analytic-vs-FD
+    /// loss-gradient test. Asymmetric values so per-mask gradients are all
+    /// distinct and degenerate cancellations don't hide bugs.
+    fn fixture_for_grad() -> (HashMap<RegionMask, f64>, HashMap<RegionMask, f64>) {
+        let mut fitted = HashMap::new();
+        fitted.insert(0b0001, 10.0);
+        fitted.insert(0b0010, 22.5);
+        fitted.insert(0b0100, 31.0);
+        fitted.insert(0b1000, 4.0);
+
+        let mut target = HashMap::new();
+        target.insert(0b0001, 8.0);
+        target.insert(0b0010, 25.0);
+        target.insert(0b0100, 28.0);
+        target.insert(0b1000, 6.0);
+        (fitted, target)
+    }
+
+    /// Verify the analytic per-mask gradient returned by `compute_with_gradient`
+    /// matches a central-difference estimate of `compute()` on the same
+    /// (fitted, target) pair, within `tol` relative error.
+    fn assert_loss_grad_matches_fd(loss: LossType, h: f64, tol: f64) {
+        let (fitted, target) = fixture_for_grad();
+        let (loss_val, analytic) = loss
+            .compute_with_gradient(&fitted, &target)
+            .expect("analytic gradient");
+        // Sanity: the analytic loss agrees with `compute()`.
+        let plain = loss.compute(&fitted, &target);
+        assert!(
+            (loss_val - plain).abs() <= 1e-9 + 1e-9 * plain.abs(),
+            "{:?}: analytic loss {} vs compute() {}",
+            loss,
+            loss_val,
+            plain
+        );
+
+        let masks: Vec<RegionMask> = {
+            let mut m: Vec<_> = fitted.keys().chain(target.keys()).copied().collect();
+            m.sort_unstable();
+            m.dedup();
+            m
+        };
+        for &mask in &masks {
+            let mut plus = fitted.clone();
+            let mut minus = fitted.clone();
+            *plus.entry(mask).or_insert(0.0) += h;
+            *minus.entry(mask).or_insert(0.0) -= h;
+            let fd = (loss.compute(&plus, &target) - loss.compute(&minus, &target)) / (2.0 * h);
+            let an = analytic.get(&mask).copied().unwrap_or(0.0);
+            let scale = fd.abs().max(1e-6);
+            let rel = (an - fd).abs() / scale;
+            assert!(
+                rel < tol,
+                "{:?}, mask {:b}: analytic={} fd={} rel={:.3e}",
+                loss,
+                mask,
+                an,
+                fd,
+                rel
+            );
+        }
+    }
+
+    #[test]
+    fn test_grad_sum_squared_matches_fd() {
+        assert_loss_grad_matches_fd(LossType::SumSquared, 1e-6, 1e-5);
+    }
+
+    #[test]
+    fn test_grad_root_mean_squared_matches_fd() {
+        assert_loss_grad_matches_fd(LossType::RootMeanSquared, 1e-6, 1e-5);
+    }
+
+    #[test]
+    fn test_grad_stress_matches_fd() {
+        assert_loss_grad_matches_fd(LossType::Stress, 1e-6, 1e-5);
+    }
+
+    #[test]
+    fn test_grad_sum_squared_region_error_matches_fd() {
+        assert_loss_grad_matches_fd(LossType::SumSquaredRegionError, 1e-6, 1e-5);
+    }
+
+    #[test]
+    fn test_grad_smooth_sum_absolute_matches_fd() {
+        // ε ≈ 1% of typical residual (~2.5).
+        assert_loss_grad_matches_fd(LossType::smooth_sum_absolute(0.05), 1e-6, 1e-5);
+    }
+
+    #[test]
+    fn test_grad_smooth_sum_absolute_region_error_matches_fd() {
+        // r_k is ~O(1/Σf) ≈ 0.015, so use a smaller ε to stay in the smooth
+        // regime without dominating the loss.
+        assert_loss_grad_matches_fd(LossType::smooth_sum_absolute_region_error(1e-3), 1e-6, 1e-4);
+    }
+
+    #[test]
+    fn test_grad_smooth_max_absolute_matches_fd() {
+        // Larger ε keeps the softmax weights bounded away from a one-hot
+        // vector — which makes FD comparisons stable on this fixture (one
+        // residual is ~3× the next-largest, so a tiny ε would put nearly all
+        // mass on a single mask and amplify FD noise).
+        assert_loss_grad_matches_fd(LossType::smooth_max_absolute(0.5), 1e-6, 1e-4);
+    }
+
+    #[test]
+    fn test_grad_smooth_max_squared_matches_fd() {
+        assert_loss_grad_matches_fd(LossType::smooth_max_squared(0.5), 1e-6, 1e-4);
+    }
+
+    #[test]
+    fn test_grad_smooth_diag_error_matches_fd() {
+        assert_loss_grad_matches_fd(LossType::smooth_diag_error(1e-3), 1e-6, 1e-4);
+    }
+
+    #[test]
+    fn test_grad_degenerate_inputs() {
+        // Empty target: every smooth loss reports (0.0, empty) — gradient is
+        // either undefined or a stationary subgradient at 0.
+        let empty = HashMap::<RegionMask, f64>::new();
+        let mut fitted = HashMap::new();
+        fitted.insert(0b001, 10.0);
+        fitted.insert(0b010, 5.0);
+
+        let smooth_losses = [
+            LossType::SumSquared,
+            LossType::RootMeanSquared,
+            LossType::Stress,
+            LossType::SumSquaredRegionError,
+            LossType::smooth_sum_absolute(1e-3),
+            LossType::smooth_sum_absolute_region_error(1e-3),
+            LossType::smooth_max_absolute(1e-3),
+            LossType::smooth_max_squared(1e-3),
+            LossType::smooth_diag_error(1e-3),
+        ];
+        for loss in smooth_losses {
+            let (l, g) = loss
+                .compute_with_gradient(&fitted, &empty)
+                .expect("smooth losses always return Some");
+            assert_eq!(l, 0.0, "{:?}: loss should be 0 for empty target", loss);
+            assert!(g.is_empty(), "{:?}: grad should be empty", loss);
+        }
+
+        // Non-smooth losses still fall back to FD (return None).
+        let non_smooth = [
+            LossType::SumAbsoute,
+            LossType::SumAbsoluteRegionError,
+            LossType::MaxAbsolute,
+            LossType::MaxSquared,
+            LossType::DiagError,
+        ];
+        for loss in non_smooth {
+            assert!(
+                loss.compute_with_gradient(&fitted, &empty).is_none(),
+                "{:?}: should return None to trigger FD fallback",
+                loss
+            );
+        }
     }
 }

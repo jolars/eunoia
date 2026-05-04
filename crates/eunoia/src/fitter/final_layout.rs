@@ -1302,6 +1302,45 @@ mod tests {
         v
     }
 
+    /// Every smooth loss type, paired with a relative tolerance multiplier
+    /// applied to the scenario's base tolerance. `Smooth*` losses use a
+    /// deliberately roomy `eps` so the softmax weights stay
+    /// numerically well-conditioned in the FD comparison; smaller `eps` is
+    /// fine in production but amplifies FD noise here.
+    fn smooth_losses_for_grad_test() -> Vec<(crate::loss::LossType, f64, &'static str)> {
+        use crate::loss::LossType;
+        // Multipliers reflect how much harder FD agreement is for losses with
+        // sharper curvature: `Smooth*` and region-error variants get a 10×
+        // bump because the softmax / quotient amplifies higher-order FD error.
+        vec![
+            (LossType::SumSquared, 1.0, "SumSquared"),
+            (LossType::RootMeanSquared, 1.0, "RootMeanSquared"),
+            (LossType::Stress, 1.0, "Stress"),
+            (
+                LossType::SumSquaredRegionError,
+                10.0,
+                "SumSquaredRegionError",
+            ),
+            (
+                LossType::smooth_sum_absolute(0.05),
+                10.0,
+                "SmoothSumAbsolute",
+            ),
+            (
+                LossType::smooth_sum_absolute_region_error(1e-3),
+                10.0,
+                "SmoothSumAbsoluteRegionError",
+            ),
+            (
+                LossType::smooth_max_absolute(0.5),
+                10.0,
+                "SmoothMaxAbsolute",
+            ),
+            (LossType::smooth_max_squared(0.5), 10.0, "SmoothMaxSquared"),
+            (LossType::smooth_diag_error(1e-3), 10.0, "SmoothDiagError"),
+        ]
+    }
+
     #[test]
     fn analytic_gradient_two_circle_overlap() {
         // Classic 2-circle lens: this is the case I derived analytically.
@@ -1313,14 +1352,12 @@ mod tests {
         // Probe at a perturbed config so the loss isn't exactly zero
         // (gradient at L=0 minimum is also zero, which is uninformative).
         let params = vec![0.0, 0.0, 1.0, 1.2, 0.0, 0.95];
-        assert_analytic_matches_fd(
-            &spec,
-            &params,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            1e-4,
-            || "two_circle_overlap SumSquared".to_string(),
-        );
+        let base_tol = 1e-4;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd(&spec, &params, loss_type, 1e-6, base_tol * mul, || {
+                format!("two_circle_overlap {}", name)
+            });
+        }
     }
 
     #[test]
@@ -1337,14 +1374,12 @@ mod tests {
         params[0] += 0.07;
         params[4] -= 0.05;
         params[8] += 0.03;
-        assert_analytic_matches_fd(
-            &spec,
-            &params,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            1e-3,
-            || "three_circle_venn SumSquared".to_string(),
-        );
+        let base_tol = 1e-3;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd(&spec, &params, loss_type, 1e-6, base_tol * mul, || {
+                format!("three_circle_venn {}", name)
+            });
+        }
     }
 
     #[test]
@@ -1364,14 +1399,12 @@ mod tests {
         perturbed[2] += 0.1;
         perturbed[5] -= 0.05;
         perturbed[8] += 0.07;
-        assert_analytic_matches_fd(
-            &spec,
-            &perturbed,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            1e-4,
-            || "disjoint".to_string(),
-        );
+        let base_tol = 1e-4;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd(&spec, &perturbed, loss_type, 1e-6, base_tol * mul, || {
+                format!("disjoint {}", name)
+            });
+        }
     }
 
     #[test]
@@ -1386,14 +1419,12 @@ mod tests {
         // Perturb the inner circle.
         params[3] += 0.1;
         params[5] += 0.05;
-        assert_analytic_matches_fd(
-            &spec,
-            &params,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            1e-4,
-            || "nested".to_string(),
-        );
+        let base_tol = 1e-4;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd(&spec, &params, loss_type, 1e-6, base_tol * mul, || {
+                format!("nested {}", name)
+            });
+        }
     }
 
     /// Same idea as `benchmark_gradient_call_only` but for ellipses.
@@ -1660,14 +1691,17 @@ mod tests {
         let mut params = flat_params_ellipse(&ellipses);
         params[0] += 0.05;
         params[4] += 0.07;
-        assert_analytic_matches_fd_shape::<Ellipse, _>(
-            &spec,
-            &params,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            5e-4,
-            || "ellipse two_overlap SumSquared".to_string(),
-        );
+        let base_tol = 5e-4;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd_shape::<Ellipse, _>(
+                &spec,
+                &params,
+                loss_type,
+                1e-6,
+                base_tol * mul,
+                || format!("ellipse two_overlap {}", name),
+            );
+        }
     }
 
     #[test]
@@ -1684,14 +1718,17 @@ mod tests {
         params[4] -= 0.05;
         params[8] += 0.03;
         params[14] += 0.04;
-        assert_analytic_matches_fd_shape::<Ellipse, _>(
-            &spec,
-            &params,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            5e-3,
-            || "ellipse three_venn".to_string(),
-        );
+        let base_tol = 5e-3;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd_shape::<Ellipse, _>(
+                &spec,
+                &params,
+                loss_type,
+                1e-6,
+                base_tol * mul,
+                || format!("ellipse three_venn {}", name),
+            );
+        }
     }
 
     #[test]
@@ -1707,14 +1744,17 @@ mod tests {
         params[2] += 0.1;
         params[3] -= 0.05;
         params[4] += 0.07;
-        assert_analytic_matches_fd_shape::<Ellipse, _>(
-            &spec,
-            &params,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            5e-4,
-            || "ellipse disjoint".to_string(),
-        );
+        let base_tol = 5e-4;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd_shape::<Ellipse, _>(
+                &spec,
+                &params,
+                loss_type,
+                1e-6,
+                base_tol * mul,
+                || format!("ellipse disjoint {}", name),
+            );
+        }
     }
 
     #[test]
@@ -1730,14 +1770,17 @@ mod tests {
         params[5] += 0.1;
         params[7] += 0.05;
         params[9] += 0.05;
-        assert_analytic_matches_fd_shape::<Ellipse, _>(
-            &spec,
-            &params,
-            crate::loss::LossType::SumSquared,
-            1e-6,
-            5e-4,
-            || "ellipse nested".to_string(),
-        );
+        let base_tol = 5e-4;
+        for (loss_type, mul, name) in smooth_losses_for_grad_test() {
+            assert_analytic_matches_fd_shape::<Ellipse, _>(
+                &spec,
+                &params,
+                loss_type,
+                1e-6,
+                base_tol * mul,
+                || format!("ellipse nested {}", name),
+            );
+        }
     }
 
     #[test]
