@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/jolars/eunoia/compare/v0.8.0...v0.9.0) (2026-05-04)
+
+### Features
+- clean up plotting API ([`d0a066c`](https://github.com/jolars/eunoia/commit/d0a066c21aa80804a66d9eaabcbf01e526693c3c))
+- **plotting:** improve and fix plotting API ([`8fd5293`](https://github.com/jolars/eunoia/commit/8fd52930328b52882f547c6fc93dcccb9f0a3d2e))
+
+### Bug Fixes
+- **plotting:** deal with polygons contained and holes ([`b5c78c8`](https://github.com/jolars/eunoia/commit/b5c78c8dc25ddb267a2a6e4fce4a06b477e121c2))
 ## [0.8.0](https://github.com/jolars/eunoia/compare/v0.7.0...v0.8.0) (2026-05-01)
 
 ### Breaking changes

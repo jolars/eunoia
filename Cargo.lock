@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "eunoia"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "argmin",
  "argmin-math",
@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "eunoia-wasm"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "console_error_panic_hook",
  "eunoia",
