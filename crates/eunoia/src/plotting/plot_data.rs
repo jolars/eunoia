@@ -140,6 +140,19 @@ pub struct PlotData {
     /// behind. Use them to draw set strokes directly without visible
     /// seams between exclusive regions, or when you want to overlay the
     /// "outline" view on top of a "filled regions" view.
+    ///
+    /// # Closing the ring
+    ///
+    /// Outlines are stored in **open polyline** form: the final vertex is
+    /// distinct from the first, and renderers that auto-close (SVG
+    /// `<polygon>`, Canvas `closePath()`, R `polygon()`) draw the closing
+    /// segment for free. Renderers that draw the polyline literally —
+    /// e.g. R's `grid::polylineGrob`, or any line-strip primitive — must
+    /// append the first vertex manually before drawing or they'll leave a
+    /// gap. The stored form is open because every fill-rule renderer we
+    /// know of treats an explicit closing duplicate vertex as a
+    /// zero-length segment that can produce stroke artifacts at the
+    /// closure point.
     pub shape_outlines: HashMap<String, Polygon>,
 }
 
@@ -161,6 +174,51 @@ impl PlotData {
         // `Combination::from_str` is `Infallible`, so the parse cannot fail.
         let combo: Combination = combination.parse().unwrap();
         self.regions.get(&combo)
+    }
+
+    /// Build a `PlotData` directly from a slice of fitted shapes plus the
+    /// spec they were fitted against. The companion to
+    /// [`crate::Layout::plot_data`] for consumers who don't hold a `Layout`
+    /// — for example, an FFI binding that hands fitted shape parameters
+    /// back to the host language and re-receives them later so the user
+    /// can replot at a different `n_vertices` without re-fitting.
+    ///
+    /// `shapes[i]` is taken to correspond to `spec.set_names()[i]`. Any
+    /// shapes whose set was pruned during preprocessing (empty sets) should
+    /// be reinserted at their spec position before calling this — exactly
+    /// the contract `Layout` upholds for its own shape list.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+    /// use eunoia::geometry::shapes::Circle;
+    /// use eunoia::plotting::{PlotData, PlotOptions};
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 5.0)
+    ///     .set("B", 3.0)
+    ///     .intersection(&["A", "B"], 1.0)
+    ///     .input_type(InputType::Exclusive)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+    /// let shapes: Vec<Circle> = spec
+    ///     .set_names()
+    ///     .iter()
+    ///     .map(|n| *layout.shape_for_set(n).unwrap())
+    ///     .collect();
+    ///
+    /// // Same output as `layout.plot_data(&spec, PlotOptions::default())`.
+    /// let plot = PlotData::from_shapes(&shapes, &spec, PlotOptions::default());
+    /// assert!(plot.shape_outlines.contains_key("A"));
+    /// ```
+    pub fn from_shapes<S>(shapes: &[S], spec: &DiagramSpec, options: PlotOptions) -> PlotData
+    where
+        S: DiagramShape + Polygonize,
+    {
+        build_plot_data(shapes, spec, options)
     }
 }
 

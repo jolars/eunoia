@@ -22,7 +22,7 @@
 use eunoia::geometry::primitives::Point;
 use eunoia::geometry::shapes::{Circle, Ellipse, Square};
 use eunoia::geometry::traits::Polygonize;
-use eunoia::plotting::{classify_into_pieces, polygon_clip, ClipOperation, PlotOptions};
+use eunoia::plotting::{classify_into_pieces, polygon_clip, ClipOperation, PlotData, PlotOptions};
 use eunoia::spec::{Combination, DiagramSpecBuilder, InputType};
 use eunoia::{DiagramError, Fitter};
 
@@ -188,8 +188,68 @@ fn binding_author_walkthrough() {
     // `Polygonize` is still available for bindings that want a cleaner
     // analytical stroke than the polygonised outlines bundled in
     // `PlotData::shape_outlines` (which are at `n_vertices` resolution).
+    //
+    // Note: `shape_outlines` rings are stored in **open polyline** form;
+    // renderers that auto-close (SVG `<polygon>`, Canvas `closePath()`,
+    // R `polygon()`) draw the closing segment for free. Renderers like
+    // `grid::polylineGrob` that draw the polyline literally must append
+    // the first vertex to close the ring.
     // ---------------------------------------------------------------------
     let circle = layout.shape_for_set("A").unwrap();
     let smooth = circle.polygonize(512);
     assert_eq!(smooth.vertices().len(), 512);
+
+    // ---------------------------------------------------------------------
+    // 8. Replotting from stored params without a `Layout`.
+    //
+    // A common FFI workflow: fit once, hand the fitted shape parameters
+    // back to the host language, then later receive them again and re-
+    // polygonise at a different resolution without re-fitting.
+    // `PlotData::from_shapes` is the entry point for that — same output
+    // as `Layout::plot_data`, but you only need the shapes plus the
+    // original spec.
+    // ---------------------------------------------------------------------
+    let stored_shapes: Vec<Circle> = spec
+        .set_names()
+        .iter()
+        .map(|n| *layout.shape_for_set(n).unwrap())
+        .collect();
+    let replot = PlotData::from_shapes(
+        &stored_shapes,
+        &spec,
+        PlotOptions {
+            n_vertices: 32,
+            ..PlotOptions::default()
+        },
+    );
+    // Same regions appear at the lower resolution.
+    assert_eq!(replot.regions.len(), plot.regions.len());
+
+    // ---------------------------------------------------------------------
+    // 9. `iter_in_input_order` accepts any string-like slice.
+    //
+    // For ad-hoc renderers that don't carry a `&[String]` around,
+    // `iter_in_input_order` accepts `&[impl AsRef<str>]` — including
+    // `&[&str]` literals and `&[String]` from a spec.
+    // ---------------------------------------------------------------------
+    let custom_names = ["A", "B", "C"];
+    let _ad_hoc_order: Vec<_> = plot
+        .regions
+        .iter_in_input_order(&custom_names)
+        .map(|(combo, _)| combo.to_string())
+        .collect();
+
+    // ---------------------------------------------------------------------
+    // 10. FFI-safety lint pattern (informational, not exercised here).
+    //
+    // The `eunoia-wasm` crate ships a `clippy.toml` that puts
+    // `Circle::new`, `Ellipse::new`, and `Square::new` on the
+    // `disallowed-methods` list with `#![deny(clippy::disallowed_methods)]`
+    // in `lib.rs`. Every direct shape construction inside that crate has
+    // to use `try_new`, surfacing the validation error to JS instead of
+    // panicking across the WASM boundary. Downstream binding crates
+    // (R, Python, Julia) can copy `crates/eunoia-wasm/clippy.toml`
+    // verbatim into their own crate root to get the same machine-enforced
+    // safety net.
+    // ---------------------------------------------------------------------
 }

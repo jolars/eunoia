@@ -116,10 +116,15 @@ impl RegionPolygons {
         self.regions.get(combination)
     }
 
-    /// Iterates over every non-empty region and its pieces. Iteration order
-    /// is unspecified (backed by a `HashMap`); use [`Self::iter_sorted`] for
-    /// canonical order or [`Self::iter_in_input_order`] to align with the
-    /// input set order.
+    /// Iterates over every non-empty region and its pieces.
+    ///
+    /// **You almost certainly want [`Self::iter_in_input_order`]** (when
+    /// you have a spec at hand) or [`Self::iter_sorted`] (when you don't).
+    /// Both yield deterministic output, which is what bindings, snapshot
+    /// tests, and CSV exports want. This method exists only for the rare
+    /// case where unordered traversal is fine and the small sort cost of
+    /// the deterministic helpers is unwelcome — its iteration order is
+    /// unspecified (backed by a `HashMap`) and may change between releases.
     pub fn iter(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
         self.regions.iter()
     }
@@ -169,16 +174,16 @@ impl RegionPolygons {
     /// // Singletons before the pair, and "A" before "B".
     /// assert_eq!(order, vec!["A", "B", "A&B"]);
     /// ```
-    pub fn iter_in_input_order<'a>(
+    pub fn iter_in_input_order<'a, N: AsRef<str>>(
         &'a self,
-        set_names: &[String],
+        set_names: &'a [N],
     ) -> impl Iterator<Item = (&'a Combination, &'a Vec<RegionPiece>)> + 'a {
         // Build a name → index lookup once. Sets not found in `set_names`
         // sort after every known set (sentinel = `set_names.len()`).
         let lookup: HashMap<&str, usize> = set_names
             .iter()
             .enumerate()
-            .map(|(i, name)| (name.as_str(), i))
+            .map(|(i, name)| (name.as_ref(), i))
             .collect();
         let sentinel = set_names.len();
         let key = move |combo: &Combination| -> Vec<usize> {
@@ -324,10 +329,15 @@ impl RegionPolygons {
     /// assert!(set_labels.contains_key("A"));
     /// assert!(set_labels.contains_key("B"));
     /// ```
-    pub fn set_label_points(&self, set_names: &[String], precision: f64) -> HashMap<String, Point> {
+    pub fn set_label_points<N: AsRef<str>>(
+        &self,
+        set_names: &[N],
+        precision: f64,
+    ) -> HashMap<String, Point> {
         let mut result = HashMap::new();
 
         for name in set_names {
+            let name = name.as_ref();
             // Flatten every piece (outer + holes) of every region containing
             // this set into a single ring list, union them, and reclassify
             // into pieces — gives the hole-aware POI of the unioned coverage.
@@ -356,7 +366,7 @@ impl RegionPolygons {
 
             let pieces = classify_into_pieces(merged);
             if let Some((point, _)) = poi_with_holes(&pieces, precision) {
-                result.insert(name.clone(), point);
+                result.insert(name.to_string(), point);
             }
         }
 

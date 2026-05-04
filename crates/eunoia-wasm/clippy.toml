@@ -1,0 +1,17 @@
+# FFI-safety lints for the WASM bindings crate.
+#
+# The `*::new` shape constructors panic on invalid input; in a WASM context
+# that aborts the module without a recoverable error path. Bindings authors
+# (and any code that constructs shapes from JS-supplied values) should use
+# the `try_new` variants instead, which return a `DiagramError` we can map
+# to a JS exception via `JsValue::from_str`.
+#
+# Other binding crates (R/Python/Julia, downstream) can copy this file
+# verbatim into their own crate root to get the same machine-enforced
+# safety net — see `crates/eunoia/tests/binding_walkthrough.rs` for the
+# pattern.
+disallowed-methods = [
+    { path = "eunoia::geometry::shapes::Circle::new", reason = "FFI panic risk: use Circle::try_new and surface DiagramError via JsValue." },
+    { path = "eunoia::geometry::shapes::Ellipse::new", reason = "FFI panic risk: use Ellipse::try_new and surface DiagramError via JsValue." },
+    { path = "eunoia::geometry::shapes::Square::new", reason = "FFI panic risk: use Square::try_new and surface DiagramError via JsValue." },
+]

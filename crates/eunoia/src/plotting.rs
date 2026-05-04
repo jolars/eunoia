@@ -25,8 +25,6 @@ pub use clip::{polygon_clip, ClipOperation};
 #[cfg(feature = "plotting")]
 pub use inscribed::{largest_inscribed_rect, principal_axis};
 #[cfg(feature = "plotting")]
-pub(crate) use plot_data::build_plot_data;
-#[cfg(feature = "plotting")]
 pub use plot_data::{PlotData, PlotOptions};
 #[cfg(feature = "plotting")]
 pub use regions::{

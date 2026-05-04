@@ -315,7 +315,7 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     where
         S: crate::geometry::traits::Polygonize,
     {
-        crate::plotting::build_plot_data(&self.shapes, spec, options)
+        crate::plotting::PlotData::from_shapes(&self.shapes, spec, options)
     }
 
     /// Compute all combination areas from current shapes.

@@ -2,6 +2,18 @@
 //!
 //! This crate provides WebAssembly bindings for the eunoia library,
 //! enabling Euler and Venn diagram generation in web browsers.
+//!
+//! # FFI-safety lint
+//!
+//! The shape constructor panics (`Circle::new` / `Ellipse::new` /
+//! `Square::new`) abort the WASM module on invalid input, which is a
+//! one-way trip from JavaScript's perspective. The local `clippy.toml`
+//! puts those constructors on the `disallowed-methods` list so that any
+//! call from this crate becomes a clippy error pointing at the
+//! corresponding `try_new` variant. Downstream binding crates
+//! (R/Python/Julia) can copy that file verbatim.
+
+#![deny(clippy::disallowed_methods)]
 
 use eunoia::geometry::shapes::{Circle, Ellipse, Square};
 use eunoia::geometry::traits::Polygonize;
