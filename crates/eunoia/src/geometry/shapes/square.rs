@@ -50,9 +50,41 @@ pub struct Square {
 
 impl Square {
     /// Creates a new axis-aligned square with the given center and side length.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `side <= 0`. Use [`Square::try_new`] to handle invalid
+    /// input as a [`crate::error::DiagramError`] instead of a panic.
     pub fn new(center: Point, side: f64) -> Self {
-        debug_assert!(side > 0.0, "Square side must be positive");
+        assert!(side > 0.0, "Square side must be > 0, got {}", side);
         Square { center, side }
+    }
+
+    /// Fallible constructor: returns
+    /// [`crate::error::DiagramError::InvalidShapeParameter`] when `side <= 0`
+    /// instead of panicking. Use this when constructing squares from
+    /// untrusted input (e.g. across an FFI boundary).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Square;
+    /// use eunoia::geometry::primitives::Point;
+    ///
+    /// assert!(Square::try_new(Point::new(0.0, 0.0), 1.0).is_ok());
+    /// assert!(Square::try_new(Point::new(0.0, 0.0), 0.0).is_err());
+    /// assert!(Square::try_new(Point::new(0.0, 0.0), -2.0).is_err());
+    /// ```
+    pub fn try_new(center: Point, side: f64) -> Result<Self, crate::error::DiagramError> {
+        if side > 0.0 {
+            Ok(Square { center, side })
+        } else {
+            Err(crate::error::DiagramError::InvalidShapeParameter {
+                shape: "Square",
+                param: "side",
+                value: side,
+            })
+        }
     }
 
     /// Returns the center point of the square.
@@ -488,6 +520,33 @@ mod tests {
         assert_eq!(s.center().x(), 1.0);
         assert_eq!(s.center().y(), 2.0);
         assert_eq!(s.side(), 3.0);
+    }
+
+    #[test]
+    fn test_try_new_accepts_positive() {
+        let s = Square::try_new(Point::new(0.0, 0.0), 1.0).unwrap();
+        assert_eq!(s.side(), 1.0);
+    }
+
+    #[test]
+    fn test_try_new_rejects_zero_and_negative() {
+        for bad in [0.0, -1.0] {
+            let err = Square::try_new(Point::new(0.0, 0.0), bad).unwrap_err();
+            assert!(matches!(
+                err,
+                crate::error::DiagramError::InvalidShapeParameter {
+                    shape: "Square",
+                    param: "side",
+                    ..
+                }
+            ));
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Square side must be > 0")]
+    fn test_new_panics_on_zero_side() {
+        let _ = Square::new(Point::new(0.0, 0.0), 0.0);
     }
 
     #[test]

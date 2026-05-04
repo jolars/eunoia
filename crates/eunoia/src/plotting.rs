@@ -30,6 +30,6 @@ pub(crate) use plot_data::build_plot_data;
 pub use plot_data::{PlotData, PlotOptions};
 #[cfg(feature = "plotting")]
 pub use regions::{
-    decompose_regions, decompose_regions_with, RegionPiece, RegionPolygons,
+    classify_into_pieces, decompose_regions, decompose_regions_with, RegionPiece, RegionPolygons,
     DEFAULT_SLIVER_THRESHOLD,
 };

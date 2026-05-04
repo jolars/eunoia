@@ -35,6 +35,20 @@ pub struct Polygon {
 
 impl Polygon {
     /// Creates a new polygon from a sequence of vertices.
+    ///
+    /// # Validity
+    ///
+    /// Unlike [`Circle::new`](super::Circle::new),
+    /// [`Ellipse::new`](super::Ellipse::new), and
+    /// [`Square::new`](super::Square::new) — which validate their numeric
+    /// parameters — `Polygon::new` accepts any vertex sequence, including
+    /// empty (`[]`), degenerate (fewer than three vertices, collinear),
+    /// self-intersecting, or non-simple rings. This is intentional: this
+    /// type is the carrier for arbitrary `i_overlay` clip output, where
+    /// intermediate empty/degenerate rings are normal and adding validation
+    /// here would force every internal caller to guard against them.
+    /// Methods such as [`Polygon::area`] return safe defaults (e.g. `0.0`)
+    /// for degenerate input.
     pub fn new(vertices: Vec<Point>) -> Self {
         Self { vertices }
     }

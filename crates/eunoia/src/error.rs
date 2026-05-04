@@ -31,6 +31,20 @@ pub enum DiagramError {
     /// ([`crate::constants::MAX_SETS`]). The first field is the requested
     /// count, the second is the supported maximum.
     TooManySets { requested: usize, max: usize },
+
+    /// A geometric shape was constructed with an out-of-range parameter
+    /// (e.g. a non-positive radius). Returned by the `try_new` constructors
+    /// on shape types so callers can recover from invalid user input
+    /// without catching a panic.
+    InvalidShapeParameter {
+        /// Shape type name (e.g. `"Circle"`, `"Ellipse"`, `"Square"`).
+        shape: &'static str,
+        /// Parameter name that failed validation (e.g. `"radius"`,
+        /// `"semi_major"`, `"side"`).
+        param: &'static str,
+        /// The offending value.
+        value: f64,
+    },
 }
 
 impl Display for DiagramError {
@@ -64,6 +78,13 @@ impl Display for DiagramError {
                     "Too many sets: {} requested, but maximum supported is {}",
                     requested, max
                 )
+            }
+            DiagramError::InvalidShapeParameter {
+                shape,
+                param,
+                value,
+            } => {
+                write!(f, "Invalid {} for {}: {} must be > 0", param, shape, value)
             }
         }
     }
@@ -147,6 +168,19 @@ mod tests {
         let debug_str = format!("{:?}", error);
         assert!(debug_str.contains("UndefinedSet"));
         assert!(debug_str.contains("A"));
+    }
+
+    #[test]
+    fn test_invalid_shape_parameter_error() {
+        let error = DiagramError::InvalidShapeParameter {
+            shape: "Circle",
+            param: "radius",
+            value: -1.5,
+        };
+        assert_eq!(
+            format!("{}", error),
+            "Invalid radius for Circle: -1.5 must be > 0"
+        );
     }
 
     #[test]

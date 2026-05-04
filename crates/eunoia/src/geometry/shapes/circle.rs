@@ -2,6 +2,7 @@
 
 use std::f64::consts::PI;
 
+use crate::error::DiagramError;
 use crate::geometry::diagram::IntersectionPoint;
 use crate::geometry::primitives::point;
 use crate::geometry::primitives::Point;
@@ -205,7 +206,14 @@ impl DiagramShape for Circle {
             3,
             "Circle requires 3 parameters: x, y, radius"
         );
-        Circle::new(Point::new(params[0], params[1]), params[2])
+        // Floor at `f64::MIN_POSITIVE` so the optimizer's exploratory steps
+        // (which can briefly propose `radius <= 0`) still produce a valid
+        // shape — `Circle::new` asserts `radius > 0`. Mirrors the
+        // `Square::from_params` and `Ellipse::from_optimizer_params` clamps.
+        Circle::new(
+            Point::new(params[0], params[1]),
+            params[2].max(f64::MIN_POSITIVE),
+        )
     }
 
     fn to_params(&self) -> Vec<f64> {
@@ -264,7 +272,12 @@ impl Circle {
     /// # Arguments
     ///
     /// * `center` - The center point of the circle
-    /// * `radius` - The radius of the circle (must be positive)
+    /// * `radius` - The radius of the circle (must be > 0)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `radius <= 0`. Use [`Circle::try_new`] to handle invalid
+    /// input as a [`DiagramError`] instead of a panic.
     ///
     /// # Examples
     ///
@@ -275,7 +288,35 @@ impl Circle {
     /// let circle = Circle::new(Point::new(1.0, 2.0), 3.0);
     /// ```
     pub fn new(center: Point, radius: f64) -> Self {
+        assert!(radius > 0.0, "Circle radius must be > 0, got {}", radius);
         Circle { center, radius }
+    }
+
+    /// Fallible constructor: returns
+    /// [`DiagramError::InvalidShapeParameter`] when `radius <= 0` instead of
+    /// panicking. Use this when constructing circles from untrusted input
+    /// (e.g. across an FFI boundary).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Circle;
+    /// use eunoia::geometry::primitives::Point;
+    ///
+    /// assert!(Circle::try_new(Point::new(0.0, 0.0), 1.0).is_ok());
+    /// assert!(Circle::try_new(Point::new(0.0, 0.0), 0.0).is_err());
+    /// assert!(Circle::try_new(Point::new(0.0, 0.0), -1.0).is_err());
+    /// ```
+    pub fn try_new(center: Point, radius: f64) -> Result<Self, DiagramError> {
+        if radius > 0.0 {
+            Ok(Circle { center, radius })
+        } else {
+            Err(DiagramError::InvalidShapeParameter {
+                shape: "Circle",
+                param: "radius",
+                value: radius,
+            })
+        }
     }
 
     /// Returns a reference to the circle's center point.
@@ -851,6 +892,40 @@ mod tests {
         assert_eq!(circle.radius(), 5.0);
         assert_eq!(circle.center().x(), 1.0);
         assert_eq!(circle.center().y(), 2.0);
+    }
+
+    #[test]
+    fn test_circle_try_new_accepts_positive() {
+        let circle = Circle::try_new(Point::new(0.0, 0.0), 1.0).unwrap();
+        assert_eq!(circle.radius(), 1.0);
+    }
+
+    #[test]
+    fn test_circle_try_new_rejects_zero_and_negative() {
+        let err = Circle::try_new(Point::new(0.0, 0.0), 0.0).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::DiagramError::InvalidShapeParameter {
+                shape: "Circle",
+                param: "radius",
+                ..
+            }
+        ));
+        let err = Circle::try_new(Point::new(0.0, 0.0), -1.5).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::DiagramError::InvalidShapeParameter {
+                shape: "Circle",
+                param: "radius",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "Circle radius must be > 0")]
+    fn test_circle_new_panics_on_zero_radius() {
+        let _ = Circle::new(Point::new(0.0, 0.0), 0.0);
     }
 
     #[test]

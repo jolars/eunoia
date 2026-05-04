@@ -507,9 +507,16 @@ mod tests {
         // All 3 original sets should be represented.
         assert_eq!(layout.shapes().len(), 3);
 
-        // C must be accessible by name and have zero area.
+        // C must be accessible by name and have effectively zero area.
+        // (`Circle::from_params` floors at `f64::MIN_POSITIVE` so the
+        // optimizer can never produce a `Circle::new` panic; the empty-set
+        // placeholder inherits that floor.)
         let c_shape = layout.shape_for_set("C").expect("C should be present");
-        assert_eq!(c_shape.radius(), 0.0);
+        assert!(
+            c_shape.radius() <= f64::MIN_POSITIVE,
+            "C placeholder radius should be at floor, got {}",
+            c_shape.radius()
+        );
 
         // Surviving sets should have positive-area shapes.
         let a_shape = layout.shape_for_set("A").expect("A should be present");

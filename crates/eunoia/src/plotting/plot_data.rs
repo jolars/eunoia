@@ -158,8 +158,8 @@ impl PlotData {
     /// }
     /// ```
     pub fn pieces_for(&self, combination: &str) -> Option<&Vec<crate::plotting::RegionPiece>> {
-        let parts: Vec<&str> = combination.split('&').map(|s| s.trim()).collect();
-        let combo = Combination::new(&parts);
+        // `Combination::from_str` is `Infallible`, so the parse cannot fail.
+        let combo: Combination = combination.parse().unwrap();
         self.regions.get(&combo)
     }
 }

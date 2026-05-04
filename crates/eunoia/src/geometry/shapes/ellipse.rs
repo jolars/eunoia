@@ -107,7 +107,9 @@ impl Ellipse {
     ///
     /// # Panics
     ///
-    /// Panics in debug builds if either axis length is <= 0.
+    /// Panics if either axis length is <= 0. Use [`Ellipse::try_new`] to
+    /// handle invalid input as a [`crate::error::DiagramError`] instead of a
+    /// panic.
     ///
     /// # Examples
     ///
@@ -120,14 +122,66 @@ impl Ellipse {
     /// assert_eq!(ellipse.semi_minor(), 3.0);
     /// ```
     pub fn new(center: Point, semi_major: f64, semi_minor: f64, rotation: f64) -> Self {
-        debug_assert!(semi_major > 0.0, "Semi-major axis must be > 0");
-        debug_assert!(semi_minor > 0.0, "Semi-minor axis must be > 0");
+        assert!(
+            semi_major > 0.0,
+            "Ellipse semi_major must be > 0, got {}",
+            semi_major
+        );
+        assert!(
+            semi_minor > 0.0,
+            "Ellipse semi_minor must be > 0, got {}",
+            semi_minor
+        );
         Self {
             center,
             semi_major,
             semi_minor,
             rotation,
         }
+    }
+
+    /// Fallible constructor: returns
+    /// [`crate::error::DiagramError::InvalidShapeParameter`] when either
+    /// axis length is `<= 0` instead of panicking. Use this when
+    /// constructing ellipses from untrusted input (e.g. across an FFI
+    /// boundary).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::geometry::shapes::Ellipse;
+    /// use eunoia::geometry::primitives::Point;
+    ///
+    /// assert!(Ellipse::try_new(Point::new(0.0, 0.0), 4.0, 3.0, 0.0).is_ok());
+    /// assert!(Ellipse::try_new(Point::new(0.0, 0.0), 0.0, 3.0, 0.0).is_err());
+    /// assert!(Ellipse::try_new(Point::new(0.0, 0.0), 4.0, -1.0, 0.0).is_err());
+    /// ```
+    pub fn try_new(
+        center: Point,
+        semi_major: f64,
+        semi_minor: f64,
+        rotation: f64,
+    ) -> Result<Self, crate::error::DiagramError> {
+        if semi_major <= 0.0 {
+            return Err(crate::error::DiagramError::InvalidShapeParameter {
+                shape: "Ellipse",
+                param: "semi_major",
+                value: semi_major,
+            });
+        }
+        if semi_minor <= 0.0 {
+            return Err(crate::error::DiagramError::InvalidShapeParameter {
+                shape: "Ellipse",
+                param: "semi_minor",
+                value: semi_minor,
+            });
+        }
+        Ok(Self {
+            center,
+            semi_major,
+            semi_minor,
+            rotation,
+        })
     }
 
     /// Creates a new ellipse from radius and log-aspect ratio parameterization.
@@ -1146,9 +1200,9 @@ impl DiagramShape for Ellipse {
 
         // Floor at `f64::MIN_POSITIVE` so that very negative `u` / `v`
         // values (which `.exp()` underflows to 0) still produce a strictly
-        // positive semi-axis — `Ellipse::new`'s debug_assert requires
-        // `> 0`. The optimizer should not drive here in practice; this is
-        // purely defensive against runaway log-space steps.
+        // positive semi-axis — `Ellipse::new` asserts `> 0`. The optimizer
+        // should not drive here in practice; this is purely defensive
+        // against runaway log-space steps.
         Ellipse::new(
             Point::new(params[0], params[1]),
             params[2].exp().max(f64::MIN_POSITIVE),
@@ -1256,6 +1310,44 @@ mod tests {
 
     fn approx_eq(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-10
+    }
+
+    #[test]
+    fn test_ellipse_try_new_accepts_positive() {
+        let e = Ellipse::try_new(Point::new(0.0, 0.0), 4.0, 3.0, 0.5).unwrap();
+        assert_eq!(e.semi_major(), 4.0);
+        assert_eq!(e.semi_minor(), 3.0);
+    }
+
+    #[test]
+    fn test_ellipse_try_new_rejects_non_positive_axes() {
+        for (a, b, expected_param) in [
+            (0.0, 3.0, "semi_major"),
+            (-1.0, 3.0, "semi_major"),
+            (4.0, 0.0, "semi_minor"),
+            (4.0, -2.0, "semi_minor"),
+        ] {
+            let err = Ellipse::try_new(Point::new(0.0, 0.0), a, b, 0.0).unwrap_err();
+            match err {
+                crate::error::DiagramError::InvalidShapeParameter { shape, param, .. } => {
+                    assert_eq!(shape, "Ellipse");
+                    assert_eq!(param, expected_param);
+                }
+                _ => panic!("expected InvalidShapeParameter"),
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Ellipse semi_major must be > 0")]
+    fn test_ellipse_new_panics_on_zero_semi_major() {
+        let _ = Ellipse::new(Point::new(0.0, 0.0), 0.0, 3.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Ellipse semi_minor must be > 0")]
+    fn test_ellipse_new_panics_on_zero_semi_minor() {
+        let _ = Ellipse::new(Point::new(0.0, 0.0), 4.0, 0.0, 0.0);
     }
 
     #[test]

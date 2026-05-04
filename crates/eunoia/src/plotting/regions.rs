@@ -117,10 +117,83 @@ impl RegionPolygons {
     }
 
     /// Iterates over every non-empty region and its pieces. Iteration order
-    /// is unspecified (backed by a `HashMap`); sort the result if you need
-    /// determinism.
+    /// is unspecified (backed by a `HashMap`); use [`Self::iter_sorted`] for
+    /// canonical order or [`Self::iter_in_input_order`] to align with the
+    /// input set order.
     pub fn iter(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
         self.regions.iter()
+    }
+
+    /// Iterates in canonical `(size, lexicographic)` order: singletons
+    /// first, then pairs, then triples, etc.; ties broken by the lexicographic
+    /// order of the (already-sorted) set names. Deterministic without needing
+    /// the spec — useful when you want stable output and don't care about
+    /// matching input order.
+    pub fn iter_sorted(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
+        let mut entries: Vec<(&Combination, &Vec<RegionPiece>)> = self.regions.iter().collect();
+        entries
+            .sort_by(|(a, _), (b, _)| a.len().cmp(&b.len()).then_with(|| a.sets().cmp(b.sets())));
+        entries.into_iter()
+    }
+
+    /// Iterates in spec input order: combinations are sorted by the
+    /// position of their member sets in `set_names` (typically
+    /// `spec.set_names()`), with smaller combinations before larger.
+    /// Sets in a combination that don't appear in `set_names` are
+    /// placed last by convention; if every combination's sets are present
+    /// in `set_names`, this matches the order a user-facing summary
+    /// would naturally take.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 5.0)
+    ///     .set("B", 3.0)
+    ///     .intersection(&["A", "B"], 1.0)
+    ///     .input_type(InputType::Exclusive)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let layout = Fitter::<Circle>::new(&spec).seed(0).fit().unwrap();
+    /// let regions = layout.region_polygons(&spec, 64);
+    ///
+    /// // Pull out the keys in input order.
+    /// let order: Vec<_> = regions
+    ///     .iter_in_input_order(spec.set_names())
+    ///     .map(|(c, _)| c.to_string())
+    ///     .collect();
+    /// // Singletons before the pair, and "A" before "B".
+    /// assert_eq!(order, vec!["A", "B", "A&B"]);
+    /// ```
+    pub fn iter_in_input_order<'a>(
+        &'a self,
+        set_names: &[String],
+    ) -> impl Iterator<Item = (&'a Combination, &'a Vec<RegionPiece>)> + 'a {
+        // Build a name → index lookup once. Sets not found in `set_names`
+        // sort after every known set (sentinel = `set_names.len()`).
+        let lookup: HashMap<&str, usize> = set_names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (name.as_str(), i))
+            .collect();
+        let sentinel = set_names.len();
+        let key = move |combo: &Combination| -> Vec<usize> {
+            let mut idxs: Vec<usize> = combo
+                .sets()
+                .iter()
+                .map(|s| lookup.get(s.as_str()).copied().unwrap_or(sentinel))
+                .collect();
+            idxs.sort_unstable();
+            idxs
+        };
+
+        let mut entries: Vec<(&Combination, &Vec<RegionPiece>)> = self.regions.iter().collect();
+        entries.sort_by(|(a, _), (b, _)| a.len().cmp(&b.len()).then_with(|| key(a).cmp(&key(b))));
+        entries.into_iter()
     }
 
     /// Number of distinct non-empty regions.
@@ -348,7 +421,46 @@ fn reverse_polygon(p: &Polygon) -> Polygon {
 /// orientation is not stable across operations — relying on the sign of the
 /// signed area to identify outers vs holes silently breaks for chained
 /// difference/union operations.
-pub(crate) fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
+///
+/// # When to use this
+///
+/// Reach for this when you've chained your own [`crate::plotting::polygon_clip`]
+/// calls and have a flat `Vec<Polygon>` of rings that you'd like to render
+/// with the same outer-and-holes contract that
+/// [`decompose_regions`] guarantees. For the standard "fitted shapes →
+/// per-region pieces" pipeline, prefer [`decompose_regions`] (or
+/// [`crate::Layout::region_polygons`]) — it handles boundary discovery,
+/// inclusion-exclusion, and sliver filtering for you.
+///
+/// # Examples
+///
+/// ```
+/// use eunoia::geometry::primitives::Point;
+/// use eunoia::geometry::shapes::Polygon;
+/// use eunoia::plotting::classify_into_pieces;
+///
+/// // A square with a square hole — two rings, same direction here
+/// // (classification is by containment, not winding).
+/// let outer = Polygon::new(vec![
+///     Point::new(0.0, 0.0),
+///     Point::new(4.0, 0.0),
+///     Point::new(4.0, 4.0),
+///     Point::new(0.0, 4.0),
+/// ]);
+/// let hole = Polygon::new(vec![
+///     Point::new(1.0, 1.0),
+///     Point::new(3.0, 1.0),
+///     Point::new(3.0, 3.0),
+///     Point::new(1.0, 3.0),
+/// ]);
+///
+/// let pieces = classify_into_pieces(vec![outer, hole]);
+/// assert_eq!(pieces.len(), 1);
+/// assert_eq!(pieces[0].holes.len(), 1);
+/// // Net area: 16 (outer) - 4 (hole) = 12.
+/// assert!((pieces[0].area() - 12.0).abs() < 1e-9);
+/// ```
+pub fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
     // Drop degenerate rings.
     let kept: Vec<(Polygon, f64)> = rings
         .into_iter()
@@ -1162,6 +1274,60 @@ mod tests {
             total_area,
             expected_total
         );
+    }
+
+    #[test]
+    fn test_iter_sorted_is_deterministic_by_size_then_lex() {
+        let mut regions = RegionPolygons::new();
+        let dummy_piece = || RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(0.0, 0.0),
+                Point::new(1.0, 0.0),
+                Point::new(1.0, 1.0),
+            ]),
+            holes: Vec::new(),
+        };
+        // Insert in scrambled order to make sure iter_sorted re-sorts.
+        regions.insert(Combination::new(&["A", "B"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["B"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A", "B", "C"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A", "C"]), vec![dummy_piece()]);
+
+        let order: Vec<String> = regions.iter_sorted().map(|(c, _)| c.to_string()).collect();
+        assert_eq!(order, vec!["A", "B", "A&B", "A&C", "A&B&C"]);
+    }
+
+    #[test]
+    fn test_iter_in_input_order_respects_set_names_order() {
+        let mut regions = RegionPolygons::new();
+        let dummy_piece = || RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(0.0, 0.0),
+                Point::new(1.0, 0.0),
+                Point::new(1.0, 1.0),
+            ]),
+            holes: Vec::new(),
+        };
+        regions.insert(Combination::new(&["B"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["C"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A", "B"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A", "C"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["B", "C"]), vec![dummy_piece()]);
+
+        // Spec defined in order C, A, B — iteration should follow that.
+        let names = vec!["C".to_string(), "A".to_string(), "B".to_string()];
+        let order: Vec<String> = regions
+            .iter_in_input_order(&names)
+            .map(|(c, _)| c.to_string())
+            .collect();
+        // Singletons first, in input order: C, A, B.
+        // Pairs sorted by their canonical-form member indices in `names`:
+        //   "A&C"  → indices (1, 0)  → sorted (0, 1)
+        //   "B&C"  → indices (2, 0)  → sorted (0, 2)
+        //   "A&B"  → indices (1, 2)  → sorted (1, 2)
+        assert_eq!(order, vec!["C", "A", "B", "A&C", "B&C", "A&B"]);
     }
 
     #[test]
