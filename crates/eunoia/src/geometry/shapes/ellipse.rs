@@ -107,9 +107,10 @@ impl Ellipse {
     ///
     /// # Panics
     ///
-    /// Panics if either axis length is <= 0. Use [`Ellipse::try_new`] to
-    /// handle invalid input as a [`crate::error::DiagramError`] instead of a
-    /// panic.
+    /// Panics if either axis length is `<= 0`. Use [`Ellipse::try_new`] to
+    /// handle invalid input as a [`crate::error::DiagramError`] instead of
+    /// a panic — bindings authors writing FFI wrappers should reach for
+    /// `try_new`.
     ///
     /// # Examples
     ///

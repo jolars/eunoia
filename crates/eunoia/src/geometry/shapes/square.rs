@@ -54,7 +54,8 @@ impl Square {
     /// # Panics
     ///
     /// Panics if `side <= 0`. Use [`Square::try_new`] to handle invalid
-    /// input as a [`crate::error::DiagramError`] instead of a panic.
+    /// input as a [`crate::error::DiagramError`] instead of a panic —
+    /// bindings authors writing FFI wrappers should reach for `try_new`.
     pub fn new(center: Point, side: f64) -> Self {
         assert!(side > 0.0, "Square side must be > 0, got {}", side);
         Square { center, side }

@@ -277,7 +277,8 @@ impl Circle {
     /// # Panics
     ///
     /// Panics if `radius <= 0`. Use [`Circle::try_new`] to handle invalid
-    /// input as a [`DiagramError`] instead of a panic.
+    /// input as a [`DiagramError`] instead of a panic — bindings authors
+    /// writing FFI wrappers should reach for `try_new`.
     ///
     /// # Examples
     ///
