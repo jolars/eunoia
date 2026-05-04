@@ -25,18 +25,40 @@ use std::collections::HashMap;
 /// A connected component of a region: one outer boundary plus zero or more
 /// interior holes (other regions or shapes cutting through this piece).
 ///
-/// Orientation is normalised so consumers can render each piece with the
-/// SVG default `fill-rule: nonzero`:
+/// Orientation is normalised by the core library so consumers can render
+/// each piece with the SVG default `fill-rule: nonzero` (or any equivalent
+/// nonzero / "even-odd-of-rings" rule) **without classifying rings on their
+/// own side**:
 ///
 /// * `outer` — CCW (positive signed area).
-/// * `holes` — CW (negative signed area), each fully contained in `outer`.
+/// * `holes` — CW (negative signed area), each strictly inside `outer`.
 ///
 /// Use [`RegionPiece::area`] for the piece's net area (outer minus holes).
+///
+/// # Renderer recipe
+///
+/// SVG: emit one `<path>` per piece with `d` formed by concatenating the
+/// outer ring's `M…Z` and each hole's `M…Z`. Default `fill-rule: nonzero`
+/// fills only the donut/cookie shape because the rings have opposite
+/// winding.
+///
+/// Canvas: `ctx.beginPath()`, walk the outer ring, walk each hole ring,
+/// `ctx.fill()` (Canvas's default fill is also nonzero).
+///
+/// # Construction
+///
+/// `RegionPiece`s are produced by [`decompose_regions`] (and the higher-
+/// level [`crate::Layout::region_polygons`]). Bindings authors should not
+/// build them by hand: the topological classification that maps a flat
+/// list of clipper-output rings to outer/holes pairs is not part of the
+/// public API.
 #[derive(Debug, Clone)]
 pub struct RegionPiece {
-    /// CCW outer boundary of the piece.
+    /// CCW outer boundary of the piece (always non-degenerate after
+    /// [`decompose_regions`]).
     pub outer: Polygon,
-    /// CW hole rings, each strictly inside `outer`.
+    /// CW hole rings, each strictly inside `outer`. Empty when the piece
+    /// is simply connected.
     pub holes: Vec<Polygon>,
 }
 
@@ -52,44 +74,58 @@ impl RegionPiece {
 
 /// Collection of region pieces for each exclusive region in a diagram.
 ///
-/// Each key is a combination of set names, and the value is a list of
+/// Each key is a [`Combination`] of set names, and the value is a list of
 /// [`RegionPiece`]s that together represent that exclusive region. Multiple
 /// pieces occur when a region is disconnected (e.g. an "A only" lobe split
-/// by an intersection cutting across A).
+/// by an intersection cutting across A); piece orientations and hole
+/// containment are guaranteed by [`decompose_regions`] — see
+/// [`RegionPiece`] for the rendering contract.
+///
+/// Pieces below the per-diagram sliver threshold (see [`decompose_regions`])
+/// are filtered out before insertion; consumers can assume every retained
+/// piece has positive net area.
 #[derive(Debug, Clone)]
 pub struct RegionPolygons {
     regions: HashMap<Combination, Vec<RegionPiece>>,
 }
 
 impl RegionPolygons {
-    /// Creates a new empty RegionPolygons collection.
+    /// Creates a new empty `RegionPolygons` collection. Most callers should
+    /// instead use [`decompose_regions`] (or [`crate::Layout::region_polygons`])
+    /// to populate one from fitted shapes.
     pub fn new() -> Self {
         Self {
             regions: HashMap::new(),
         }
     }
 
-    /// Adds pieces for a given region.
+    /// Adds pieces for a given region, replacing any previous entry for
+    /// `combination`. The caller is responsible for ensuring the pieces
+    /// satisfy the [`RegionPiece`] orientation contract — typically only
+    /// useful for tests; production code should rely on [`decompose_regions`].
     pub fn insert(&mut self, combination: Combination, pieces: Vec<RegionPiece>) {
         self.regions.insert(combination, pieces);
     }
 
-    /// Gets pieces for a given region.
+    /// Returns the pieces for a given region, or `None` if the combination
+    /// has no fitted (non-empty) area.
     pub fn get(&self, combination: &Combination) -> Option<&Vec<RegionPiece>> {
         self.regions.get(combination)
     }
 
-    /// Returns an iterator over all regions and their pieces.
+    /// Iterates over every non-empty region and its pieces. Iteration order
+    /// is unspecified (backed by a `HashMap`); sort the result if you need
+    /// determinism.
     pub fn iter(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
         self.regions.iter()
     }
 
-    /// Returns the number of regions.
+    /// Number of distinct non-empty regions.
     pub fn len(&self) -> usize {
         self.regions.len()
     }
 
-    /// Returns true if there are no regions.
+    /// `true` when no regions are stored.
     pub fn is_empty(&self) -> bool {
         self.regions.is_empty()
     }
@@ -106,18 +142,18 @@ impl RegionPolygons {
             .collect()
     }
 
-    /// Computes a label anchor point for every non-empty region.
+    /// Computes a hole-aware label anchor point for every non-empty region.
     ///
-    /// For each region, this returns the *pole of inaccessibility* (the
-    /// interior point farthest from the polygon boundary — the Polylabel
-    /// algorithm). When a region is disconnected into several polygons, the
-    /// anchor with the largest pole-to-boundary distance is chosen — i.e. the
-    /// piece with the most breathing room for a label, which is not always
-    /// the piece with the largest area (a thin crescent can have large area
-    /// but no spot wide enough to fit text).
+    /// For each region, this returns the *pole of inaccessibility* — the
+    /// interior point that maximises the minimum distance to **every**
+    /// boundary, both the outer ring and any holes (the Polylabel algorithm
+    /// extended to hole-bearing shapes). When a region is disconnected into
+    /// multiple [`RegionPiece`]s, the piece with the largest pole-to-boundary
+    /// clearance wins — i.e. the piece with the most breathing room for a
+    /// label, which is not always the piece with the largest area (a thin
+    /// crescent can have large area but no spot wide enough to fit text).
     ///
-    /// Regions whose polygons all have zero area (or where the region has no
-    /// polygons at all) are omitted from the result.
+    /// Regions with no pieces (or whose pieces are degenerate) are omitted.
     ///
     /// # Arguments
     ///
@@ -159,18 +195,18 @@ impl RegionPolygons {
             .collect()
     }
 
-    /// Computes a label anchor point for every set in `set_names`.
+    /// Computes a label anchor point for every set in `set_names`, by
+    /// unioning every region containing the set, reclassifying the union
+    /// into [`RegionPiece`]s, and returning the hole-aware pole of
+    /// inaccessibility of the highest-clearance piece.
     ///
-    /// **Note:** when sets are fully nested (e.g. `B, C, D ⊆ A`) the
-    /// exclusive region polygons stored in this `RegionPolygons` lose their
-    /// hole structure during clipping, so this method may return a poor
-    /// anchor (e.g. A's geometric centre, overlapping the inner shapes).
-    /// For correct nested-set behaviour use [`PlotData::set_anchors`] which
-    /// is computed from the shape outlines directly with hole handling.
-    ///
-    /// For each set, this unions every region polygon that contains the set
-    /// into a single shape and returns the pole of inaccessibility of the
-    /// component with the largest pole-to-boundary distance.
+    /// This works for nested sets in the same way it works for overlapping
+    /// ones — but if you also want the eulerr-style fallback ("if a set has
+    /// no exclusive region of its own, place its label inside the largest
+    /// containing intersection"), use [`crate::plotting::PlotData::set_anchors`]
+    /// instead. That builds anchors directly from the shape outlines and
+    /// applies the fallback automatically; this method only sees the region
+    /// decomposition.
     ///
     /// Sets that are absent from every region are omitted from the result.
     ///
@@ -545,36 +581,60 @@ impl Default for RegionPolygons {
     }
 }
 
-/// Decomposes fitted shapes into exclusive region polygons.
+/// Decomposes fitted shapes into exclusive [`RegionPiece`]s, one entry per
+/// non-empty set combination.
 ///
-/// This function takes a set of fitted shapes and produces a collection of polygons
-/// for each exclusive region (set combination), regardless of whether those regions
-/// were specified in the original diagram specification.
+/// # Algorithm
 ///
-/// The algorithm:
-/// 1. Convert each shape to a polygon
-/// 2. Discover candidate regions sparsely from the actual fitted geometry (via
-///    the shape boundary intersection points), instead of enumerating the full
-///    `2^n - 1` power set. Only regions that can geometrically be non-empty
-///    are considered.
-/// 3. For each candidate region:
-///    a. Start with polygons of sets that should be present
-///    b. Intersect them together
-///    c. Subtract polygons of sets that should NOT be present
-/// 4. Only include regions with non-empty polygon results
+/// 1. Convert each shape to a polygon at `n_vertices` resolution.
+/// 2. Discover candidate region masks sparsely from the actual fitted
+///    geometry (via the shape-boundary intersection points), instead of
+///    enumerating the full `2^n - 1` power set. Only regions that can
+///    geometrically be non-empty are considered, so the cost scales with
+///    the number of geometrically real regions and large `n` stays
+///    tractable on sparse layouts.
+/// 3. For each candidate, intersect the in-set polygons and subtract the
+///    out-of-set polygons via repeated polygon clipping.
+/// 4. Run the resulting flat ring list through the topological piece
+///    classifier — each piece gets one CCW outer + zero or more CW holes,
+///    with orientations normalised.
+/// 5. Drop sliver pieces (see "Sliver filtering" below) and store the rest.
 ///
-/// **Note**: This function generates regions based on the actual fitted shapes,
-/// not the spec — so if the optimizer produces shapes with unexpected overlaps
-/// or exclusive regions, they will still be visualized. Unlike a power-set
-/// scan, the cost scales with the number of geometrically real regions, which
-/// keeps large `n` tractable on sparse layouts.
+/// # Output guarantees
+///
+/// For every retained piece:
+///
+/// * `outer.area() > 0`, vertex count ≥ 3, winding is CCW.
+/// * Each `hole` is strictly inside `outer`, with CW winding.
+/// * Net area (`outer` minus `holes`) is positive and at least
+///   `1e-3 ×` the largest piece in the diagram.
+///
+/// Renderers can therefore use SVG / Canvas defaults (`fill-rule: nonzero`)
+/// and don't need to do their own ring classification — see [`RegionPiece`].
+///
+/// # Sliver filtering
+///
+/// 200-vertex polygonization (the typical default) produces tiny rounding
+/// artifacts along seams between two shapes — e.g. a "B-only" region of
+/// area ~0.02% of the largest piece when B is geometrically nested in A
+/// but their polygonal boundaries don't agree exactly. These slivers
+/// would otherwise mislead label anchors, produce duplicate strokes, and
+/// expose binding authors to noise. The threshold is **net piece area
+/// below `1e-3 ×` the largest single piece in the diagram**; smaller
+/// pieces are dropped before insertion. This is scale-invariant (large
+/// and small diagrams behave the same) and stable against `n_vertices`.
+///
+/// Driven by the actual fitted shapes, not the spec, so unexpected
+/// overlaps the optimiser produces are still visualised.
 ///
 /// # Arguments
 ///
-/// * `shapes` - The fitted diagram shapes (one per set)
-/// * `set_names` - Names of the sets (in same order as shapes)
-/// * `_spec` - The diagram specification (currently unused, kept for API compatibility)
-/// * `n_vertices` - Number of vertices to use when converting shapes to polygons
+/// * `shapes` - The fitted diagram shapes (one per set).
+/// * `set_names` - Set names in the same order as `shapes`.
+/// * `_spec` - The diagram specification (unused at present; reserved for
+///   future use such as spec-driven hole hints).
+/// * `n_vertices` - Resolution used when polygonizing each shape. Higher =
+///   smoother boundaries at higher clipping cost. The eulerr default is 200.
 ///
 /// # Examples
 ///

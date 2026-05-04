@@ -47,28 +47,46 @@ impl Default for PlotOptions {
 
 /// Everything a renderer needs to draw a fitted diagram.
 ///
-/// All anchors and polygons live in the same coordinate system as the fitted
-/// shapes. See [`crate::Layout::plot_data`] for construction.
+/// All anchors and polygons live in the same coordinate system as the
+/// fitted shapes (no normalisation is applied — the renderer chooses the
+/// transform). See [`crate::Layout::plot_data`] for construction and
+/// [`crate::plotting::RegionPiece`] for the rendering contract on
+/// `regions`.
 #[derive(Debug, Clone)]
 pub struct PlotData {
-    /// Polygons for every non-empty exclusive region, keyed by set
-    /// combination. Use these to fill regions.
+    /// Per-region pieces (outer + holes per connected component) keyed by
+    /// set combination. Renderers should fill each piece with the SVG /
+    /// Canvas default `fill-rule: nonzero`; orientations are normalised
+    /// for that — see [`crate::plotting::RegionPiece`].
     pub regions: RegionPolygons,
 
-    /// One anchor per non-empty region — the pole of inaccessibility of the
-    /// region's largest-clearance polygon. Use these to place per-region
-    /// labels (e.g. element counts).
+    /// Hole-aware label anchor for every non-empty region (one anchor per
+    /// region, even when the region is fragmented). Computed by
+    /// [`RegionPolygons::label_points`] — the pole of inaccessibility of
+    /// the highest-clearance piece. Use these for per-region labels such
+    /// as element counts.
     pub region_anchors: HashMap<Combination, Point>,
-
-    /// One anchor per set — the pole of inaccessibility of the largest
-    /// connected component of the union of regions containing the set. Use
-    /// these to place per-set labels (e.g. set names).
+    /// Label anchor for every set, with the eulerr-style fallback chain:
+    ///
+    /// 1. **Hole-aware POI of `shape_i \ ⋃_{j≠i} shape_j`** — the natural
+    ///    "S only" lobe, accounting for nested sets as holes.
+    /// 2. **Largest containing region's anchor** — for sets with no
+    ///    exclusive area (e.g. B fully nested in A → label lands in
+    ///    `A&B`), so the label still appears inside the set's actual
+    ///    coverage.
+    /// 3. **Shape's own POI** — last-resort default; reachable only when
+    ///    the set is geometrically empty.
+    ///
+    /// Use these for per-set labels (e.g. set names). For the un-fallback'd
+    /// version that only considers regions, see
+    /// [`RegionPolygons::set_label_points`].
     pub set_anchors: HashMap<String, Point>,
 
-    /// Polygonized outline of each set's shape, in the order of
-    /// `spec.set_names()`. Use these to draw set boundaries (edges) directly
-    /// from the analytical shape rather than from the unioned regions —
-    /// avoids visible seams where exclusive regions meet.
+    /// Polygonised outline of each set's shape, in the order of
+    /// `spec.set_names()`. Use these to draw set boundaries (edges)
+    /// directly from the analytical shape rather than from the unioned
+    /// regions — avoids visible seams where exclusive regions meet under
+    /// stroke rendering.
     pub shape_outlines: Vec<Polygon>,
 }
 
