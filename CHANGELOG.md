@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.10.0](https://github.com/jolars/eunoia/compare/v0.9.0...v0.10.0) (2026-05-04)
+
+### Features
+- **plotting:** provide stable iterator and harmonize API ([`55027cd`](https://github.com/jolars/eunoia/commit/55027cd98add36524aa1dfa3e4f7d568c6d55380))
+- add inscribed-rectangle method for labeling ([`b1abeb5`](https://github.com/jolars/eunoia/commit/b1abeb5b58f300aaaefded39e37c400241fbd606))
 ## [0.9.0](https://github.com/jolars/eunoia/compare/v0.8.0...v0.9.0) (2026-05-04)
 
 ### Features
