@@ -151,7 +151,37 @@ export type {
   VennSetCount,
 };
 
-function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
+function containerBoundsFor(
+  c: { x: number; y: number; width: number; height: number } | undefined,
+): Point[] {
+  if (!c) return [];
+  const hw = c.width / 2;
+  const hh = c.height / 2;
+  return [
+    { x: c.x - hw, y: c.y - hh },
+    { x: c.x + hw, y: c.y + hh },
+  ];
+}
+
+function normContainer(
+  c: { x: number; y: number; width: number; height: number } | undefined,
+  ctx: NormalizationContext,
+): { x: number; y: number; width: number; height: number } | undefined {
+  if (!c) return undefined;
+  const center = normPoint({ x: c.x, y: c.y }, ctx);
+  return {
+    x: center.x,
+    y: center.y,
+    width: c.width * ctx.scale,
+    height: c.height * ctx.scale,
+  };
+}
+
+function layoutToFitResult(
+  layout: Layout,
+  shapeType: ShapeType,
+  complement?: number,
+): FitResult {
   const m = layout.metrics;
   const metrics = {
     loss: m.loss,
@@ -168,7 +198,7 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
     const allVerts = layout.regions.flatMap((r) =>
       r.pieces.flatMap((p) => pieceVerts(p)),
     );
-    const ctx = buildContext([allVerts]);
+    const ctx = buildContext([allVerts, containerBoundsFor(layout.container)]);
     return {
       shapeMode: "region",
       shapeType,
@@ -179,6 +209,8 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
       rectangles: [],
       regions: normRegions(layout.regions, ctx),
       setAnchors: normSetAnchors(layout.setAnchors, ctx),
+      container: normContainer(layout.container, ctx),
+      complement,
       metrics,
     };
   }
@@ -188,7 +220,10 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
   }
 
   const polyVerts = layout.polygons.map((p) => p.vertices);
-  const ctx = buildContext(polyVerts);
+  const ctx = buildContext([
+    ...polyVerts,
+    containerBoundsFor(layout.container),
+  ]);
 
   const normPolygons = layout.polygons.map((p) => ({
     label: p.label,
@@ -205,6 +240,8 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
     rectangles: [],
     regions: [],
     setAnchors: {},
+    container: normContainer(layout.container, ctx),
+    complement,
     metrics,
   };
 
@@ -253,13 +290,21 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
 }
 
 export function runFit(inputs: FitInputs): FitResult | null {
+  const complement =
+    inputs.advanced.useComplement &&
+    Number.isFinite(inputs.advanced.complement) &&
+    inputs.advanced.complement >= 0
+      ? inputs.advanced.complement
+      : undefined;
+
   if (inputs.diagramType === "venn") {
     const layout = venn({
       n: inputs.vennN,
       output: inputs.advanced.showRegions ? "regions" : "polygons",
       polygonVertices: POLYGON_VERTICES,
+      complement,
     });
-    return layoutToFitResult(layout, "ellipse");
+    return layoutToFitResult(layout, "ellipse", complement);
   }
 
   const sets = buildSets(inputs.rows);
@@ -283,7 +328,8 @@ export function runFit(inputs: FitInputs): FitResult | null {
     loss: LOSS_MAP[inputs.advanced.lossType],
     tolerance,
     polygonVertices: POLYGON_VERTICES,
+    complement,
   });
 
-  return layoutToFitResult(layout, inputs.shapeType);
+  return layoutToFitResult(layout, inputs.shapeType, complement);
 }

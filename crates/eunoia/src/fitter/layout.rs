@@ -239,13 +239,13 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     where
         S: Clone,
     {
-        // Container/complement layouts share an optimizer-chosen frame
-        // between the shapes and the container; rotating/packing the shapes
-        // without a corresponding container transform would desync them. S6
-        // will introduce a container-aware normaliser; until then this is a
-        // no-op for container layouts so callers don't accidentally break the
-        // shape/container relationship.
-        if self.container.is_some() {
+        // Complement layouts: the container must stay axis-aligned (design
+        // invariant), so rotating / mirroring the diagram is out of scope.
+        // Multi-cluster + complement is rejected at fitter construction, so
+        // packing is moot too. All that's left is translating shapes and
+        // container together so the container is centred at the origin.
+        if let Some(container) = self.container.as_mut() {
+            crate::fitter::normalize::normalize_layout_with_container(&mut self.shapes, container);
             return;
         }
         crate::fitter::normalize::normalize_layout(&mut self.shapes, padding_factor);

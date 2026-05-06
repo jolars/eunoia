@@ -34,6 +34,34 @@ where
     normalize_layout_with_clusters::<S>(shapes, padding_factor, None);
 }
 
+/// Container-aware normalisation for complement (universe) layouts.
+///
+/// The container is **always axis-aligned** (a hard design invariant), so
+/// rotating or mirroring the layout would either break that invariant or
+/// require flipping the container — not useful for the visual frame the
+/// container represents. Multi-cluster + complement is rejected upfront
+/// (`spec_is_multi_cluster`), so packing is moot.
+///
+/// What we *do* want: translate the shapes and container together so the
+/// container's center sits at the origin. That puts the diagram in a
+/// predictable coordinate frame for downstream consumers (renderers,
+/// bindings) without disturbing the optimiser-chosen relationship between
+/// shapes and container.
+pub fn normalize_layout_with_container<S>(shapes: &mut [S], container: &mut Rectangle)
+where
+    S: DiagramShape + Clone,
+{
+    let cx = container.center().x();
+    let cy = container.center().y();
+    if cx.abs() < 1e-12 && cy.abs() < 1e-12 {
+        return;
+    }
+    for shape in shapes.iter_mut() {
+        *shape = translate_shape(shape, -cx, -cy);
+    }
+    *container = Rectangle::new(Point::new(0.0, 0.0), container.width(), container.height());
+}
+
 /// Variant of [`normalize_layout`] that uses the caller-supplied
 /// exclusive-region area map for cluster detection instead of the geometric
 /// `Closed::intersects` test.
@@ -551,6 +579,50 @@ mod tests {
             "Should be centered in y, got {}",
             bb_center_y
         );
+    }
+
+    #[test]
+    fn test_normalize_with_container_centres_container() {
+        let mut shapes = vec![
+            Circle::new(Point::new(11.0, 6.0), 1.0),
+            Circle::new(Point::new(13.0, 6.0), 1.0),
+        ];
+        let mut container = Rectangle::new(Point::new(12.0, 5.0), 6.0, 4.0);
+
+        normalize_layout_with_container(&mut shapes, &mut container);
+
+        // Container is centred at origin; size preserved.
+        assert!(approx_eq(container.center().x(), 0.0));
+        assert!(approx_eq(container.center().y(), 0.0));
+        assert!(approx_eq(container.width(), 6.0));
+        assert!(approx_eq(container.height(), 4.0));
+
+        // Shapes translated by exactly (-12, -5).
+        assert!(approx_eq(shapes[0].centroid().x(), -1.0));
+        assert!(approx_eq(shapes[0].centroid().y(), 1.0));
+        assert!(approx_eq(shapes[1].centroid().x(), 1.0));
+        assert!(approx_eq(shapes[1].centroid().y(), 1.0));
+    }
+
+    #[test]
+    fn test_normalize_with_container_idempotent() {
+        let mut shapes = vec![Circle::new(Point::new(0.5, 0.0), 1.0)];
+        let mut container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 3.0);
+
+        let cx_before = shapes[0].centroid().x();
+        let cy_before = shapes[0].centroid().y();
+        let w_before = container.width();
+        let h_before = container.height();
+
+        normalize_layout_with_container(&mut shapes, &mut container);
+
+        // Already centred — nothing should move.
+        assert!(approx_eq(shapes[0].centroid().x(), cx_before));
+        assert!(approx_eq(shapes[0].centroid().y(), cy_before));
+        assert!(approx_eq(container.width(), w_before));
+        assert!(approx_eq(container.height(), h_before));
+        assert!(approx_eq(container.center().x(), 0.0));
+        assert!(approx_eq(container.center().y(), 0.0));
     }
 
     #[test]

@@ -620,16 +620,21 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             ));
         }
 
-        // Multi-cluster + complement is ill-defined in S1: there is one
-        // container rectangle, but the optimised shapes would sit in two or
-        // more disjoint clusters that `skyline_pack` would normally separate.
-        // Reject the combination upfront with a clear message; lifting this
-        // (e.g. per-cluster containers) is S6 work.
+        // Multi-cluster + complement is rejected by design. A single container
+        // rectangle is a single universe — putting two disjoint clusters
+        // inside it makes the "items outside every set" region span both
+        // clusters and the gap between them, which the packer would normally
+        // separate. Per-cluster containers were considered (one universe per
+        // disjoint sub-diagram) but rejected: the complement count is one
+        // number, with no obvious per-cluster split, and the visual framing
+        // would imply mutually exclusive universes that don't reflect the
+        // user's intent. Users with multiple disjoint clusters should fit
+        // them as separate diagrams, each with its own complement.
         if spec.complement.is_some() && spec_is_multi_cluster(&spec) {
             return Err(DiagramError::InvalidCombination(
                 "complement (container/universe) fitting requires that every set overlap \
-                 (directly or transitively) with every other set; multi-cluster specs are \
-                 not supported in this release"
+                 (directly or transitively) with every other set; fit each disjoint \
+                 cluster as its own diagram with its own complement instead"
                     .to_string(),
             ));
         }
@@ -876,7 +881,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         // When the spec carries a complement, the trailing 4 entries of the
         // optimizer parameter vector encode the jointly-optimised container
         // rectangle. Decode it here so it can ride along with `Layout`.
-        let optimized_container: Option<crate::geometry::shapes::Rectangle> =
+        let mut optimized_container: Option<crate::geometry::shapes::Rectangle> =
             if spec.complement.is_some() {
                 let start = n_sets * params_per_shape;
                 let trailing = &final_params[start..start + 4];
@@ -918,12 +923,16 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         // Step 4: Normalize the non-empty shapes only (zero shapes would confuse
         // clustering/packing). We do this before re-assembly.
         //
-        // When the spec carries a complement, the container rectangle and the
-        // shapes share an optimizer-chosen coordinate frame; rotating /
-        // packing the shapes without a corresponding transform on the
-        // container would desync them. Skip normalization entirely for
-        // container specs in S1; container-aware normalisation lands in S6.
-        if spec.complement.is_none() {
+        // Complement specs use the container-aware path: only translate, so
+        // the (axis-aligned) container/shape relationship survives. The
+        // standard rotate/mirror/pack path is reserved for non-complement
+        // specs where the cluster orientation can be freely chosen.
+        if let Some(container) = optimized_container.as_mut() {
+            crate::fitter::normalize::normalize_layout_with_container(
+                &mut optimized_shapes,
+                container,
+            );
+        } else {
             crate::fitter::normalize::normalize_layout_with_clusters(
                 &mut optimized_shapes,
                 0.05,
@@ -1189,7 +1198,9 @@ fn shape_supports_container_clipping<S: DiagramShape>() -> bool {
 /// when their inclusive overlap is non-zero) splits into more than one
 /// connected component. Such specs would normally be packed via
 /// `skyline_pack` into multiple clusters; with a single shared container
-/// rectangle that's ill-defined for S1, so we reject them upfront.
+/// rectangle that has no clean semantics — see the rejection block in
+/// [`Fitter::fit_with_optimization`]. Multi-cluster + complement is rejected
+/// by design.
 fn spec_is_multi_cluster(spec: &PreprocessedSpec) -> bool {
     let n = spec.n_sets;
     if n <= 1 {
@@ -1996,10 +2007,41 @@ mod tests {
         );
     }
 
-    /// `Layout::normalize` should be a no-op when a container is present so
-    /// the shape/container relationship can't be silently broken.
+    /// End-to-end inclusive input × complement: union sizes go through
+    /// inclusion-exclusion in the builder; the container's area should
+    /// match the universe (sum of exclusive areas + complement).
     #[test]
-    fn layout_normalize_no_op_when_container_present() {
+    fn fit_circles_inclusive_input_with_complement() {
+        // Inclusive: |A| = 30, |B| = 25, |A∪B| = 45.
+        // → exclusive: A only = 30 - intersection, B only = 25 - intersection,
+        //   intersection = 30 + 25 - 45 = 10.
+        //   Universe = 30 + 25 - 10 + complement = 45 + 30 = 75.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 30.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 10.0)
+            .complement(30.0)
+            .input_type(crate::InputType::Inclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let container = layout.container().expect("container present");
+        let universe = container.width() * container.height();
+        let expected = 45.0 + 30.0;
+        assert!(
+            (universe - expected).abs() / expected < 0.05,
+            "container area {} should match universe {} within 5%",
+            universe,
+            expected,
+        );
+    }
+
+    /// Container-aware normalize: post-fit the container is centred at the
+    /// origin (the fitter applies the container-aware path automatically),
+    /// and a follow-up `Layout::normalize` is a stable no-op.
+    #[test]
+    fn fit_centres_container_at_origin_and_normalize_is_idempotent() {
         let spec = DiagramSpecBuilder::new()
             .set("A", 25.0)
             .set("B", 25.0)
@@ -2010,14 +2052,19 @@ mod tests {
             .unwrap();
 
         let mut layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
-        let container_before = layout.container().copied();
-        let shapes_before = layout.shapes().to_vec();
+        let container = layout.container().expect("container present");
+        assert!(
+            container.center().x().abs() < 1e-9 && container.center().y().abs() < 1e-9,
+            "container should be centred at origin post-fit, got ({}, {})",
+            container.center().x(),
+            container.center().y(),
+        );
 
+        let snapshot_shapes = layout.shapes().to_vec();
+        let snapshot_container = *layout.container().unwrap();
         layout.normalize(0.05);
-
-        // Container and shapes should be unchanged.
-        assert_eq!(layout.container().copied(), container_before);
-        assert_eq!(layout.shapes(), shapes_before.as_slice());
+        assert_eq!(layout.container().copied(), Some(snapshot_container));
+        assert_eq!(layout.shapes(), snapshot_shapes.as_slice());
     }
 }
 #[test]

@@ -39,6 +39,8 @@ const DEFAULT_ADVANCED: AdvancedOptions = {
   seed: 1,
   useSeed: true,
   tolerance: 1e-3,
+  useComplement: false,
+  complement: 0,
 };
 
 const DEFAULT_EXPORT: ExportSettings = {

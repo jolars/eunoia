@@ -630,6 +630,48 @@ mod tests {
     }
 
     #[test]
+    fn complement_works_with_inclusive_input() {
+        // Inclusive input goes through inclusion-exclusion in the builder.
+        // The complement is orthogonal — it should round-trip unchanged.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(20.0)
+            .input_type(InputType::Inclusive)
+            .build()
+            .unwrap();
+
+        assert_eq!(spec.complement(), Some(20.0));
+        // Inclusion–exclusion: A=10, B=8, A∩B=5 → exclusive A=5, B=3, A∩B=5.
+        assert_eq!(spec.get_exclusive(&Combination::new(&["A"])), Some(5.0));
+        assert_eq!(spec.get_exclusive(&Combination::new(&["B"])), Some(3.0));
+        assert_eq!(
+            spec.get_exclusive(&Combination::new(&["A", "B"])),
+            Some(5.0)
+        );
+    }
+
+    #[test]
+    fn complement_rejects_inconsistent_inclusive_input() {
+        // Inclusive input that decomposes to a negative exclusive area is
+        // rejected the same way regardless of whether complement is set.
+        // (A=5, B=5, A∩B=10 means A∩B > A or B, which is impossible.)
+        let result = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 5.0)
+            .intersection(&["A", "B"], 10.0)
+            .complement(3.0)
+            .input_type(InputType::Inclusive)
+            .build();
+        assert!(
+            matches!(result, Err(DiagramError::InvalidValue { .. })),
+            "inclusive-input inconsistency should be rejected even with complement, got {:?}",
+            result,
+        );
+    }
+
+    #[test]
     fn builder_accepts_zero_complement() {
         // complement = 0 is a meaningful "tight container" request.
         let spec = DiagramSpecBuilder::new()

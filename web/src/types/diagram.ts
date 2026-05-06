@@ -89,6 +89,15 @@ export interface FitResult {
   regions: RegionPolygon[];
   /** Per-set label anchors keyed by set name. Populated in region mode from `PlotData::set_anchors`; empty in outline mode (use shape `labelX/labelY` instead). */
   setAnchors: Record<string, { x: number; y: number }>;
+  /**
+   * Universe / container rectangle (x, y are the center; width and height
+   * are full extents) when the spec carried a complement. Same coordinate
+   * frame as the rest of the layout — already normalized to the ~100-unit
+   * canvas. `undefined` when no complement was set.
+   */
+  container?: { x: number; y: number; width: number; height: number };
+  /** Complement value carried alongside the spec (number of items outside every named set). Useful for displaying as a label. */
+  complement?: number;
   metrics: FitMetrics;
 }
 
@@ -152,6 +161,14 @@ export interface AdvancedOptions {
   useSeed: boolean;
   /** Final-stage cost-change tolerance. Wired to `Fitter::tolerance`. */
   tolerance: number;
+  /**
+   * When true, fit a universe-bounding container around the diagram and pass
+   * `complement` (items outside every named set) into the fitter. The
+   * container is rendered as a separate axis-aligned rectangle.
+   */
+  useComplement: boolean;
+  /** Number of items outside every named set. Only used when `useComplement` is true. */
+  complement: number;
 }
 
 export interface ExportSettings {

@@ -152,4 +152,39 @@
       </div>
     </div>
   {/if}
+
+  <div>
+    <label class="flex items-center cursor-pointer">
+      <input
+        type="checkbox"
+        bind:checked={appState.advanced.useComplement}
+        class="mr-2"
+      />
+      <span class="text-sm font-medium text-gray-700">Complement (universe)</span>
+    </label>
+    {#if appState.advanced.useComplement}
+      <div class="mt-1.5 flex items-center gap-2">
+        <input
+          type="number"
+          bind:value={appState.advanced.complement}
+          min="0"
+          step="1"
+          class="w-28 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          aria-label="Complement count"
+        />
+        <span class="text-xs text-gray-500">items outside every set</span>
+      </div>
+      {#if appState.diagramType === "venn"}
+        <p class="mt-1.5 text-xs text-gray-500">
+          Venn is topological, so the container is a non-proportional visual
+          frame around the canonical layout.
+        </p>
+      {:else}
+        <p class="mt-1.5 text-xs text-gray-500">
+          Fits a bounding rectangle whose area equals the universe (sum of all
+          set sizes plus complement). Multi-cluster specs are not supported.
+        </p>
+      {/if}
+    {/if}
+  </div>
 </div>

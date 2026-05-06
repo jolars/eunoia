@@ -74,6 +74,27 @@ export interface Rectangle {
   labelAnchor: Point;
 }
 
+/**
+ * Jointly-optimised container rectangle drawn around the diagram when the
+ * spec carried a complement (universe outside every named set).
+ *
+ * For a fitted diagram (`fit({ complement: ... })`), the container is
+ * area-proportional: its area minus the union of the (clipped) shapes equals
+ * the complement target, up to optimiser residual. For a Venn diagram
+ * (`venn({ complement: ... })`), the container is purely a visual frame
+ * around the canonical layout (Venn is topological, not area-proportional).
+ */
+export interface Container {
+  /** X coordinate of the rectangle's centre (same convention as `Rectangle`). */
+  x: number;
+  /** Y coordinate of the rectangle's centre. */
+  y: number;
+  /** Full width along x. */
+  width: number;
+  /** Full height along y. */
+  height: number;
+}
+
 export interface Polygon {
   label: string;
   vertices: Point[];
@@ -104,7 +125,7 @@ export interface Metrics {
   residuals: Record<string, number>;
 }
 
-export type Layout =
+export type Layout = (
   | { mode: "shapes"; shape: "circle"; circles: Circle[]; metrics: Metrics }
   | { mode: "shapes"; shape: "ellipse"; ellipses: Ellipse[]; metrics: Metrics }
   | { mode: "shapes"; shape: "square"; squares: Square[]; metrics: Metrics }
@@ -148,7 +169,14 @@ export type Layout =
       regions: Region[];
       setAnchors: Record<string, Point>;
       metrics: Metrics;
-    };
+    }
+) & {
+  /**
+   * Container rectangle (universe / "outside every named set" frame), present
+   * only when the input spec carried a complement.
+   */
+  container?: Container;
+};
 
 export interface FitOptions {
   /** Set sizes keyed by combination expression (e.g. `{ A: 5, "A&B": 1 }`). */
@@ -169,6 +197,13 @@ export interface FitOptions {
   tolerance?: number;
   /** Number of vertices per polygon outline (used when `output` is `"polygons"` or `"regions"`). Default 256. */
   polygonVertices?: number;
+  /**
+   * Items outside every named set (the universe complement). When set, the
+   * fitter jointly optimises a bounding rectangular container; the returned
+   * `Layout` exposes it via `layout.container`. Multi-cluster specs are
+   * rejected with a complement.
+   */
+  complement?: number;
 }
 
 export interface VennOptions {
@@ -178,6 +213,12 @@ export interface VennOptions {
   output?: "polygons" | "regions";
   /** Number of vertices per polygon outline. Default 256. */
   polygonVertices?: number;
+  /**
+   * Items outside every named set (the universe complement). Venn is
+   * topological, not area-proportional, so the resulting `Layout.container`
+   * is a non-proportional visual frame around the canonical layout.
+   */
+  complement?: number;
 }
 
 // ============================================================================
@@ -302,6 +343,15 @@ function rectangleFrom(r: wasm.WasmRectangle): Rectangle {
   };
 }
 
+function containerFrom(
+  r: wasm.WasmRectangle | undefined,
+): Container | undefined {
+  if (!r) return undefined;
+  const c: Container = { x: r.x, y: r.y, width: r.width, height: r.height };
+  r.free();
+  return c;
+}
+
 function polygonFrom(p: wasm.WasmPolygon): Polygon {
   const verts = p.vertices;
   const out: Point[] = verts.map(pointFrom);
@@ -369,6 +419,7 @@ export function fit(options: FitOptions): Layout {
     loss,
     tolerance,
     polygonVertices = 256,
+    complement,
   } = options;
 
   if (!sets || typeof sets !== "object") {
@@ -412,17 +463,20 @@ export function fit(options: FitOptions): Layout {
         optimizerArg,
         lossArg,
         tolArg,
+        complement,
       );
       try {
         const regionsArr = result.regions;
         const regions = regionsArr.map(regionFrom);
         freeAll(regionsArr);
+        const container = containerFrom(result.container);
         return {
           mode: "regions",
           shape,
           regions,
           setAnchors: parseAnchors(result.set_anchors_json),
           metrics: metricsFromPolygonResult(result),
+          ...(container ? { container } : {}),
         };
       } finally {
         result.free();
@@ -446,9 +500,12 @@ export function fit(options: FitOptions): Layout {
       optimizerArg,
       lossArg,
       tolArg,
+      complement,
     );
     try {
       const metrics = metricsFromPolygonResult(result);
+      const container = containerFrom(result.container);
+      const containerField = container ? { container } : {};
 
       if (output === "polygons") {
         const polysArr = result.polygons;
@@ -467,6 +524,7 @@ export function fit(options: FitOptions): Layout {
             polygons,
             circles,
             metrics,
+            ...containerField,
           };
         }
         if (shape === "ellipse") {
@@ -482,6 +540,7 @@ export function fit(options: FitOptions): Layout {
             polygons,
             ellipses,
             metrics,
+            ...containerField,
           };
         }
         if (shape === "rectangle") {
@@ -497,6 +556,7 @@ export function fit(options: FitOptions): Layout {
             polygons,
             rectangles,
             metrics,
+            ...containerField,
           };
         }
         const arr = result.squares;
@@ -511,6 +571,7 @@ export function fit(options: FitOptions): Layout {
           polygons,
           squares,
           metrics,
+          ...containerField,
         };
       }
 
@@ -523,7 +584,13 @@ export function fit(options: FitOptions): Layout {
         freeAll(result.squares);
         freeAll(result.rectangles);
         freeAll(result.polygons);
-        return { mode: "shapes", shape: "circle", circles, metrics };
+        return {
+          mode: "shapes",
+          shape: "circle",
+          circles,
+          metrics,
+          ...containerField,
+        };
       }
       if (shape === "ellipse") {
         const arr = result.ellipses;
@@ -533,7 +600,13 @@ export function fit(options: FitOptions): Layout {
         freeAll(result.squares);
         freeAll(result.rectangles);
         freeAll(result.polygons);
-        return { mode: "shapes", shape: "ellipse", ellipses, metrics };
+        return {
+          mode: "shapes",
+          shape: "ellipse",
+          ellipses,
+          metrics,
+          ...containerField,
+        };
       }
       if (shape === "rectangle") {
         const arr = result.rectangles;
@@ -543,7 +616,13 @@ export function fit(options: FitOptions): Layout {
         freeAll(result.ellipses);
         freeAll(result.squares);
         freeAll(result.polygons);
-        return { mode: "shapes", shape: "rectangle", rectangles, metrics };
+        return {
+          mode: "shapes",
+          shape: "rectangle",
+          rectangles,
+          metrics,
+          ...containerField,
+        };
       }
       const arr = result.squares;
       const squares = arr.map(squareFrom);
@@ -552,7 +631,13 @@ export function fit(options: FitOptions): Layout {
       freeAll(result.ellipses);
       freeAll(result.rectangles);
       freeAll(result.polygons);
-      return { mode: "shapes", shape: "square", squares, metrics };
+      return {
+        mode: "shapes",
+        shape: "square",
+        squares,
+        metrics,
+        ...containerField,
+      };
     } finally {
       result.free();
     }
@@ -571,31 +656,33 @@ export function fit(options: FitOptions): Layout {
  * region is requested at area 1.0; treat them as informational only.
  */
 export function venn(options: VennOptions): Layout {
-  const { n, output = "polygons", polygonVertices = 256 } = options;
+  const { n, output = "polygons", polygonVertices = 256, complement } = options;
   if (!Number.isInteger(n) || n < 1 || n > 5) {
     throw new RangeError("venn: `n` must be an integer in 1..=5");
   }
   const nVerts = Math.max(3, Math.floor(polygonVertices));
 
   if (output === "regions") {
-    const result = wasm.generate_venn_regions(n, nVerts);
+    const result = wasm.generate_venn_regions(n, nVerts, complement);
     try {
       const regionsArr = result.regions;
       const regions = regionsArr.map(regionFrom);
       freeAll(regionsArr);
+      const container = containerFrom(result.container);
       return {
         mode: "regions",
         shape: "ellipse",
         regions,
         setAnchors: parseAnchors(result.set_anchors_json),
         metrics: metricsFromPolygonResult(result),
+        ...(container ? { container } : {}),
       };
     } finally {
       result.free();
     }
   }
 
-  const result = wasm.generate_venn_polygons(n, nVerts);
+  const result = wasm.generate_venn_polygons(n, nVerts, complement);
   try {
     const polysArr = result.polygons;
     const polygons = polysArr.map(polygonFrom);
@@ -606,12 +693,14 @@ export function venn(options: VennOptions): Layout {
     freeAll(result.circles);
     freeAll(result.squares);
     freeAll(result.rectangles);
+    const container = containerFrom(result.container);
     return {
       mode: "polygons",
       shape: "ellipse",
       polygons,
       ellipses,
       metrics: metricsFromPolygonResult(result),
+      ...(container ? { container } : {}),
     };
   } finally {
     result.free();

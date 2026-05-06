@@ -20,6 +20,8 @@ use std::collections::HashMap;
 
 use crate::error::DiagramError;
 use crate::fitter::Layout;
+use crate::geometry::primitives::Point;
+use crate::geometry::shapes::Rectangle;
 use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
 use crate::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
@@ -44,7 +46,14 @@ use crate::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
 pub struct VennDiagram<S: DiagramShape + Copy> {
     shapes: Vec<S>,
     names: Vec<String>,
+    complement: Option<f64>,
 }
+
+/// Padding added around the shapes' bounding box when a Venn diagram carries
+/// a complement: the container is purely a visual frame (Venn is topological,
+/// not area-proportional), so the size is chosen for legibility, not to
+/// satisfy any area constraint.
+const VENN_CONTAINER_PADDING_FRAC: f64 = 0.15;
 
 impl<S: DiagramShape + Copy + 'static> VennDiagram<S> {
     /// Constructs the canonical Venn arrangement for `n` sets in shape `S`.
@@ -60,7 +69,39 @@ impl<S: DiagramShape + Copy + 'static> VennDiagram<S> {
     pub fn new(n: usize) -> Result<Self, DiagramError> {
         let shapes = S::canonical_venn_layout(n).ok_or(DiagramError::UnsupportedSetCount(n))?;
         let names = (0..n).map(|i| default_name(i).to_string()).collect();
-        Ok(VennDiagram { shapes, names })
+        Ok(VennDiagram {
+            shapes,
+            names,
+            complement: None,
+        })
+    }
+
+    /// Attach a complement (universe-outside-every-set) value to the diagram.
+    ///
+    /// Venn diagrams are *topological*, not area-proportional, so the
+    /// complement value does **not** drive an area-proportional optimisation
+    /// — the canonical shape layout is fixed. The complement is carried
+    /// through to the resulting [`Layout`] in two ways:
+    ///
+    /// - The synthetic [`DiagramSpec`] from [`Self::build_spec`] gets the
+    ///   value via [`DiagramSpecBuilder::complement`], so renderers can label
+    ///   the complement region.
+    /// - [`Self::into_layout`] / [`Self::into_layout_and_spec`] build a
+    ///   visual container rectangle as the shapes' bounding box plus a
+    ///   small padding (no optimisation involved).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DiagramError::InvalidValue`] if `value` is negative.
+    pub fn complement(mut self, value: f64) -> Result<Self, DiagramError> {
+        if value < 0.0 {
+            return Err(DiagramError::InvalidValue {
+                combination: "<complement>".to_string(),
+                value,
+            });
+        }
+        self.complement = Some(value);
+        Ok(self)
     }
 
     /// Override the default set names. Names are matched to shapes by index.
@@ -94,6 +135,9 @@ impl<S: DiagramShape + Copy + 'static> VennDiagram<S> {
     /// sets is requested with area `1.0` (matching eulerr's
     /// `fitted.values = rep(1, length(orig))`).
     ///
+    /// If a complement was attached via [`Self::complement`], it is forwarded
+    /// to the spec so renderers can label the universe region.
+    ///
     /// Useful when callers need to drive code paths that take the spec
     /// alongside the layout (e.g. `Layout::region_polygons`).
     pub fn build_spec(&self) -> DiagramSpec {
@@ -118,9 +162,37 @@ impl<S: DiagramShape + Copy + 'static> VennDiagram<S> {
             builder = builder.intersection(&subset, 1.0);
         }
 
+        if let Some(c) = self.complement {
+            builder = builder.complement(c);
+        }
+
         builder
             .build()
             .expect("synthetic Venn spec should always build")
+    }
+
+    /// Bounding rectangle of the canonical shape arrangement plus a small
+    /// uniform padding. Used as the visual container when [`Self::complement`]
+    /// is set: Venn is topological, so this is purely a frame, not an
+    /// area-proportional fit.
+    fn padded_bounding_container(&self) -> Rectangle {
+        let mut x_min = f64::INFINITY;
+        let mut x_max = f64::NEG_INFINITY;
+        let mut y_min = f64::INFINITY;
+        let mut y_max = f64::NEG_INFINITY;
+        for shape in &self.shapes {
+            let (bx_min, bx_max, by_min, by_max) = shape.bounding_box().bounds();
+            x_min = x_min.min(bx_min);
+            x_max = x_max.max(bx_max);
+            y_min = y_min.min(by_min);
+            y_max = y_max.max(by_max);
+        }
+        let width = x_max - x_min;
+        let height = y_max - y_min;
+        let pad = width.max(height) * VENN_CONTAINER_PADDING_FRAC;
+        let cx = (x_min + x_max) * 0.5;
+        let cy = (y_min + y_max) * 0.5;
+        Rectangle::new(Point::new(cx, cy), width + 2.0 * pad, height + 2.0 * pad)
     }
 
     /// Builds a [`Layout<S>`] over the synthetic specification from
@@ -145,13 +217,19 @@ impl<S: DiagramShape + Copy + 'static> VennDiagram<S> {
             .map(|(i, name)| (name.clone(), i))
             .collect();
 
+        // Container is a *visual frame* when complement is set — Venn is
+        // topological, so we don't run the fitter; we just pad the shapes'
+        // bounding box. The padded box becomes the container so renderers
+        // know where to draw the universe outline.
+        let container = self.complement.map(|_| self.padded_bounding_container());
+
         let layout = Layout::new(
             self.shapes,
             set_to_shape,
             &spec,
             0,
             LossType::SumSquared,
-            None,
+            container,
         );
         (layout, spec)
     }
@@ -290,6 +368,71 @@ mod tests {
         let _ = VennDiagram::<Ellipse>::new(3)
             .unwrap()
             .with_names(&["foo", "bar"]);
+    }
+
+    #[test]
+    fn test_complement_round_trips_into_spec() {
+        // Setting a complement on a Venn diagram should forward into the
+        // synthetic spec, so renderers / spec consumers see it.
+        let venn = VennDiagram::<Ellipse>::new(3)
+            .unwrap()
+            .complement(7.5)
+            .unwrap();
+        let spec = venn.build_spec();
+        assert_eq!(spec.complement(), Some(7.5));
+    }
+
+    #[test]
+    fn test_complement_negative_rejected() {
+        let err = VennDiagram::<Ellipse>::new(2)
+            .unwrap()
+            .complement(-1.0)
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                DiagramError::InvalidValue { ref combination, value }
+                    if combination == "<complement>" && value < 0.0
+            ),
+            "expected InvalidValue, got {:?}",
+            err,
+        );
+    }
+
+    #[test]
+    fn test_complement_into_layout_produces_visual_container() {
+        // Layout should carry a Rectangle container that strictly encloses
+        // every shape's bounding box (Venn is topological, container is
+        // padded around the canonical arrangement).
+        let venn = VennDiagram::<Ellipse>::new(3)
+            .unwrap()
+            .complement(2.0)
+            .unwrap();
+        let shapes = venn.shapes().to_vec();
+        let (layout, _spec) = venn.into_layout_and_spec();
+
+        let container = layout.container().expect("container present");
+        let (cx_min, cx_max, cy_min, cy_max) = (
+            container.center().x() - container.width() * 0.5,
+            container.center().x() + container.width() * 0.5,
+            container.center().y() - container.height() * 0.5,
+            container.center().y() + container.height() * 0.5,
+        );
+
+        use crate::geometry::traits::BoundingBox;
+        for shape in &shapes {
+            let (sx_min, sx_max, sy_min, sy_max) = shape.bounding_box().bounds();
+            assert!(sx_min > cx_min && sx_max < cx_max);
+            assert!(sy_min > cy_min && sy_max < cy_max);
+        }
+    }
+
+    #[test]
+    fn test_no_complement_yields_no_container() {
+        let (layout, _) = VennDiagram::<Ellipse>::new(3)
+            .unwrap()
+            .into_layout_and_spec();
+        assert!(layout.container().is_none());
     }
 
     #[test]

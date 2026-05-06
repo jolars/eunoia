@@ -14,6 +14,12 @@
 //! (R/Python/Julia) can copy that file verbatim.
 
 #![deny(clippy::disallowed_methods)]
+// FFI surface: each WASM-exported `generate_*` function takes the full set of
+// fitter knobs as positional arguments because wasm-bindgen does not support
+// idiomatic Rust struct parameters across the boundary. Bundling them into a
+// helper struct would force JS callers to round-trip a JS object across the
+// wasm-bindgen ABI on every call. The argument count is deliberate.
+#![allow(clippy::too_many_arguments)]
 
 use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
 use eunoia::geometry::traits::Polygonize;
@@ -112,6 +118,71 @@ where
         .into_iter()
         .map(|(name, point)| (name, (point.x(), point.y())))
         .collect()
+}
+
+/// Build a core [`eunoia::spec::DiagramSpec`] from the WASM-side spec list,
+/// input-type string, and optional complement value. Centralises the parsing
+/// shared by every `generate_*` entry point.
+fn build_diagram_spec(
+    specs: &[DiagramSpec],
+    input_type: &str,
+    complement: Option<f64>,
+) -> Result<eunoia::spec::DiagramSpec, JsValue> {
+    use eunoia::spec::{DiagramSpecBuilder, InputType};
+
+    let input_type_enum = match input_type {
+        "exclusive" => InputType::Exclusive,
+        "inclusive" => InputType::Inclusive,
+        _ => {
+            return Err(JsValue::from_str(
+                "Invalid input type. Must be 'exclusive' or 'inclusive'",
+            ));
+        }
+    };
+
+    let mut builder = DiagramSpecBuilder::new();
+    for spec in specs {
+        let input = spec.input.trim();
+        let size = spec.size;
+        if input.is_empty() || size < 0.0 {
+            continue;
+        }
+        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
+        builder = match sets.len() {
+            0 => builder,
+            1 => builder.set(sets[0], size),
+            _ => builder.intersection(&sets, size),
+        };
+    }
+    if let Some(c) = complement {
+        builder = builder.complement(c);
+    }
+
+    builder
+        .input_type(input_type_enum)
+        .build()
+        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))
+}
+
+/// Convert the optional `Rectangle` container from a fitted layout into a
+/// [`WasmRectangle`] for the WASM surface.
+fn container_to_wasm<S>(layout: &eunoia::Layout<S>) -> Option<WasmRectangle>
+where
+    S: eunoia::geometry::traits::DiagramShape + Copy + 'static,
+{
+    layout.container().map(|rect| {
+        let cx = rect.center().x();
+        let cy = rect.center().y();
+        WasmRectangle {
+            x: cx,
+            y: cy,
+            width: rect.width(),
+            height: rect.height(),
+            label_x: cx,
+            label_y: cy,
+            label: String::new(),
+        }
+    })
 }
 
 fn extract_diagnostics<S>(layout: &eunoia::Layout<S>) -> Result<LayoutDiagnostics, JsValue>
@@ -567,6 +638,10 @@ pub struct PolygonResult {
     ellipses: Vec<WasmEllipse>,
     squares: Vec<WasmSquare>,
     rectangles: Vec<WasmRectangle>,
+    /// Optional jointly-optimised container rectangle, present when the spec
+    /// carried a complement. Renderers should draw this as the diagram's
+    /// universe outline.
+    container: Option<WasmRectangle>,
     pub loss: f64,
     pub stress: f64,
     pub diag_error: f64,
@@ -602,6 +677,11 @@ impl PolygonResult {
     #[wasm_bindgen(getter)]
     pub fn rectangles(&self) -> Vec<WasmRectangle> {
         self.rectangles.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn container(&self) -> Option<WasmRectangle> {
+        self.container.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -719,6 +799,9 @@ fn region_piece_to_wasm(piece: &eunoia::plotting::RegionPiece) -> WasmRegionPiec
 #[wasm_bindgen]
 pub struct WasmRegionPolygons {
     regions: Vec<WasmRegion>,
+    /// Optional jointly-optimised container rectangle, present when the spec
+    /// carried a complement.
+    container: Option<WasmRectangle>,
     pub loss: f64,
     pub stress: f64,
     pub diag_error: f64,
@@ -765,6 +848,11 @@ impl WasmRegionPolygons {
     #[wasm_bindgen(getter)]
     pub fn set_anchors_json(&self) -> String {
         self.set_anchors_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn container(&self) -> Option<WasmRectangle> {
+        self.container.clone()
     }
 }
 
@@ -1377,35 +1465,11 @@ pub fn generate_ellipses_from_spec(
     input_type: String,
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
+    complement: Option<f64>,
 ) -> Result<EllipseResult, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -1469,35 +1533,11 @@ pub fn generate_from_spec_square(
     input_type: String,
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
+    complement: Option<f64>,
 ) -> Result<SquareResult, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Square>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -1557,35 +1597,11 @@ pub fn generate_from_spec_rectangle(
     input_type: String,
     seed: Option<u64>,
     optimizer: Option<WasmOptimizer>,
+    complement: Option<f64>,
 ) -> Result<RectangleResult, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Rectangle>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -1646,35 +1662,11 @@ pub fn generate_circles_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Circle>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -1753,6 +1745,7 @@ pub fn generate_circles_as_polygons(
         ellipses: vec![],
         squares: vec![],
         rectangles: vec![],
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -1776,35 +1769,11 @@ pub fn generate_ellipses_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -1885,6 +1854,7 @@ pub fn generate_ellipses_as_polygons(
         ellipses: wasm_ellipses,
         squares: vec![],
         rectangles: vec![],
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -1908,35 +1878,11 @@ pub fn generate_squares_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Square>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -2014,6 +1960,7 @@ pub fn generate_squares_as_polygons(
         ellipses: vec![],
         squares: wasm_squares,
         rectangles: vec![],
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -2037,35 +1984,11 @@ pub fn generate_rectangles_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Rectangle>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -2144,6 +2067,7 @@ pub fn generate_rectangles_as_polygons(
         ellipses: vec![],
         squares: vec![],
         rectangles: wasm_rectangles,
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -2167,35 +2091,11 @@ pub fn generate_region_polygons_circles(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Circle>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -2252,6 +2152,7 @@ pub fn generate_region_polygons_circles(
 
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -2277,35 +2178,11 @@ pub fn generate_region_polygons_ellipses(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Ellipse>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -2362,6 +2239,7 @@ pub fn generate_region_polygons_ellipses(
 
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -2387,35 +2265,11 @@ pub fn generate_region_polygons_squares(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Square>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -2468,6 +2322,7 @@ pub fn generate_region_polygons_squares(
 
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -2493,35 +2348,11 @@ pub fn generate_region_polygons_rectangles(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
-    use eunoia::spec::{DiagramSpecBuilder, InputType};
 
-    let input_type = match input_type.as_str() {
-        "exclusive" => InputType::Exclusive,
-        "inclusive" => InputType::Inclusive,
-        _ => return Err(JsValue::from_str("Invalid input type")),
-    };
-
-    let mut builder = DiagramSpecBuilder::new();
-    for spec in &specs {
-        let input = spec.input.trim();
-        let size = spec.size;
-        if input.is_empty() || size < 0.0 {
-            continue;
-        }
-        let sets: Vec<&str> = input.split('&').map(|s| s.trim()).collect();
-        builder = match sets.len() {
-            0 => builder,
-            1 => builder.set(sets[0], size),
-            _ => builder.intersection(&sets, size),
-        };
-    }
-
-    let diagram_spec = builder
-        .input_type(input_type)
-        .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
 
     let mut fitter = Fitter::<Rectangle>::new(&diagram_spec);
     if let Some(s) = seed {
@@ -2574,6 +2405,7 @@ pub fn generate_region_polygons_rectangles(
 
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -2596,8 +2428,18 @@ pub fn generate_region_polygons_rectangles(
 /// Loss/stress/diag-error are reported against the synthetic spec (every
 /// region requested at area `1.0`); they have no optimization meaning.
 #[wasm_bindgen]
-pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResult, JsValue> {
-    let venn = VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+pub fn generate_venn_polygons(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<PolygonResult, JsValue> {
+    let mut venn =
+        VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    if let Some(c) = complement {
+        venn = venn
+            .complement(c)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    }
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
     let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
@@ -2660,6 +2502,7 @@ pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResu
         ellipses: wasm_ellipses,
         squares: vec![],
         rectangles: vec![],
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,
@@ -2676,8 +2519,18 @@ pub fn generate_venn_polygons(n: usize, n_vertices: usize) -> Result<PolygonResu
 /// Build a canonical n-set Venn diagram (1 ≤ n ≤ 5) and return its decomposition
 /// into per-region exclusive polygons.
 #[wasm_bindgen]
-pub fn generate_venn_regions(n: usize, n_vertices: usize) -> Result<WasmRegionPolygons, JsValue> {
-    let venn = VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+pub fn generate_venn_regions(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    let mut venn =
+        VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    if let Some(c) = complement {
+        venn = venn
+            .complement(c)
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    }
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
 
@@ -2714,6 +2567,7 @@ pub fn generate_venn_regions(n: usize, n_vertices: usize) -> Result<WasmRegionPo
 
     Ok(WasmRegionPolygons {
         regions: wasm_regions,
+        container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
         diag_error: diagnostics.diag_error,

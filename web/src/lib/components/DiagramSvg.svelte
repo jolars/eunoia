@@ -88,6 +88,12 @@
       }
     }
 
+    if (result.container) {
+      const c = result.container;
+      consume({ x: c.x - c.width / 2, y: c.y - c.height / 2 });
+      consume({ x: c.x + c.width / 2, y: c.y + c.height / 2 });
+    }
+
     if (!isFinite(minX)) {
       return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
     }
@@ -315,6 +321,31 @@
   xmlns="http://www.w3.org/2000/svg"
 >
   {#if result}
+    {#if result.container}
+      {@const c = result.container}
+      <rect
+        x={c.x - c.width / 2}
+        y={c.y - c.height / 2}
+        width={c.width}
+        height={c.height}
+        fill="none"
+        stroke="#9ca3af"
+        stroke-width={Math.max(strokeW, 0.5)}
+        stroke-dasharray="2 2"
+      />
+      {#if result.complement !== undefined && style.showCounts}
+        <text
+          x={c.x + c.width / 2 - 1.5}
+          y={c.y - c.height / 2 + 2}
+          text-anchor="end"
+          dominant-baseline="hanging"
+          font-size={style.labelSize * 0.75}
+          fill="#6b7280"
+        >
+          {fmt(result.complement)}
+        </text>
+      {/if}
+    {/if}
     {#if result.shapeMode === "region"}
       {#each result.regions as region}
         {@const fill = regionFill(region.combination)}
