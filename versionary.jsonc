@@ -12,7 +12,7 @@
         "ts/"
       ]
     },
-    "ts/": {
+    "ts": {
       "release-type": "node",
       "package-name": "eunoia-npm"
     }
