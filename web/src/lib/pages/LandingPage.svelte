@@ -1,24 +1,33 @@
 <script lang="ts">
-  // Repo links — kept here so the landing has a single declarative source of
-  // truth that's easy to scan and edit.
-  const repoUrl = "https://github.com/jolars/eunoia";
-  const cratesUrl = "https://crates.io/crates/eunoia";
-  const docsRsUrl = "https://docs.rs/eunoia";
-  const npmUrl = "https://www.npmjs.com/package/@jolars/eunoia";
+// Repo links — kept here so the landing has a single declarative source of
+// truth that's easy to scan and edit.
+const repoUrl = "https://github.com/jolars/eunoia";
+const cratesUrl = "https://crates.io/crates/eunoia";
+const docsRsUrl = "https://docs.rs/eunoia";
+const npmUrl = "https://www.npmjs.com/package/@jolars/eunoia";
+const eulerrUrl = "https://cran.r-project.org/package=eulerr";
+const eulerrRepoUrl = "https://github.com/jolars/eulerr";
 </script>
 
 <div class="text-gray-800">
   <main class="max-w-5xl mx-auto px-6 py-16 space-y-16">
-    <section class="space-y-4">
-      <h2 class="text-3xl font-bold leading-tight">
+    <section>
+      <img
+        src="/logo.png"
+        alt="Eunoia logo"
+        class="float-right ml-6 mb-4 w-32 sm:w-40 md:w-48 h-auto"
+      />
+      <h2 class="text-3xl font-bold leading-tight mb-4">
         Area-proportional Euler and Venn diagrams
       </h2>
-      <p class="text-lg text-gray-600 max-w-2xl">
+      <p class="text-lg text-gray-600 mb-4">
         A Rust library for fitting set-visualization diagrams with circles,
         ellipses, squares, and rectangles — accurate, fast, and shipped with
-        bindings for the web (WASM) and, soon, R, Python, and Julia.
+        WASM bindings for the web. The successor to the R package
+        <a href={eulerrRepoUrl} class="text-blue-600 hover:underline">eulerr</a>,
+        with Python and Julia wrappers planned.
       </p>
-      <div class="flex flex-wrap gap-3 pt-2">
+      <div class="flex flex-wrap gap-3 pt-2 clear-both">
         <a
           href="/app/"
           class="px-5 py-2.5 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
@@ -55,8 +64,20 @@
             <a href="/app/" class="text-blue-600 hover:underline">this site</a>.
           </p>
         </div>
-        <div class="bg-white border border-gray-200 rounded p-4 space-y-2 sm:col-span-2">
-          <span class="font-medium">R, Python, Julia</span>
+        <div class="bg-white border border-gray-200 rounded p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-medium">R</span>
+            <a href={eulerrUrl} class="text-xs text-blue-600 hover:underline">CRAN</a>
+          </div>
+          <pre class="bg-gray-50 border border-gray-200 rounded p-2 font-mono text-xs overflow-x-auto">install.packages("eulerr")</pre>
+          <p class="text-xs text-gray-500">
+            R users can use
+            <a href={eulerrRepoUrl} class="text-blue-600 hover:underline">eulerr</a>,
+            which is now backed by the same Rust core as Eunoia. 
+          </p>
+        </div>
+        <div class="bg-white border border-gray-200 rounded p-4 space-y-2">
+          <span class="font-medium">Python, Julia</span>
           <p class="text-xs text-gray-500">
             Planned thin wrappers around the Rust core, each in its own
             repository. Track progress on the
