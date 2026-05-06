@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.0](https://github.com/jolars/eunoia/compare/v0.11.0...v0.12.0) (2026-05-06)
+
+### Features
+- **web:** add a landig page and unify web layout ([`7ff0559`](https://github.com/jolars/eunoia/commit/7ff0559cecf1ce5152a19a2c23df3af420290e37))
+- support `complement` as a bounding box ([`9503454`](https://github.com/jolars/eunoia/commit/950345418eb3a862cf1bf2c055e67dec8d32d22b))
+- add ellipse-bounding box gradient via forward-diff ([`1d400b0`](https://github.com/jolars/eunoia/commit/1d400b08587809cb58c34d7bf4545f01aeee5f53))
+- support rectangles ([`5e3e1fb`](https://github.com/jolars/eunoia/commit/5e3e1fb99f0d6490bda268dfa30e02d6eeb48061))
+
+### Bug Fixes
+- **web:** enforce stable ordering of sets ([`2d5c749`](https://github.com/jolars/eunoia/commit/2d5c749e4f85b446c2c4cefa1f7f083d1f9d42fc))
+- make ordering deterministic ([`4f4ee48`](https://github.com/jolars/eunoia/commit/4f4ee48a8fd9a6ead54dfa1c30831c8a59e62904))
+- **web:** handle infinite loop in web app ([`8f36ea4`](https://github.com/jolars/eunoia/commit/8f36ea48c3b8139a3cb127fbab550ceb05f18e74))
+
+### Performance Improvements
+- add gradients for squares and rectangles too ([`50a74f3`](https://github.com/jolars/eunoia/commit/50a74f343bc12bb2d7a958f6dae482fbba0c19ca))
+- wire in analytical gradient for complement case ([`402f92e`](https://github.com/jolars/eunoia/commit/402f92e852788b9f58995dd14e76261f219412a7))
 ## [0.11.0](https://github.com/jolars/eunoia/compare/v0.10.0...v0.11.0) (2026-05-06)
 
 ### Features

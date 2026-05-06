@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.12.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.11.0...eunoia-npm-v0.12.0) (2026-05-06)
+
+### Features
+- support `complement` as a bounding box ([`9503454`](https://github.com/jolars/eunoia/commit/950345418eb3a862cf1bf2c055e67dec8d32d22b))
+- support rectangles ([`5e3e1fb`](https://github.com/jolars/eunoia/commit/5e3e1fb99f0d6490bda268dfa30e02d6eeb48061))
+
 ## [0.11.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.10.0...eunoia-npm-v0.11.0) (2026-05-06)
 
 ### Features
