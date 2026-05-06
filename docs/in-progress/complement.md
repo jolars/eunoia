@@ -122,20 +122,74 @@ construction; analytical gradient deferred.
       (2 tests) — 9 total
 - [x] `task fmt`, `cargo test --workspace`, `task lint` all green
 
-### S4 — Ellipse analytical gradient with container
+### S4 — Ellipse analytical gradient with container — **DONE**
 
-- [ ] Same as S2 but for `EllipseArc` representation
-- [ ] FD verification
+- [x] Box-edge boundary integrals contributing to container params
+      (`x`, `y`, `ln(area)`, `ln(ratio)`) via the rigid-edge
+      boundary-velocity formulas in
+      `area_and_gradient_from_clipped_arcs_ellipse` (identical to the
+      circle path — the container moves rigidly regardless of the
+      shape inside)
+- [x] Clipped-arc gradient contributions to ellipse shape params
+      (`x`, `y`, `ln(a)`, `ln(b)`, `φ`) via
+      `clipped_ellipse_arc_integral_with_gradient` — boundary-velocity
+      identity over inside-container sub-arcs, mirroring the unclipped
+      `accumulate_region_overlap_gradient_ellipse` per-arc formulas
+- [x] Complement region gradient: mask `0` seeded with
+      `container_area` plus `∂(w·h)/∂u = container_area`; shape
+      params get zero from the seed, container params get the full
+      contribution; inclusion-exclusion handles the rest
+- [x] `Ellipse` overrides `compute_exclusive_regions_clipped_with_gradient`
+- [x] `DiagramCost::gradient` already dispatches to the analytical
+      clipped path when `spec.complement.is_some()` (shape-generic
+      since S2); no further wiring needed beyond the trait override
+- [x] LM Jacobian path through `LmDiagramProblem` now uses the analytical
+      clipped gradient for ellipses too (same shape-generic plumbing as
+      circles); LM remains gated to L-BFGS in `optimize_from_initial`,
+      same as S2 — revisit in S6
+- [x] FD-vs-analytical verification at the per-region level (4
+      tests in `ellipse.rs`: two ellipses inside, two ellipses each
+      touching an edge, three ellipses inside, rotated ellipses with
+      one clipped) and end-to-end through `DiagramCost::gradient`
+      (2 tests in `final_layout.rs`: complement two ellipses inside,
+      complement one rotated ellipse clipped)
+- [x] `task fmt`, `cargo test --workspace`, `task lint` all green
 
-### S5 — Square + Rectangle clipping & gradient
+### S5 — Square + Rectangle clipping & gradient — **DONE**
 
-- [ ] Lift the gate for Square / Rectangle
-- [ ] Closed-form rect-vs-rect clipping (n-way intersection of axis-
-      aligned rectangles is itself an axis-aligned rectangle, then
-      intersect with container — also a rect)
-- [ ] Analytical gradient via the existing rectangle log-area /
-      log-ratio chain rule, extended with container-edge
-      contributions
+- [x] Lift the gate for Square / Rectangle: the
+      `shape_supports_container_clipping` probe now returns true for
+      every shape that overrides
+      `DiagramShape::compute_exclusive_regions_clipped`, which Square
+      and Rectangle now do. The fitter error message and gate docstring
+      were updated accordingly (`fitter.rs::fit_with_optimization`,
+      `fitter.rs::shape_supports_container_clipping`).
+- [x] Closed-form rect-vs-rect clipping: the n-way intersection of
+      axis-aligned rectangles plus an axis-aligned container is itself
+      one axis-aligned rectangle, exact in closed form. Each region's
+      bounds become `max(container.{x,y}_min, …)` /
+      `min(container.{x,y}_max, …)` and the area is `dx · dy`. Mask 0 is
+      seeded with `container.area()` so inclusion-exclusion produces
+      `complement = container.area − area(⋃ rects ∩ container)` — same
+      pattern as Circle / Ellipse
+      (`compute_exclusive_regions_clipped_rectangles`,
+      `compute_exclusive_regions_clipped_squares`).
+- [x] Analytical gradient with container-edge contributions: per side
+      (left / right / bottom / top) we collect tied binders (shapes ∪
+      container) and split each side's contribution equally. Geometric
+      derivatives (`±dy` for x-edges, `±dx` for y-edges, `±d{x,y}/2` for
+      width / height) are then chain-ruled into the optimizer encoding —
+      `[x, y, side]` for Square, `[x, y, ln(w·h), ln(w/h)]` for both
+      Rectangle and the container. Mask 0 is seeded with
+      `[…, 0, 0, container_area, 0]` so the complement gradient lands
+      naturally via the shared IE combiner
+      (`compute_exclusive_regions_clipped_with_gradient_rectangles`,
+      `compute_exclusive_regions_clipped_with_gradient_squares`).
+- [x] FD-vs-analytical verification at the per-region level (4 tests
+      each in `rectangle.rs` and `square.rs` covering inside / clipped /
+      3-way / nested / disjoint cases) plus end-to-end `Fitter::fit`
+      smoke tests in `rectangle.rs`, `square.rs`, and `fitter.rs`.
+- [x] `task fmt`, `cargo test --workspace`, `task lint` all green.
 
 ### S6 — Polish, exposure, render
 

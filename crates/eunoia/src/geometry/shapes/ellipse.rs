@@ -1130,6 +1130,66 @@ pub fn compute_exclusive_regions_clipped_ellipse(
     to_exclusive_areas(&overlapping_areas)
 }
 
+/// Gradient-aware companion to [`compute_exclusive_regions_clipped_ellipse`].
+///
+/// Returns `(exclusive_areas, exclusive_grads)` where each gradient vector has
+/// length `n_sets · 5 + 4` and is laid out as
+/// `[x₀, y₀, u₀, v₀, φ₀, x₁, …, x_c, y_c, u, v]` with `u_k = ln(a_k)`,
+/// `v_k = ln(b_k)`. The trailing four entries are the container's optimizer
+/// encoding (`u = ln(w·h)`, `v = ln(w/h)`).
+///
+/// The shape-param gradient comes from the same boundary-velocity identity
+/// `dA/dθ = ∮_∂R (v_θ · n) ds` as the unclipped path
+/// (`accumulate_region_overlap_gradient_ellipse`), restricted to inside-container
+/// sub-arcs. Box-edge sub-segments contribute to the container-param block
+/// only — the container moves rigidly, identical to the circle case.
+/// Endpoints where an arc meets a box edge cancel pairwise (same point, same
+/// `(v · n)`, opposite ds direction across the two boundary pieces), so this
+/// builds a consistent gradient without tracking trim-point motion.
+///
+/// Mask `0` (the complement) is seeded with `container.area()` and a gradient
+/// `∂(w·h)/∂(x_c, y_c, u, v) = [0, 0, w·h, 0]` so inclusion-exclusion produces
+/// `complement = container.area − area(⋃ ellipses ∩ container)` along with its
+/// matching gradient.
+pub(crate) fn compute_exclusive_regions_clipped_ellipse_with_gradient(
+    ellipses: &[Ellipse],
+    container: &Rectangle,
+) -> (
+    std::collections::HashMap<RegionMask, f64>,
+    std::collections::HashMap<RegionMask, Vec<f64>>,
+) {
+    use crate::geometry::diagram::{discover_regions, to_exclusive_areas_and_gradients};
+
+    let n_sets = ellipses.len();
+    let n_params = n_sets * 5 + 4;
+    let intersections = collect_intersections_ellipse(ellipses);
+    let regions = discover_regions(ellipses, &intersections, n_sets);
+
+    let mut overlapping_areas = std::collections::HashMap::new();
+    let mut overlapping_grads: std::collections::HashMap<RegionMask, Vec<f64>> =
+        std::collections::HashMap::new();
+
+    // Seed mask 0 with `container.area()` and its gradient. ∂(w·h)/∂u = w·h
+    // (chain through `u = ln(w·h)`); other partials are zero.
+    let container_area = container.area();
+    overlapping_areas.insert(0, container_area);
+    let mut zero_grad = vec![0.0; n_params];
+    zero_grad[n_sets * 5 + 2] = container_area;
+    overlapping_grads.insert(0, zero_grad);
+
+    for &mask in &regions {
+        let arcs = region_boundary_arcs_ellipse(mask, ellipses, &intersections, n_sets);
+        let mut grad = vec![0.0; n_params];
+        let area = area_and_gradient_from_clipped_arcs_ellipse(
+            &arcs, ellipses, container, mask, n_sets, &mut grad,
+        );
+        overlapping_areas.insert(mask, area);
+        overlapping_grads.insert(mask, grad);
+    }
+
+    to_exclusive_areas_and_gradients(&overlapping_areas, &overlapping_grads, n_params)
+}
+
 /// Compute `area(R_m ∩ container)` from the CCW ellipse-boundary arcs of
 /// `R_m` and the axis-aligned `container`. Mirrors `circle::area_from_clipped_arcs`:
 /// arc contributions split at box-edge crossings, plus container-edge
@@ -1186,6 +1246,100 @@ fn area_from_clipped_arcs_ellipse(
         ellipse_vertical_edge_inside_interval(x_min, y_min, y_max, &indices, ellipses)
     {
         total += -x_min * (b - a);
+    }
+
+    0.5 * total
+}
+
+/// Gradient-aware companion to [`area_from_clipped_arcs_ellipse`]. Computes
+/// `area(R_m ∩ container)` and accumulates `∂area / ∂θ` into `grad`
+/// (length `n_sets · 5 + 4`, layout `[x₀, y₀, u₀, v₀, φ₀, …, x_c, y_c, u, v]`
+/// with `u_k = ln(a_k)`, `v_k = ln(b_k)` and the trailing four entries the
+/// container's optimizer encoding).
+///
+/// The arc and box-edge decompositions are identical to the area-only path;
+/// the gradient is produced inline using the per-piece boundary-velocity
+/// formulas — see the function docs of
+/// [`compute_exclusive_regions_clipped_ellipse_with_gradient`] for the
+/// derivation summary.
+fn area_and_gradient_from_clipped_arcs_ellipse(
+    arcs: &[EllipseArc],
+    ellipses: &[Ellipse],
+    container: &Rectangle,
+    mask: RegionMask,
+    n_sets: usize,
+    grad: &mut [f64],
+) -> f64 {
+    use crate::geometry::diagram::mask_to_indices;
+
+    let (x_min, x_max, y_min, y_max) = container.bounds();
+    if x_max <= x_min || y_max <= y_min {
+        return 0.0;
+    }
+
+    let w = x_max - x_min;
+    let h = y_max - y_min;
+    let container_off = n_sets * 5;
+
+    let mut total = 0.0; // ∫ (x dy − y dx); area = 0.5 · total.
+
+    // 1. Arc contributions — area + shape-param gradient.
+    for arc in arcs {
+        total += clipped_ellipse_arc_integral_with_gradient(
+            arc, ellipses, x_min, x_max, y_min, y_max, grad,
+        );
+    }
+
+    // 2. Container-edge contributions. The container moves rigidly, so the
+    // box-edge gradient identities are identical to the circle case — see
+    // `circle::area_and_gradient_from_clipped_arcs` for the derivation. The
+    // only ellipse-specific piece is the inside-region sub-interval.
+    let indices = mask_to_indices(mask, n_sets);
+
+    if let Some((a, b)) =
+        ellipse_horizontal_edge_inside_interval(y_min, x_min, x_max, &indices, ellipses)
+    {
+        let l = b - a;
+        // Area: bottom edge walked left→right; ∫(−y dx) = −y_min·L.
+        total += -y_min * l;
+        // Gradient: outward normal (0, −1); v·n = −∂y_min/∂θ.
+        // ∂y_min/∂(x_c, y_c, u, v) = (0, 1, −h/4, h/4)
+        grad[container_off + 1] -= l;
+        grad[container_off + 2] += (h / 4.0) * l;
+        grad[container_off + 3] -= (h / 4.0) * l;
+    }
+    if let Some((a, b)) =
+        ellipse_vertical_edge_inside_interval(x_max, y_min, y_max, &indices, ellipses)
+    {
+        let l = b - a;
+        total += x_max * l;
+        // Right edge: outward normal (+1, 0); v·n = ∂x_max/∂θ.
+        // ∂x_max/∂(x_c, y_c, u, v) = (1, 0, w/4, w/4)
+        grad[container_off] += l;
+        grad[container_off + 2] += (w / 4.0) * l;
+        grad[container_off + 3] += (w / 4.0) * l;
+    }
+    if let Some((a, b)) =
+        ellipse_horizontal_edge_inside_interval(y_max, x_min, x_max, &indices, ellipses)
+    {
+        let l = b - a;
+        total += y_max * l;
+        // Top edge: outward normal (0, +1); v·n = ∂y_max/∂θ.
+        // ∂y_max/∂(x_c, y_c, u, v) = (0, 1, h/4, −h/4)
+        grad[container_off + 1] += l;
+        grad[container_off + 2] += (h / 4.0) * l;
+        grad[container_off + 3] -= (h / 4.0) * l;
+    }
+    if let Some((a, b)) =
+        ellipse_vertical_edge_inside_interval(x_min, y_min, y_max, &indices, ellipses)
+    {
+        let l = b - a;
+        total += -x_min * l;
+        // Left edge: outward normal (−1, 0); v·n = −∂x_min/∂θ.
+        // ∂x_min/∂(x_c, y_c, u, v) = (1, 0, −w/4, −w/4)
+        grad[container_off] -= l;
+        grad[container_off + 2] += (w / 4.0) * l;
+        grad[container_off + 3] += (w / 4.0) * l;
     }
 
     0.5 * total
@@ -1260,6 +1414,109 @@ fn clipped_ellipse_arc_integral(
         let int_x = b * cphi * s_diff + a * sphi * c_diff;
         let int_y = -a * cphi * c_diff + b * sphi * s_diff;
         sum += xc * int_x + yc * int_y + a * b * delta;
+    }
+    sum
+}
+
+/// Gradient-aware companion to [`clipped_ellipse_arc_integral`]. Returns the
+/// same area-integrand contribution to `2A` while also accumulating shape-param
+/// gradient entries for the owning ellipse into `grad` (length
+/// `≥ 5 · n_sets + 4`, layout `[x₀, y₀, u₀, v₀, φ₀, …, x_c, y_c, u, v]`).
+///
+/// Per inside-container sub-arc on ellipse `k` with continuous endpoints
+/// `(t_a, t_b)`, `t_b > t_a`, the boundary-velocity identity (derived in
+/// [`accumulate_region_overlap_gradient_ellipse`]) gives:
+///
+/// ```text
+/// ∂A/∂x_k += b cos φ (sin t_b − sin t_a) + a sin φ (cos t_b − cos t_a)
+/// ∂A/∂y_k += −a cos φ (cos t_b − cos t_a) + b sin φ (sin t_b − sin t_a)
+/// ∂A/∂u_k += a · [(b/2) Δt + (b/4) (sin 2t_b − sin 2t_a)]
+/// ∂A/∂v_k += b · [(a/2) Δt − (a/4) (sin 2t_b − sin 2t_a)]
+/// ∂A/∂φ_k += (a² − b²)/4 · (cos 2t_a − cos 2t_b)
+/// ```
+///
+/// Trim-point motion at box-edge endpoints is captured by the matching
+/// box-edge integral (same point, opposite-sign `ds`), so the per-sub-arc
+/// formula is self-contained.
+fn clipped_ellipse_arc_integral_with_gradient(
+    arc: &EllipseArc,
+    ellipses: &[Ellipse],
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+    grad: &mut [f64],
+) -> f64 {
+    let e = &ellipses[arc.ellipse];
+    let xc = e.center.x();
+    let yc = e.center.y();
+    let a = e.semi_major;
+    let b = e.semi_minor;
+    let cphi = e.rotation.cos();
+    let sphi = e.rotation.sin();
+
+    let t_a = arc.t_start;
+    let t_b = t_a + arc.delta_t;
+
+    let mut crossings: Vec<f64> = Vec::with_capacity(8);
+
+    for &x_edge in &[x_min, x_max] {
+        push_axis_crossings(&mut crossings, a * cphi, -b * sphi, x_edge - xc, t_a, t_b);
+    }
+    for &y_edge in &[y_min, y_max] {
+        push_axis_crossings(&mut crossings, a * sphi, b * cphi, y_edge - yc, t_a, t_b);
+    }
+
+    let mut breaks: Vec<f64> = Vec::with_capacity(crossings.len() + 2);
+    breaks.push(t_a);
+    breaks.extend(crossings);
+    breaks.push(t_b);
+    breaks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let off = arc.ellipse * 5;
+    let mut sum = 0.0;
+    for w in breaks.windows(2) {
+        let ta = w[0];
+        let tb = w[1];
+        let delta = tb - ta;
+        if delta <= 1e-12 {
+            continue;
+        }
+        let mid = 0.5 * (ta + tb);
+        let mid_pt = ellipse_point_at(e, mid);
+        let mx = mid_pt.x();
+        let my = mid_pt.y();
+        let tol = 1e-9;
+        let inside =
+            mx >= x_min - tol && mx <= x_max + tol && my >= y_min - tol && my <= y_max + tol;
+        if !inside {
+            continue;
+        }
+
+        let s_a = ta.sin();
+        let s_b = tb.sin();
+        let c_a = ta.cos();
+        let c_b = tb.cos();
+        let s_diff = s_b - s_a;
+        let c_diff = c_b - c_a;
+        let int_x = b * cphi * s_diff + a * sphi * c_diff;
+        let int_y = -a * cphi * c_diff + b * sphi * s_diff;
+        // 2A integrand (matches the area-only path).
+        sum += xc * int_x + yc * int_y + a * b * delta;
+
+        // Boundary-velocity gradient on ellipse k. Sub-arcs inherit the
+        // parent arc's CCW orientation (delta > 0), so no sign flip needed.
+        let s2_a = (2.0 * ta).sin();
+        let s2_b = (2.0 * tb).sin();
+        let c2_a = (2.0 * ta).cos();
+        let c2_b = (2.0 * tb).cos();
+        grad[off] += int_x;
+        grad[off + 1] += int_y;
+        // ∂A/∂u = ∂A/∂a · da/du = (∂A/∂a) · a
+        grad[off + 2] += a * (0.5 * b * delta + 0.25 * b * (s2_b - s2_a));
+        // ∂A/∂v = ∂A/∂b · db/dv = (∂A/∂b) · b
+        grad[off + 3] += b * (0.5 * a * delta - 0.25 * a * (s2_b - s2_a));
+        grad[off + 4] += 0.25 * (a * a - b * b) * (c2_a - c2_b);
     }
     sum
 }
@@ -1456,10 +1713,15 @@ impl DiagramShape for Ellipse {
     ) -> Option<std::collections::HashMap<RegionMask, f64>> {
         Some(compute_exclusive_regions_clipped_ellipse(shapes, container))
     }
-    // `compute_exclusive_regions_clipped_with_gradient` deliberately falls
-    // back to the trait default (`None`) so `DiagramCost::gradient` uses
-    // central finite differences. Analytical gradients for ellipse + container
-    // are S4 work.
+
+    fn compute_exclusive_regions_clipped_with_gradient(
+        shapes: &[Self],
+        container: &Rectangle,
+    ) -> Option<crate::geometry::traits::ExclusiveRegionsAndGradient> {
+        Some(compute_exclusive_regions_clipped_ellipse_with_gradient(
+            shapes, container,
+        ))
+    }
 
     fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
         // Semi-axes are stored in log space (`u = ln(a)`, `v = ln(b)`) so the
@@ -3104,6 +3366,189 @@ mod tests {
             "clipped ellipse {} vs MC {}",
             kept,
             mc_area
+        );
+    }
+
+    // ===== Clipped exclusive areas: analytical gradient (S4) =====
+
+    /// Pack `(ellipses, container)` into the same flat parameter layout the
+    /// optimiser uses: per-ellipse `[x, y, ln a, ln b, φ]` blocks, then
+    /// container `[x_c, y_c, ln(area), ln(ratio)]`.
+    fn pack_clipped_params_ellipse(ellipses: &[Ellipse], container: &Rectangle) -> Vec<f64> {
+        let mut p = Vec::with_capacity(ellipses.len() * 5 + 4);
+        for e in ellipses {
+            p.extend(e.to_optimizer_params());
+        }
+        p.extend(container.to_optimizer_params());
+        p
+    }
+
+    /// Inverse of `pack_clipped_params_ellipse`: decode a flat parameter slice
+    /// back into ellipses plus container.
+    fn unpack_clipped_params_ellipse(p: &[f64], n_sets: usize) -> (Vec<Ellipse>, Rectangle) {
+        let ellipses: Vec<Ellipse> = (0..n_sets)
+            .map(|i| Ellipse::from_optimizer_params(&p[5 * i..5 * (i + 1)]))
+            .collect();
+        let container = Rectangle::from_optimizer_params(&p[5 * n_sets..5 * n_sets + 4]);
+        (ellipses, container)
+    }
+
+    /// FD vs analytical gradient comparison for the clipped per-mask area
+    /// helper. `params` is laid out as in `pack_clipped_params_ellipse`.
+    fn assert_clipped_gradient_matches_fd_ellipse(
+        ellipses: &[Ellipse],
+        container: &Rectangle,
+        h: f64,
+        tol: f64,
+        label: &str,
+    ) {
+        let (areas, grads) =
+            compute_exclusive_regions_clipped_ellipse_with_gradient(ellipses, container);
+        let n_sets = ellipses.len();
+        let n_params = n_sets * 5 + 4;
+        let p0 = pack_clipped_params_ellipse(ellipses, container);
+
+        for (mask, analytic) in &grads {
+            assert_eq!(
+                analytic.len(),
+                n_params,
+                "{}: gradient length {} ≠ expected {}",
+                label,
+                analytic.len(),
+                n_params
+            );
+            let mut fd = vec![0.0; n_params];
+            for i in 0..n_params {
+                let mut plus = p0.clone();
+                let mut minus = p0.clone();
+                plus[i] += h;
+                minus[i] -= h;
+                let (ep, kp) = unpack_clipped_params_ellipse(&plus, n_sets);
+                let (em, km) = unpack_clipped_params_ellipse(&minus, n_sets);
+                let ap = compute_exclusive_regions_clipped_ellipse(&ep, &kp)
+                    .get(mask)
+                    .copied()
+                    .unwrap_or(0.0);
+                let am = compute_exclusive_regions_clipped_ellipse(&em, &km)
+                    .get(mask)
+                    .copied()
+                    .unwrap_or(0.0);
+                fd[i] = (ap - am) / (2.0 * h);
+            }
+            // Check the analytical area matches the value-only path.
+            let direct = compute_exclusive_regions_clipped_ellipse(ellipses, container)
+                .get(mask)
+                .copied()
+                .unwrap_or(0.0);
+            let analytic_area = areas.get(mask).copied().unwrap_or(0.0);
+            assert!(
+                (analytic_area - direct).abs() < 1e-12,
+                "{}: mask {:b} area {} vs direct {} mismatch",
+                label,
+                mask,
+                analytic_area,
+                direct
+            );
+            let diff_norm: f64 = analytic
+                .iter()
+                .zip(fd.iter())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+            let rel = if fd_norm > 1e-9 {
+                diff_norm / fd_norm
+            } else {
+                diff_norm
+            };
+            assert!(
+                rel < tol,
+                "{}: mask {:b} analytic vs FD mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+                label,
+                mask,
+                rel,
+                fd_norm,
+                analytic,
+                fd
+            );
+        }
+    }
+
+    /// Two ellipses fully inside a wide container. No box edge clips any
+    /// ellipse — only the complement region touches the box. Verifies that
+    /// shape-param gradients reproduce the unclipped gradient and that the
+    /// container gradient is purely (0, 0, container_area, 0).
+    #[test]
+    fn clipped_grad_two_ellipses_inside_box_matches_fd() {
+        let ellipses = vec![
+            Ellipse::new(Point::new(-0.7, 0.05), 1.1, 0.8, 0.0),
+            Ellipse::new(Point::new(0.6, -0.04), 0.95, 0.6, 0.0),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 6.0, 5.0);
+        assert_clipped_gradient_matches_fd_ellipse(
+            &ellipses,
+            &container,
+            1e-6,
+            1e-5,
+            "two_ellipses_inside",
+        );
+    }
+
+    /// Two ellipses each clipped by a different box edge. Exercises the
+    /// box-edge boundary contribution to the container-param gradient and
+    /// the trimmed-arc contribution to shape params.
+    #[test]
+    fn clipped_grad_two_ellipses_each_touching_an_edge_matches_fd() {
+        let ellipses = vec![
+            Ellipse::new(Point::new(1.4, 0.05), 0.9, 0.7, 0.0),
+            Ellipse::new(Point::new(0.0, -0.07), 0.85, 0.6, 0.0),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 3.6, 3.0);
+        assert_clipped_gradient_matches_fd_ellipse(
+            &ellipses,
+            &container,
+            1e-6,
+            1e-4,
+            "two_ellipses_clipped_edge",
+        );
+    }
+
+    /// Three overlapping ellipses inside the box, all axis-aligned.
+    /// Exercises 3-way intersection regions plus the complement.
+    #[test]
+    fn clipped_grad_three_ellipses_inside_box_matches_fd() {
+        let ellipses = vec![
+            Ellipse::new(Point::new(-0.5, -0.3), 1.0, 0.7, 0.0),
+            Ellipse::new(Point::new(0.5, -0.3), 1.0, 0.7, 0.0),
+            Ellipse::new(Point::new(0.0, 0.55), 1.0, 0.7, 0.0),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.05), 3.5, 3.5);
+        assert_clipped_gradient_matches_fd_ellipse(
+            &ellipses,
+            &container,
+            1e-6,
+            1e-4,
+            "three_ellipses",
+        );
+    }
+
+    /// Two rotated ellipses with the box clipping the right-most ellipse.
+    /// Exercises non-zero rotation in both the arc-gradient terms and the
+    /// box-edge intersection helpers.
+    #[test]
+    fn clipped_grad_rotated_ellipses_one_clipped_matches_fd() {
+        let ellipses = vec![
+            Ellipse::new(Point::new(-0.4, -0.1), 1.0, 0.6, 0.5),
+            Ellipse::new(Point::new(0.7, 0.05), 0.95, 0.55, -0.3),
+        ];
+        // Right edge cuts through the right ellipse; left ellipse fully inside.
+        let container = Rectangle::new(Point::new(0.0, 0.0), 2.6, 2.4);
+        assert_clipped_gradient_matches_fd_ellipse(
+            &ellipses,
+            &container,
+            1e-6,
+            1e-4,
+            "rotated_one_clipped",
         );
     }
 }

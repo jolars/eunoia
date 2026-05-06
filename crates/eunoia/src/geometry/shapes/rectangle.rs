@@ -478,6 +478,244 @@ fn compute_exclusive_regions_with_gradient_rectangles(
     to_exclusive_areas_and_gradients(&overlapping_areas, &overlapping_grads, n_params)
 }
 
+/// Clipped exclusive areas: each region's intersection with `container` is
+/// itself an axis-aligned rectangle (the n-way intersection of axis-aligned
+/// rectangles is one axis-aligned rectangle, and adding the container as one
+/// more participant preserves that). Mask `0` is seeded with the container
+/// area; inclusion-exclusion then produces
+/// `complement = container.area − area(⋃ rectangles ∩ container)`.
+pub(crate) fn compute_exclusive_regions_clipped_rectangles(
+    shapes: &[Rectangle],
+    container: &Rectangle,
+) -> HashMap<RegionMask, f64> {
+    let n_sets = shapes.len();
+    let intersections = collect_intersections_rectangle(shapes, n_sets);
+    let regions = discover_regions(shapes, &intersections, n_sets);
+
+    let (cx_min, cx_max, cy_min, cy_max) = container.bounds();
+    let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
+    overlapping_areas.insert(0, container.area());
+
+    for &mask in &regions {
+        let indices = mask_to_indices(mask, n_sets);
+        let mut x_min = cx_min;
+        let mut x_max = cx_max;
+        let mut y_min = cy_min;
+        let mut y_max = cy_max;
+        for &i in &indices {
+            let (a, b, c, d) = shapes[i].bounds();
+            if a > x_min {
+                x_min = a;
+            }
+            if b < x_max {
+                x_max = b;
+            }
+            if c > y_min {
+                y_min = c;
+            }
+            if d < y_max {
+                y_max = d;
+            }
+        }
+        let dx = (x_max - x_min).max(0.0);
+        let dy = (y_max - y_min).max(0.0);
+        overlapping_areas.insert(mask, dx * dy);
+    }
+
+    to_exclusive_areas(&overlapping_areas)
+}
+
+/// Gradient companion to [`compute_exclusive_regions_clipped_rectangles`].
+///
+/// Returns `(exclusive_areas, exclusive_grads)` where each gradient vector has
+/// length `n_sets · 4 + 4` and is laid out as
+/// `[x₀, y₀, u₀, v₀, …, x_c, y_c, u_c, v_c]` — the trailing four entries are
+/// the container's optimizer encoding (`u = ln(w·h)`, `v = ln(w/h)`).
+///
+/// Per region, the clipped intersection is one axis-aligned rectangle whose
+/// four sides each bind to either a shape (mask member) or the container.
+/// Geometric gradient (in `[x, y, w, h]` per shape and `[x, y, w, h]` for the
+/// container, then chain-ruled into the optimizer encoding):
+///
+/// ```text
+/// ∂A/∂x_{L} = −dy   ∂A/∂x_{R} = +dy
+/// ∂A/∂y_{B} = −dx   ∂A/∂y_{T} = +dx
+/// ∂A/∂w_{L} = dy/2  ∂A/∂w_{R} = dy/2
+/// ∂A/∂h_{B} = dx/2  ∂A/∂h_{T} = dx/2
+/// ```
+///
+/// At a tie (multiple shapes and/or the container share a side's extremum),
+/// the side's contribution is split equally among the tied participants.
+/// Chain rule into the optimizer encoding (same for shapes and container):
+///
+/// ```text
+/// ∂A/∂u = (∂A/∂w · w + ∂A/∂h · h) / 2
+/// ∂A/∂v = (∂A/∂w · w − ∂A/∂h · h) / 2
+/// ```
+///
+/// Mask `0` is seeded with `container.area()` and a gradient
+/// `∂(w·h)/∂(x_c, y_c, u_c, v_c) = [0, 0, w·h, 0]`. Inclusion-exclusion then
+/// produces the complement and its gradient consistently with the per-mask
+/// areas.
+pub(crate) fn compute_exclusive_regions_clipped_with_gradient_rectangles(
+    shapes: &[Rectangle],
+    container: &Rectangle,
+) -> ExclusiveRegionsAndGradient {
+    let n_sets = shapes.len();
+    let n_params_per_shape = 4;
+    let container_off = n_sets * n_params_per_shape;
+    let n_params = container_off + 4;
+
+    let intersections = collect_intersections_rectangle(shapes, n_sets);
+    let regions = discover_regions(shapes, &intersections, n_sets);
+
+    let (cx_min, cx_max, cy_min, cy_max) = container.bounds();
+    let container_area = container.area();
+
+    let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
+    let mut overlapping_grads: HashMap<RegionMask, Vec<f64>> = HashMap::new();
+
+    // Mask 0: complement seeded with container area + ∂(w·h)/∂u_c = w·h.
+    overlapping_areas.insert(0, container_area);
+    let mut zero_grad = vec![0.0; n_params];
+    zero_grad[container_off + 2] = container_area;
+    overlapping_grads.insert(0, zero_grad);
+
+    for &mask in &regions {
+        let indices = mask_to_indices(mask, n_sets);
+
+        let mut x_min = cx_min;
+        let mut x_max = cx_max;
+        let mut y_min = cy_min;
+        let mut y_max = cy_max;
+        for &i in &indices {
+            let (a, b, c, d) = shapes[i].bounds();
+            if a > x_min {
+                x_min = a;
+            }
+            if b < x_max {
+                x_max = b;
+            }
+            if c > y_min {
+                y_min = c;
+            }
+            if d < y_max {
+                y_max = d;
+            }
+        }
+
+        let dx_raw = x_max - x_min;
+        let dy_raw = y_max - y_min;
+        let dx = dx_raw.max(0.0);
+        let dy = dy_raw.max(0.0);
+        overlapping_areas.insert(mask, dx * dy);
+
+        let mut grad = vec![0.0; n_params];
+        if dx_raw > 0.0 && dy_raw > 0.0 {
+            let mut tied_l: Vec<usize> = Vec::with_capacity(indices.len());
+            let mut tied_r: Vec<usize> = Vec::with_capacity(indices.len());
+            let mut tied_b: Vec<usize> = Vec::with_capacity(indices.len());
+            let mut tied_t: Vec<usize> = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                let (a, b, c, d) = shapes[i].bounds();
+                #[allow(clippy::float_cmp)]
+                {
+                    if a == x_min {
+                        tied_l.push(i);
+                    }
+                    if b == x_max {
+                        tied_r.push(i);
+                    }
+                    if c == y_min {
+                        tied_b.push(i);
+                    }
+                    if d == y_max {
+                        tied_t.push(i);
+                    }
+                }
+            }
+            #[allow(clippy::float_cmp)]
+            let tied_l_c = cx_min == x_min;
+            #[allow(clippy::float_cmp)]
+            let tied_r_c = cx_max == x_max;
+            #[allow(clippy::float_cmp)]
+            let tied_b_c = cy_min == y_min;
+            #[allow(clippy::float_cmp)]
+            let tied_t_c = cy_max == y_max;
+
+            let n_l = tied_l.len() + tied_l_c as usize;
+            let n_r = tied_r.len() + tied_r_c as usize;
+            let n_b = tied_b.len() + tied_b_c as usize;
+            let n_t = tied_t.len() + tied_t_c as usize;
+
+            let w_l = 1.0 / n_l as f64;
+            let w_r = 1.0 / n_r as f64;
+            let w_b = 1.0 / n_b as f64;
+            let w_t = 1.0 / n_t as f64;
+
+            // Geometric gradient: per-shape blocks `[x, y, w, h]` then the
+            // container block `[x_c, y_c, w_c, h_c]`. Chained into the
+            // optimizer encoding below.
+            let mut geom = vec![0.0_f64; n_params];
+
+            for &i in &tied_l {
+                geom[4 * i] -= dy * w_l;
+                geom[4 * i + 2] += dy * 0.5 * w_l;
+            }
+            for &i in &tied_r {
+                geom[4 * i] += dy * w_r;
+                geom[4 * i + 2] += dy * 0.5 * w_r;
+            }
+            for &i in &tied_b {
+                geom[4 * i + 1] -= dx * w_b;
+                geom[4 * i + 3] += dx * 0.5 * w_b;
+            }
+            for &i in &tied_t {
+                geom[4 * i + 1] += dx * w_t;
+                geom[4 * i + 3] += dx * 0.5 * w_t;
+            }
+            if tied_l_c {
+                geom[container_off] -= dy * w_l;
+                geom[container_off + 2] += dy * 0.5 * w_l;
+            }
+            if tied_r_c {
+                geom[container_off] += dy * w_r;
+                geom[container_off + 2] += dy * 0.5 * w_r;
+            }
+            if tied_b_c {
+                geom[container_off + 1] -= dx * w_b;
+                geom[container_off + 3] += dx * 0.5 * w_b;
+            }
+            if tied_t_c {
+                geom[container_off + 1] += dx * w_t;
+                geom[container_off + 3] += dx * 0.5 * w_t;
+            }
+
+            for i in 0..n_sets {
+                let w_i = shapes[i].width;
+                let h_i = shapes[i].height;
+                let da_dw = geom[4 * i + 2];
+                let da_dh = geom[4 * i + 3];
+                grad[4 * i] = geom[4 * i];
+                grad[4 * i + 1] = geom[4 * i + 1];
+                grad[4 * i + 2] = 0.5 * (da_dw * w_i + da_dh * h_i);
+                grad[4 * i + 3] = 0.5 * (da_dw * w_i - da_dh * h_i);
+            }
+            let w_c = container.width;
+            let h_c = container.height;
+            let da_dw_c = geom[container_off + 2];
+            let da_dh_c = geom[container_off + 3];
+            grad[container_off] = geom[container_off];
+            grad[container_off + 1] = geom[container_off + 1];
+            grad[container_off + 2] = 0.5 * (da_dw_c * w_c + da_dh_c * h_c);
+            grad[container_off + 3] = 0.5 * (da_dw_c * w_c - da_dh_c * h_c);
+        }
+        overlapping_grads.insert(mask, grad);
+    }
+
+    to_exclusive_areas_and_gradients(&overlapping_areas, &overlapping_grads, n_params)
+}
+
 impl Polygonize for Rectangle {
     /// Returns the four corners as a CCW polygon. `n_vertices` is ignored —
     /// a rectangle has exactly four vertices.
@@ -615,6 +853,24 @@ impl DiagramShape for Rectangle {
         shapes: &[Self],
     ) -> Option<ExclusiveRegionsAndGradient> {
         Some(compute_exclusive_regions_with_gradient_rectangles(shapes))
+    }
+
+    fn compute_exclusive_regions_clipped(
+        shapes: &[Self],
+        container: &Rectangle,
+    ) -> Option<HashMap<RegionMask, f64>> {
+        Some(compute_exclusive_regions_clipped_rectangles(
+            shapes, container,
+        ))
+    }
+
+    fn compute_exclusive_regions_clipped_with_gradient(
+        shapes: &[Self],
+        container: &Rectangle,
+    ) -> Option<ExclusiveRegionsAndGradient> {
+        Some(compute_exclusive_regions_clipped_with_gradient_rectangles(
+            shapes, container,
+        ))
     }
 
     /// Canonical axis-aligned Venn arrangements for `n ∈ {1, 2, 3}`.
@@ -1285,5 +1541,284 @@ mod tests {
         assert!(Rectangle::canonical_venn_layout(0).is_none());
         assert!(Rectangle::canonical_venn_layout(4).is_none());
         assert!(Rectangle::canonical_venn_layout(5).is_none());
+    }
+
+    // ----------------------------------------------------------------
+    // Container clipping (S5)
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn test_clipped_no_rects_complement_equals_container_area() {
+        let container = Rectangle::new(Point::new(0.0, 0.0), 5.0, 4.0);
+        let areas = compute_exclusive_regions_clipped_rectangles(&[], &container);
+        assert!(approx_eq(areas[&0], 20.0));
+    }
+
+    #[test]
+    fn test_clipped_single_rect_inside_container() {
+        let r = Rectangle::new(Point::new(0.0, 0.0), 2.0, 1.0);
+        let container = Rectangle::new(Point::new(0.0, 0.0), 5.0, 4.0);
+        let areas = compute_exclusive_regions_clipped_rectangles(&[r], &container);
+        assert!(approx_eq(areas[&0b1], 2.0));
+        assert!(approx_eq(areas[&0], 20.0 - 2.0));
+    }
+
+    #[test]
+    fn test_clipped_single_rect_outside_container() {
+        let r = Rectangle::new(Point::new(100.0, 0.0), 2.0, 1.0);
+        let container = Rectangle::new(Point::new(0.0, 0.0), 5.0, 4.0);
+        let areas = compute_exclusive_regions_clipped_rectangles(&[r], &container);
+        assert!(approx_eq(areas.get(&0b1).copied().unwrap_or(0.0), 0.0));
+        assert!(approx_eq(areas[&0], 20.0));
+    }
+
+    #[test]
+    fn test_clipped_single_rect_partial_clip() {
+        // Rectangle of size 4x2 centered at (1, 0): bounds x ∈ [-1, 3],
+        // y ∈ [-1, 1]. Container of size 4x4 at origin: bounds x ∈ [-2, 2],
+        // y ∈ [-2, 2]. Overlap x ∈ [-1, 2] (= 3) × y ∈ [-1, 1] (= 2) → 6.
+        let r = Rectangle::new(Point::new(1.0, 0.0), 4.0, 2.0);
+        let container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 4.0);
+        let areas = compute_exclusive_regions_clipped_rectangles(&[r], &container);
+        assert!(approx_eq(areas[&0b1], 6.0));
+        assert!(approx_eq(areas[&0], 16.0 - 6.0));
+    }
+
+    #[test]
+    fn test_clipped_container_fully_inside_rect() {
+        // Container is fully inside the (huge) rectangle; the rectangle's
+        // clipped exclusive area equals the container's area, complement is 0.
+        let r = Rectangle::new(Point::new(0.0, 0.0), 100.0, 100.0);
+        let container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 3.0);
+        let areas = compute_exclusive_regions_clipped_rectangles(&[r], &container);
+        assert!(approx_eq(areas[&0b1], 12.0));
+        assert!(approx_eq(areas[&0], 0.0));
+    }
+
+    #[test]
+    fn test_clipped_two_rects_inside_sum_to_union() {
+        let a = Rectangle::new(Point::new(-0.6, 0.0), 1.6, 1.6);
+        let b = Rectangle::new(Point::new(0.6, 0.0), 1.6, 1.6);
+        let container = Rectangle::new(Point::new(0.0, 0.0), 5.0, 4.0);
+
+        let unclipped = Rectangle::compute_exclusive_regions(&[a, b]);
+        let clipped = compute_exclusive_regions_clipped_rectangles(&[a, b], &container);
+
+        // Both rectangles fully inside container, so per-shape exclusive
+        // areas match the unclipped path.
+        for &mask in &[0b01_usize, 0b10_usize, 0b11_usize] {
+            let lhs = clipped.get(&mask).copied().unwrap_or(0.0);
+            let rhs = unclipped.get(&mask).copied().unwrap_or(0.0);
+            assert!(
+                approx_eq(lhs, rhs),
+                "mask {mask:b}: clipped={lhs} unclipped={rhs}"
+            );
+        }
+        // Complement equals container - union.
+        let union: f64 = clipped[&0b01] + clipped[&0b10] + clipped[&0b11];
+        assert!(approx_eq(clipped[&0], 20.0 - union));
+    }
+
+    /// Pack `(rectangles, container)` into the same flat parameter layout the
+    /// optimiser uses: per-rect `[x, y, u, v]` blocks (optimizer encoding),
+    /// then container `[x_c, y_c, u_c, v_c]`.
+    fn pack_clipped_rect_params(rects: &[Rectangle], container: &Rectangle) -> Vec<f64> {
+        let mut p = Vec::with_capacity(rects.len() * 4 + 4);
+        for r in rects {
+            p.extend(r.to_optimizer_params());
+        }
+        p.extend(container.to_optimizer_params());
+        p
+    }
+
+    /// Inverse of `pack_clipped_rect_params`: decode a flat parameter slice
+    /// back into rectangles plus container.
+    fn unpack_clipped_rect_params(p: &[f64], n_sets: usize) -> (Vec<Rectangle>, Rectangle) {
+        let rects: Vec<Rectangle> = (0..n_sets)
+            .map(|i| Rectangle::from_optimizer_params(&p[4 * i..4 * i + 4]))
+            .collect();
+        let container = Rectangle::from_optimizer_params(&p[4 * n_sets..4 * n_sets + 4]);
+        (rects, container)
+    }
+
+    /// FD vs analytical gradient comparison for the clipped per-mask area
+    /// helper. `params` is laid out as in `pack_clipped_rect_params`.
+    fn assert_clipped_rect_gradient_matches_fd(
+        rects: &[Rectangle],
+        container: &Rectangle,
+        h: f64,
+        tol: f64,
+        label: &str,
+    ) {
+        let (areas, grads) =
+            compute_exclusive_regions_clipped_with_gradient_rectangles(rects, container);
+        let n_sets = rects.len();
+        let n_params = n_sets * 4 + 4;
+        let p0 = pack_clipped_rect_params(rects, container);
+
+        for (mask, analytic) in &grads {
+            assert_eq!(
+                analytic.len(),
+                n_params,
+                "{}: gradient length {} ≠ expected {}",
+                label,
+                analytic.len(),
+                n_params
+            );
+            let mut fd = vec![0.0; n_params];
+            for i in 0..n_params {
+                let mut plus = p0.clone();
+                let mut minus = p0.clone();
+                plus[i] += h;
+                minus[i] -= h;
+                let (rp, kp) = unpack_clipped_rect_params(&plus, n_sets);
+                let (rm, km) = unpack_clipped_rect_params(&minus, n_sets);
+                let ap = compute_exclusive_regions_clipped_rectangles(&rp, &kp)
+                    .get(mask)
+                    .copied()
+                    .unwrap_or(0.0);
+                let am = compute_exclusive_regions_clipped_rectangles(&rm, &km)
+                    .get(mask)
+                    .copied()
+                    .unwrap_or(0.0);
+                fd[i] = (ap - am) / (2.0 * h);
+            }
+            let direct = compute_exclusive_regions_clipped_rectangles(rects, container)
+                .get(mask)
+                .copied()
+                .unwrap_or(0.0);
+            let analytic_area = areas.get(mask).copied().unwrap_or(0.0);
+            assert!(
+                (analytic_area - direct).abs() < 1e-12,
+                "{}: mask {:b} area {} vs direct {} mismatch",
+                label,
+                mask,
+                analytic_area,
+                direct
+            );
+            let diff_norm: f64 = analytic
+                .iter()
+                .zip(fd.iter())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+            let rel = if fd_norm > 1e-9 {
+                diff_norm / fd_norm
+            } else {
+                diff_norm
+            };
+            assert!(
+                rel < tol,
+                "{}: mask {:b} analytic vs FD mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+                label,
+                mask,
+                rel,
+                fd_norm,
+                analytic,
+                fd
+            );
+        }
+    }
+
+    #[test]
+    fn test_clipped_grad_two_rects_inside_box_matches_fd() {
+        let rects = vec![
+            Rectangle::new(Point::new(-0.6, 0.05), 1.7, 1.3),
+            Rectangle::new(Point::new(0.62, -0.04), 1.4, 1.5),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 6.0, 5.0);
+        assert_clipped_rect_gradient_matches_fd(&rects, &container, 1e-5, 1e-7, "two_rects_inside");
+    }
+
+    #[test]
+    fn test_clipped_grad_two_rects_one_clipped_by_edge_matches_fd() {
+        // Right rectangle extends past the container's right edge, exercising
+        // the container-x_max binding path. y-extents are deliberately
+        // distinct in f64 so no shape-vs-shape ties slip in via floating-point
+        // coincidence.
+        let rects = vec![
+            Rectangle::new(Point::new(0.0, 0.07), 1.7, 1.3),
+            Rectangle::new(Point::new(1.4, -0.03), 1.5, 1.5),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 3.6, 3.0);
+        assert_clipped_rect_gradient_matches_fd(
+            &rects,
+            &container,
+            1e-5,
+            1e-6,
+            "two_rects_one_clipped",
+        );
+    }
+
+    #[test]
+    fn test_clipped_grad_three_rects_inside_box_matches_fd() {
+        let rects = vec![
+            Rectangle::new(Point::new(-0.5, -0.3), 1.8, 1.4),
+            Rectangle::new(Point::new(0.5, -0.3), 1.7, 1.5),
+            Rectangle::new(Point::new(0.0, 0.55), 1.6, 1.3),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.05), 3.5, 3.5);
+        assert_clipped_rect_gradient_matches_fd(
+            &rects,
+            &container,
+            1e-5,
+            1e-7,
+            "three_rects_inside",
+        );
+    }
+
+    #[test]
+    fn test_clipped_grad_three_rects_one_clipped_matches_fd() {
+        let rects = vec![
+            Rectangle::new(Point::new(-0.6, -0.2), 1.5, 1.3),
+            Rectangle::new(Point::new(0.7, -0.2), 1.5, 1.4),
+            Rectangle::new(Point::new(0.05, 0.6), 1.4, 1.6),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 3.5, 2.0);
+        assert_clipped_rect_gradient_matches_fd(
+            &rects,
+            &container,
+            1e-5,
+            1e-5,
+            "three_rects_one_clipped",
+        );
+    }
+
+    /// End-to-end fitter test with complement: two rectangles that should fit
+    /// comfortably inside a jointly-optimised container.
+    #[test]
+    fn fit_two_rectangles_with_complement_runs_to_finite_loss() {
+        use crate::{DiagramSpecBuilder, Fitter, InputType};
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 4.0)
+            .set("B", 4.0)
+            .intersection(&["A", "B"], 1.0)
+            .complement(20.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Rectangle>::new(&spec).seed(42).fit().unwrap();
+        let fitted = layout.fitted();
+        assert!(
+            fitted.values().all(|&v| v.is_finite()),
+            "non-finite fitted areas in {fitted:?}"
+        );
+        assert!(
+            layout.loss().is_finite(),
+            "non-finite loss {}",
+            layout.loss()
+        );
+        let container = layout
+            .container()
+            .expect("complement spec carries container");
+        // Universe = 4 + 4 + 1 + 20 = 29.
+        assert!(
+            (container.area() - 29.0).abs() / 29.0 < 0.1,
+            "container area {} should be near universe 29",
+            container.area()
+        );
     }
 }

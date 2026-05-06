@@ -1712,6 +1712,188 @@ mod tests {
         );
     }
 
+    /// Build a complement-bearing PreprocessedSpec from a known ellipse
+    /// layout inside a known container. Mirrors `complement_spec_from_layout`
+    /// but routes through the ellipse-specific clipped helper.
+    fn complement_spec_from_layout_ellipse(
+        ellipses: &[crate::geometry::shapes::Ellipse],
+        container: &crate::geometry::shapes::Rectangle,
+    ) -> PreprocessedSpec {
+        use crate::geometry::shapes::ellipse::compute_exclusive_regions_clipped_ellipse;
+        use crate::spec::{DiagramSpec, DiagramSpecBuilder};
+
+        let names: Vec<String> = (0..ellipses.len()).map(|i| format!("S{}", i)).collect();
+        let areas = compute_exclusive_regions_clipped_ellipse(ellipses, container);
+
+        let mut builder = DiagramSpecBuilder::new();
+        for (i, name) in names.iter().enumerate() {
+            let single_mask = 1usize << i;
+            let v = areas.get(&single_mask).copied().unwrap_or(0.0);
+            builder = builder.set(name.as_str(), v);
+        }
+        for (mask, &v) in &areas {
+            if *mask == 0 {
+                continue;
+            }
+            let bits = mask.count_ones();
+            if bits < 2 {
+                continue;
+            }
+            let mut sets: Vec<&str> = Vec::with_capacity(bits as usize);
+            for (i, name) in names.iter().enumerate() {
+                if mask & (1 << i) != 0 {
+                    sets.push(name.as_str());
+                }
+            }
+            builder = builder.intersection(&sets, v);
+        }
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+        builder = builder
+            .complement(complement)
+            .input_type(crate::InputType::Exclusive);
+        let spec: DiagramSpec = builder.build().unwrap();
+        spec.preprocess().unwrap()
+    }
+
+    /// Pack ellipses + container into the optimizer's flat parameter layout
+    /// (per-ellipse blocks `[x, y, ln a, ln b, φ]` then container
+    /// `[x_c, y_c, ln(area), ln(ratio)]`).
+    fn pack_complement_params_ellipse(
+        ellipses: &[crate::geometry::shapes::Ellipse],
+        container: &crate::geometry::shapes::Rectangle,
+    ) -> Vec<f64> {
+        let mut p = Vec::with_capacity(ellipses.len() * 5 + 4);
+        for e in ellipses {
+            p.extend(e.to_optimizer_params());
+        }
+        p.extend(container.to_optimizer_params());
+        p
+    }
+
+    /// FD-vs-analytical for `DiagramCost::gradient` on an ellipse complement
+    /// spec with both ellipses inside the container. Mirrors
+    /// `analytic_gradient_complement_two_circles_inside_box`.
+    #[test]
+    fn analytic_gradient_complement_two_ellipses_inside_box() {
+        use crate::geometry::shapes::Ellipse;
+        let ellipses = vec![
+            Ellipse::new(Point::new(-0.7, 0.0), 1.0, 0.7, 0.0),
+            Ellipse::new(Point::new(0.55, 0.05), 0.95, 0.6, 0.0),
+        ];
+        let container = crate::geometry::shapes::Rectangle::new(Point::new(0.0, 0.0), 6.0, 5.0);
+        let spec = complement_spec_from_layout_ellipse(&ellipses, &container);
+        // Probe at a perturbed config so the loss isn't exactly zero.
+        let mut params = pack_complement_params_ellipse(&ellipses, &container);
+        params[0] += 0.07; // x0
+        params[5] += -0.05; // x1
+        params[10 + 2] += 0.03; // ln(area) of container
+
+        let cost = DiagramCost::<Ellipse> {
+            spec: &spec,
+            loss_type: crate::loss::LossType::SumSquared,
+            params_per_shape: Ellipse::n_params(),
+            _shape: std::marker::PhantomData,
+        };
+        let p = DVector::from_vec(params.clone());
+        let analytic = cost.gradient(&p).expect("analytic gradient");
+
+        let h = 1e-6;
+        let n = params.len();
+        let mut fd = vec![0.0; n];
+        for i in 0..n {
+            let mut plus = params.clone();
+            let mut minus = params.clone();
+            plus[i] += h;
+            minus[i] -= h;
+            let f_plus = cost.cost(&DVector::from_vec(plus)).expect("cost +");
+            let f_minus = cost.cost(&DVector::from_vec(minus)).expect("cost -");
+            fd[i] = (f_plus - f_minus) / (2.0 * h);
+        }
+        let analytic_slice: Vec<f64> = analytic.as_slice().to_vec();
+        let diff_norm: f64 = analytic_slice
+            .iter()
+            .zip(fd.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+        let rel = if fd_norm > 1e-9 {
+            diff_norm / fd_norm
+        } else {
+            diff_norm
+        };
+        assert!(
+            rel < 1e-3,
+            "ellipse complement gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+            rel,
+            fd_norm,
+            analytic_slice,
+            fd
+        );
+    }
+
+    /// Same as above but with one rotated ellipse clipped by the right edge of
+    /// the container — exercises the box-edge contribution to the ellipse's
+    /// boundary integral plus a non-zero rotation.
+    #[test]
+    fn analytic_gradient_complement_one_ellipse_clipped() {
+        use crate::geometry::shapes::Ellipse;
+        let ellipses = vec![
+            Ellipse::new(Point::new(1.4, 0.05), 0.9, 0.6, 0.3),
+            Ellipse::new(Point::new(0.0, -0.07), 0.85, 0.55, -0.2),
+        ];
+        let container = crate::geometry::shapes::Rectangle::new(Point::new(0.0, 0.0), 3.6, 3.0);
+        let spec = complement_spec_from_layout_ellipse(&ellipses, &container);
+        let mut params = pack_complement_params_ellipse(&ellipses, &container);
+        // Bump container x slightly so the right-edge clip on ellipse 0 stays
+        // a smooth (non-tangent) intersection but the gradient is non-trivial.
+        params[10] += 0.04;
+        params[10 + 3] += 0.02;
+
+        let cost = DiagramCost::<Ellipse> {
+            spec: &spec,
+            loss_type: crate::loss::LossType::SumSquared,
+            params_per_shape: Ellipse::n_params(),
+            _shape: std::marker::PhantomData,
+        };
+        let p = DVector::from_vec(params.clone());
+        let analytic = cost.gradient(&p).expect("analytic gradient");
+
+        let h = 1e-6;
+        let n = params.len();
+        let mut fd = vec![0.0; n];
+        for i in 0..n {
+            let mut plus = params.clone();
+            let mut minus = params.clone();
+            plus[i] += h;
+            minus[i] -= h;
+            let f_plus = cost.cost(&DVector::from_vec(plus)).expect("cost +");
+            let f_minus = cost.cost(&DVector::from_vec(minus)).expect("cost -");
+            fd[i] = (f_plus - f_minus) / (2.0 * h);
+        }
+        let analytic_slice: Vec<f64> = analytic.as_slice().to_vec();
+        let diff_norm: f64 = analytic_slice
+            .iter()
+            .zip(fd.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+        let rel = if fd_norm > 1e-9 {
+            diff_norm / fd_norm
+        } else {
+            diff_norm
+        };
+        assert!(
+            rel < 1e-3,
+            "ellipse complement+clip gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+            rel,
+            fd_norm,
+            analytic_slice,
+            fd
+        );
+    }
+
     /// Same idea as `benchmark_gradient_call_only` but for ellipses.
     #[test]
     #[ignore]
