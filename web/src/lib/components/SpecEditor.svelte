@@ -76,7 +76,7 @@
 
     <div>
       <div class="block text-xs font-medium text-gray-600 mb-1.5">Shape</div>
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-x-3 gap-y-1.5">
         <label class="flex items-center cursor-pointer">
           <input
             type="radio"

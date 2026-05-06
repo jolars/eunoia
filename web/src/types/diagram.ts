@@ -124,7 +124,6 @@ export type LossName =
   | "Stress"
   | "DiagError";
 export type ExportFormat = "svg" | "png" | "pdf" | "json";
-export type TabKey = "app" | "about" | "cite";
 
 export interface DiagramStyle {
   /** Per-set fill colors keyed by set name. Missing sets fall back to the default palette. */

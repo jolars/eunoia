@@ -8,7 +8,6 @@ import type {
   PersistedState,
   Row,
   ShapeType,
-  TabKey,
   VennSetCount,
 } from "../types/diagram";
 
@@ -67,7 +66,6 @@ class AppState {
   exportSettings: ExportSettings = $state({ ...DEFAULT_EXPORT });
 
   // Runtime
-  tab: TabKey = $state("app");
   result: FitResult | null = $state(null);
   error = $state("");
   loading = $state(true);
@@ -165,15 +163,5 @@ export function saveToStorage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.toPersisted()));
   } catch {
     // ignore quota / serialization errors
-  }
-}
-
-export function syncTabToHash() {
-  if (typeof window === "undefined") return;
-  const hash = window.location.hash.replace(/^#/, "").toLowerCase();
-  if (hash === "about" || hash === "cite") {
-    appState.tab = hash;
-  } else {
-    appState.tab = "app";
   }
 }
