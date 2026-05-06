@@ -101,6 +101,11 @@ impl DiagramSpecBuilder {
     /// ```
     pub fn intersection(mut self, sets: &[&str], value: f64) -> Self {
         let combination = Combination::new(sets);
+        for &name in sets {
+            if !self.set_order.iter().any(|n| n == name) {
+                self.set_order.push(name.to_string());
+            }
+        }
         self.combinations.insert(combination, value);
         self
     }
@@ -236,21 +241,18 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // Use set_order to create an ordered vector of set names, then add any
-        // implicitly defined sets that weren't in the original order
-        let mut ordered_set_names: Vec<String> = self
-            .set_order
-            .iter()
-            .filter(|name| all_set_names.contains(*name))
-            .cloned()
-            .collect();
-
-        // Add any sets that were implicitly discovered but not in set_order
-        for set_name in &all_set_names {
-            if !ordered_set_names.contains(set_name) {
-                ordered_set_names.push(set_name.clone());
-            }
-        }
+        // `set_order` is updated by both `set()` and `intersection()` on
+        // first occurrence, so it already contains every name reachable from
+        // `combinations.keys()`. Cloning preserves first-seen order for a
+        // deterministic `set_names()` — previously we appended unseen names
+        // by iterating `all_set_names` (a `HashSet`), which produced
+        // run-to-run shuffling for intersection-only sets.
+        let ordered_set_names: Vec<String> = self.set_order.clone();
+        debug_assert!(
+            ordered_set_names.iter().all(|n| all_set_names.contains(n))
+                && all_set_names.len() == ordered_set_names.len(),
+            "set_order must mirror combinations.keys()'s name set",
+        );
 
         // Enforce the cap on set count. The internal RegionMask is a usize
         // bitset, but the default cap (MAX_SETS) sits well below the bit
@@ -388,6 +390,47 @@ mod tests {
             spec.get_inclusive(&Combination::new(&["A", "B"])),
             Some(1.0)
         );
+    }
+
+    #[test]
+    fn set_names_follow_first_seen_input_order() {
+        // Mix of `set` and `intersection`-only entries. Names must come out
+        // in first-seen order — previously, intersection-only sets were
+        // appended via a `HashSet` walk, which produced run-to-run shuffling.
+        let spec = DiagramSpecBuilder::new()
+            .set("B", 1.0)
+            .intersection(&["B", "D"], 1.0)
+            .set("A", 1.0)
+            .intersection(&["C", "A"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            spec.set_names(),
+            &[
+                "B".to_string(),
+                "D".to_string(),
+                "A".to_string(),
+                "C".to_string()
+            ]
+        );
+
+        // Repeat builds with intersection-only inputs to pin determinism for
+        // the path that previously walked a `HashSet` of names.
+        for _ in 0..4 {
+            let s = DiagramSpecBuilder::new()
+                .intersection(&["X", "Y"], 1.0)
+                .intersection(&["Y", "Z"], 1.0)
+                .intersection(&["X", "Z"], 1.0)
+                .input_type(InputType::Exclusive)
+                .build()
+                .unwrap();
+            assert_eq!(
+                s.set_names(),
+                &["X".to_string(), "Y".to_string(), "Z".to_string()]
+            );
+        }
     }
 
     #[test]
