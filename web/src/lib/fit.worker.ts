@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import type { FitResult } from "../types/diagram";
-import { type FitInputs, runFit } from "./fit";
+import type { FitInputs } from "./fit";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -14,19 +14,22 @@ type Response =
   | { id: number; result: FitResult | null }
   | { id: number; error: string };
 
-let wasmPromise: Promise<unknown> | null = null;
-
-async function ensureWasm() {
-  if (!wasmPromise) {
-    wasmPromise = import("@jolars/eunoia");
-  }
-  return wasmPromise;
+// Imports must be type-only at the top level: any value import that
+// transitively loads `@jolars/eunoia` pulls in wasm-bindgen's top-level await,
+// which `vite-plugin-top-level-await` wraps the entire worker body in. That
+// would defer the `self.onmessage = …` assignment until after wasm finishes
+// loading — by which time the main thread's first `postMessage` has already
+// been dispatched to a worker with no handler and silently dropped.
+let runtimePromise: Promise<typeof import("./fit")> | null = null;
+async function getRuntime() {
+  if (!runtimePromise) runtimePromise = import("./fit");
+  return runtimePromise;
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
   const msg = e.data;
   try {
-    await ensureWasm();
+    const { runFit } = await getRuntime();
     if (msg.type === "init") {
       const reply: Response = { id: msg.id, ready: true };
       self.postMessage(reply);
