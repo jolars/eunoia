@@ -1095,6 +1095,312 @@ pub(crate) fn collect_intersections_ellipse(
     intersections
 }
 
+/// Compute the per-mask exclusive areas of `ellipses` clipped to an
+/// axis-aligned `container` rectangle, including the all-zeros region (mask
+/// `0`) representing `container ∖ ⋃ ellipses` (the complement target).
+///
+/// Mirrors `circle::compute_exclusive_regions_clipped`. For each overlap
+/// region `R_m = ⋂_{i ∈ m} E_i`, computes `area(R_m ∩ container)` via Green's
+/// theorem with the boundary decomposed into:
+///
+/// - sub-arcs of `∂R_m` (arcs on each `∂E_i`) that lie inside the container, and
+/// - sub-segments of `∂container` (axis-aligned edges) that lie inside `R_m`.
+///
+/// Mask `0` is seeded with `area(container)` so the inclusion-exclusion pass
+/// produces `container.area − area(⋃ ellipses ∩ container)` for free.
+pub fn compute_exclusive_regions_clipped_ellipse(
+    ellipses: &[Ellipse],
+    container: &Rectangle,
+) -> std::collections::HashMap<RegionMask, f64> {
+    use crate::geometry::diagram::{discover_regions, to_exclusive_areas};
+
+    let n_sets = ellipses.len();
+    let intersections = collect_intersections_ellipse(ellipses);
+    let regions = discover_regions(ellipses, &intersections, n_sets);
+
+    let mut overlapping_areas = std::collections::HashMap::new();
+    overlapping_areas.insert(0, container.area());
+
+    for &mask in &regions {
+        let arcs = region_boundary_arcs_ellipse(mask, ellipses, &intersections, n_sets);
+        let area = area_from_clipped_arcs_ellipse(&arcs, ellipses, container, mask, n_sets);
+        overlapping_areas.insert(mask, area);
+    }
+
+    to_exclusive_areas(&overlapping_areas)
+}
+
+/// Compute `area(R_m ∩ container)` from the CCW ellipse-boundary arcs of
+/// `R_m` and the axis-aligned `container`. Mirrors `circle::area_from_clipped_arcs`:
+/// arc contributions split at box-edge crossings, plus container-edge
+/// contributions (intersection of per-ellipse interior-x / interior-y ranges).
+fn area_from_clipped_arcs_ellipse(
+    arcs: &[EllipseArc],
+    ellipses: &[Ellipse],
+    container: &Rectangle,
+    mask: RegionMask,
+    n_sets: usize,
+) -> f64 {
+    use crate::geometry::diagram::mask_to_indices;
+
+    let (x_min, x_max, y_min, y_max) = container.bounds();
+    if x_max <= x_min || y_max <= y_min {
+        return 0.0;
+    }
+
+    let mut total = 0.0; // ∫ (x dy − y dx); area = 0.5 · total.
+
+    // 1. Arc contributions.
+    for arc in arcs {
+        total += clipped_ellipse_arc_integral(arc, ellipses, x_min, x_max, y_min, y_max);
+    }
+
+    // 2. Container-edge contributions, each oriented CCW around the container
+    // interior. For each edge we find the inside-`R_m` sub-interval (the
+    // intersection of the per-ellipse projections onto that edge), then add
+    // the closed-form line integral.
+    let indices = mask_to_indices(mask, n_sets);
+
+    // Bottom edge: y = y_min, walk x from x_min → x_max. ∫(−y dx) = −y_min·Δx.
+    if let Some((a, b)) =
+        ellipse_horizontal_edge_inside_interval(y_min, x_min, x_max, &indices, ellipses)
+    {
+        total += -y_min * (b - a);
+    }
+    // Right edge: x = x_max, walk y from y_min → y_max. ∫(x dy) = x_max·Δy.
+    if let Some((a, b)) =
+        ellipse_vertical_edge_inside_interval(x_max, y_min, y_max, &indices, ellipses)
+    {
+        total += x_max * (b - a);
+    }
+    // Top edge: y = y_max, walk x from x_max → x_min. ∫(−y dx) = +y_max·Δx
+    // because dx is negative when walking right→left.
+    if let Some((a, b)) =
+        ellipse_horizontal_edge_inside_interval(y_max, x_min, x_max, &indices, ellipses)
+    {
+        total += y_max * (b - a);
+    }
+    // Left edge: x = x_min, walk y from y_max → y_min. ∫(x dy) = −x_min·Δy
+    // because dy is negative when walking top→bottom.
+    if let Some((a, b)) =
+        ellipse_vertical_edge_inside_interval(x_min, y_min, y_max, &indices, ellipses)
+    {
+        total += -x_min * (b - a);
+    }
+
+    0.5 * total
+}
+
+/// Sum the Green's-theorem arc integral over the inside-container sub-arcs of
+/// `arc`, splitting at crossings with the four box edges. Mirrors
+/// `circle::clipped_arc_integral`, with crossings found by solving
+/// `A cos t + B sin t = C` for the rotated-ellipse parameterisation.
+fn clipped_ellipse_arc_integral(
+    arc: &EllipseArc,
+    ellipses: &[Ellipse],
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+) -> f64 {
+    let e = &ellipses[arc.ellipse];
+    let xc = e.center.x();
+    let yc = e.center.y();
+    let a = e.semi_major;
+    let b = e.semi_minor;
+    let cphi = e.rotation.cos();
+    let sphi = e.rotation.sin();
+
+    let t_a = arc.t_start;
+    let t_b = t_a + arc.delta_t; // continuous (not wrapped)
+
+    let mut crossings: Vec<f64> = Vec::with_capacity(8);
+
+    // Vertical edges x = X: a cos φ · cos t + (−b sin φ) · sin t = X − xc.
+    for &x_edge in &[x_min, x_max] {
+        push_axis_crossings(&mut crossings, a * cphi, -b * sphi, x_edge - xc, t_a, t_b);
+    }
+    // Horizontal edges y = Y: a sin φ · cos t + b cos φ · sin t = Y − yc.
+    for &y_edge in &[y_min, y_max] {
+        push_axis_crossings(&mut crossings, a * sphi, b * cphi, y_edge - yc, t_a, t_b);
+    }
+
+    let mut breaks: Vec<f64> = Vec::with_capacity(crossings.len() + 2);
+    breaks.push(t_a);
+    breaks.extend(crossings);
+    breaks.push(t_b);
+    breaks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut sum = 0.0;
+    for w in breaks.windows(2) {
+        let ta = w[0];
+        let tb = w[1];
+        let delta = tb - ta;
+        if delta <= 1e-12 {
+            continue;
+        }
+        let mid = 0.5 * (ta + tb);
+        let mid_pt = ellipse_point_at(e, mid);
+        let mx = mid_pt.x();
+        let my = mid_pt.y();
+        // Generous geometric tolerance to keep boundary-aligned midpoints
+        // (e.g. arcs that exit and immediately re-enter via a corner) on the
+        // "inside" side. Mismatched signs here would lose a slice of area.
+        let tol = 1e-9;
+        let inside =
+            mx >= x_min - tol && mx <= x_max + tol && my >= y_min - tol && my <= y_max + tol;
+        if !inside {
+            continue;
+        }
+
+        // Integrand of `x dy − y dx` for the rotated ellipse, integrated
+        // analytically from `ta` to `tb` (matches `area_from_boundary_arcs_ellipse`).
+        let s_diff = tb.sin() - ta.sin();
+        let c_diff = tb.cos() - ta.cos();
+        let int_x = b * cphi * s_diff + a * sphi * c_diff;
+        let int_y = -a * cphi * c_diff + b * sphi * s_diff;
+        sum += xc * int_x + yc * int_y + a * b * delta;
+    }
+    sum
+}
+
+/// Solve `A cos t + B sin t = C` and push every periodic copy of each
+/// solution that lands strictly inside `(t_a, t_b)` into `out`. Skips when
+/// `R = √(A² + B²)` is zero or `|C| > R`.
+fn push_axis_crossings(out: &mut Vec<f64>, big_a: f64, big_b: f64, big_c: f64, t_a: f64, t_b: f64) {
+    let r_sq = big_a * big_a + big_b * big_b;
+    if r_sq <= 0.0 {
+        return;
+    }
+    let r = r_sq.sqrt();
+    let ratio = big_c / r;
+    if ratio.abs() > 1.0 {
+        return;
+    }
+    // R cos(t − δ) = C, with δ = atan2(B, A).
+    let delta = big_b.atan2(big_a);
+    let alpha = ratio.clamp(-1.0, 1.0).acos();
+    collect_periodic_in_range_ellipse(out, delta + alpha, t_a, t_b);
+    collect_periodic_in_range_ellipse(out, delta - alpha, t_a, t_b);
+}
+
+/// For a candidate solution `cand`, push every periodic copy `cand + 2πk`
+/// strictly inside `(t_a, t_b)` into `out`. Arc spans can reach 2π so at most
+/// one copy per shift offset is in range; iterating `k ∈ {-1, 0, 1}` covers
+/// every case for `delta_t ≤ 2π`.
+fn collect_periodic_in_range_ellipse(out: &mut Vec<f64>, cand: f64, t_a: f64, t_b: f64) {
+    let two_pi = 2.0 * PI;
+    let tol = 1e-12;
+    for k in -1..=1 {
+        let p = cand + (k as f64) * two_pi;
+        if p > t_a + tol && p < t_b - tol {
+            out.push(p);
+        }
+    }
+}
+
+/// Inside-`R_m` sub-interval of a horizontal edge `y = const` over
+/// `x ∈ [x_min, x_max]`, where `R_m = ⋂_{i ∈ indices} E_i`. Returns `None` if
+/// the edge does not touch every ellipse in `indices`. With `indices` empty,
+/// the whole `[x_min, x_max]` is "inside" (intersection over an empty
+/// constraint set is the universe), which is exactly what mask `0` (the
+/// complement) wants.
+///
+/// For each ellipse the inside-x range at fixed `y` is found by substituting
+/// `dy = y − y_c` into the rotated-ellipse implicit form
+/// `A·dx² + B·dx + C = 0` and taking the two real roots.
+fn ellipse_horizontal_edge_inside_interval(
+    y: f64,
+    x_min: f64,
+    x_max: f64,
+    indices: &[usize],
+    ellipses: &[Ellipse],
+) -> Option<(f64, f64)> {
+    let mut lo = x_min;
+    let mut hi = x_max;
+    for &i in indices {
+        let e = &ellipses[i];
+        let dy = y - e.center.y();
+        let cphi = e.rotation.cos();
+        let sphi = e.rotation.sin();
+        let inv_a2 = 1.0 / (e.semi_major * e.semi_major);
+        let inv_b2 = 1.0 / (e.semi_minor * e.semi_minor);
+        let big_a = cphi * cphi * inv_a2 + sphi * sphi * inv_b2;
+        let big_b = 2.0 * dy * sphi * cphi * (inv_a2 - inv_b2);
+        let big_c = dy * dy * (sphi * sphi * inv_a2 + cphi * cphi * inv_b2) - 1.0;
+        let disc = big_b * big_b - 4.0 * big_a * big_c;
+        if disc < 0.0 {
+            return None;
+        }
+        let sqrt_disc = disc.sqrt();
+        let dx_lo = (-big_b - sqrt_disc) / (2.0 * big_a);
+        let dx_hi = (-big_b + sqrt_disc) / (2.0 * big_a);
+        let disk_lo = e.center.x() + dx_lo;
+        let disk_hi = e.center.x() + dx_hi;
+        if disk_lo > lo {
+            lo = disk_lo;
+        }
+        if disk_hi < hi {
+            hi = disk_hi;
+        }
+        if hi <= lo {
+            return None;
+        }
+    }
+    if hi > lo {
+        Some((lo, hi))
+    } else {
+        None
+    }
+}
+
+/// Inside-`R_m` sub-interval of a vertical edge `x = const` over
+/// `y ∈ [y_min, y_max]`. Mirror of [`ellipse_horizontal_edge_inside_interval`].
+fn ellipse_vertical_edge_inside_interval(
+    x: f64,
+    y_min: f64,
+    y_max: f64,
+    indices: &[usize],
+    ellipses: &[Ellipse],
+) -> Option<(f64, f64)> {
+    let mut lo = y_min;
+    let mut hi = y_max;
+    for &i in indices {
+        let e = &ellipses[i];
+        let dx = x - e.center.x();
+        let cphi = e.rotation.cos();
+        let sphi = e.rotation.sin();
+        let inv_a2 = 1.0 / (e.semi_major * e.semi_major);
+        let inv_b2 = 1.0 / (e.semi_minor * e.semi_minor);
+        let big_a = sphi * sphi * inv_a2 + cphi * cphi * inv_b2;
+        let big_b = 2.0 * dx * sphi * cphi * (inv_a2 - inv_b2);
+        let big_c = dx * dx * (cphi * cphi * inv_a2 + sphi * sphi * inv_b2) - 1.0;
+        let disc = big_b * big_b - 4.0 * big_a * big_c;
+        if disc < 0.0 {
+            return None;
+        }
+        let sqrt_disc = disc.sqrt();
+        let dy_lo = (-big_b - sqrt_disc) / (2.0 * big_a);
+        let dy_hi = (-big_b + sqrt_disc) / (2.0 * big_a);
+        let disk_lo = e.center.y() + dy_lo;
+        let disk_hi = e.center.y() + dy_hi;
+        if disk_lo > lo {
+            lo = disk_lo;
+        }
+        if disk_hi < hi {
+            hi = disk_hi;
+        }
+        if hi <= lo {
+            return None;
+        }
+    }
+    if hi > lo {
+        Some((lo, hi))
+    } else {
+        None
+    }
+}
+
 impl DiagramShape for Ellipse {
     fn compute_exclusive_regions(shapes: &[Self]) -> std::collections::HashMap<RegionMask, f64> {
         use crate::geometry::diagram::{discover_regions, to_exclusive_areas};
@@ -1143,6 +1449,17 @@ impl DiagramShape for Ellipse {
             n_params,
         ))
     }
+
+    fn compute_exclusive_regions_clipped(
+        shapes: &[Self],
+        container: &Rectangle,
+    ) -> Option<std::collections::HashMap<RegionMask, f64>> {
+        Some(compute_exclusive_regions_clipped_ellipse(shapes, container))
+    }
+    // `compute_exclusive_regions_clipped_with_gradient` deliberately falls
+    // back to the trait default (`None`) so `DiagramCost::gradient` uses
+    // central finite differences. Analytical gradients for ellipse + container
+    // are S4 work.
 
     fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
         // Semi-axes are stored in log space (`u = ln(a)`, `v = ln(b)`) so the
@@ -2587,6 +2904,206 @@ mod tests {
             error < 0.15,
             "Three-ellipse Monte Carlo error too large: {:.1}%",
             error * 100.0
+        );
+    }
+
+    // ===== Container clipping (compute_exclusive_regions_clipped_ellipse) =====
+
+    /// An axis-aligned ellipse fully inside the container should keep its
+    /// full area; the complement region is the rest of the container.
+    #[test]
+    fn clipped_single_ellipse_inside_container() {
+        // a = 2, b = 1 → area = 2π.
+        let ellipses = vec![Ellipse::new(Point::new(0.0, 0.0), 2.0, 1.0, 0.0)];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 10.0, 6.0); // 60
+        let areas = compute_exclusive_regions_clipped_ellipse(&ellipses, &container);
+
+        let ellipse_area = areas.get(&0b1).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+        let expected_ellipse = 2.0 * PI;
+
+        assert!(
+            (ellipse_area - expected_ellipse).abs() < 1e-9,
+            "ellipse area {} ≠ 2π",
+            ellipse_area
+        );
+        assert!(
+            (complement - (60.0 - expected_ellipse)).abs() < 1e-9,
+            "complement {} ≠ 60 − 2π",
+            complement
+        );
+    }
+
+    /// A rotated ellipse fully inside the container should still keep its
+    /// full area πab.
+    #[test]
+    fn clipped_rotated_ellipse_inside_container() {
+        let ellipses = vec![Ellipse::new(
+            Point::new(0.0, 0.0),
+            3.0,
+            2.0,
+            std::f64::consts::FRAC_PI_4,
+        )];
+        // Bounding box of rotated (a=3,b=2) is at most 3√2 ≈ 4.24 in each
+        // dimension; 12×12 container gives plenty of room.
+        let container = Rectangle::new(Point::new(0.0, 0.0), 12.0, 12.0);
+        let areas = compute_exclusive_regions_clipped_ellipse(&ellipses, &container);
+
+        let ellipse_area = areas.get(&0b1).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+        let expected_ellipse = 6.0 * PI;
+
+        assert!(
+            (ellipse_area - expected_ellipse).abs() < 1e-9,
+            "rotated ellipse area {} ≠ 6π",
+            ellipse_area
+        );
+        assert!(
+            (complement - (144.0 - expected_ellipse)).abs() < 1e-9,
+            "complement {} ≠ 144 − 6π",
+            complement
+        );
+    }
+
+    /// An ellipse entirely outside the container should contribute zero; the
+    /// complement equals the full container area.
+    #[test]
+    fn clipped_single_ellipse_outside_container() {
+        let ellipses = vec![Ellipse::new(Point::new(100.0, 100.0), 2.0, 1.0, 0.3)];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 4.0); // 16
+        let areas = compute_exclusive_regions_clipped_ellipse(&ellipses, &container);
+
+        let ellipse_area = areas.get(&0b1).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+
+        assert!(
+            ellipse_area.abs() < 1e-9,
+            "ellipse area {} ≠ 0",
+            ellipse_area
+        );
+        assert!(
+            (complement - 16.0).abs() < 1e-9,
+            "complement {} ≠ 16",
+            complement
+        );
+    }
+
+    /// Container fully inside an ellipse: clipped area equals container area;
+    /// complement is zero.
+    #[test]
+    fn clipped_container_fully_inside_ellipse() {
+        // Big ellipse covering the entire container (and then some).
+        let ellipses = vec![Ellipse::new(Point::new(0.0, 0.0), 100.0, 80.0, 0.0)];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 6.0);
+        let areas = compute_exclusive_regions_clipped_ellipse(&ellipses, &container);
+
+        let inside = areas.get(&0b1).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+
+        assert!(
+            (inside - 24.0).abs() < 1e-9,
+            "ellipse-clipped {} ≠ container area",
+            inside
+        );
+        assert!(complement.abs() < 1e-9, "complement {} ≠ 0", complement);
+    }
+
+    /// Sanity: with no shapes, the complement equals the container area.
+    #[test]
+    fn clipped_no_ellipses_complement_equals_container_area() {
+        let ellipses: Vec<Ellipse> = Vec::new();
+        let container = Rectangle::new(Point::new(1.0, 2.0), 3.0, 4.0);
+        let areas = compute_exclusive_regions_clipped_ellipse(&ellipses, &container);
+
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+        assert!(
+            (complement - 12.0).abs() < 1e-9,
+            "complement {} ≠ 12",
+            complement
+        );
+    }
+
+    /// Two overlapping ellipses both fully inside the container: the per-mask
+    /// exclusive areas sum to the union area; complement = box − union.
+    #[test]
+    fn clipped_two_ellipses_inside_sum_to_union_area() {
+        // Two identical axis-aligned ellipses (a=1.5, b=1) horizontally
+        // separated. Both inside an 8×6 box.
+        let ellipses = vec![
+            Ellipse::new(Point::new(-0.7, 0.0), 1.5, 1.0, 0.0),
+            Ellipse::new(Point::new(0.7, 0.0), 1.5, 1.0, 0.0),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 8.0, 6.0); // 48
+        let areas = compute_exclusive_regions_clipped_ellipse(&ellipses, &container);
+
+        let a_only = areas.get(&0b01).copied().unwrap_or(0.0);
+        let b_only = areas.get(&0b10).copied().unwrap_or(0.0);
+        let a_and_b = areas.get(&0b11).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+
+        // Union via per-mask sum.
+        let union = a_only + b_only + a_and_b;
+        // Reference: 2·area − lens area (intersection_area is exact for
+        // ellipses).
+        let lens = ellipses[0].intersection_area(&ellipses[1]);
+        let expected_union = 2.0 * (1.5 * PI) - lens;
+
+        assert!(
+            (union - expected_union).abs() < 1e-9,
+            "union via per-mask sum {} ≠ {}",
+            union,
+            expected_union
+        );
+        assert!(
+            (complement - (48.0 - expected_union)).abs() < 1e-9,
+            "complement {} ≠ box − union",
+            complement
+        );
+    }
+
+    /// Ellipse clipped by exactly one edge: validate against a Monte-Carlo
+    /// reference. Closed-form for a rotated-ellipse single-edge cut is
+    /// painful, so MC is more practical here.
+    #[test]
+    fn clipped_single_ellipse_one_edge_matches_monte_carlo() {
+        // Rotated ellipse at origin; container's top edge cuts through.
+        let ellipses = vec![Ellipse::new(Point::new(0.0, 0.0), 2.0, 1.0, 0.4)];
+        let container = Rectangle::new(Point::new(0.0, -2.0), 100.0, 4.5);
+        // Container bounds: x ∈ [−50, 50], y ∈ [−4.25, 0.25]. Top edge at
+        // y = 0.25 cuts the rotated ellipse.
+        let areas = compute_exclusive_regions_clipped_ellipse(&ellipses, &container);
+
+        let kept = areas.get(&0b1).copied().unwrap_or(0.0);
+
+        // Monte-Carlo reference: sample uniformly in the bounding box of the
+        // rotated ellipse (which fits in [-2.2, 2.2]² for a=2, b=1).
+        let n = 400_000;
+        let mut hits = 0;
+        let mut state: u64 = 0xDEAD_BEEF_CAFE_BABE;
+        let next_u01 = |s: &mut u64| -> f64 {
+            *s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((*s >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        for _ in 0..n {
+            let x = -2.2 + 4.4 * next_u01(&mut state);
+            let y = -2.2 + 4.4 * next_u01(&mut state);
+            let in_ellipse = ellipses[0].contains_point(&Point::new(x, y));
+            let in_box = (-50.0..=50.0).contains(&x) && (-4.25..=0.25).contains(&y);
+            if in_ellipse && in_box {
+                hits += 1;
+            }
+        }
+        let bbox_area = 4.4 * 4.4;
+        let mc_area = bbox_area * (hits as f64) / (n as f64);
+        // 400k samples → stderr ≈ √(p(1-p)/n) · bbox_area; about 0.02
+        // empirically.
+        assert!(
+            (kept - mc_area).abs() < 0.05,
+            "clipped ellipse {} vs MC {}",
+            kept,
+            mc_area
         );
     }
 }

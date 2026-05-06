@@ -607,13 +607,15 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let n_sets = spec.n_sets;
 
         // Container/complement fitting is only wired for shapes that
-        // implement `compute_exclusive_regions_clipped`. In S1 only `Circle`
-        // does; reject other shapes here so failure is reported once at the
-        // top of `fit`, not on every cost call.
+        // implement `compute_exclusive_regions_clipped`. As of S3, `Circle`
+        // and `Ellipse` do; `Square`/`Rectangle` will be added in S5. Reject
+        // unsupported shapes here so the failure is reported once at the top
+        // of `fit`, not on every cost call.
         if spec.complement.is_some() && !shape_supports_container_clipping::<S>() {
             return Err(DiagramError::InvalidCombination(
                 "complement (container/universe) fitting is currently only supported \
-                 with `Circle` shapes; other shape types will be added in a future release"
+                 with `Circle` and `Ellipse` shapes; other shape types will be added \
+                 in a future release"
                     .to_string(),
             ));
         }
@@ -1173,9 +1175,9 @@ fn spec_has_disjoint_pair(spec: &PreprocessedSpec) -> bool {
 /// `Some(empty map)` for impls that override the default and `None` for
 /// shapes still on the default trait impl.
 ///
-/// In S1 only `Circle` overrides the default, so this returns true only for
-/// `S = Circle`. Used at fitter construction to fail early on unsupported
-/// `complement + non-Circle shape` combinations.
+/// As of S3 this returns true for `Circle` and `Ellipse`. `Square`/`Rectangle`
+/// will be added in S5. Used at fitter construction to fail early on
+/// unsupported `complement + shape` combinations.
 fn shape_supports_container_clipping<S: DiagramShape>() -> bool {
     use crate::geometry::primitives::Point;
     use crate::geometry::shapes::Rectangle;
@@ -1893,11 +1895,81 @@ mod tests {
         );
     }
 
-    /// Non-`Circle` shape + complement should be rejected with a clear error
-    /// — no other shape implements clipping yet.
+    /// End-to-end ellipse + complement (S3): the container area should
+    /// match the universe and shape areas should match targets. Mirrors
+    /// `fit_two_circles_small_complement_container_matches_universe` but
+    /// with `Fitter::<Ellipse>`. Loss tolerance is looser than the circle
+    /// case because the ellipse path uses FD gradients (S4 will add
+    /// analytical).
     #[test]
-    fn non_circle_shape_with_complement_errors_at_fit() {
+    fn fit_two_ellipses_small_complement_container_matches_universe() {
         use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(20.0) // universe = 75
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).seed(42).fit().unwrap();
+        let container = layout.container().expect("container present");
+
+        let area = container.width() * container.height();
+        assert!(
+            (area - 75.0).abs() / 75.0 < 0.05,
+            "container area {} ≠ 75 (within 5%)",
+            area
+        );
+        // FD-gradient L-BFGS is less accurate than the circle's analytical
+        // path; allow a higher residual.
+        assert!(
+            layout.loss() < 5e-2,
+            "loss {} should be small",
+            layout.loss()
+        );
+    }
+
+    /// Ellipse + large complement: shapes occupy a small fraction of the
+    /// container, but container area should still match the universe.
+    #[test]
+    fn fit_two_ellipses_large_complement_universe_matches() {
+        use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(945.0) // universe = 1000
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Ellipse>::new(&spec).seed(42).fit().unwrap();
+        let container = layout.container().expect("container present");
+
+        let area = container.width() * container.height();
+        assert!(
+            (area - 1000.0).abs() / 1000.0 < 0.05,
+            "container area {} ≠ 1000 (within 5%)",
+            area
+        );
+        let union_target = 55.0;
+        assert!(
+            area > 10.0 * union_target,
+            "container area {} should be much larger than union {}",
+            area,
+            union_target
+        );
+    }
+
+    /// Shapes that don't yet implement clipping (Square / Rectangle) +
+    /// complement should be rejected with a clear error.
+    #[test]
+    fn unsupported_shape_with_complement_errors_at_fit() {
+        use crate::geometry::shapes::Square;
 
         let spec = DiagramSpecBuilder::new()
             .set("A", 25.0)
@@ -1908,10 +1980,14 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = Fitter::<Ellipse>::new(&spec).seed(42).fit();
+        let result = Fitter::<Square>::new(&spec).seed(42).fit();
         assert!(
-            matches!(result, Err(DiagramError::InvalidCombination(ref msg)) if msg.contains("Circle")),
-            "expected InvalidCombination naming Circle, got {:?}",
+            matches!(
+                result,
+                Err(DiagramError::InvalidCombination(ref msg))
+                    if msg.contains("Circle") && msg.contains("Ellipse")
+            ),
+            "expected InvalidCombination naming supported shapes, got {:?}",
             result.map(|_| "Ok(_layout)")
         );
     }

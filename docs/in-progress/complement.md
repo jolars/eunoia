@@ -99,14 +99,28 @@ construction; analytical gradient deferred.
       `DiagramCost::gradient` (2 tests in `final_layout.rs`)
 - [x] `task fmt`, `cargo test --workspace`, `task lint` all green
 
-### S3 — Ellipse clipping (FD gradient)
+### S3 — Ellipse clipping (FD gradient) — **DONE**
 
-- [ ] Lift the `S != Circle` gate to allow Ellipse
-- [ ] Ellipse-vs-axis-aligned-line intersections (parametric `t`
-      from `(x_c + a cos t cos φ - b sin t sin φ)`)
-- [ ] `region_boundary_arcs_ellipse` clipping path
-- [ ] Reuse box-edge stitching from S1
-- [ ] Tests on ellipse + complement (smoke + edge cases)
+- [x] Lift the `S != Circle` gate to allow Ellipse
+      (`fitter.rs::fit_with_optimization`)
+- [x] Ellipse-vs-axis-aligned-line intersections via
+      `A cos t + B sin t = C` (`A = a cos φ`, `B = −b sin φ` for vertical
+      edges; `A = a sin φ`, `B = b cos φ` for horizontal) solved as
+      `t = atan2(B, A) ± acos(C/√(A²+B²))`
+      (`geometry/shapes/ellipse.rs::push_axis_crossings`)
+- [x] `compute_exclusive_regions_clipped_ellipse` — arc clipping via
+      the parametric crossings, box-edge segment intervals via the
+      rotated-ellipse implicit form, area via Green's theorem
+      (`geometry/shapes/ellipse.rs`)
+- [x] Reuse box-edge stitching pattern from S1 (per-edge inside-mask
+      interval intersected across all ellipses in the mask)
+- [x] `Ellipse::compute_exclusive_regions_clipped` overrides the trait
+      default; `compute_exclusive_regions_clipped_with_gradient` stays
+      on the default `None` so `DiagramCost::gradient` falls back to
+      central FD (analytical gradient is S4)
+- [x] Tests: ellipse clipping (7 unit tests) and end-to-end fit
+      (2 tests) — 9 total
+- [x] `task fmt`, `cargo test --workspace`, `task lint` all green
 
 ### S4 — Ellipse analytical gradient with container
 
