@@ -27,9 +27,11 @@ pub enum DiagramError {
     /// cogwheels) which eunoia does not support.
     UnsupportedSetCount(usize),
 
-    /// Diagram specification exceeds the supported number of sets
-    /// ([`crate::constants::MAX_SETS`]). The first field is the requested
-    /// count, the second is the supported maximum.
+    /// Diagram specification exceeds the supported number of sets. The
+    /// `max` field reports the limit that was in effect when the spec was
+    /// built — by default [`crate::constants::MAX_SETS`], or whatever
+    /// override was set via [`crate::DiagramSpecBuilder::max_sets`] (capped
+    /// at [`crate::constants::MAX_SETS_HARD_CAP`]).
     TooManySets { requested: usize, max: usize },
 
     /// A geometric shape was constructed with an out-of-range parameter

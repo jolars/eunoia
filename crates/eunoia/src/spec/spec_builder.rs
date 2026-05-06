@@ -1,7 +1,7 @@
 //! Builder for constructing diagram specifications.
 
 use super::{Combination, DiagramSpec, InputType};
-use crate::constants::MAX_SETS;
+use crate::constants::{MAX_SETS, MAX_SETS_HARD_CAP};
 use crate::error::DiagramError;
 use std::collections::{HashMap, HashSet};
 
@@ -32,6 +32,7 @@ pub struct DiagramSpecBuilder {
     combinations: HashMap<Combination, f64>,
     input_type: Option<InputType>,
     set_order: Vec<String>,
+    max_sets: Option<usize>,
 }
 
 impl Default for DiagramSpecBuilder {
@@ -47,6 +48,7 @@ impl DiagramSpecBuilder {
             combinations: HashMap::new(),
             input_type: None,
             set_order: Vec::new(),
+            max_sets: None,
         }
     }
 
@@ -121,6 +123,33 @@ impl DiagramSpecBuilder {
         self
     }
 
+    /// Overrides the maximum number of sets allowed in this specification.
+    ///
+    /// Defaults to [`crate::constants::MAX_SETS`] (32) when unset. Callers
+    /// that knowingly need to handle larger diagrams can raise the cap up
+    /// to [`crate::constants::MAX_SETS_HARD_CAP`] (63), the absolute
+    /// representational limit set by the `usize` bitset encoding of region
+    /// masks. Values above the hard cap are silently clamped to it.
+    ///
+    /// Note that increasing this value does not make large dense diagrams
+    /// tractable: a fully-overlapping `n`-set diagram has `2^n - 1` regions,
+    /// so memory and runtime grow exponentially. Sparse inputs (most
+    /// subsets empty) remain tractable at any `n` up to the hard cap.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::DiagramSpecBuilder;
+    ///
+    /// let builder = DiagramSpecBuilder::new()
+    ///     .set("A", 1.0)
+    ///     .max_sets(40);
+    /// ```
+    pub fn max_sets(mut self, max_sets: usize) -> Self {
+        self.max_sets = Some(max_sets.min(MAX_SETS_HARD_CAP));
+        self
+    }
+
     /// Builds the diagram specification, validating all inputs.
     ///
     /// # Errors
@@ -189,14 +218,16 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // Enforce the hard cap on set count. The internal RegionMask is a
-        // usize bitset, but we cap well below the bit limit because a fully
-        // overlapping diagram has 2^n - 1 regions — sparse inputs scale fine
-        // up to MAX_SETS, but the worst case is bounded.
-        if ordered_set_names.len() > MAX_SETS {
+        // Enforce the cap on set count. The internal RegionMask is a usize
+        // bitset, but the default cap (MAX_SETS) sits well below the bit
+        // limit because a fully overlapping diagram has 2^n - 1 regions.
+        // Callers can raise the cap via `max_sets`, clamped to
+        // MAX_SETS_HARD_CAP.
+        let effective_max = self.max_sets.unwrap_or(MAX_SETS);
+        if ordered_set_names.len() > effective_max {
             return Err(DiagramError::TooManySets {
                 requested: ordered_set_names.len(),
-                max: MAX_SETS,
+                max: effective_max,
             });
         }
 
@@ -435,6 +466,80 @@ mod tests {
         assert_eq!(spec.set_names().len(), MAX_SETS);
         // Sparse: exactly one inclusive entry per singleton, no power-set blowup.
         assert_eq!(spec.inclusive_areas().len(), MAX_SETS);
+    }
+
+    #[test]
+    fn test_max_sets_override_raises_cap() {
+        // With an override, MAX_SETS + 1 singletons should now build cleanly.
+        let n = MAX_SETS + 1;
+        let mut builder = DiagramSpecBuilder::new().max_sets(n);
+        for i in 0..n {
+            builder = builder.set(format!("S{i}"), 1.0);
+        }
+        let spec = builder
+            .build()
+            .expect("MAX_SETS + 1 singletons should build with override");
+        assert_eq!(spec.set_names().len(), n);
+    }
+
+    #[test]
+    fn test_max_sets_override_still_enforces_limit() {
+        // Override of N rejects N + 1 distinct singletons.
+        let limit = MAX_SETS + 2;
+        let mut builder = DiagramSpecBuilder::new().max_sets(limit);
+        for i in 0..(limit + 1) {
+            builder = builder.set(format!("S{i}"), 1.0);
+        }
+        let result = builder.build();
+        assert!(
+            matches!(
+                result,
+                Err(DiagramError::TooManySets { requested, max })
+                if requested == limit + 1 && max == limit
+            ),
+            "expected TooManySets reporting the overridden cap, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_max_sets_override_clamped_to_hard_cap() {
+        // Asking for more than the hard cap silently clamps. Building one
+        // more set than the hard cap must report `max = MAX_SETS_HARD_CAP`.
+        let n = MAX_SETS_HARD_CAP + 1;
+        let mut builder = DiagramSpecBuilder::new().max_sets(usize::MAX);
+        for i in 0..n {
+            builder = builder.set(format!("S{i}"), 1.0);
+        }
+        let result = builder.build();
+        assert!(
+            matches!(
+                result,
+                Err(DiagramError::TooManySets { requested, max })
+                if requested == n && max == MAX_SETS_HARD_CAP
+            ),
+            "expected TooManySets clamped to MAX_SETS_HARD_CAP, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_max_sets_below_default_tightens_cap() {
+        // Override below the default tightens the limit.
+        let mut builder = DiagramSpecBuilder::new().max_sets(2);
+        for i in 0..3 {
+            builder = builder.set(format!("S{i}"), 1.0);
+        }
+        let result = builder.build();
+        assert!(
+            matches!(
+                result,
+                Err(DiagramError::TooManySets { requested, max })
+                if requested == 3 && max == 2
+            ),
+            "expected TooManySets with tightened cap, got {:?}",
+            result
+        );
     }
 
     #[test]
