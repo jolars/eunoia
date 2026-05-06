@@ -255,7 +255,7 @@ pub trait DiagramShape: Closed {
         None
     }
 
-    /// Gradient companion to [`compute_exclusive_regions_clipped`].
+    /// Gradient companion to `compute_exclusive_regions_clipped`.
     ///
     /// Returns `Some((exclusive_areas, gradients))` where each `gradients[mask]`
     /// is a length-`n_sets · Self::n_params() + 4` vector laid out as the
