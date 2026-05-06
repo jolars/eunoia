@@ -48,6 +48,16 @@ export interface SquareShape {
   labelY: number;
 }
 
+export interface RectangleShape {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  labelX: number;
+  labelY: number;
+}
+
 export interface RegionPolygon {
   combination: string;
   pieces: RegionPiece[];
@@ -70,11 +80,12 @@ export interface FitMetrics {
 
 export interface FitResult {
   shapeMode: "outline" | "region";
-  shapeType: "circle" | "ellipse" | "square";
+  shapeType: "circle" | "ellipse" | "square" | "rectangle";
   polygons: Polygon[];
   circles: CircleShape[];
   ellipses: EllipseShape[];
   squares: SquareShape[];
+  rectangles: RectangleShape[];
   regions: RegionPolygon[];
   /** Per-set label anchors keyed by set name. Populated in region mode from `PlotData::set_anchors`; empty in outline mode (use shape `labelX/labelY` instead). */
   setAnchors: Record<string, { x: number; y: number }>;
@@ -83,7 +94,7 @@ export interface FitResult {
 
 export type Row = { input: string; size: number };
 export type InputType = "exclusive" | "inclusive";
-export type ShapeType = "circle" | "ellipse" | "square";
+export type ShapeType = "circle" | "ellipse" | "square" | "rectangle";
 export type DiagramType = "euler" | "venn";
 /** Set count for canonical Venn diagrams. Limited to the range supported by `VennDiagram::new` (1..=5). */
 export type VennSetCount = 1 | 2 | 3 | 4 | 5;

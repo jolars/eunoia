@@ -22,8 +22,8 @@ Generate area-proportional Euler and Venn diagrams by:
 
 ## Supported Shapes
 
-- **Current**: Circles, Ellipses, Squares (axis-aligned)
-- **Planned**: Rotated squares / general rectangles, triangles
+- **Current**: Circles, Ellipses, Squares (axis-aligned), Rectangles (axis-aligned)
+- **Planned**: Rotated squares / rotated rectangles, triangles
 
 ## Features
 
@@ -80,7 +80,7 @@ Pure Rust library with no platform-specific dependencies.
   - `shapes/`: Shape implementations
     - `circle.rs`: Circle shape implementation
     - `ellipse.rs`: Ellipse shape implementation (exact conic intersections, incl. 3+)
-    - `rectangle.rs`: Rectangle primitive (axis-aligned, used for bounding boxes; not a `DiagramShape`)
+    - `rectangle.rs`: Axis-aligned rectangle. Doubles as a primitive (used by every shape's `BoundingBox` impl) and as a `DiagramShape` (4 params: `[x, y, width, height]`). Geometric and optimizer encodings differ — see the [`Rectangle`](#rectangle-vs-square) bullet below.
     - `square.rs`: Square shape implementation (axis-aligned, 3 params: `[x, y, side]`; n-way intersections are exact axis-aligned rectangles)
     - `polygon.rs`: Polygon primitive for visualization output
   - `operations/`: Specialized geometric operations (currently `overlaps.rs`)
@@ -130,6 +130,7 @@ Interactive diagram viewer built with Svelte + TypeScript.
    - Circle: closed-form lens-area inversion (Brent root-finding on the analytic overlap formula).
    - Ellipse: same as Circle — the MDS warm-start treats every ellipse as a circle of equal area.
    - Square (axis-aligned): inverts overlap along the diagonal `|dx| = |dy|`, giving `d = √2 · ((s_i + s_j)/2 − √target_overlap)`.
+   - Rectangle (axis-aligned): same diagonal-direction inversion as Square — the MDS phase treats each rectangle as a square of equal area; aspect ratio is recovered by the final stage.
    - This produces initial `(x, y)` positions per set, consistent with each shape's own overlap geometry.
 
 2. **Convert to Shape-Specific Optimizer Parameters**:
@@ -137,6 +138,7 @@ Interactive diagram viewer built with Svelte + TypeScript.
    - Circle: `[x, y, r]` → `[x, y, r]` (identity, linear)
    - Ellipse: `[x, y, r]` → `[x, y, ln(r), ln(r), 0.0]` (semi-axes in **log space** for the unbounded LM solver)
    - Square: `[x, y, r]` → `[x, y, r·√π]` (equal-area mapping — the resulting square has area `πr²`)
+   - Rectangle: `[x, y, r]` → `[x, y, ln(π·r²), 0.0]` (square of equal area; `ln(area) + ln(ratio)` optimizer encoding decouples size from aspect ratio)
 
 3. **Final Optimization (shape-specific)**:
    - Optimizes actual shape parameters (not circles!)
@@ -462,7 +464,7 @@ eulerr's `input` argument is:
 - ✅ Point-based coordinate system (`Point`)
 - ✅ **Shape trait with generic parameter system**
 - ✅ Circle implementation with full geometric operations and exact area computation
-- ✅ Rectangle implementation for bounding boxes
+- ✅ Rectangle implementation: doubles as a bounding-box primitive and as an axis-aligned `DiagramShape` (4 params: `[x, y, width, height]` geometric / `[x, y, ln(area), ln(ratio)]` optimizer where `area = w·h`, `ratio = w/h`). The optimizer encoding rotates `(ln w, ln h)` 45° in log-space so the size axis (constrained by singleton targets) and the aspect-ratio axis (constrained only by overlap geometry) decouple, giving the unbounded LM/CMA-ES solver a much better-conditioned Hessian than `[ln w, ln h]` would. See the `Rectangle` bullet below.
 - ✅ Line and LineSegment primitives
 - ✅ **Trait-based design with generic `Shape` trait**
   - `compute_exclusive_regions()` - Shape-specific exact area computation
@@ -495,7 +497,8 @@ eulerr's `input` argument is:
 - ✅ Named quality metrics on `Layout`: `region_error()`, `diag_error()`, `stress()` (β-scaled venneuler form), `residuals()`.
 - ✅ Canonical Venn warm-start in slot 0 of `n_restarts` (always-on, no opt-in flag). Builds full shape parameters from `crate::venn::VennDiagram::new(n)` (rotationally-symmetric circles for `n ≤ 3`, Wilkinson/Edwards ellipses for `n ∈ {4, 5}`, axis-aligned squares for `n ∈ {2, 3}`), scales to the spec's mean radius (circles/ellipses) or mean side length (squares), and dispatches the final-stage optimizer directly via `final_layout::optimize_from_initial`. Replaces (does not add to) slot 0; remaining 9 slots run the standard MDS path. Auto-skipped when not applicable: `n_sets > 4` for circles, `> 5` for ellipses, `> 3` for squares, any disjoint pair in the spec (Venn topology forces every region positive), or shape `S` not in {Circle, Ellipse, Square}; in those cases slot 0 stays on the random MDS path. Dispatch is by `TypeId` since the per-shape parameter encodings (`[x,y,r]` vs `[x,y,ln a, ln b, phi]` vs `[x,y,side]`) are not interchangeable. Closes `issue92_3_set_dropped_pair` ellipse fits from a basin LM-on-LM-on-CMA-ES gets stuck at (median 1.309e-4 across all `QUALITY_SEEDS`) to ~1.4e-31 across all seeds; lifts ellipse spec wins from 18 → 19 in `examples/quality_report` at ~2% wall-time cost. No-op on circles (most circle specs are out of range or already at the optimum). Helpers in `fitter.rs::venn_warm_start_params` / `fitter.rs::spec_has_disjoint_pair`.
 - ✅ Analytical final-stage gradient for **circles and ellipses** with `NormalizedSumSquared` and `SumSquared` losses. Derived from boundary-velocity (`dA/dθ = ∮_∂R (v·n) ds`) on a CCW arc decomposition of each region; chained through inclusion-exclusion to exclusive-area gradients. Wired into `DiagramCost::gradient` and used transparently by L-BFGS / CG / TrustRegion. Falls back to central finite differences when the loss doesn't expose an analytical gradient. ~12-32× faster on circles (n=3 → n=8), ~14-32× faster on ellipses (gradient call only). Boundary builders: `geometry/shapes/circle.rs::region_boundary_arcs` (3 params/shape) and `geometry/shapes/ellipse.rs::region_boundary_arcs_ellipse` (5 params/shape, `t = atan2(v·a, u·b)` parameterisation, with index tiebreaker for boundary-coincident ellipses). Shared IE-gradient combiner in `geometry/diagram.rs::to_exclusive_areas_and_gradients`; loss derivative in `loss.rs::LossType::compute_with_gradient`; trait dispatch in `geometry/traits.rs::DiagramShape::compute_exclusive_regions_with_gradient`.
-- ❌ Rotated squares / general rectangles not implemented (axis-aligned `Square` is in)
+- ✅ Axis-aligned `Rectangle` shape (`[x, y, w, h]` geometric; `[x, y, ln(w·h), ln(w/h)]` optimizer). `compute_exclusive_regions` mirrors `Square`: the n-way intersection of axis-aligned rectangles is itself one axis-aligned rectangle, exact in closed form. Analytical edge-velocity gradient with full chain-rule into the log-area / log-ratio basis (`compute_exclusive_regions_with_gradient_rectangles` in `geometry/shapes/rectangle.rs`); FD-verified to ~1e-7 in smooth configurations and ~1e-5 with edge ties. MDS uses `Rectangle::mds_target_distance` (same diagonal-direction inversion as Square, treating rectangles as equal-area squares — the final stage refines aspect ratio). Canonical Venn warm-start at `n ∈ {1, 2, 3}` (square footprint, ratio = 1) via `VENN_SEED_MAX_SETS_RECTANGLE`. Wired into `examples/quality_report` (29-entry corpus, all `Fittable::Normal`), into the WASM surface (`WasmRectangle`, `RectangleResult`, `generate_from_spec_rectangle`, `generate_rectangles_as_polygons`, `generate_region_polygons_rectangles`), the npm wrapper, and the web app's shape picker.
+- ❌ Rotated squares / rotated rectangles not implemented
 - ❌ Triangle shape not implemented
 - ❌ Label placement algorithms not implemented (poles of inaccessibility)
 - ❌ C/FFI or extendr bindings for R not yet started

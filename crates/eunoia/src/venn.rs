@@ -158,7 +158,7 @@ fn default_name(i: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::shapes::{Ellipse, Square};
+    use crate::geometry::shapes::{Ellipse, Rectangle, Square};
 
     fn approx_eq(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-10
@@ -390,6 +390,59 @@ mod tests {
     #[test]
     fn test_square_five_sets_unsupported() {
         let err = VennDiagram::<Square>::new(5).unwrap_err();
+        assert_eq!(err, DiagramError::UnsupportedSetCount(5));
+    }
+
+    /// Rectangle Venn arrangements only exist for n ∈ {1, 2, 3} (same cap
+    /// as Square — the obstruction is the axis-aligned topology, not the
+    /// width/height freedom). The 2ⁿ − 1 region invariant must still hold.
+    #[test]
+    fn test_topology_is_true_venn_rectangle() {
+        for n in 1..=3usize {
+            let layout = VennDiagram::<Rectangle>::new(n).unwrap().into_layout();
+            let expected = (1usize << n) - 1;
+            let fitted = layout.fitted();
+            assert_eq!(
+                fitted.len(),
+                expected,
+                "rectangle n={}: expected {} non-empty regions, got {}",
+                n,
+                expected,
+                fitted.len()
+            );
+            for (combo, &area) in fitted {
+                assert!(
+                    area > 1e-9,
+                    "rectangle n={}: region {} has area {} (too small)",
+                    n,
+                    combo,
+                    area
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_rectangle_default_names() {
+        let venn = VennDiagram::<Rectangle>::new(3).unwrap();
+        assert_eq!(venn.names(), &["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_rectangle_zero_sets_unsupported() {
+        let err = VennDiagram::<Rectangle>::new(0).unwrap_err();
+        assert_eq!(err, DiagramError::UnsupportedSetCount(0));
+    }
+
+    #[test]
+    fn test_rectangle_four_sets_unsupported() {
+        let err = VennDiagram::<Rectangle>::new(4).unwrap_err();
+        assert_eq!(err, DiagramError::UnsupportedSetCount(4));
+    }
+
+    #[test]
+    fn test_rectangle_five_sets_unsupported() {
+        let err = VennDiagram::<Rectangle>::new(5).unwrap_err();
         assert_eq!(err, DiagramError::UnsupportedSetCount(5));
     }
 }

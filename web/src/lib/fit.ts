@@ -176,6 +176,7 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
       circles: [],
       ellipses: [],
       squares: [],
+      rectangles: [],
       regions: normRegions(layout.regions, ctx),
       setAnchors: normSetAnchors(layout.setAnchors, ctx),
       metrics,
@@ -201,6 +202,7 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
     circles: [],
     ellipses: [],
     squares: [],
+    rectangles: [],
     regions: [],
     setAnchors: {},
     metrics,
@@ -234,6 +236,16 @@ function layoutToFitResult(layout: Layout, shapeType: ShapeType): FitResult {
       side: s.side * ctx.scale,
       labelX: (s.labelAnchor.x - ctx.minX) * ctx.scale,
       labelY: (s.labelAnchor.y - ctx.minY) * ctx.scale,
+    }));
+  } else if (layout.shape === "rectangle") {
+    result.rectangles = layout.rectangles.map((r) => ({
+      label: r.label,
+      x: (r.x - ctx.minX) * ctx.scale,
+      y: (r.y - ctx.minY) * ctx.scale,
+      width: r.width * ctx.scale,
+      height: r.height * ctx.scale,
+      labelX: (r.labelAnchor.x - ctx.minX) * ctx.scale,
+      labelY: (r.labelAnchor.y - ctx.minY) * ctx.scale,
     }));
   }
 

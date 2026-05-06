@@ -47,6 +47,11 @@ const VENN_SEED_MAX_SETS_ELLIPSE: usize = 5;
 /// [`crate::venn`] — n ≥ 4 has no axis-aligned-square Venn (any four
 /// axis-aligned rectangles miss at least one of the `2ⁿ − 1` regions).
 const VENN_SEED_MAX_SETS_SQUARE: usize = 3;
+/// Maximum `n_sets` for which the Venn warm-start is attempted under
+/// [`Fitter::<Rectangle>`]. Same cap as [`VENN_SEED_MAX_SETS_SQUARE`] — the
+/// Venn topology obstruction at n ≥ 4 applies to any axis-aligned shape
+/// regardless of width/height freedom.
+const VENN_SEED_MAX_SETS_RECTANGLE: usize = 3;
 
 /// Fitter for creating diagram layouts from specifications.
 ///
@@ -968,7 +973,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
 ) -> Option<Vec<f64>> {
-    use crate::geometry::shapes::{Ellipse, Square};
+    use crate::geometry::shapes::{Ellipse, Rectangle, Square};
     use std::any::TypeId;
 
     let n_sets = spec.n_sets;
@@ -1002,6 +1007,33 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
             // Square params are `[x, y, side]`; bypass `optimizer_params_from_circle`
             // (which would re-encode `side` as `r·√π` and shrink the seed).
             params.extend([c.x() * mean_side, c.y() * mean_side, sq.side() * mean_side]);
+        }
+        return Some(params);
+    }
+
+    if type_id == TypeId::of::<Rectangle>() {
+        if n_sets > VENN_SEED_MAX_SETS_RECTANGLE {
+            return None;
+        }
+        // Rectangle's canonical Venn at n ≤ 3 uses square footprints
+        // (width = height = side); aspect ratio = 1 → ln(ratio) = 0. Scale
+        // sides by `mean(sqrt(area_i))` so the area magnitude matches the
+        // spec, then encode as optimizer params `[x, y, ln(area), 0]`.
+        let mean_side: f64 = if !spec.set_areas.is_empty() {
+            let total: f64 = spec.set_areas.iter().map(|a| a.sqrt()).sum();
+            (total / spec.set_areas.len() as f64).max(1e-6)
+        } else {
+            1.0
+        };
+        let venn = VennDiagram::<Rectangle>::new(n_sets).ok()?;
+        let mut params = Vec::with_capacity(n_sets * pp);
+        for r in venn.shapes() {
+            let c = r.center();
+            let scaled_w = r.width() * mean_side;
+            let scaled_h = r.height() * mean_side;
+            let u = (scaled_w * scaled_h).ln();
+            let v = (scaled_w / scaled_h).ln();
+            params.extend([c.x() * mean_side, c.y() * mean_side, u, v]);
         }
         return Some(params);
     }

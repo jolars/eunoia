@@ -80,6 +80,12 @@
         consume({ x: s.x - h, y: s.y - h });
         consume({ x: s.x + h, y: s.y + h });
       }
+      for (const r of result.rectangles) {
+        const hw = r.width / 2;
+        const hh = r.height / 2;
+        consume({ x: r.x - hw, y: r.y - hh });
+        consume({ x: r.x + hw, y: r.y + hh });
+      }
     }
 
     if (!isFinite(minX)) {
@@ -103,6 +109,7 @@
     if (result.circles.length > 0) return result.circles.map((c) => c.label);
     if (result.ellipses.length > 0) return result.ellipses.map((e) => e.label);
     if (result.squares.length > 0) return result.squares.map((s) => s.label);
+    if (result.rectangles.length > 0) return result.rectangles.map((r) => r.label);
     return result.polygons.map((p) => p.label);
   });
 
@@ -412,6 +419,18 @@
           stroke="none"
         />
       {/each}
+      {#each result.rectangles as rect, i}
+        {@const color = setColorMap.get(rect.label) || defaultColorFor(i)}
+        <rect
+          x={rect.x - rect.width / 2}
+          y={rect.y - rect.height / 2}
+          width={rect.width}
+          height={rect.height}
+          fill={color}
+          fill-opacity={style.alpha}
+          stroke="none"
+        />
+      {/each}
       {#if showStroke}
         {#each result.circles as circle}
           <circle
@@ -441,6 +460,17 @@
             y={square.y - square.side / 2}
             width={square.side}
             height={square.side}
+            fill="none"
+            stroke="black"
+            stroke-width={strokeW}
+          />
+        {/each}
+        {#each result.rectangles as rect}
+          <rect
+            x={rect.x - rect.width / 2}
+            y={rect.y - rect.height / 2}
+            width={rect.width}
+            height={rect.height}
             fill="none"
             stroke="black"
             stroke-width={strokeW}
@@ -486,12 +516,26 @@
           {square.label}
         </text>
       {/each}
+      {#each result.rectangles as rect}
+        <text
+          x={rect.labelX ?? rect.x}
+          y={rect.labelY ?? rect.y}
+          text-anchor="middle"
+          dominant-baseline="central"
+          font-size={style.labelSize}
+          font-weight={fontWeight}
+          font-style={fontItalic}
+        >
+          {rect.label}
+        </text>
+      {/each}
       {#if style.showCounts && result.shapeMode === "outline"}
         {#each Object.entries(result.metrics?.fitted ?? {}) as [combo, area]}
           {#if combo.indexOf("&") < 0}
             {@const c = result.circles.find((c) => c.label === combo)}
             {@const e = result.ellipses.find((e) => e.label === combo)}
             {@const sq = result.squares.find((s) => s.label === combo)}
+            {@const rc = result.rectangles.find((r) => r.label === combo)}
             {#if c}
               <text
                 x={c.labelX ?? c.x}
@@ -518,6 +562,17 @@
               <text
                 x={sq.labelX ?? sq.x}
                 y={(sq.labelY ?? sq.y) + style.labelSize}
+                text-anchor="middle"
+                dominant-baseline="central"
+                font-size={style.labelSize * 0.75}
+                fill="#374151"
+              >
+                {fmt(area)}
+              </text>
+            {:else if rc}
+              <text
+                x={rc.labelX ?? rc.x}
+                y={(rc.labelY ?? rc.y) + style.labelSize}
                 text-anchor="middle"
                 dominant-baseline="central"
                 font-size={style.labelSize * 0.75}

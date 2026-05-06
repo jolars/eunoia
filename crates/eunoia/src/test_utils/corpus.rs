@@ -55,6 +55,8 @@ pub struct CorpusEntry {
     pub max_diag_error_ellipse: Option<f64>,
     /// Explicit per-shape `diag_error` ceiling for squares.
     pub max_diag_error_square: Option<f64>,
+    /// Explicit per-shape `diag_error` ceiling for rectangles.
+    pub max_diag_error_rectangle: Option<f64>,
     /// How the harness should treat the spec under [`Circle`].
     ///
     /// [`Circle`]: crate::geometry::shapes::Circle
@@ -67,6 +69,10 @@ pub struct CorpusEntry {
     ///
     /// [`Square`]: crate::geometry::shapes::Square
     pub fittable_square: Fittable,
+    /// How the harness should treat the spec under [`Rectangle`].
+    ///
+    /// [`Rectangle`]: crate::geometry::shapes::Rectangle
+    pub fittable_rectangle: Fittable,
 }
 
 impl CorpusEntry {
@@ -86,6 +92,12 @@ impl CorpusEntry {
     /// Resolve the active `diag_error` ceiling for squares.
     pub fn ceiling_square(&self) -> f64 {
         self.max_diag_error_square
+            .unwrap_or_else(|| default_ceiling(self.category))
+    }
+
+    /// Resolve the active `diag_error` ceiling for rectangles.
+    pub fn ceiling_rectangle(&self) -> f64 {
+        self.max_diag_error_rectangle
             .unwrap_or_else(|| default_ceiling(self.category))
     }
 }
@@ -160,9 +172,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(3e-2),
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "three_disjoint",
@@ -171,9 +185,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: None,
         max_diag_error_ellipse: None,
         max_diag_error_square: None,
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "one_contained",
@@ -185,9 +201,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "two_inside_third",
@@ -196,9 +214,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "one_contained_others_interacting",
@@ -208,9 +228,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(8e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "russian_doll",
@@ -220,9 +242,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(5e-2),
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "unequal_overlaps",
@@ -234,9 +258,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: None,
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "two_disjoint",
@@ -245,9 +271,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: None,
         max_diag_error_ellipse: None,
         max_diag_error_square: None,
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "wilkinson_6_set",
@@ -259,9 +287,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(5e-2),
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "gene_sets",
@@ -270,9 +300,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "three_inside_fourth",
@@ -281,9 +313,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(5e-2),
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "eulerape_3_set",
@@ -297,9 +331,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(2e-2),
         max_diag_error_ellipse: Some(2e-2),
         max_diag_error_square: Some(2e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "one_disjoint_two_intersecting",
@@ -308,9 +344,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: None,
         max_diag_error_ellipse: None,
         max_diag_error_square: None,
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "four_uniform_interactions",
@@ -320,9 +358,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "two_overlapping_completely",
@@ -331,9 +371,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: None,
         max_diag_error_ellipse: None,
         max_diag_error_square: None,
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "single_set",
@@ -342,10 +384,12 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: None,
         max_diag_error_ellipse: None,
         max_diag_error_square: None,
+        max_diag_error_rectangle: None,
         // Preprocessing rejects n_sets <= 1, so fit() returns Err.
         fittable_circle: Fittable::SanityOnly,
         fittable_ellipse: Fittable::SanityOnly,
         fittable_square: Fittable::SanityOnly,
+        fittable_rectangle: Fittable::SanityOnly,
     },
     CorpusEntry {
         name: "random_4_set",
@@ -364,9 +408,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_ellipse: Some(3e-2),
         // Squares land deterministically at ~7.5e-2 across TEST_SEEDS.
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     // -- issue-derived specs (eulerr issue tracker) --
     // These come from real bug reports against eulerr's `euler()` and exercise
@@ -383,9 +429,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1.5e-1),
         max_diag_error_ellipse: Some(7e-2),
         max_diag_error_square: Some(1.5e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue114_4_set_dominant_quad",
@@ -396,9 +444,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(5e-2),
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue47_3_set_huge_triple",
@@ -411,9 +461,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_ellipse: Some(3e-2),
         // Squares land at ~7.0-7.3e-2 — barely under the natural 8e-2 cap.
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue92_3_set_dropped_pair",
@@ -424,9 +476,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: Some(2e-2),
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue44_4_set_inclusive",
@@ -441,9 +495,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_ellipse: Some(1e-1),
         // Squares land at ~9.3e-2 typically but seed=7 hits 1.01e-1.
         max_diag_error_square: Some(1.5e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue71_4_set_extreme_scale",
@@ -456,9 +512,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(ISSUE71_ELLIPSE_CEILING),
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue103_4_set_missing_d",
@@ -469,9 +527,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1e-1),
         max_diag_error_ellipse: Some(5e-2),
         max_diag_error_square: Some(1e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue32_3_set_small_triple",
@@ -484,9 +544,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_ellipse: Some(2e-2),
         // Squares land at ~4.4-5.9e-2 across TEST_SEEDS.
         max_diag_error_square: Some(7e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue91_6_set",
@@ -499,9 +561,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(2e-1),
         max_diag_error_ellipse: Some(1e-1),
         max_diag_error_square: Some(2e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "issue111_3_set_asymmetric",
@@ -512,9 +576,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(5e-2),
         max_diag_error_ellipse: Some(2e-2),
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "three_set_small_overlaps",
@@ -527,9 +593,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(3e-2),
         max_diag_error_ellipse: None,
         max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
     CorpusEntry {
         name: "three_set_triple_only",
@@ -543,9 +611,11 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_circle: Some(1.5e-1),
         max_diag_error_ellipse: Some(2e-2),
         max_diag_error_square: Some(1.5e-1),
+        max_diag_error_rectangle: None,
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
     },
 ];
 

@@ -46,7 +46,7 @@ mod quality_report {
     use std::path::PathBuf;
     use std::time::Instant;
 
-    use eunoia::geometry::shapes::{Circle, Ellipse, Square};
+    use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
     use eunoia::geometry::traits::DiagramShape;
     use eunoia::loss::LossType;
     use eunoia::test_utils::corpus::{all, CorpusEntry, Fittable, QUALITY_SEEDS};
@@ -166,8 +166,9 @@ mod quality_report {
         let circle_configs = shape_configs::<Circle>();
         let ellipse_configs = shape_configs::<Ellipse>();
         let square_configs = shape_configs::<Square>();
+        let rectangle_configs = shape_configs::<Rectangle>();
         eprintln!(
-            "Running quality sweep: {} configs × 3 shapes × 27 specs × {} seeds.",
+            "Running quality sweep: {} configs × 4 shapes × 27 specs × {} seeds.",
             circle_configs.len(),
             QUALITY_SEEDS.len()
         );
@@ -205,6 +206,17 @@ mod quality_report {
                 *cfg_fn,
                 "square",
                 |e| e.fittable_square,
+                &mut all_rows,
+            );
+            eprintln!();
+        }
+        for (cfg_name, cfg_fn) in &rectangle_configs {
+            eprintln!("== config: {cfg_name} | shape: rectangle ==");
+            run_config::<Rectangle>(
+                cfg_name,
+                *cfg_fn,
+                "rectangle",
+                |e| e.fittable_rectangle,
                 &mut all_rows,
             );
             eprintln!();
@@ -510,7 +522,7 @@ mod quality_report {
         let _ = writeln!(s, "- Configs swept: `{}`", config_names.join("`, `"));
         let _ = writeln!(s);
 
-        for &shape in &["circle", "ellipse", "square"] {
+        for &shape in &["circle", "ellipse", "square", "rectangle"] {
             render_shape_block(&mut s, rows, config_names, shape, active_loss);
         }
 

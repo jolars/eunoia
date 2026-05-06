@@ -15,7 +15,7 @@ import * as wasm from "./eunoia_wasm.js";
 // Public types
 // ============================================================================
 
-export type ShapeType = "circle" | "ellipse" | "square";
+export type ShapeType = "circle" | "ellipse" | "square" | "rectangle";
 export type InputType = "exclusive" | "inclusive";
 export type OutputMode = "shapes" | "polygons" | "regions";
 export type Optimizer =
@@ -65,6 +65,15 @@ export interface Square {
   labelAnchor: Point;
 }
 
+export interface Rectangle {
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  labelAnchor: Point;
+}
+
 export interface Polygon {
   label: string;
   vertices: Point[];
@@ -100,6 +109,12 @@ export type Layout =
   | { mode: "shapes"; shape: "ellipse"; ellipses: Ellipse[]; metrics: Metrics }
   | { mode: "shapes"; shape: "square"; squares: Square[]; metrics: Metrics }
   | {
+      mode: "shapes";
+      shape: "rectangle";
+      rectangles: Rectangle[];
+      metrics: Metrics;
+    }
+  | {
       mode: "polygons";
       shape: "circle";
       polygons: Polygon[];
@@ -118,6 +133,13 @@ export type Layout =
       shape: "square";
       polygons: Polygon[];
       squares: Square[];
+      metrics: Metrics;
+    }
+  | {
+      mode: "polygons";
+      shape: "rectangle";
+      polygons: Polygon[];
+      rectangles: Rectangle[];
       metrics: Metrics;
     }
   | {
@@ -269,6 +291,17 @@ function squareFrom(s: wasm.WasmSquare): Square {
   };
 }
 
+function rectangleFrom(r: wasm.WasmRectangle): Rectangle {
+  return {
+    label: r.label,
+    x: r.x,
+    y: r.y,
+    width: r.width,
+    height: r.height,
+    labelAnchor: { x: r.label_x, y: r.label_y },
+  };
+}
+
 function polygonFrom(p: wasm.WasmPolygon): Polygon {
   const verts = p.vertices;
   const out: Point[] = verts.map(pointFrom);
@@ -368,7 +401,9 @@ export function fit(options: FitOptions): Layout {
           ? wasm.generate_region_polygons_circles
           : shape === "square"
             ? wasm.generate_region_polygons_squares
-            : wasm.generate_region_polygons_ellipses;
+            : shape === "rectangle"
+              ? wasm.generate_region_polygons_rectangles
+              : wasm.generate_region_polygons_ellipses;
       const result = fn(
         specs,
         inputType,
@@ -400,7 +435,9 @@ export function fit(options: FitOptions): Layout {
         ? wasm.generate_circles_as_polygons
         : shape === "square"
           ? wasm.generate_squares_as_polygons
-          : wasm.generate_ellipses_as_polygons;
+          : shape === "rectangle"
+            ? wasm.generate_rectangles_as_polygons
+            : wasm.generate_ellipses_as_polygons;
     const result = fn(
       specs,
       inputType,
@@ -423,6 +460,7 @@ export function fit(options: FitOptions): Layout {
           freeAll(arr);
           freeAll(result.ellipses);
           freeAll(result.squares);
+          freeAll(result.rectangles);
           return {
             mode: "polygons",
             shape: "circle",
@@ -437,6 +475,7 @@ export function fit(options: FitOptions): Layout {
           freeAll(arr);
           freeAll(result.circles);
           freeAll(result.squares);
+          freeAll(result.rectangles);
           return {
             mode: "polygons",
             shape: "ellipse",
@@ -445,11 +484,27 @@ export function fit(options: FitOptions): Layout {
             metrics,
           };
         }
+        if (shape === "rectangle") {
+          const arr = result.rectangles;
+          const rectangles = arr.map(rectangleFrom);
+          freeAll(arr);
+          freeAll(result.circles);
+          freeAll(result.ellipses);
+          freeAll(result.squares);
+          return {
+            mode: "polygons",
+            shape: "rectangle",
+            polygons,
+            rectangles,
+            metrics,
+          };
+        }
         const arr = result.squares;
         const squares = arr.map(squareFrom);
         freeAll(arr);
         freeAll(result.circles);
         freeAll(result.ellipses);
+        freeAll(result.rectangles);
         return {
           mode: "polygons",
           shape: "square",
@@ -466,6 +521,7 @@ export function fit(options: FitOptions): Layout {
         freeAll(arr);
         freeAll(result.ellipses);
         freeAll(result.squares);
+        freeAll(result.rectangles);
         freeAll(result.polygons);
         return { mode: "shapes", shape: "circle", circles, metrics };
       }
@@ -475,14 +531,26 @@ export function fit(options: FitOptions): Layout {
         freeAll(arr);
         freeAll(result.circles);
         freeAll(result.squares);
+        freeAll(result.rectangles);
         freeAll(result.polygons);
         return { mode: "shapes", shape: "ellipse", ellipses, metrics };
+      }
+      if (shape === "rectangle") {
+        const arr = result.rectangles;
+        const rectangles = arr.map(rectangleFrom);
+        freeAll(arr);
+        freeAll(result.circles);
+        freeAll(result.ellipses);
+        freeAll(result.squares);
+        freeAll(result.polygons);
+        return { mode: "shapes", shape: "rectangle", rectangles, metrics };
       }
       const arr = result.squares;
       const squares = arr.map(squareFrom);
       freeAll(arr);
       freeAll(result.circles);
       freeAll(result.ellipses);
+      freeAll(result.rectangles);
       freeAll(result.polygons);
       return { mode: "shapes", shape: "square", squares, metrics };
     } finally {
@@ -537,6 +605,7 @@ export function venn(options: VennOptions): Layout {
     freeAll(ellipsesArr);
     freeAll(result.circles);
     freeAll(result.squares);
+    freeAll(result.rectangles);
     return {
       mode: "polygons",
       shape: "ellipse",

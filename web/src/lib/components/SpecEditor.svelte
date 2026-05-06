@@ -104,6 +104,15 @@
           />
           <span class="text-sm">Square</span>
         </label>
+        <label class="flex items-center cursor-pointer">
+          <input
+            type="radio"
+            bind:group={appState.shapeType}
+            value="rectangle"
+            class="mr-1.5"
+          />
+          <span class="text-sm">Rectangle</span>
+        </label>
       </div>
     </div>
 
