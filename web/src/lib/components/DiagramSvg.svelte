@@ -6,6 +6,7 @@
     RegionPiece,
   } from "../../types/diagram";
   import { defaultColorFor } from "../colors";
+  import { appState } from "../state.svelte";
 
   interface Props {
     result: FitResult | null;
@@ -100,6 +101,10 @@
     return { minX, minY, maxX, maxY };
   });
 
+  // Result-driven label list (drives lookups for circles/ellipses/etc. and
+  // hole-aware nested labels). Order follows whatever the wasm result
+  // returned; the legend uses `legendLabels` instead so its order stays
+  // stable across reseeds.
   let setLabels: string[] = $derived.by(() => {
     if (!result) return [];
     if (result.shapeMode === "region") {
@@ -119,11 +124,26 @@
     return result.polygons.map((p) => p.label);
   });
 
+  // Legend lists the user-input set order, restricted to labels that
+  // actually appear in the fit result (so deleted/empty rows don't show up).
+  let legendLabels: string[] = $derived.by(() => {
+    const present = new Set(setLabels);
+    return appState.setNames.filter((n) => present.has(n));
+  });
+
+  // Color index keyed off the stable, input-order set list rather than the
+  // fit output, so the same set keeps its color across reseeds and reshuffled
+  // result arrays. Any label that appears in the fit but isn't in the spec
+  // (shouldn't normally happen) falls back to its result-order index.
   let setColorMap: Map<string, string> = $derived.by(() => {
     const m = new Map<string, string>();
-    setLabels.forEach((l, i) =>
-      m.set(l, style.colors[l] ?? defaultColorFor(i)),
-    );
+    const order = appState.setNames;
+    const indexOf = new Map<string, number>();
+    order.forEach((name, i) => indexOf.set(name, i));
+    setLabels.forEach((l, i) => {
+      const idx = indexOf.get(l) ?? i;
+      m.set(l, style.colors[l] ?? defaultColorFor(idx));
+    });
     return m;
   });
 
@@ -214,10 +234,10 @@
 
 
     // Reserve space for the legend.
-    if (result && style.showLegend && setLabels.length > 0) {
+    if (result && style.showLegend && legendLabels.length > 0) {
       const legendW = Math.max(20, style.labelSize * 2);
       const legendH =
-        Math.max(8, style.labelSize * 1.4) * setLabels.length + 8;
+        Math.max(8, style.labelSize * 1.4) * legendLabels.length + 8;
       switch (style.legendPosition) {
         case "right":
           lw += legendW;
@@ -280,13 +300,13 @@
 
   // Legend layout
   let legendBox = $derived.by(() => {
-    if (!result || !style.showLegend || setLabels.length === 0) {
+    if (!result || !style.showLegend || legendLabels.length === 0) {
       return null;
     }
     const swatch = style.labelSize * 0.9;
     const gap = swatch * 0.4;
     const lineH = swatch + gap;
-    const totalH = lineH * setLabels.length;
+    const totalH = lineH * legendLabels.length;
     const padding = swatch * 0.5;
     let x = 0,
       y = 0;
@@ -619,7 +639,7 @@
 
     {#if legendBox}
       <g>
-        {#each setLabels as label, i}
+        {#each legendLabels as label, i}
           {@const yi = legendBox.y + i * legendBox.lineH}
           {@const color = setColorMap.get(label) || defaultColorFor(i)}
           <rect

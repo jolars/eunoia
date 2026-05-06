@@ -2,32 +2,7 @@
   import { appState } from "../state.svelte";
   import { defaultColorFor } from "../colors";
 
-  let setNames = $derived.by(() => {
-    const r = appState.result;
-    if (r) {
-      if (r.circles.length > 0) return r.circles.map((c) => c.label);
-      if (r.ellipses.length > 0) return r.ellipses.map((e) => e.label);
-      if (r.squares.length > 0) return r.squares.map((s) => s.label);
-      if (r.rectangles.length > 0) return r.rectangles.map((r2) => r2.label);
-      if (r.polygons.length > 0) return r.polygons.map((p) => p.label);
-      const seen = new Set<string>();
-      for (const region of r.regions) {
-        for (const ch of region.combination.split("&")) {
-          const t = ch.trim();
-          if (t) seen.add(t);
-        }
-      }
-      return Array.from(seen);
-    }
-    const seen = new Set<string>();
-    for (const row of appState.rows) {
-      for (const ch of row.input.split("&")) {
-        const t = ch.trim();
-        if (t) seen.add(t);
-      }
-    }
-    return Array.from(seen);
-  });
+  let setNames = $derived(appState.setNames);
 
   function colorFor(name: string, idx: number): string {
     return appState.style.colors[name] ?? defaultColorFor(idx);

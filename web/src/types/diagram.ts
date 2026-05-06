@@ -167,8 +167,13 @@ export interface AdvancedOptions {
    * container is rendered as a separate axis-aligned rectangle.
    */
   useComplement: boolean;
-  /** Number of items outside every named set. Only used when `useComplement` is true. */
-  complement: number;
+  /**
+   * Number of items outside every named set. Only used when `useComplement` is
+   * true. `null` when the user has ticked Complement but not yet entered a
+   * value — the fit then skips the universe container until a positive number
+   * is supplied.
+   */
+  complement: number | null;
 }
 
 export interface ExportSettings {

@@ -169,11 +169,17 @@
           bind:value={appState.advanced.complement}
           min="0"
           step="1"
-          class="w-28 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          placeholder="enter a count"
+          class="w-32 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           aria-label="Complement count"
         />
         <span class="text-xs text-gray-500">items outside every set</span>
       </div>
+      {#if appState.advanced.complement === null}
+        <p class="mt-1 text-xs text-amber-600">
+          Container will appear once you enter a count.
+        </p>
+      {/if}
       {#if appState.diagramType === "venn"}
         <p class="mt-1.5 text-xs text-gray-500">
           Venn is topological, so the container is a non-proportional visual

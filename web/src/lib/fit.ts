@@ -290,11 +290,13 @@ function layoutToFitResult(
 }
 
 export function runFit(inputs: FitInputs): FitResult | null {
+  const c = inputs.advanced.complement;
   const complement =
     inputs.advanced.useComplement &&
-    Number.isFinite(inputs.advanced.complement) &&
-    inputs.advanced.complement >= 0
-      ? inputs.advanced.complement
+    typeof c === "number" &&
+    Number.isFinite(c) &&
+    c >= 0
+      ? c
       : undefined;
 
   if (inputs.diagramType === "venn") {

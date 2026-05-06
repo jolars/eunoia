@@ -40,7 +40,7 @@ const DEFAULT_ADVANCED: AdvancedOptions = {
   useSeed: true,
   tolerance: 1e-3,
   useComplement: false,
-  complement: 0,
+  complement: null,
 };
 
 const DEFAULT_EXPORT: ExportSettings = {
@@ -72,6 +72,32 @@ class AppState {
   error = $state("");
   loading = $state(true);
   fitting = $state(false);
+
+  // Stable, input-driven set ordering used for palette indices and the legend.
+  // Derived from the spec (rows / vennN) rather than the fit output, so colors
+  // don't shuffle when the seed changes or the fit re-runs.
+  setNames: string[] = $derived.by(() => {
+    if (this.diagramType === "venn") {
+      const out: string[] = [];
+      for (let i = 0; i < this.vennN; i++) {
+        out.push(String.fromCharCode(65 + i));
+      }
+      return out;
+    }
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const row of this.rows) {
+      const t = row.input.trim();
+      if (!t) continue;
+      for (const part of t.split(/[&|]/)) {
+        const p = part.trim();
+        if (!p || seen.has(p)) continue;
+        seen.add(p);
+        out.push(p);
+      }
+    }
+    return out;
+  });
 
   addRow() {
     this.rows = [...this.rows, { input: "", size: 0 }];
