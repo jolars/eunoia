@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.0](https://github.com/jolars/eunoia/compare/v0.10.0...v0.11.0) (2026-05-06)
+
+### Features
+- introduce `max_sets` option to cap max sets ([`f30ed14`](https://github.com/jolars/eunoia/commit/f30ed14613eac9b1339eda60d5e9cd9bd1e8eab4))
+- add NPM package ([`ad1c3e7`](https://github.com/jolars/eunoia/commit/ad1c3e71cebdd25b310e10dd5dd53bac10d0a15d))
+- implement `from_shapes` and sanitize API ([`6f5dab1`](https://github.com/jolars/eunoia/commit/6f5dab1030d244e53ce351dc332da60b63a17561))
+
+### Performance Improvements
+- add analytical gradients for all smooth losses ([`f973acf`](https://github.com/jolars/eunoia/commit/f973acf5eb6ee08bfc78cac47ceddc6a13fb749d)), closes [#39](https://github.com/jolars/eunoia/issues/39)
 ## [0.10.0](https://github.com/jolars/eunoia/compare/v0.9.0...v0.10.0) (2026-05-04)
 
 ### Features
