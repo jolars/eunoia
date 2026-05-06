@@ -34,7 +34,7 @@ export default defineConfig({
     topLevelAwait(),
     svelte(),
     Sitemap({
-      hostname: "https://eunoia.fit",
+      hostname: "https://eunoia.bz",
       dynamicRoutes: ["/", "/app/", "/about/", "/cite/"],
     }),
     viteCompression({ algorithm: "brotliCompress" }),
