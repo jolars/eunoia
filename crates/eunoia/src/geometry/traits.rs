@@ -237,6 +237,42 @@ pub trait DiagramShape: Closed {
         None
     }
 
+    /// Compute exclusive region areas clipped to an axis-aligned container
+    /// rectangle, including the all-zeros region (mask `0`) representing the
+    /// area of `container ∖ ⋃ shapes`. Used when the diagram spec carries a
+    /// complement target.
+    ///
+    /// Returns `None` for shapes without a clipping implementation. The fitter
+    /// validates this at construction time when `spec.complement.is_some()` so
+    /// non-clippable shapes never reach the cost path.
+    fn compute_exclusive_regions_clipped(
+        _shapes: &[Self],
+        _container: &Rectangle,
+    ) -> Option<std::collections::HashMap<crate::geometry::diagram::RegionMask, f64>>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
+    /// Gradient companion to [`compute_exclusive_regions_clipped`].
+    ///
+    /// Returns `Some((exclusive_areas, gradients))` where each `gradients[mask]`
+    /// is a length-`n_sets · Self::n_params() + 4` vector laid out as the
+    /// per-shape parameter block followed by the container's optimizer
+    /// encoding (`[x_c, y_c, ln(area), ln(ratio)]`). The default
+    /// implementation returns `None`, signalling to the optimiser that finite
+    /// differences should be used instead.
+    fn compute_exclusive_regions_clipped_with_gradient(
+        _shapes: &[Self],
+        _container: &Rectangle,
+    ) -> Option<ExclusiveRegionsAndGradient>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
     /// Canonical Venn-diagram layout for `n` sets, or `None` if no canonical
     /// arrangement exists for this shape at this `n`.
     ///

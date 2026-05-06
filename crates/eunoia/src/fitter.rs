@@ -605,6 +605,32 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     fn fit_with_optimization(self, optimize: bool) -> Result<Layout<S>, DiagramError> {
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
+
+        // Container/complement fitting is only wired for shapes that
+        // implement `compute_exclusive_regions_clipped`. In S1 only `Circle`
+        // does; reject other shapes here so failure is reported once at the
+        // top of `fit`, not on every cost call.
+        if spec.complement.is_some() && !shape_supports_container_clipping::<S>() {
+            return Err(DiagramError::InvalidCombination(
+                "complement (container/universe) fitting is currently only supported \
+                 with `Circle` shapes; other shape types will be added in a future release"
+                    .to_string(),
+            ));
+        }
+
+        // Multi-cluster + complement is ill-defined in S1: there is one
+        // container rectangle, but the optimised shapes would sit in two or
+        // more disjoint clusters that `skyline_pack` would normally separate.
+        // Reject the combination upfront with a clear message; lifting this
+        // (e.g. per-cluster containers) is S6 work.
+        if spec.complement.is_some() && spec_is_multi_cluster(&spec) {
+            return Err(DiagramError::InvalidCombination(
+                "complement (container/universe) fitting requires that every set overlap \
+                 (directly or transitively) with every other set; multi-cluster specs are \
+                 not supported in this release"
+                    .to_string(),
+            ));
+        }
         let max_iterations = self.max_iterations;
         let tolerance = self.tolerance;
         let xtol = self.xtol;
@@ -683,7 +709,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         // 19 in `examples/quality_report`, and is a no-op on circles
         // (most circle specs are out of range or already at the optimum).
         // Cost is ~2% wall time when applicable.
-        let venn_initial: Option<Vec<f64>> = if optimize {
+        let venn_initial: Option<Vec<f64>> = if optimize && spec.complement.is_none() {
             venn_warm_start_params::<S>(&spec)
         } else {
             None
@@ -845,6 +871,20 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             optimized_shapes.push(S::from_optimizer_params(&final_params[start..end]));
         }
 
+        // When the spec carries a complement, the trailing 4 entries of the
+        // optimizer parameter vector encode the jointly-optimised container
+        // rectangle. Decode it here so it can ride along with `Layout`.
+        let optimized_container: Option<crate::geometry::shapes::Rectangle> =
+            if spec.complement.is_some() {
+                let start = n_sets * params_per_shape;
+                let trailing = &final_params[start..start + 4];
+                Some(crate::geometry::shapes::Rectangle::from_optimizer_params(
+                    trailing,
+                ))
+            } else {
+                None
+            };
+
         // Compute the pre-normalize exclusive-region areas and thread them
         // into `normalize_layout` so cluster detection uses the same exact-
         // conic / inclusion-exclusion math the optimizer minimised against.
@@ -875,11 +915,19 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 
         // Step 4: Normalize the non-empty shapes only (zero shapes would confuse
         // clustering/packing). We do this before re-assembly.
-        crate::fitter::normalize::normalize_layout_with_clusters(
-            &mut optimized_shapes,
-            0.05,
-            Some(&pre_normalize_regions),
-        );
+        //
+        // When the spec carries a complement, the container rectangle and the
+        // shapes share an optimizer-chosen coordinate frame; rotating /
+        // packing the shapes without a corresponding transform on the
+        // container would desync them. Skip normalization entirely for
+        // container specs in S1; container-aware normalisation lands in S6.
+        if spec.complement.is_none() {
+            crate::fitter::normalize::normalize_layout_with_clusters(
+                &mut optimized_shapes,
+                0.05,
+                Some(&pre_normalize_regions),
+            );
+        }
 
         // Step 5: Re-assemble full shape list in the ORIGINAL spec set ordering,
         // inserting zero-parameter placeholders for sets that were pruned by
@@ -904,6 +952,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             self.spec,
             self.max_iterations,
             self.loss_type,
+            optimized_container,
         );
 
         Ok(layout)
@@ -1113,6 +1162,62 @@ fn spec_has_disjoint_pair(spec: &PreprocessedSpec) -> bool {
             if spec.relationships.is_disjoint(i, j) {
                 return true;
             }
+        }
+    }
+    false
+}
+
+/// Whether the shape `S` supports the `compute_exclusive_regions_clipped`
+/// path needed for joint container/complement fitting. Probed by calling the
+/// trait method on an empty shape slice — a no-op call that returns
+/// `Some(empty map)` for impls that override the default and `None` for
+/// shapes still on the default trait impl.
+///
+/// In S1 only `Circle` overrides the default, so this returns true only for
+/// `S = Circle`. Used at fitter construction to fail early on unsupported
+/// `complement + non-Circle shape` combinations.
+fn shape_supports_container_clipping<S: DiagramShape>() -> bool {
+    use crate::geometry::primitives::Point;
+    use crate::geometry::shapes::Rectangle;
+    let probe_container = Rectangle::new(Point::new(0.0, 0.0), 1.0, 1.0);
+    S::compute_exclusive_regions_clipped(&[], &probe_container).is_some()
+}
+
+/// Returns true iff the spec's pairwise-overlap graph (edge between i and j
+/// when their inclusive overlap is non-zero) splits into more than one
+/// connected component. Such specs would normally be packed via
+/// `skyline_pack` into multiple clusters; with a single shared container
+/// rectangle that's ill-defined for S1, so we reject them upfront.
+fn spec_is_multi_cluster(spec: &PreprocessedSpec) -> bool {
+    let n = spec.n_sets;
+    if n <= 1 {
+        return false;
+    }
+    fn find(parent: &mut [usize], i: usize) -> usize {
+        if parent[i] != i {
+            let root = find(parent, parent[i]);
+            parent[i] = root;
+        }
+        parent[i]
+    }
+    let mut parent: Vec<usize> = (0..n).collect();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if !spec.relationships.is_disjoint(i, j) {
+                let ri = find(&mut parent, i);
+                let rj = find(&mut parent, j);
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
+        }
+    }
+    let mut roots = std::collections::HashSet::new();
+    for i in 0..n {
+        let r = find(&mut parent, i);
+        roots.insert(r);
+        if roots.len() > 1 {
+            return true;
         }
     }
     false
@@ -1666,6 +1771,173 @@ mod tests {
             .unwrap();
         let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
         assert!(layout.loss().is_finite());
+    }
+
+    // ===== Container / complement (Session 1) =====
+
+    /// Two overlapping circles with a *small* complement: the container
+    /// area should match `complement + Σ named` (the universe), shapes match
+    /// targets, and the residual loss is small.
+    #[test]
+    fn fit_two_circles_small_complement_container_matches_universe() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(20.0) // universe = 75; some breathing room around the shapes
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let container = layout.container().expect("container present");
+
+        let area = container.width() * container.height();
+        assert!(
+            (area - 75.0).abs() / 75.0 < 0.05,
+            "container area {} ≠ 75 (within 5%)",
+            area
+        );
+        // L-BFGS with analytical gradients (S2) on the clipped landscape
+        // reaches a low residual when the shapes have room inside the box.
+        assert!(
+            layout.loss() < 5e-3,
+            "loss {} should be small",
+            layout.loss()
+        );
+    }
+
+    /// Same A/B sizes, but a *large* complement should leave the container
+    /// much larger than the shapes — the shapes don't change relative to each
+    /// other but the universe grows.
+    #[test]
+    fn fit_two_circles_large_complement_universe_matches() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(945.0) // universe = 1000
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let container = layout.container().expect("container present");
+
+        let area = container.width() * container.height();
+        assert!(
+            (area - 1000.0).abs() / 1000.0 < 0.05,
+            "container area {} ≠ 1000 (within 5%)",
+            area
+        );
+        // The disks together occupy ~55 area; the rest is complement. Container
+        // should be much larger than the union.
+        let union_target = 25.0 + 25.0 + 5.0; // 55
+        assert!(
+            area > 10.0 * union_target,
+            "container area {} should be much larger than union {}",
+            area,
+            union_target
+        );
+    }
+
+    /// Single set + complement: pins the absolute scale (the disk area must
+    /// match the spec value, container area must match universe).
+    #[test]
+    fn fit_one_circle_with_complement_pins_scale() {
+        // Single-set specs are rejected by `preprocess` (n_sets <= 1), so use
+        // the smallest case that's accepted: one large set and one tiny set
+        // that's effectively a placeholder, plus a complement.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 100.0)
+            .set("B", 1.0)
+            .intersection(&["A", "B"], 0.5)
+            .complement(50.0) // universe = 100 + 1 + 0.5 + 50 ≈ 151.5
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let container = layout.container().expect("container present");
+
+        let area = container.width() * container.height();
+        let universe = 151.5;
+        assert!(
+            (area - universe).abs() / universe < 0.05,
+            "container area {} ≠ {} (within 5%)",
+            area,
+            universe
+        );
+    }
+
+    /// Multi-cluster + complement should be rejected at fitter construction
+    /// time with a clear error.
+    #[test]
+    fn multi_cluster_with_complement_errors() {
+        // Three sets where {A, B} overlap but C is disjoint from both.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 10.0)
+            .set("C", 10.0)
+            .intersection(&["A", "B"], 2.0)
+            .complement(50.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let result = Fitter::<Circle>::new(&spec).seed(42).fit();
+        assert!(
+            matches!(result, Err(DiagramError::InvalidCombination(_))),
+            "expected InvalidCombination for multi-cluster + complement, got {:?}",
+            result.map(|_| "Ok(_layout)")
+        );
+    }
+
+    /// Non-`Circle` shape + complement should be rejected with a clear error
+    /// — no other shape implements clipping yet.
+    #[test]
+    fn non_circle_shape_with_complement_errors_at_fit() {
+        use crate::geometry::shapes::Ellipse;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(50.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let result = Fitter::<Ellipse>::new(&spec).seed(42).fit();
+        assert!(
+            matches!(result, Err(DiagramError::InvalidCombination(ref msg)) if msg.contains("Circle")),
+            "expected InvalidCombination naming Circle, got {:?}",
+            result.map(|_| "Ok(_layout)")
+        );
+    }
+
+    /// `Layout::normalize` should be a no-op when a container is present so
+    /// the shape/container relationship can't be silently broken.
+    #[test]
+    fn layout_normalize_no_op_when_container_present() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(50.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let mut layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let container_before = layout.container().copied();
+        let shapes_before = layout.shapes().to_vec();
+
+        layout.normalize(0.05);
+
+        // Container and shapes should be unchanged.
+        assert_eq!(layout.container().copied(), container_before);
+        assert_eq!(layout.shapes(), shapes_before.as_slice());
     }
 }
 #[test]

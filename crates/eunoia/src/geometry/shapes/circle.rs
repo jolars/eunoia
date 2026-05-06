@@ -225,6 +225,22 @@ impl DiagramShape for Circle {
     ) -> Option<crate::geometry::traits::ExclusiveRegionsAndGradient> {
         Some(crate::geometry::diagram::compute_exclusive_regions_with_gradient_circles(shapes))
     }
+
+    fn compute_exclusive_regions_clipped(
+        shapes: &[Self],
+        container: &Rectangle,
+    ) -> Option<std::collections::HashMap<crate::geometry::diagram::RegionMask, f64>> {
+        Some(compute_exclusive_regions_clipped(shapes, container))
+    }
+
+    fn compute_exclusive_regions_clipped_with_gradient(
+        shapes: &[Self],
+        container: &Rectangle,
+    ) -> Option<crate::geometry::traits::ExclusiveRegionsAndGradient> {
+        Some(compute_exclusive_regions_clipped_with_gradient(
+            shapes, container,
+        ))
+    }
 }
 
 impl Polygonize for Circle {
@@ -873,6 +889,522 @@ pub(crate) fn accumulate_region_overlap_gradient(
         grad[off] += sign * r * (arc.phi_end.sin() - arc.phi_start.sin());
         grad[off + 1] -= sign * r * (arc.phi_end.cos() - arc.phi_start.cos());
         grad[off + 2] += r * arc.delta_phi.abs();
+    }
+}
+
+/// Compute the per-mask exclusive areas of `circles` clipped to an
+/// axis-aligned `container` rectangle, including the all-zeros region (mask
+/// `0`) representing `container ∖ ⋃ circles` (the complement target).
+///
+/// Algorithm: for each overlap region `R_m = ⋂_{i ∈ m} D_i`, compute
+/// `area(R_m ∩ container)` via Green's theorem. The boundary
+/// `∂(R_m ∩ container)` decomposes into:
+///
+/// - sub-arcs of `∂R_m` that lie inside the container, and
+/// - sub-segments of `∂container` (axis-aligned edges) that lie inside `R_m`.
+///
+/// Both pieces are integrated in closed form. After that, inclusion-exclusion
+/// (`to_exclusive_areas`) converts the overlap areas to per-mask exclusive
+/// areas; mask `0` is seeded with `area(container)` so the IE pass produces
+/// the complement (`container.area − area(⋃ disks ∩ container)`) for free.
+///
+/// See `area_from_clipped_arcs` (private) for the per-region implementation.
+pub fn compute_exclusive_regions_clipped(
+    circles: &[Circle],
+    container: &Rectangle,
+) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64> {
+    use crate::geometry::diagram::{collect_intersections, discover_regions, to_exclusive_areas};
+
+    let n_sets = circles.len();
+    let intersections = collect_intersections(circles, n_sets);
+    let regions = discover_regions(circles, &intersections, n_sets);
+
+    let mut overlapping_areas = std::collections::HashMap::new();
+    // Seed mask 0 with the container area. After inclusion-exclusion the
+    // exclusive value at mask 0 becomes `container.area − area(⋃ disks ∩
+    // container)`, i.e. the complement.
+    overlapping_areas.insert(0, container.area());
+
+    for &mask in &regions {
+        let arcs = region_boundary_arcs(mask, circles, &intersections, n_sets);
+        let area = area_from_clipped_arcs(&arcs, circles, container, mask, n_sets);
+        overlapping_areas.insert(mask, area);
+    }
+
+    to_exclusive_areas(&overlapping_areas)
+}
+
+/// Gradient-aware companion to [`compute_exclusive_regions_clipped`].
+///
+/// Returns `(exclusive_areas, exclusive_grads)` where each gradient vector has
+/// length `n_sets · 3 + 4` and is laid out as
+/// `[x₀, y₀, r₀, x₁, …, x_c, y_c, u, v]` — the trailing four entries are the
+/// container's optimizer encoding (`u = ln(w·h)`, `v = ln(w/h)`).
+///
+/// The shape-param gradient comes from the same boundary-velocity identity
+/// `dA/dθ = ∮_∂R (v_θ · n) ds` as the unclipped path
+/// (`accumulate_region_overlap_gradient`), restricted to inside-container
+/// sub-arcs. Box-edge sub-segments contribute to the container-param block
+/// only: each edge moves rigidly with `(x_c, y_c, u, v)`, so the line
+/// integral collapses to length-times-velocity. Endpoints where an arc meets a
+/// box edge cancel pairwise (same point, same `(v · n)`, opposite ds direction
+/// across the two boundary pieces), so this builds a consistent gradient
+/// without tracking trim-point motion.
+///
+/// Mask `0` (the complement) is seeded with `container.area()` and a gradient
+/// `∂(w·h)/∂(x_c, y_c, u, v) = [0, 0, w·h, 0]` so inclusion-exclusion produces
+/// `complement = container.area − area(⋃ disks ∩ container)` along with its
+/// matching gradient.
+pub(crate) fn compute_exclusive_regions_clipped_with_gradient(
+    circles: &[Circle],
+    container: &Rectangle,
+) -> (
+    std::collections::HashMap<crate::geometry::diagram::RegionMask, f64>,
+    std::collections::HashMap<crate::geometry::diagram::RegionMask, Vec<f64>>,
+) {
+    use crate::geometry::diagram::{
+        collect_intersections, discover_regions, to_exclusive_areas_and_gradients,
+    };
+
+    let n_sets = circles.len();
+    let n_params = n_sets * 3 + 4;
+    let intersections = collect_intersections(circles, n_sets);
+    let regions = discover_regions(circles, &intersections, n_sets);
+
+    let mut overlapping_areas = std::collections::HashMap::new();
+    let mut overlapping_grads: std::collections::HashMap<
+        crate::geometry::diagram::RegionMask,
+        Vec<f64>,
+    > = std::collections::HashMap::new();
+
+    // Seed mask 0 with `container.area()` and its gradient. ∂(w·h)/∂u = w·h
+    // (chain through `u = ln(w·h)`); other partials are zero.
+    let container_area = container.area();
+    overlapping_areas.insert(0, container_area);
+    let mut zero_grad = vec![0.0; n_params];
+    zero_grad[n_sets * 3 + 2] = container_area;
+    overlapping_grads.insert(0, zero_grad);
+
+    for &mask in &regions {
+        let arcs = region_boundary_arcs(mask, circles, &intersections, n_sets);
+        let mut grad = vec![0.0; n_params];
+        let area =
+            area_and_gradient_from_clipped_arcs(&arcs, circles, container, mask, n_sets, &mut grad);
+        overlapping_areas.insert(mask, area);
+        overlapping_grads.insert(mask, grad);
+    }
+
+    to_exclusive_areas_and_gradients(&overlapping_areas, &overlapping_grads, n_params)
+}
+
+/// Compute `area(R_m ∩ container)` from the CCW boundary arcs of `R_m` and
+/// the axis-aligned `container`, where `R_m = ⋂_{i ∈ m} disks[i]`.
+///
+/// Boundary decomposition:
+/// - Each input arc contributes its inside-container sub-arcs (split at
+///   crossings with the four box edges, kept iff the sub-arc midpoint lies
+///   inside the container).
+/// - Each container edge contributes its inside-`R_m` sub-segments
+///   (intersection of per-disk projections of the edge into each disk in the
+///   mask).
+///
+/// The two pieces share Green's theorem `A = ½ ∮ (x dy − y dx)`; arc and
+/// segment contributions are summed and halved.
+pub(crate) fn area_from_clipped_arcs(
+    arcs: &[BoundaryArc],
+    circles: &[Circle],
+    container: &Rectangle,
+    mask: crate::geometry::diagram::RegionMask,
+    n_sets: usize,
+) -> f64 {
+    use crate::geometry::diagram::mask_to_indices;
+
+    let (x_min, x_max, y_min, y_max) = container.bounds();
+
+    // Defensive: a degenerate (zero-area) box can only intersect things with
+    // measure zero. The arc and edge integrals would produce 0 anyway, but
+    // bailing avoids wasted work and any divide-by-zero risk in helpers.
+    if x_max <= x_min || y_max <= y_min {
+        return 0.0;
+    }
+
+    let mut total = 0.0; // ∫ (x dy − y dx); area = 0.5 · total.
+
+    // 1. Arc contributions.
+    for arc in arcs {
+        total += clipped_arc_integral(arc, circles, x_min, x_max, y_min, y_max);
+    }
+
+    // 2. Container-edge contributions, each oriented CCW around the container
+    // interior. For each edge we find the inside-`R_m` sub-interval (the
+    // intersection of the per-disk projections onto that edge), then add the
+    // closed-form line integral.
+    let indices = mask_to_indices(mask, n_sets);
+
+    // Bottom edge: y = y_min, walk x from x_min → x_max. ∫(−y dx) = −y_min·Δx.
+    if let Some((a, b)) = horizontal_edge_inside_interval(y_min, x_min, x_max, &indices, circles) {
+        total += -y_min * (b - a);
+    }
+    // Right edge: x = x_max, walk y from y_min → y_max. ∫(x dy) = x_max·Δy.
+    if let Some((a, b)) = vertical_edge_inside_interval(x_max, y_min, y_max, &indices, circles) {
+        total += x_max * (b - a);
+    }
+    // Top edge: y = y_max, walk x from x_max → x_min. ∫(−y dx) = +y_max·Δx
+    // because dx is negative when walking right→left.
+    if let Some((a, b)) = horizontal_edge_inside_interval(y_max, x_min, x_max, &indices, circles) {
+        total += y_max * (b - a);
+    }
+    // Left edge: x = x_min, walk y from y_max → y_min. ∫(x dy) = −x_min·Δy
+    // because dy is negative when walking top→bottom.
+    if let Some((a, b)) = vertical_edge_inside_interval(x_min, y_min, y_max, &indices, circles) {
+        total += -x_min * (b - a);
+    }
+
+    0.5 * total
+}
+
+/// Gradient-aware companion to [`area_from_clipped_arcs`]. Computes
+/// `area(R_m ∩ container)` and accumulates `∂area / ∂θ` into `grad`
+/// (length `n_sets · 3 + 4`, layout `[x₀, y₀, r₀, …, x_c, y_c, u, v]`).
+///
+/// The arc and box-edge decompositions are identical to the area-only path;
+/// the gradient is produced inline using the per-piece boundary-velocity
+/// formulas — see the function docs of
+/// [`compute_exclusive_regions_clipped_with_gradient`] for the derivation
+/// summary.
+pub(crate) fn area_and_gradient_from_clipped_arcs(
+    arcs: &[BoundaryArc],
+    circles: &[Circle],
+    container: &Rectangle,
+    mask: crate::geometry::diagram::RegionMask,
+    n_sets: usize,
+    grad: &mut [f64],
+) -> f64 {
+    use crate::geometry::diagram::mask_to_indices;
+
+    let (x_min, x_max, y_min, y_max) = container.bounds();
+
+    if x_max <= x_min || y_max <= y_min {
+        return 0.0;
+    }
+
+    let w = x_max - x_min;
+    let h = y_max - y_min;
+    let container_off = n_sets * 3;
+
+    let mut total = 0.0; // ∫ (x dy − y dx); area = 0.5 · total.
+
+    // 1. Arc contributions — area + shape-param gradient.
+    for arc in arcs {
+        total += clipped_arc_integral_with_gradient(arc, circles, x_min, x_max, y_min, y_max, grad);
+    }
+
+    // 2. Container-edge contributions. Each edge is a line of length `L`
+    // inside `R_m` (intersection of the per-disk projections onto the edge).
+    // Area integral as in `area_from_clipped_arcs`; container-param gradient
+    // from the rigid-edge boundary velocity (see fn docs above).
+    let indices = mask_to_indices(mask, n_sets);
+
+    if let Some((a, b)) = horizontal_edge_inside_interval(y_min, x_min, x_max, &indices, circles) {
+        let l = b - a;
+        // Area: bottom edge walked left→right; ∫(−y dx) = −y_min·L.
+        total += -y_min * l;
+        // Gradient: outward normal (0, −1); v·n = −∂y_min/∂θ.
+        // ∂y_min/∂(x_c, y_c, u, v) = (0, 1, −h/4, h/4)
+        grad[container_off + 1] -= l;
+        grad[container_off + 2] += (h / 4.0) * l;
+        grad[container_off + 3] -= (h / 4.0) * l;
+    }
+    if let Some((a, b)) = vertical_edge_inside_interval(x_max, y_min, y_max, &indices, circles) {
+        let l = b - a;
+        total += x_max * l;
+        // Right edge: outward normal (+1, 0); v·n = ∂x_max/∂θ.
+        // ∂x_max/∂(x_c, y_c, u, v) = (1, 0, w/4, w/4)
+        grad[container_off] += l;
+        grad[container_off + 2] += (w / 4.0) * l;
+        grad[container_off + 3] += (w / 4.0) * l;
+    }
+    if let Some((a, b)) = horizontal_edge_inside_interval(y_max, x_min, x_max, &indices, circles) {
+        let l = b - a;
+        total += y_max * l;
+        // Top edge: outward normal (0, +1); v·n = ∂y_max/∂θ.
+        // ∂y_max/∂(x_c, y_c, u, v) = (0, 1, h/4, −h/4)
+        grad[container_off + 1] += l;
+        grad[container_off + 2] += (h / 4.0) * l;
+        grad[container_off + 3] -= (h / 4.0) * l;
+    }
+    if let Some((a, b)) = vertical_edge_inside_interval(x_min, y_min, y_max, &indices, circles) {
+        let l = b - a;
+        total += -x_min * l;
+        // Left edge: outward normal (−1, 0); v·n = −∂x_min/∂θ.
+        // ∂x_min/∂(x_c, y_c, u, v) = (1, 0, −w/4, −w/4)
+        grad[container_off] -= l;
+        grad[container_off + 2] += (w / 4.0) * l;
+        grad[container_off + 3] += (w / 4.0) * l;
+    }
+
+    0.5 * total
+}
+
+/// Sum the Green's-theorem arc integral over the inside-container sub-arcs of
+/// `arc`, splitting at crossings with the four box edges.
+fn clipped_arc_integral(
+    arc: &BoundaryArc,
+    circles: &[Circle],
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+) -> f64 {
+    let cj = &circles[arc.circle];
+    let xc = cj.center().x();
+    let yc = cj.center().y();
+    let r = cj.radius();
+
+    let phi_a = arc.phi_start;
+    let phi_b = phi_a + arc.delta_phi; // continuous (not wrapped)
+
+    // Collect crossing parameters strictly inside (phi_a, phi_b). Endpoints
+    // bookend the sub-arc walk separately.
+    let mut crossings: Vec<f64> = Vec::with_capacity(8);
+
+    // Vertical edges: cos φ = (X − xc) / r → φ = ±acos(c) (+ 2πk).
+    for &x_edge in &[x_min, x_max] {
+        let c = (x_edge - xc) / r;
+        if c.abs() <= 1.0 {
+            let phi0 = c.acos(); // ∈ [0, π]
+            collect_periodic_in_range(&mut crossings, phi0, phi_a, phi_b);
+            collect_periodic_in_range(&mut crossings, -phi0, phi_a, phi_b);
+        }
+    }
+    // Horizontal edges: sin φ = (Y − yc) / r → φ = asin(s) or π − asin(s).
+    for &y_edge in &[y_min, y_max] {
+        let s = (y_edge - yc) / r;
+        if s.abs() <= 1.0 {
+            let phi0 = s.asin(); // ∈ [−π/2, π/2]
+            let phi1 = std::f64::consts::PI - phi0;
+            collect_periodic_in_range(&mut crossings, phi0, phi_a, phi_b);
+            collect_periodic_in_range(&mut crossings, phi1, phi_a, phi_b);
+        }
+    }
+
+    let mut breaks: Vec<f64> = Vec::with_capacity(crossings.len() + 2);
+    breaks.push(phi_a);
+    breaks.extend(crossings);
+    breaks.push(phi_b);
+    breaks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut sum = 0.0;
+    for w in breaks.windows(2) {
+        let a = w[0];
+        let b = w[1];
+        let delta = b - a;
+        if delta <= 1e-12 {
+            continue;
+        }
+        let mid = 0.5 * (a + b);
+        let mx = xc + r * mid.cos();
+        let my = yc + r * mid.sin();
+        // Generous geometric tolerance to keep boundary-aligned midpoints
+        // (e.g. arcs that exit and immediately re-enter via a corner) on the
+        // "inside" side. Mismatched signs here would lose a slice of area.
+        let tol = 1e-9;
+        let inside =
+            mx >= x_min - tol && mx <= x_max + tol && my >= y_min - tol && my <= y_max + tol;
+        if !inside {
+            continue;
+        }
+        sum += xc * r * (b.sin() - a.sin()) + yc * r * (a.cos() - b.cos()) + r * r * (b - a);
+    }
+    sum
+}
+
+/// Gradient-aware companion to [`clipped_arc_integral`]. Returns the same
+/// area-integrand contribution to `2A` while also accumulating shape-param
+/// gradient entries for the owning circle into `grad` (length `≥ 3 · n_sets +
+/// 4`, layout `[x₀, y₀, r₀, …]`).
+///
+/// Per inside-container sub-arc on circle `k` with continuous endpoints
+/// `(a, b)`, `b > a`:
+///
+/// ```text
+/// ∂A/∂x_k += r · (sin b − sin a)
+/// ∂A/∂y_k += r · (cos a − cos b)
+/// ∂A/∂r_k += r · (b − a)
+/// ```
+///
+/// derived from the boundary-velocity identity (`v_θ · n = cos φ`, `sin φ`,
+/// `1` for `θ = x_k, y_k, r_k`) integrated against `ds = r dφ`. Trim-point
+/// motion at box-edge endpoints is captured by the matching box-edge
+/// integral (same point, opposite-sign `ds`), so the per-sub-arc formula is
+/// self-contained.
+fn clipped_arc_integral_with_gradient(
+    arc: &BoundaryArc,
+    circles: &[Circle],
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+    grad: &mut [f64],
+) -> f64 {
+    let cj = &circles[arc.circle];
+    let xc = cj.center().x();
+    let yc = cj.center().y();
+    let r = cj.radius();
+
+    let phi_a = arc.phi_start;
+    let phi_b = phi_a + arc.delta_phi;
+
+    let mut crossings: Vec<f64> = Vec::with_capacity(8);
+
+    for &x_edge in &[x_min, x_max] {
+        let c = (x_edge - xc) / r;
+        if c.abs() <= 1.0 {
+            let phi0 = c.acos();
+            collect_periodic_in_range(&mut crossings, phi0, phi_a, phi_b);
+            collect_periodic_in_range(&mut crossings, -phi0, phi_a, phi_b);
+        }
+    }
+    for &y_edge in &[y_min, y_max] {
+        let s = (y_edge - yc) / r;
+        if s.abs() <= 1.0 {
+            let phi0 = s.asin();
+            let phi1 = std::f64::consts::PI - phi0;
+            collect_periodic_in_range(&mut crossings, phi0, phi_a, phi_b);
+            collect_periodic_in_range(&mut crossings, phi1, phi_a, phi_b);
+        }
+    }
+
+    let mut breaks: Vec<f64> = Vec::with_capacity(crossings.len() + 2);
+    breaks.push(phi_a);
+    breaks.extend(crossings);
+    breaks.push(phi_b);
+    breaks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let off = arc.circle * 3;
+    let mut sum = 0.0;
+    for w in breaks.windows(2) {
+        let a = w[0];
+        let b = w[1];
+        let delta = b - a;
+        if delta <= 1e-12 {
+            continue;
+        }
+        let mid = 0.5 * (a + b);
+        let mx = xc + r * mid.cos();
+        let my = yc + r * mid.sin();
+        let tol = 1e-9;
+        let inside =
+            mx >= x_min - tol && mx <= x_max + tol && my >= y_min - tol && my <= y_max + tol;
+        if !inside {
+            continue;
+        }
+        let s_diff = b.sin() - a.sin();
+        let c_diff = b.cos() - a.cos();
+        // 2A integrand (matches the area-only path).
+        sum += xc * r * s_diff - yc * r * c_diff + r * r * delta;
+        // Boundary-velocity gradient on circle k. Sub-arcs are traversed CCW
+        // (delta > 0), so sign = +1.
+        grad[off] += r * s_diff;
+        grad[off + 1] -= r * c_diff;
+        grad[off + 2] += r * delta;
+    }
+    sum
+}
+
+/// For an angle `cand` solving a circle/edge equation, push every periodic
+/// copy `cand + 2πk` strictly inside `(phi_a, phi_b)` into `out`. Arc spans
+/// can reach 2π so at most one copy per shift offset is in range; iterating
+/// `k ∈ {-1, 0, 1}` covers every case for `delta_phi ≤ 2π`.
+fn collect_periodic_in_range(out: &mut Vec<f64>, cand: f64, phi_a: f64, phi_b: f64) {
+    let two_pi = 2.0 * std::f64::consts::PI;
+    let tol = 1e-12;
+    for k in -1..=1 {
+        let p = cand + (k as f64) * two_pi;
+        if p > phi_a + tol && p < phi_b - tol {
+            out.push(p);
+        }
+    }
+}
+
+/// Inside-`R_m` sub-interval of a horizontal edge `y = const` over
+/// `x ∈ [x_min, x_max]`. Returns `None` if the edge does not touch every
+/// disk in `indices`. With `indices` empty, the whole `[x_min, x_max]` is
+/// "inside" (intersection over an empty constraint set is the universe),
+/// which is exactly what mask `0` (the complement) wants.
+fn horizontal_edge_inside_interval(
+    y: f64,
+    x_min: f64,
+    x_max: f64,
+    indices: &[usize],
+    circles: &[Circle],
+) -> Option<(f64, f64)> {
+    let mut lo = x_min;
+    let mut hi = x_max;
+    for &i in indices {
+        let c = &circles[i];
+        let dy = y - c.center().y();
+        let r = c.radius();
+        let r2 = r * r;
+        if dy * dy > r2 {
+            return None;
+        }
+        let dx = (r2 - dy * dy).max(0.0).sqrt();
+        let disk_lo = c.center().x() - dx;
+        let disk_hi = c.center().x() + dx;
+        if disk_lo > lo {
+            lo = disk_lo;
+        }
+        if disk_hi < hi {
+            hi = disk_hi;
+        }
+        if hi <= lo {
+            return None;
+        }
+    }
+    if hi > lo {
+        Some((lo, hi))
+    } else {
+        None
+    }
+}
+
+/// Inside-`R_m` sub-interval of a vertical edge `x = const` over
+/// `y ∈ [y_min, y_max]`. Mirror of `horizontal_edge_inside_interval`.
+fn vertical_edge_inside_interval(
+    x: f64,
+    y_min: f64,
+    y_max: f64,
+    indices: &[usize],
+    circles: &[Circle],
+) -> Option<(f64, f64)> {
+    let mut lo = y_min;
+    let mut hi = y_max;
+    for &i in indices {
+        let c = &circles[i];
+        let dx = x - c.center().x();
+        let r = c.radius();
+        let r2 = r * r;
+        if dx * dx > r2 {
+            return None;
+        }
+        let dy = (r2 - dx * dx).max(0.0).sqrt();
+        let disk_lo = c.center().y() - dy;
+        let disk_hi = c.center().y() + dy;
+        if disk_lo > lo {
+            lo = disk_lo;
+        }
+        if disk_hi < hi {
+            hi = disk_hi;
+        }
+        if hi <= lo {
+            return None;
+        }
+    }
+    if hi > lo {
+        Some((lo, hi))
+    } else {
+        None
     }
 }
 
@@ -1529,6 +2061,374 @@ mod tests {
             "Expected area {}, got {}",
             expected,
             all_three
+        );
+    }
+
+    // ===== Container clipping (compute_exclusive_regions_clipped) =====
+
+    /// A circle entirely inside the container should keep its full area; the
+    /// complement region is the rest of the container.
+    #[test]
+    fn clipped_single_circle_inside_container() {
+        let circles = vec![Circle::new(Point::new(0.0, 0.0), 1.0)];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 6.0, 6.0); // 36
+        let areas = compute_exclusive_regions_clipped(&circles, &container);
+
+        let disk = areas.get(&0b1).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+
+        assert!((disk - PI).abs() < 1e-9, "disk area {} ≠ π", disk);
+        assert!(
+            (complement - (36.0 - PI)).abs() < 1e-9,
+            "complement {} ≠ 36 − π",
+            complement
+        );
+    }
+
+    /// A circle entirely outside the container should contribute zero; the
+    /// complement equals the full container area.
+    #[test]
+    fn clipped_single_circle_outside_container() {
+        let circles = vec![Circle::new(Point::new(100.0, 100.0), 1.0)];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 4.0); // 16
+        let areas = compute_exclusive_regions_clipped(&circles, &container);
+
+        let disk = areas.get(&0b1).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+
+        assert!(disk.abs() < 1e-9, "disk area {} ≠ 0", disk);
+        assert!(
+            (complement - 16.0).abs() < 1e-9,
+            "complement {} ≠ 16",
+            complement
+        );
+    }
+
+    /// A circle clipped by exactly one edge produces a circular segment cut
+    /// off; the kept area equals `π − segment(2·angle)` where the segment is
+    /// the slice above the cut.
+    #[test]
+    fn clipped_single_circle_one_edge_matches_segment_formula() {
+        // Unit circle at origin; container's top edge cuts through y = 0.5.
+        let circles = vec![Circle::new(Point::new(0.0, 0.0), 1.0)];
+        let container = Rectangle::new(Point::new(0.0, -2.25), 100.0, 5.5);
+        // Container bounds: x ∈ [−50, 50], y ∈ [−5, 0.5]. Cuts the top of the
+        // unit circle at y = 0.5.
+        let areas = compute_exclusive_regions_clipped(&circles, &container);
+
+        let disk_clipped = areas.get(&0b1).copied().unwrap_or(0.0);
+
+        // Closed form: the slice above y = 0.5 is a circular segment with
+        // central angle 2·acos(0.5) = 2π/3. Segment area = ½r²(θ − sin θ).
+        let theta = 2.0 * (0.5_f64).acos(); // 2π/3
+        let segment = 0.5 * (theta - theta.sin());
+        let expected = PI - segment;
+
+        assert!(
+            (disk_clipped - expected).abs() < 1e-9,
+            "clipped disk {} ≠ π − segment ({})",
+            disk_clipped,
+            expected
+        );
+    }
+
+    /// Container fully inside one circle: clipped area equals container area;
+    /// complement is zero.
+    #[test]
+    fn clipped_container_fully_inside_circle() {
+        let circles = vec![Circle::new(Point::new(0.0, 0.0), 100.0)];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 6.0);
+        let areas = compute_exclusive_regions_clipped(&circles, &container);
+
+        let disk = areas.get(&0b1).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+
+        assert!(
+            (disk - 24.0).abs() < 1e-9,
+            "disk-clipped {} ≠ container area",
+            disk
+        );
+        assert!(complement.abs() < 1e-9, "complement {} ≠ 0", complement);
+    }
+
+    /// Two overlapping disks both fully inside the container: the per-mask
+    /// exclusive areas sum to the (2-disk) union area; complement = box − union.
+    #[test]
+    fn clipped_two_disks_inside_sum_to_union_area() {
+        // Two unit disks centered at (±0.6, 0). Both inside a 6×6 box.
+        let circles = vec![
+            Circle::new(Point::new(-0.6, 0.0), 1.0),
+            Circle::new(Point::new(0.6, 0.0), 1.0),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 6.0, 6.0); // 36
+        let areas = compute_exclusive_regions_clipped(&circles, &container);
+
+        let a_only = areas.get(&0b01).copied().unwrap_or(0.0);
+        let b_only = areas.get(&0b10).copied().unwrap_or(0.0);
+        let a_and_b = areas.get(&0b11).copied().unwrap_or(0.0);
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+
+        // Union = a-only + b-only + a∩b. Compute it independently.
+        let union = a_only + b_only + a_and_b;
+        // Direct calc: 2π − (lens between two unit circles distance 1.2 apart).
+        let lens = circles[0].intersection_area(&circles[1]);
+        let expected_union = 2.0 * PI - lens;
+
+        assert!(
+            (union - expected_union).abs() < 1e-9,
+            "union via per-mask sum {} ≠ {}",
+            union,
+            expected_union
+        );
+        assert!(
+            (complement - (36.0 - expected_union)).abs() < 1e-9,
+            "complement {} ≠ box − union",
+            complement
+        );
+    }
+
+    /// Sanity: with no shapes, the complement equals the container area.
+    #[test]
+    fn clipped_no_circles_complement_equals_container_area() {
+        let circles: Vec<Circle> = Vec::new();
+        let container = Rectangle::new(Point::new(1.0, 2.0), 3.0, 4.0);
+        let areas = compute_exclusive_regions_clipped(&circles, &container);
+
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+        assert!(
+            (complement - 12.0).abs() < 1e-9,
+            "complement {} ≠ 12",
+            complement
+        );
+    }
+
+    /// Container clipping a circle from a corner (top + right edges). The
+    /// kept piece is the disk minus a "moon" wedge near the top-right; we
+    /// validate against a Monte-Carlo reference.
+    #[test]
+    fn clipped_single_circle_corner_matches_monte_carlo() {
+        // Unit circle at origin. Container's interior is the lower-left
+        // quadrant from (-2, -2) to (0.5, 0.5), so two adjacent edges cut
+        // the circle.
+        let circles = vec![Circle::new(Point::new(0.0, 0.0), 1.0)];
+        let container = Rectangle::new(Point::new(-0.75, -0.75), 2.5, 2.5);
+        let areas = compute_exclusive_regions_clipped(&circles, &container);
+        let kept = areas.get(&0b1).copied().unwrap_or(0.0);
+
+        // Monte-Carlo reference: sample uniformly in the bounding box of the
+        // unit disk (a 2x2 square). Count points inside both the disk and
+        // container.
+        let n = 400_000;
+        let mut hits = 0;
+        // Deterministic LCG so the test is reproducible without rand.
+        let mut state: u64 = 0xCAFE_BABE_DEAD_BEEF;
+        let next_u01 = |s: &mut u64| -> f64 {
+            *s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((*s >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        for _ in 0..n {
+            let x = -1.0 + 2.0 * next_u01(&mut state);
+            let y = -1.0 + 2.0 * next_u01(&mut state);
+            let in_disk = x * x + y * y <= 1.0;
+            let in_box = (-2.0..=0.5).contains(&x) && (-2.0..=0.5).contains(&y);
+            if in_disk && in_box {
+                hits += 1;
+            }
+        }
+        let mc_area = 4.0 * (hits as f64) / (n as f64); // 4 = box area
+                                                        // 400k samples → stderr ≈ √(p(1-p)/n) · 4 ≈ 0.005 typically.
+        assert!(
+            (kept - mc_area).abs() < 0.02,
+            "clipped disk {} vs MC {}",
+            kept,
+            mc_area
+        );
+    }
+
+    // ===== Clipped exclusive areas: analytical gradient (S2) =====
+
+    /// Pack `(circles, container)` into the same flat parameter layout the
+    /// optimiser uses: per-circle `[x, y, r]` blocks, then container
+    /// `[x_c, y_c, ln(area), ln(ratio)]`.
+    fn pack_clipped_params(circles: &[Circle], container: &Rectangle) -> Vec<f64> {
+        let mut p = Vec::with_capacity(circles.len() * 3 + 4);
+        for c in circles {
+            p.push(c.center().x());
+            p.push(c.center().y());
+            p.push(c.radius());
+        }
+        p.extend(container.to_optimizer_params());
+        p
+    }
+
+    /// Inverse of `pack_clipped_params`: decode a flat parameter slice back
+    /// into circles plus container.
+    fn unpack_clipped_params(p: &[f64], n_sets: usize) -> (Vec<Circle>, Rectangle) {
+        let circles: Vec<Circle> = (0..n_sets)
+            .map(|i| {
+                Circle::new(
+                    Point::new(p[3 * i], p[3 * i + 1]),
+                    p[3 * i + 2].max(f64::MIN_POSITIVE),
+                )
+            })
+            .collect();
+        let container = Rectangle::from_optimizer_params(&p[3 * n_sets..3 * n_sets + 4]);
+        (circles, container)
+    }
+
+    /// FD vs analytical gradient comparison for the clipped per-mask area
+    /// helper. `params` is laid out as in `pack_clipped_params`.
+    fn assert_clipped_gradient_matches_fd(
+        circles: &[Circle],
+        container: &Rectangle,
+        h: f64,
+        tol: f64,
+        label: &str,
+    ) {
+        let (areas, grads) = compute_exclusive_regions_clipped_with_gradient(circles, container);
+        let n_sets = circles.len();
+        let n_params = n_sets * 3 + 4;
+        let p0 = pack_clipped_params(circles, container);
+
+        // Compute FD gradient per mask.
+        for (mask, analytic) in &grads {
+            assert_eq!(
+                analytic.len(),
+                n_params,
+                "{}: gradient length {} ≠ expected {}",
+                label,
+                analytic.len(),
+                n_params
+            );
+            let mut fd = vec![0.0; n_params];
+            for i in 0..n_params {
+                let mut plus = p0.clone();
+                let mut minus = p0.clone();
+                plus[i] += h;
+                minus[i] -= h;
+                let (cp, kp) = unpack_clipped_params(&plus, n_sets);
+                let (cm, km) = unpack_clipped_params(&minus, n_sets);
+                let ap = compute_exclusive_regions_clipped(&cp, &kp)
+                    .get(mask)
+                    .copied()
+                    .unwrap_or(0.0);
+                let am = compute_exclusive_regions_clipped(&cm, &km)
+                    .get(mask)
+                    .copied()
+                    .unwrap_or(0.0);
+                fd[i] = (ap - am) / (2.0 * h);
+            }
+            // Check the analytical area matches the value-only path.
+            let direct = compute_exclusive_regions_clipped(circles, container)
+                .get(mask)
+                .copied()
+                .unwrap_or(0.0);
+            let analytic_area = areas.get(mask).copied().unwrap_or(0.0);
+            assert!(
+                (analytic_area - direct).abs() < 1e-12,
+                "{}: mask {:b} area {} vs direct {} mismatch",
+                label,
+                mask,
+                analytic_area,
+                direct
+            );
+            // Compare gradients.
+            let diff_norm: f64 = analytic
+                .iter()
+                .zip(fd.iter())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+            let rel = if fd_norm > 1e-9 {
+                diff_norm / fd_norm
+            } else {
+                diff_norm
+            };
+            assert!(
+                rel < tol,
+                "{}: mask {:b} analytic vs FD mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+                label,
+                mask,
+                rel,
+                fd_norm,
+                analytic,
+                fd
+            );
+        }
+    }
+
+    /// Two disks fully inside a wide container. No box edge clips any disk —
+    /// only the complement region touches the box. Verifies that shape param
+    /// gradients reproduce the unclipped gradient and that the container
+    /// gradient is purely (0, 0, container_area, 0).
+    #[test]
+    fn clipped_grad_two_disks_inside_box_matches_fd() {
+        let circles = vec![
+            Circle::new(Point::new(-0.6, 0.05), 1.0),
+            Circle::new(Point::new(0.62, -0.04), 0.95),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 6.0, 5.0);
+        assert_clipped_gradient_matches_fd(&circles, &container, 1e-6, 1e-5, "two_disks_inside");
+    }
+
+    /// Two disks each clipped by a different box edge. Exercises the
+    /// box-edge boundary contribution to the container-param gradient and
+    /// the trimmed-arc contribution to shape params.
+    #[test]
+    fn clipped_grad_two_disks_each_touching_an_edge_matches_fd() {
+        // Disk 0 sits near the right edge of the box (x_max = 1.8),
+        // clipped at x ≥ 1.8. Disk 1 sits left-of-centre, overlapping disk 0.
+        let circles = vec![
+            Circle::new(Point::new(1.4, 0.05), 0.9),
+            Circle::new(Point::new(0.0, -0.07), 0.85),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.0), 3.6, 3.0);
+        assert_clipped_gradient_matches_fd(
+            &circles,
+            &container,
+            1e-6,
+            1e-4,
+            "two_disks_clipped_edge",
+        );
+    }
+
+    /// Three overlapping disks, all inside the box but with the box snug
+    /// enough that the complement and pairwise/triple regions all carry
+    /// container-edge contributions.
+    #[test]
+    fn clipped_grad_three_disks_inside_box_matches_fd() {
+        let circles = vec![
+            Circle::new(Point::new(-0.5, -0.3), 1.0),
+            Circle::new(Point::new(0.5, -0.3), 1.0),
+            Circle::new(Point::new(0.0, 0.55), 1.0),
+        ];
+        let container = Rectangle::new(Point::new(0.0, 0.05), 3.5, 3.5);
+        assert_clipped_gradient_matches_fd(&circles, &container, 1e-6, 1e-4, "three_disks");
+    }
+
+    /// Three overlapping disks with the box clipping the right-most disk
+    /// from the top. Mixes inside-disk regions with disks that have
+    /// inside-container sub-arcs.
+    #[test]
+    fn clipped_grad_three_disks_one_clipped_matches_fd() {
+        let circles = vec![
+            Circle::new(Point::new(-0.6, -0.2), 0.9),
+            Circle::new(Point::new(0.7, -0.2), 0.9),
+            Circle::new(Point::new(0.05, 0.6), 0.9),
+        ];
+        // Top edge cuts through circle 2 (at y = 0.6 + 0.9 - clip = 1.0
+        // means the top edge at y_max = 1.0 cuts a slice off the top of
+        // disk 2).
+        let container = Rectangle::new(Point::new(0.0, 0.0), 3.5, 2.0);
+        assert_clipped_gradient_matches_fd(
+            &circles,
+            &container,
+            1e-6,
+            1e-4,
+            "three_disks_clipped_top",
         );
     }
 }

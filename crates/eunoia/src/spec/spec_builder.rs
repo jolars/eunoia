@@ -33,6 +33,7 @@ pub struct DiagramSpecBuilder {
     input_type: Option<InputType>,
     set_order: Vec<String>,
     max_sets: Option<usize>,
+    complement: Option<f64>,
 }
 
 impl Default for DiagramSpecBuilder {
@@ -49,6 +50,7 @@ impl DiagramSpecBuilder {
             input_type: None,
             set_order: Vec::new(),
             max_sets: None,
+            complement: None,
         }
     }
 
@@ -150,6 +152,38 @@ impl DiagramSpecBuilder {
         self
     }
 
+    /// Sets the complement: the area outside every named set in the diagram.
+    ///
+    /// When provided, the fitter jointly optimises an axis-aligned bounding
+    /// rectangle (the "container") together with the diagram shapes. The
+    /// container's area minus the union of clipped shapes is matched against
+    /// this value via the existing per-region loss, pinning the otherwise-free
+    /// absolute scale and pulling shapes that would spill outside the box back
+    /// in.
+    ///
+    /// Must be `≥ 0`. Setting `0.0` is meaningful (it asks for a tight
+    /// container). Omitting this setter (or never calling it) preserves the
+    /// classic shape-only fit path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, InputType};
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 25.0)
+    ///     .set("B", 25.0)
+    ///     .intersection(&["A", "B"], 5.0)
+    ///     .complement(145.0)        // universe area = 200
+    ///     .input_type(InputType::Exclusive)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn complement(mut self, value: f64) -> Self {
+        self.complement = Some(value);
+        self
+    }
+
     /// Builds the diagram specification, validating all inputs.
     ///
     /// # Errors
@@ -241,6 +275,18 @@ impl DiagramSpecBuilder {
             }
         }
 
+        // Reject negative complement. Use the sentinel `<complement>` for
+        // the offending-combination string since the all-zeros region has
+        // no `Combination` representation.
+        if let Some(c) = self.complement {
+            if c < 0.0 {
+                return Err(DiagramError::InvalidValue {
+                    combination: "<complement>".to_string(),
+                    value: c,
+                });
+            }
+        }
+
         // Reduce input to the canonical exclusive representation. The
         // inclusive view is computed on demand by `DiagramSpec` and is
         // never stored in the spec; this keeps build cost proportional to
@@ -255,6 +301,7 @@ impl DiagramSpecBuilder {
             exclusive_areas,
             input_type,
             set_names: ordered_set_names,
+            complement: self.complement,
         })
     }
 }
@@ -540,6 +587,58 @@ mod tests {
             "expected TooManySets with tightened cap, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn complement_field_round_trips_through_builder() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .complement(42.0)
+            .build()
+            .unwrap();
+        assert_eq!(spec.complement(), Some(42.0));
+        assert_eq!(spec.complement, Some(42.0));
+    }
+
+    #[test]
+    fn builder_omits_complement_by_default() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .build()
+            .unwrap();
+        assert_eq!(spec.complement(), None);
+    }
+
+    #[test]
+    fn builder_rejects_negative_complement() {
+        let result = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .complement(-1.0)
+            .build();
+        assert!(
+            matches!(
+                result,
+                Err(DiagramError::InvalidValue { ref combination, value })
+                    if combination == "<complement>" && value < 0.0
+            ),
+            "expected InvalidValue for negative complement, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn builder_accepts_zero_complement() {
+        // complement = 0 is a meaningful "tight container" request.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .complement(0.0)
+            .build()
+            .unwrap();
+        assert_eq!(spec.complement(), Some(0.0));
     }
 
     #[test]

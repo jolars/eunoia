@@ -38,6 +38,15 @@ pub struct DiagramSpec {
 
     /// Set of all unique set names in the diagram (ordered).
     pub(crate) set_names: Vec<String>,
+
+    /// Optional area outside every named set (the "universe minus union").
+    ///
+    /// When `Some`, the fitter jointly optimises an axis-aligned bounding
+    /// rectangle (the "container") together with the diagram shapes; the
+    /// container's area minus the union of clipped shapes is matched against
+    /// this value via the regular per-region loss. See
+    /// [`DiagramSpecBuilder::complement`] for the user-facing entry point.
+    pub(crate) complement: Option<f64>,
 }
 
 impl DiagramSpec {
@@ -54,6 +63,15 @@ impl DiagramSpec {
     /// Returns the exclusive areas.
     pub fn exclusive_areas(&self) -> &HashMap<Combination, f64> {
         &self.exclusive_areas
+    }
+
+    /// Returns the complement (area outside every named set), if set.
+    ///
+    /// `Some(value)` enables the container/complement fit path; `None`
+    /// preserves the classic shape-only behaviour. See
+    /// [`DiagramSpecBuilder::complement`] for the builder entry point.
+    pub fn complement(&self) -> Option<f64> {
+        self.complement
     }
 
     /// Returns the inclusive areas, computed on demand from `exclusive_areas`.
@@ -171,6 +189,14 @@ impl DiagramSpec {
             }
         }
 
+        // When the spec carries a complement, surface the all-zeros region
+        // (mask 0) so the loss can compare the fitted complement against the
+        // target value. Without this, the existing per-mask loss path skips
+        // mask 0 entirely (matching the old behaviour).
+        if let Some(c) = self.complement {
+            exclusive_areas_mask.insert(0, c);
+        }
+
         // 4. Set areas in canonical order.
         let set_areas: Vec<f64> = non_empty_sets
             .iter()
@@ -192,6 +218,7 @@ impl DiagramSpec {
             n_sets,
             set_areas,
             relationships,
+            complement: self.complement,
         })
     }
 
@@ -328,6 +355,11 @@ pub(crate) struct PreprocessedSpec {
 
     /// Pairwise relationships
     pub(crate) relationships: PairwiseRelations,
+
+    /// Carried through from [`DiagramSpec::complement`]. `Some(_)` flips the
+    /// fitter into the joint container/complement optimisation path; `None`
+    /// preserves classic shape-only fitting.
+    pub(crate) complement: Option<f64>,
 }
 
 /// Pairwise relationships between sets (internal).
@@ -513,6 +545,41 @@ mod tests {
             spec.get_inclusive(&Combination::new(&["A", "B", "C", "D"])),
             None
         );
+    }
+
+    #[test]
+    fn preprocessed_includes_mask_zero_iff_complement_set() {
+        // No complement: PreprocessedSpec.exclusive_areas should not contain mask 0.
+        let spec_no_comp = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+        let pre = spec_no_comp.preprocess().unwrap();
+        assert!(
+            !pre.exclusive_areas.contains_key(&0),
+            "mask 0 should be absent when complement is not set"
+        );
+        assert_eq!(pre.complement, None);
+
+        // With complement = 50: mask 0 should be present and equal to the complement.
+        let spec_with_comp = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .complement(50.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+        let pre = spec_with_comp.preprocess().unwrap();
+        assert_eq!(
+            pre.exclusive_areas.get(&0).copied(),
+            Some(50.0),
+            "mask 0 should hold the complement value"
+        );
+        assert_eq!(pre.complement, Some(50.0));
     }
 
     #[test]

@@ -210,12 +210,40 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
             }
         }
 
-        let mut initial_params = Vec::with_capacity(n_sets * params_per_shape);
+        let mut initial_params = Vec::with_capacity(n_sets * params_per_shape + 4);
         for i in 0..n_sets {
             let x = positions[i * 2];
             let y = positions[i * 2 + 1];
             let r = initial_radii[i];
             initial_params.extend(S::optimizer_params_from_circle(x, y, r));
+        }
+        // Append container init params when the spec carries a complement.
+        // Container init: centred on the (perturbed) MDS positions, square
+        // footprint of side √universe (so initial area ≈ complement +
+        // Σ named exclusive). The optimiser refines x/y/area/ratio from there.
+        if spec.complement.is_some() {
+            let mut sx = 0.0;
+            let mut sy = 0.0;
+            for i in 0..n_sets {
+                sx += positions[i * 2];
+                sy += positions[i * 2 + 1];
+            }
+            let cx = if n_sets > 0 { sx / n_sets as f64 } else { 0.0 };
+            let cy = if n_sets > 0 { sy / n_sets as f64 } else { 0.0 };
+            // Universe area = sum of all targets in `exclusive_areas`, which
+            // includes the mask-0 complement entry inserted by `preprocess`.
+            let universe = spec
+                .exclusive_areas
+                .values()
+                .sum::<f64>()
+                .max(f64::MIN_POSITIVE);
+            let side = universe.sqrt();
+            let rect = crate::geometry::shapes::Rectangle::new(
+                crate::geometry::primitives::Point::new(cx, cy),
+                side,
+                side,
+            );
+            initial_params.extend(rect.to_optimizer_params());
         }
         let initial_param = DVector::from_vec(initial_params);
 
@@ -269,8 +297,21 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
 ) -> Result<(DVector<f64>, f64), Error> {
     let params_per_shape = S::n_params();
 
+    // Complement specs run through L-BFGS with analytical gradients (S2). LM
+    // also has analytical Jacobians via `LmDiagramProblem`, but on the small
+    // complement specs in the test corpus it consistently converges to higher
+    // residual loss than L-BFGS — the clipped landscape's basin shape differs
+    // enough from the unclipped one that LM's `JᵀJ` step bias is unhelpful.
+    // CmaEsLm is also downgraded because `cmaes_bounds_for` doesn't yet split
+    // off the trailing container block. Both lifts are S6 polish.
+    let optimizer = if spec.complement.is_some() {
+        Optimizer::Lbfgs
+    } else {
+        config.optimizer
+    };
+
     // Choose optimizer and run based on configuration
-    let (final_params, loss) = match config.optimizer {
+    let (final_params, loss) = match optimizer {
         Optimizer::NelderMead => {
             run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)?
         }
@@ -645,6 +686,15 @@ impl<S: DiagramShape + Copy + 'static> DiagramCost<'_, S> {
             })
             .collect()
     }
+
+    /// Decode the trailing 4 container params (`[x, y, ln area, ln ratio]`)
+    /// into a `Rectangle`. Only meaningful when `self.spec.complement.is_some()`;
+    /// the caller is responsible for that gate.
+    fn params_to_container(&self, params: &DVector<f64>) -> crate::geometry::shapes::Rectangle {
+        let n_sets = self.spec.n_sets;
+        let trailing = &params.as_slice()[n_sets * self.params_per_shape..];
+        crate::geometry::shapes::Rectangle::from_optimizer_params(trailing)
+    }
 }
 
 impl<S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'_, S> {
@@ -654,8 +704,21 @@ impl<S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'_, S> {
     fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
         let shapes = self.params_to_shapes(param);
 
-        // Compute exclusive regions using shape-specific exact computation
-        let exclusive_areas = S::compute_exclusive_regions(&shapes);
+        // When the spec carries a complement, the trailing 4 params encode a
+        // jointly-optimised axis-aligned container rectangle; per-region areas
+        // are clipped to it and mask 0 (the complement) is added by the
+        // shape-specific clipping helper. Otherwise use the unclipped path.
+        let exclusive_areas = if self.spec.complement.is_some() {
+            let container = self.params_to_container(param);
+            S::compute_exclusive_regions_clipped(&shapes, &container).ok_or_else(|| {
+                Error::msg(
+                    "complement specs require a shape with `compute_exclusive_regions_clipped`; \
+                     fitter construction should have rejected this combination",
+                )
+            })?
+        } else {
+            S::compute_exclusive_regions(&shapes)
+        };
 
         // `LossType::compute` evaluates the right thing for both true and
         // smooth-surrogate variants — smoothing is now expressed by picking
@@ -676,8 +739,19 @@ impl<S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'_, S> {
         // Try the analytical path: requires both the shape (region geometry)
         // and the loss to provide analytical gradients. Falls back to central
         // finite differences when either piece isn't available.
+        //
+        // When the spec carries a complement, region geometry is clipped to a
+        // jointly-optimised container; the clipped-with-gradient companion
+        // returns gradients of length `n_sets · S::n_params() + 4` matching
+        // the trailing container params in `param`.
         let shapes = self.params_to_shapes(param);
-        if let Some((fitted, fitted_grads)) = S::compute_exclusive_regions_with_gradient(&shapes) {
+        let analytic = if self.spec.complement.is_some() {
+            let container = self.params_to_container(param);
+            S::compute_exclusive_regions_clipped_with_gradient(&shapes, &container)
+        } else {
+            S::compute_exclusive_regions_with_gradient(&shapes)
+        };
+        if let Some((fitted, fitted_grads)) = analytic {
             if let Some((_loss, loss_grad)) = self
                 .loss_type
                 .compute_with_gradient(&fitted, &self.spec.exclusive_areas)
@@ -735,17 +809,23 @@ impl<S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'_, S> {
 /// region-area gradients exposed by
 /// [`DiagramShape::compute_exclusive_regions_with_gradient`].
 ///
-/// Residual ordering is fixed at construction to all non-empty subset masks
-/// `1..(1 << n_sets)`. Masks not produced by the geometry have implicit area 0
-/// (zero residual contribution, zero Jacobian row), matching the existing
-/// loss exactly.
+/// Residual ordering is fixed at construction. For non-complement specs the
+/// list is `1..(1 << n_sets)` (every non-empty subset). For complement specs
+/// it additionally includes mask `0` so the universe-residual contributes to
+/// the Jacobian; in that case the trailing 4 entries of the parameter vector
+/// encode the jointly-optimised container rectangle and the Jacobian columns
+/// pick up box-edge contributions via
+/// [`DiagramShape::compute_exclusive_regions_clipped_with_gradient`]. Masks
+/// not produced by the geometry have implicit area 0 (zero residual
+/// contribution, zero Jacobian row), matching the existing loss exactly.
 ///
 /// Supported loss: [`LossType::SumSquared`]. Other losses are rejected at
 /// construction with an [`Error`].
 struct LmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
     spec: &'a PreprocessedSpec,
     params_per_shape: usize,
-    /// Fixed canonical residual ordering: all non-empty subset masks.
+    /// Fixed canonical residual ordering. Includes mask 0 iff the spec
+    /// carries a complement target.
     masks: Vec<RegionMask>,
     /// `1/sqrt(Σ tᵢ²)`. Stored residuals get multiplied by this so
     /// `Σ rᵢ²` equals the configured loss `Σ(f-t)² / Σt²`.
@@ -787,11 +867,14 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 )));
             }
         };
-        // Enumerate every non-empty subset mask once; residual ordering is
-        // fixed for the whole solve so the Jacobian shape stays constant
-        // (LM rejects residual-count changes).
+        // Enumerate every subset mask once; residual ordering is fixed for the
+        // whole solve so the Jacobian shape stays constant (LM rejects
+        // residual-count changes). Mask 0 (the complement) is included only
+        // when the spec carries a complement target — otherwise it carries no
+        // signal and has no analytical gradient.
         let n_sets = spec.n_sets;
-        let masks: Vec<RegionMask> = (1..(1usize << n_sets)).collect();
+        let start = if spec.complement.is_some() { 0 } else { 1 };
+        let masks: Vec<RegionMask> = (start..(1usize << n_sets)).collect();
         Ok(Self {
             spec,
             params_per_shape,
@@ -816,7 +899,17 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 S::from_optimizer_params(&self.params.as_slice()[start..end])
             })
             .collect();
-        let (fitted, fitted_grads) = match S::compute_exclusive_regions_with_gradient(&shapes) {
+        let analytic = if self.spec.complement.is_some() {
+            // Trailing 4 params encode the container rectangle in `[x_c, y_c,
+            // ln(area), ln(ratio)]` — same encoding as `Rectangle`'s
+            // optimizer params.
+            let trailing = &self.params.as_slice()[n_sets * self.params_per_shape..];
+            let container = crate::geometry::shapes::Rectangle::from_optimizer_params(trailing);
+            S::compute_exclusive_regions_clipped_with_gradient(&shapes, &container)
+        } else {
+            S::compute_exclusive_regions_with_gradient(&shapes)
+        };
+        let (fitted, fitted_grads) = match analytic {
             Some(pair) => pair,
             None => {
                 // Should not happen for shapes that wire LM in (Circle/Ellipse
@@ -824,7 +917,15 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 // with empty gradient map; the Jacobian becomes all-zeros
                 // and LM will terminate immediately on its orthogonality
                 // check, surfacing the issue.
-                let fitted = S::compute_exclusive_regions(&shapes);
+                let fitted = if self.spec.complement.is_some() {
+                    let trailing = &self.params.as_slice()[n_sets * self.params_per_shape..];
+                    let container =
+                        crate::geometry::shapes::Rectangle::from_optimizer_params(trailing);
+                    S::compute_exclusive_regions_clipped(&shapes, &container)
+                        .unwrap_or_else(|| S::compute_exclusive_regions(&shapes))
+                } else {
+                    S::compute_exclusive_regions(&shapes)
+                };
                 (fitted, HashMap::new())
             }
         };
@@ -1425,6 +1526,190 @@ mod tests {
                 format!("nested {}", name)
             });
         }
+    }
+
+    /// Build a complement-bearing PreprocessedSpec from a known circle layout
+    /// inside a known container. Targets equal the layout's own clipped
+    /// areas, so the gradient at the layout's own params is well-defined and
+    /// the loss at that point is zero.
+    fn complement_spec_from_layout(
+        circles: &[Circle],
+        container: &crate::geometry::shapes::Rectangle,
+    ) -> PreprocessedSpec {
+        use crate::geometry::shapes::circle::compute_exclusive_regions_clipped;
+        use crate::spec::{DiagramSpec, DiagramSpecBuilder};
+
+        let names: Vec<String> = (0..circles.len()).map(|i| format!("S{}", i)).collect();
+        let areas = compute_exclusive_regions_clipped(circles, container);
+
+        // Build a builder mirroring `helpers::create_spec_from_exclusive` but
+        // routing per-set / per-intersection values from the (mask → area)
+        // map of the clipped layout.
+        let mut builder = DiagramSpecBuilder::new();
+        for (i, name) in names.iter().enumerate() {
+            // Singleton: the area at mask `1 << i` is the disk-only piece.
+            let single_mask = 1usize << i;
+            let v = areas.get(&single_mask).copied().unwrap_or(0.0);
+            builder = builder.set(name.as_str(), v);
+        }
+        for (mask, &v) in &areas {
+            if *mask == 0 {
+                continue;
+            }
+            let bits = mask.count_ones();
+            if bits < 2 {
+                continue;
+            }
+            let mut sets: Vec<&str> = Vec::with_capacity(bits as usize);
+            for (i, name) in names.iter().enumerate() {
+                if mask & (1 << i) != 0 {
+                    sets.push(name.as_str());
+                }
+            }
+            builder = builder.intersection(&sets, v);
+        }
+        let complement = areas.get(&0).copied().unwrap_or(0.0);
+        builder = builder
+            .complement(complement)
+            .input_type(crate::InputType::Exclusive);
+        let spec: DiagramSpec = builder.build().unwrap();
+        spec.preprocess().unwrap()
+    }
+
+    /// Pack circles + container into the optimizer's flat parameter layout
+    /// (per-circle blocks then container `[x_c, y_c, ln(area), ln(ratio)]`).
+    fn pack_complement_params(
+        circles: &[Circle],
+        container: &crate::geometry::shapes::Rectangle,
+    ) -> Vec<f64> {
+        let mut p = Vec::with_capacity(circles.len() * 3 + 4);
+        for c in circles {
+            p.extend(c.to_optimizer_params());
+        }
+        p.extend(container.to_optimizer_params());
+        p
+    }
+
+    /// FD-vs-analytical for `DiagramCost::gradient` on a complement spec.
+    /// Mirrors `assert_analytic_matches_fd` but works with the extended
+    /// parameter vector that includes the trailing 4 container params.
+    #[test]
+    fn analytic_gradient_complement_two_circles_inside_box() {
+        let circles = vec![
+            Circle::new(Point::new(-0.6, 0.0), 1.0),
+            Circle::new(Point::new(0.55, 0.05), 0.95),
+        ];
+        let container = crate::geometry::shapes::Rectangle::new(Point::new(0.0, 0.0), 6.0, 5.0);
+        let spec = complement_spec_from_layout(&circles, &container);
+        // Probe at a perturbed config so the loss isn't exactly zero.
+        let mut params = pack_complement_params(&circles, &container);
+        params[0] += 0.07; // x0
+        params[3] += -0.05; // x1
+        params[6 + 2] += 0.03; // ln(area) of container
+
+        let cost = DiagramCost::<Circle> {
+            spec: &spec,
+            loss_type: crate::loss::LossType::SumSquared,
+            params_per_shape: Circle::n_params(),
+            _shape: std::marker::PhantomData,
+        };
+        let p = DVector::from_vec(params.clone());
+        let analytic = cost.gradient(&p).expect("analytic gradient");
+
+        let h = 1e-6;
+        let n = params.len();
+        let mut fd = vec![0.0; n];
+        for i in 0..n {
+            let mut plus = params.clone();
+            let mut minus = params.clone();
+            plus[i] += h;
+            minus[i] -= h;
+            let f_plus = cost.cost(&DVector::from_vec(plus)).expect("cost +");
+            let f_minus = cost.cost(&DVector::from_vec(minus)).expect("cost -");
+            fd[i] = (f_plus - f_minus) / (2.0 * h);
+        }
+        let analytic_slice: Vec<f64> = analytic.as_slice().to_vec();
+        let diff_norm: f64 = analytic_slice
+            .iter()
+            .zip(fd.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+        let rel = if fd_norm > 1e-9 {
+            diff_norm / fd_norm
+        } else {
+            diff_norm
+        };
+        assert!(
+            rel < 1e-3,
+            "complement gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+            rel,
+            fd_norm,
+            analytic_slice,
+            fd
+        );
+    }
+
+    /// Same as above but with one disk clipped by the right edge of the
+    /// container — exercises the box-edge contribution to the disk's
+    /// boundary integral.
+    #[test]
+    fn analytic_gradient_complement_one_disk_clipped() {
+        let circles = vec![
+            Circle::new(Point::new(1.4, 0.05), 0.9),
+            Circle::new(Point::new(0.0, -0.07), 0.85),
+        ];
+        let container = crate::geometry::shapes::Rectangle::new(Point::new(0.0, 0.0), 3.6, 3.0);
+        let spec = complement_spec_from_layout(&circles, &container);
+        let mut params = pack_complement_params(&circles, &container);
+        // Bump container x slightly so the right-edge clip on disk 0 stays a
+        // smooth (non-tangent) intersection but the gradient is non-trivial.
+        params[6] += 0.04;
+        params[6 + 3] += 0.02;
+
+        let cost = DiagramCost::<Circle> {
+            spec: &spec,
+            loss_type: crate::loss::LossType::SumSquared,
+            params_per_shape: Circle::n_params(),
+            _shape: std::marker::PhantomData,
+        };
+        let p = DVector::from_vec(params.clone());
+        let analytic = cost.gradient(&p).expect("analytic gradient");
+
+        let h = 1e-6;
+        let n = params.len();
+        let mut fd = vec![0.0; n];
+        for i in 0..n {
+            let mut plus = params.clone();
+            let mut minus = params.clone();
+            plus[i] += h;
+            minus[i] -= h;
+            let f_plus = cost.cost(&DVector::from_vec(plus)).expect("cost +");
+            let f_minus = cost.cost(&DVector::from_vec(minus)).expect("cost -");
+            fd[i] = (f_plus - f_minus) / (2.0 * h);
+        }
+        let analytic_slice: Vec<f64> = analytic.as_slice().to_vec();
+        let diff_norm: f64 = analytic_slice
+            .iter()
+            .zip(fd.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let fd_norm: f64 = fd.iter().map(|b| b * b).sum::<f64>().sqrt();
+        let rel = if fd_norm > 1e-9 {
+            diff_norm / fd_norm
+        } else {
+            diff_norm
+        };
+        assert!(
+            rel < 1e-3,
+            "complement+clip gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
+            rel,
+            fd_norm,
+            analytic_slice,
+            fd
+        );
     }
 
     /// Same idea as `benchmark_gradient_call_only` but for ellipses.

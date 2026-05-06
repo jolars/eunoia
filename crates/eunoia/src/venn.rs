@@ -145,7 +145,14 @@ impl<S: DiagramShape + Copy + 'static> VennDiagram<S> {
             .map(|(i, name)| (name.clone(), i))
             .collect();
 
-        let layout = Layout::new(self.shapes, set_to_shape, &spec, 0, LossType::SumSquared);
+        let layout = Layout::new(
+            self.shapes,
+            set_to_shape,
+            &spec,
+            0,
+            LossType::SumSquared,
+            None,
+        );
         (layout, spec)
     }
 }

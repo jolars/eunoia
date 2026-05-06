@@ -1,7 +1,7 @@
 //! Layout representation - the result of fitting a diagram specification.
 
 use crate::geometry::diagram;
-use crate::geometry::shapes::Circle;
+use crate::geometry::shapes::{Circle, Rectangle};
 use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
 use crate::spec::{Combination, DiagramSpec};
@@ -36,6 +36,11 @@ pub struct Layout<S: DiagramShape = Circle> {
 
     /// Number of iterations performed.
     iterations: usize,
+
+    /// Optional jointly-optimised container rectangle, present only when the
+    /// spec carried a [`DiagramSpec::complement`]. Renderers should draw this
+    /// box as the diagram's "universe" and label its complement region.
+    pub(crate) container: Option<Rectangle>,
 }
 
 impl<S: DiagramShape + Copy + 'static> Layout<S> {
@@ -50,6 +55,7 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         spec: &DiagramSpec,
         iterations: usize,
         loss_type: LossType,
+        container: Option<Rectangle>,
     ) -> Self {
         let requested = spec.exclusive_areas().clone();
         let fitted = Self::compute_fitted_areas(&shapes, spec);
@@ -63,7 +69,16 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
             loss_type,
             loss,
             iterations,
+            container,
         }
+    }
+
+    /// Returns the jointly-optimised container rectangle, if the spec was
+    /// built with [`crate::DiagramSpecBuilder::complement`]. The container's
+    /// area minus the union of (clipped) shapes equals the complement target,
+    /// up to the optimizer's residual.
+    pub fn container(&self) -> Option<&Rectangle> {
+        self.container.as_ref()
     }
 
     /// Get the fitted shapes.
@@ -224,6 +239,15 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     where
         S: Clone,
     {
+        // Container/complement layouts share an optimizer-chosen frame
+        // between the shapes and the container; rotating/packing the shapes
+        // without a corresponding container transform would desync them. S6
+        // will introduce a container-aware normaliser; until then this is a
+        // no-op for container layouts so callers don't accidentally break the
+        // shape/container relationship.
+        if self.container.is_some() {
+            return;
+        }
         crate::fitter::normalize::normalize_layout(&mut self.shapes, padding_factor);
     }
 
@@ -388,7 +412,7 @@ mod tests {
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse());
+        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse(), None);
 
         assert_eq!(layout.shapes().len(), 1);
         assert!(layout.loss() < 0.001); // Should be very close to π
@@ -404,7 +428,7 @@ mod tests {
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse());
+        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse(), None);
 
         let circle = layout.shape_for_set("A").unwrap();
         assert_eq!(circle.radius(), 3.0);
@@ -440,7 +464,7 @@ mod tests {
         set_to_shape.insert("B".to_string(), 1);
         set_to_shape.insert("C".to_string(), 2);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse());
+        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse(), None);
 
         // Check fitted areas - there should be NO intersection areas
         let ab_combo = Combination::new(&["A", "B"]);
