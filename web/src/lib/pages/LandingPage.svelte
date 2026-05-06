@@ -18,7 +18,7 @@ const eulerrRepoUrl = "https://github.com/jolars/eulerr";
         class="float-right ml-6 mb-4 w-32 sm:w-40 md:w-48 h-auto"
       />
       <h2 class="text-3xl font-bold leading-tight mb-4">
-        Area-proportional Euler and Venn diagrams
+        Area-Proportional Euler and Venn Diagrams
       </h2>
       <p class="text-lg text-gray-600 mb-4">
         A Rust library for fitting set-visualization diagrams with circles,
