@@ -17,10 +17,10 @@ npm install @jolars/eunoia
 ```
 
 ```ts
-import { fit, venn } from "@jolars/eunoia";
+import { euler, venn } from "@jolars/eunoia";
 
 // Fit an Euler diagram from set sizes
-const layout = fit({
+const layout = euler({
   sets: { A: 5, B: 2, "A&B": 1 },
   shape: "circle",        // "circle" | "ellipse" | "square"
   output: "shapes",       // "shapes" | "polygons" | "regions"
