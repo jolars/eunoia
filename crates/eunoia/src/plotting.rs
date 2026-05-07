@@ -21,7 +21,7 @@ mod plot_data;
 mod regions;
 
 #[cfg(feature = "plotting")]
-pub use clip::{polygon_clip, ClipOperation};
+pub use clip::{polygon_clip, polygon_difference, ClipOperation};
 #[cfg(feature = "plotting")]
 pub use inscribed::{largest_inscribed_rect, principal_axis};
 #[cfg(feature = "plotting")]

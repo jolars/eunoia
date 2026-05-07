@@ -217,6 +217,7 @@ fn binding_author_walkthrough() {
     let replot = PlotData::from_shapes(
         &stored_shapes,
         &spec,
+        layout.container(),
         PlotOptions {
             n_vertices: 32,
             ..PlotOptions::default()

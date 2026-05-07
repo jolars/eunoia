@@ -211,18 +211,36 @@ impl PlotData {
     ///     .collect();
     ///
     /// // Same output as `layout.plot_data(&spec, PlotOptions::default())`.
-    /// let plot = PlotData::from_shapes(&shapes, &spec, PlotOptions::default());
+    /// // Pass `layout.container()` (or `None` when there's no complement)
+    /// // so the complement region is emitted under the empty combination
+    /// // when the spec asked for one.
+    /// let plot = PlotData::from_shapes(
+    ///     &shapes,
+    ///     &spec,
+    ///     layout.container(),
+    ///     PlotOptions::default(),
+    /// );
     /// assert!(plot.shape_outlines.contains_key("A"));
     /// ```
-    pub fn from_shapes<S>(shapes: &[S], spec: &DiagramSpec, options: PlotOptions) -> PlotData
+    pub fn from_shapes<S>(
+        shapes: &[S],
+        spec: &DiagramSpec,
+        container: Option<&crate::geometry::shapes::Rectangle>,
+        options: PlotOptions,
+    ) -> PlotData
     where
         S: DiagramShape + Polygonize,
     {
-        build_plot_data(shapes, spec, options)
+        build_plot_data(shapes, spec, container, options)
     }
 }
 
-pub(crate) fn build_plot_data<S>(shapes: &[S], spec: &DiagramSpec, options: PlotOptions) -> PlotData
+pub(crate) fn build_plot_data<S>(
+    shapes: &[S],
+    spec: &DiagramSpec,
+    container: Option<&crate::geometry::shapes::Rectangle>,
+    options: PlotOptions,
+) -> PlotData
 where
     S: DiagramShape + Polygonize,
 {
@@ -230,6 +248,7 @@ where
         shapes,
         spec.set_names(),
         spec,
+        container,
         options.n_vertices,
         options.sliver_threshold,
     );

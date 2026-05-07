@@ -108,6 +108,17 @@ export interface RegionPiece {
 }
 
 export interface Region {
+  /**
+   * The set combination this region belongs to, in canonical form (e.g.
+   * `"A"`, `"A&B"`, `"A&B&C"`).
+   *
+   * **Complement (universe minus all sets)** — when the spec was built
+   * with `complement: ...`, an extra region with `combination === ""`
+   * (the empty string) is included alongside the named regions. Its
+   * `pieces` are the container minus the union of fitted shapes, and
+   * its `labelAnchor` is the hole-aware POI inside that complement
+   * piece. Filter this entry out if you only want named regions.
+   */
   combination: string;
   totalArea: number;
   pieces: RegionPiece[];

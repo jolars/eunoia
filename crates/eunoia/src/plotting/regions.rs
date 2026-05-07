@@ -16,9 +16,9 @@
 
 use crate::geometry::diagram::{discover_regions, IntersectionPoint};
 use crate::geometry::primitives::Point;
-use crate::geometry::shapes::Polygon;
+use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{Closed, DiagramShape, Polygonize};
-use crate::plotting::clip::{polygon_clip_many, ClipOperation};
+use crate::plotting::clip::{polygon_clip_many, polygon_difference, ClipOperation};
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
 
@@ -771,12 +771,33 @@ pub(crate) fn poi_with_holes(pieces: &[RegionPiece], precision: f64) -> Option<(
 /// Driven by the actual fitted shapes, not the spec, so unexpected
 /// overlaps the optimiser produces are still visualised.
 ///
+/// # Complement region
+///
+/// When `spec.complement()` is `Some(_)` and a fitted `container` is passed,
+/// the result also includes the **complement region** — the area inside
+/// the container but outside every fitted shape — keyed on the empty
+/// [`Combination`] (`Combination::new(&[])`). This mirrors how
+/// `PreprocessedSpec::exclusive_areas` treats mask 0 as a first-class
+/// region in the loss path. Renderers can identify it with
+/// [`Combination::is_empty`] (or via the `""` string from
+/// [`Combination::Display`](Combination)).
+///
+/// The complement piece is computed via
+/// [`crate::plotting::polygon_difference`] (a single-pass multi-shape
+/// difference, so outer/hole pairing is preserved when the union of
+/// shapes is multi-ring inside the container) and runs through the same
+/// piece classifier and sliver filter as every other region.
+///
 /// # Arguments
 ///
 /// * `shapes` - The fitted diagram shapes (one per set).
 /// * `set_names` - Set names in the same order as `shapes`.
-/// * `_spec` - The diagram specification (unused at present; reserved for
-///   future use such as spec-driven hole hints).
+/// * `spec` - The diagram specification. Read for `spec.complement()`; its
+///   set-area entries are otherwise reserved for future use such as
+///   spec-driven hole hints.
+/// * `container` - The jointly-fitted container rectangle from
+///   `Layout::container()`, or `None` when the spec has no complement.
+///   Required for emitting the complement region; ignored otherwise.
 /// * `n_vertices` - Resolution used when polygonizing each shape. Higher =
 ///   smoother boundaries at higher clipping cost. The eulerr default is 200.
 ///
@@ -800,18 +821,20 @@ pub(crate) fn poi_with_holes(pieces: &[RegionPiece], precision: f64) -> Option<(
 ///     .map(|name| *layout.shape_for_set(name).unwrap())
 ///     .collect();
 ///
-/// let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+/// let regions = decompose_regions(&shapes, spec.set_names(), &spec, layout.container(), 64);
 /// ```
 pub fn decompose_regions<S: DiagramShape + Polygonize>(
     shapes: &[S],
     set_names: &[String],
     spec: &DiagramSpec,
+    container: Option<&Rectangle>,
     n_vertices: usize,
 ) -> RegionPolygons {
     decompose_regions_with(
         shapes,
         set_names,
         spec,
+        container,
         n_vertices,
         DEFAULT_SLIVER_THRESHOLD,
     )
@@ -828,7 +851,8 @@ pub const DEFAULT_SLIVER_THRESHOLD: f64 = 1e-3;
 pub fn decompose_regions_with<S: DiagramShape + Polygonize>(
     shapes: &[S],
     set_names: &[String],
-    _spec: &DiagramSpec,
+    spec: &DiagramSpec,
+    container: Option<&Rectangle>,
     n_vertices: usize,
     sliver_threshold: f64,
 ) -> RegionPolygons {
@@ -840,6 +864,23 @@ pub fn decompose_regions_with<S: DiagramShape + Polygonize>(
     let shape_polygons: Vec<Polygon> = shapes.iter().map(|s| s.polygonize(n_vertices)).collect();
 
     let mut raw: Vec<(Combination, Vec<RegionPiece>)> = Vec::new();
+
+    // Complement region (mask 0). Only emitted when the spec asked for it
+    // *and* the layout supplied a fitted container — no inferring a
+    // bounding box from the shapes, since that would silently change the
+    // complement's size depending on the diagram extent. The piece is
+    // computed in one pass via `polygon_difference` so outer/hole pairing
+    // survives when the union of shapes is multi-ring inside the container.
+    if spec.complement().is_some() {
+        if let Some(container_rect) = container {
+            let container_poly = container_rect.polygonize(n_vertices);
+            let rings = polygon_difference(&container_poly, &shape_polygons);
+            let pieces = classify_into_pieces(rings);
+            if !pieces.is_empty() {
+                raw.push((Combination::new(&[]), pieces));
+            }
+        }
+    }
 
     let n = shapes.len();
 
@@ -994,7 +1035,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let regions = decompose_regions(&circles, &set_names, &spec, 64);
+        let regions = decompose_regions(&circles, &set_names, &spec, None, 64);
 
         // Exactly the two singleton regions, never the pair.
         assert_eq!(regions.len(), 2, "expected only A-only and B-only regions");
@@ -1024,7 +1065,7 @@ mod tests {
         }
         let spec = builder.input_type(InputType::Exclusive).build().unwrap();
 
-        let regions = decompose_regions(&circles, &set_names, &spec, 32);
+        let regions = decompose_regions(&circles, &set_names, &spec, None, 32);
         assert_eq!(regions.len(), n, "expected one region per disjoint circle");
     }
 
@@ -1051,7 +1092,7 @@ mod tests {
             .collect();
 
         // n_vertices is ignored by Square::polygonize (always 4 corners).
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
         assert!(!regions.is_empty(), "no regions decomposed");
         for (combo, polys) in regions.iter() {
             assert!(!polys.is_empty(), "Region {:?} should have polygons", combo);
@@ -1076,7 +1117,7 @@ mod tests {
             .map(|name| *layout.shape_for_set(name).unwrap())
             .collect();
 
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
 
         // Should have regions for A-only, B-only, and A&B
         assert!(regions.len() >= 2); // At least A-only and B-only
@@ -1109,7 +1150,7 @@ mod tests {
             .map(|name| *layout.shape_for_set(name).unwrap())
             .collect();
 
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
 
         // Should have multiple regions
         assert!(regions.len() >= 3);
@@ -1134,7 +1175,7 @@ mod tests {
             .map(|name| *layout.shape_for_set(name).unwrap())
             .collect();
 
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
         let labels = regions.label_points(0.01);
 
         // Every non-empty region in `regions` should appear in `labels`.
@@ -1196,7 +1237,7 @@ mod tests {
             .map(|name| *layout.shape_for_set(name).unwrap())
             .collect();
 
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 128);
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 128);
         let set_labels = regions.set_label_points(spec.set_names(), 0.01);
 
         assert_eq!(set_labels.len(), 2);
@@ -1270,7 +1311,7 @@ mod tests {
             .map(|name| *layout.shape_for_set(name).unwrap())
             .collect();
 
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 128);
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 128);
         let areas = regions.areas();
 
         // Total area should be close to sum of fitted values
@@ -1372,7 +1413,7 @@ mod tests {
             .collect();
 
         // Decompose regions
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, 64);
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
 
         // For this particular configuration, C is fully contained within
         // A&B&C intersection, so there won't be a C-only region. But we
@@ -1389,6 +1430,164 @@ mod tests {
             total_area > 5.0,
             "Total area should be substantial, got {:.3}",
             total_area
+        );
+    }
+
+    #[test]
+    fn test_complement_emitted_under_empty_combination_when_set() {
+        // With a complement target, the fitter produces a container, and
+        // `decompose_regions` should emit the complement piece keyed on
+        // the empty Combination (mirroring how mask 0 is treated in the
+        // loss path).
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(20.0) // universe = 75
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let container = layout.container().expect("container fitted");
+
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|name| *layout.shape_for_set(name).unwrap())
+            .collect();
+
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, Some(container), 128);
+
+        // The complement region appears under the empty combination.
+        let empty = Combination::new(&[]);
+        let pieces = regions
+            .get(&empty)
+            .expect("complement region missing under empty Combination");
+        assert!(!pieces.is_empty());
+
+        // Net complement area should be close to the spec target. We polygonise
+        // shapes (so accuracy is bounded by `n_vertices`); allow 5% slack.
+        let complement_area: f64 = pieces.iter().map(|p| p.area()).sum();
+        assert!(
+            (complement_area - 20.0).abs() / 20.0 < 0.05,
+            "complement area {complement_area:.3} should be ≈ 20.0 (within 5%)"
+        );
+
+        // We don't pin down the topology (single piece with a hole vs.
+        // several disjoint pieces) because the fitter is free to pack
+        // shapes against the container boundary, which fragments the
+        // complement. The area + label-anchor checks already cover what
+        // bindings actually consume.
+
+        // Label points must include an anchor inside the complement region.
+        let labels = regions.label_points(0.05);
+        let anchor = labels.get(&empty).expect("complement label anchor missing");
+        // Anchor must lie inside the container.
+        let (xmin, xmax, ymin, ymax) = container.bounds();
+        assert!(anchor.x() >= xmin && anchor.x() <= xmax);
+        assert!(anchor.y() >= ymin && anchor.y() <= ymax);
+    }
+
+    #[test]
+    fn test_complement_with_strictly_nested_shapes_yields_outer_plus_holes() {
+        // Synthetic layout: two shapes strictly inside a generously sized
+        // container, far from each other and from the container edges.
+        // The complement must therefore be a single piece (the container
+        // outline) with two holes (one per shape).
+        use crate::geometry::primitives::Point;
+        use crate::geometry::shapes::Rectangle;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", std::f64::consts::PI)
+            .set("B", std::f64::consts::PI)
+            .complement(96.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let shapes = [
+            Circle::new(Point::new(-3.0, 0.0), 1.0),
+            Circle::new(Point::new(3.0, 0.0), 1.0),
+        ];
+        // 10×10 box, two unit circles ⇒ complement ≈ 100 − 2π ≈ 93.7.
+        let container = Rectangle::new(Point::new(0.0, 0.0), 10.0, 10.0);
+
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, Some(&container), 128);
+
+        let pieces = regions
+            .get(&Combination::new(&[]))
+            .expect("complement region missing");
+        assert_eq!(pieces.len(), 1, "complement should be a single piece");
+        assert_eq!(
+            pieces[0].holes.len(),
+            2,
+            "expected exactly two holes, one per nested shape"
+        );
+
+        let net = pieces[0].area();
+        let expected = 100.0 - 2.0 * std::f64::consts::PI;
+        assert!(
+            (net - expected).abs() < 0.1,
+            "net complement area {net:.4} should be ≈ {expected:.4}"
+        );
+    }
+
+    #[test]
+    fn test_no_complement_region_when_spec_has_none() {
+        // Without `.complement(...)`, the empty Combination must never be
+        // emitted, even if a container ref is somehow passed.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|name| *layout.shape_for_set(name).unwrap())
+            .collect();
+
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
+        assert!(regions.get(&Combination::new(&[])).is_none());
+    }
+
+    #[test]
+    fn test_complement_region_in_plot_data_shows_up_in_anchors_and_areas() {
+        // End-to-end via `Layout::plot_data`: the complement combo string ""
+        // must appear in `region_anchors`, `region_areas`, and
+        // `pieces_for("")`.
+        use crate::plotting::PlotOptions;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 25.0)
+            .set("B", 25.0)
+            .intersection(&["A", "B"], 5.0)
+            .complement(20.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let plot = layout.plot_data(&spec, PlotOptions::default());
+
+        let key = Combination::new(&[]).to_string();
+        assert_eq!(key, "", "empty combination must serialise to empty string");
+        assert!(
+            plot.region_anchors.contains_key(&key),
+            "region_anchors should include the empty combo for complement"
+        );
+        assert!(
+            plot.region_areas.contains_key(&key),
+            "region_areas should include the empty combo for complement"
+        );
+        assert!(
+            plot.pieces_for(&key).is_some(),
+            "pieces_for(\"\") should return the complement region"
         );
     }
 }

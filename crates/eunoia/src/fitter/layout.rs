@@ -294,7 +294,13 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         S: crate::geometry::traits::Polygonize,
     {
         let set_names = spec.set_names();
-        crate::plotting::decompose_regions(&self.shapes, set_names, spec, n_vertices)
+        crate::plotting::decompose_regions(
+            &self.shapes,
+            set_names,
+            spec,
+            self.container.as_ref(),
+            n_vertices,
+        )
     }
 
     /// Builds a [`PlotData`] bundle — region polygons, per-region and per-set
@@ -339,7 +345,7 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     where
         S: crate::geometry::traits::Polygonize,
     {
-        crate::plotting::PlotData::from_shapes(&self.shapes, spec, options)
+        crate::plotting::PlotData::from_shapes(&self.shapes, spec, self.container.as_ref(), options)
     }
 
     /// Compute all combination areas from current shapes.
