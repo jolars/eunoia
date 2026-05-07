@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.13.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.12.0...eunoia-npm-v0.13.0) (2026-05-07)
+
+### Features
+- **plotting:** provide plotting details for complement ([`9568246`](https://github.com/jolars/eunoia/commit/9568246e9a86e164448588b40309b2ea9c061867)), closes [#56](https://github.com/jolars/eunoia/issues/56)
 ## [0.12.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.11.0...eunoia-npm-v0.12.0) (2026-05-06)
 
 ### Features
