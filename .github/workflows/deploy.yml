@@ -33,17 +33,12 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      # First setup-node call: just to get Node on PATH so corepack can run.
-      - name: Setup Node.js (bootstrap)
-        uses: actions/setup-node@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          node-version-file: .nvmrc
+          package_json_file: web/package.json
 
-      - name: Enable corepack (pnpm)
-        run: corepack enable
-
-      # Second call: now pnpm is on PATH, so cache: "pnpm" works.
-      - name: Setup Node.js (with pnpm cache)
+      - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
