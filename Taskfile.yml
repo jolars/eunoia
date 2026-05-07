@@ -56,15 +56,20 @@ tasks:
       - cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   build-wasm:
-    desc: Build WASM bindings with wasm-pack (--target bundler) into npm/
+    desc: Build WASM bindings and prepare npm/ as @jolars/eunoia
+    # The prepare step is part of `build-wasm` (not a separate task) so the
+    # `npm/` artifact is always self-consistent. Otherwise downstream tooling
+    # (notably pnpm resolving the `file:../npm` link from web/) can capture
+    # the raw wasm-pack output keyed as `eunoia-wasm` instead of
+    # `@jolars/eunoia`, silently breaking imports.
     cmds:
       - wasm-pack build crates/eunoia-wasm --target bundler --out-dir ../../npm
+      - node ts/prepare-package.mjs
 
   pack-npm:
-    desc: Build WASM and prepare npm/ for publishing as @jolars/eunoia
+    desc: Alias for build-wasm (kept for back-compat with publish workflows)
     cmds:
       - task: build-wasm
-      - node ts/prepare-package.mjs
 
   web-dev:
     desc: Start Svelte development server
