@@ -31,8 +31,9 @@ const johanUrl = "https://jolars.co";
       <p class="text-lg text-gray-600 mb-4">
         A Rust library for fitting set-visualization diagrams with circles,
         ellipses, squares, and rectangles — accurate, fast, and shipped with
-        WASM bindings for the web. The backend to the R package
+        WASM bindings for the web. Powers the R package
         <a href={eulerrRepoUrl} class="text-blue-600 hover:underline">eulerr</a>,
+        npm package <a href={npmUrl} class="text-blue-600 hover:underline">@jolars/eunoia</a>,
         with Python and Julia wrappers planned.
       </p>
       <div class="flex flex-wrap gap-3 pt-2 clear-both">
