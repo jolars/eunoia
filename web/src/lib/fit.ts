@@ -3,7 +3,7 @@ import {
   type LossType,
   type Optimizer,
   type Point,
-  fit as runFitWrapper,
+  euler as runFitWrapper,
   venn,
   type Polygon as WrapperPolygon,
   type Region as WrapperRegion,

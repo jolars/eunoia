@@ -78,7 +78,7 @@ export interface Rectangle {
  * Jointly-optimised container rectangle drawn around the diagram when the
  * spec carried a complement (universe outside every named set).
  *
- * For a fitted diagram (`fit({ complement: ... })`), the container is
+ * For a fitted diagram (`euler({ complement: ... })`), the container is
  * area-proportional: its area minus the union of the (clipped) shapes equals
  * the complement target, up to optimiser residual. For a Venn diagram
  * (`venn({ complement: ... })`), the container is purely a visual frame
@@ -189,7 +189,7 @@ export type Layout = (
   container?: Container;
 };
 
-export interface FitOptions {
+export interface EulerOptions {
   /** Set sizes keyed by combination expression (e.g. `{ A: 5, "A&B": 1 }`). */
   sets: Record<string, number>;
   /** Whether `sets` values are exclusive subset sizes or full set unions. Default `"exclusive"`. */
@@ -419,7 +419,7 @@ function metricsFromPolygonResult(
  * (`loss`, `stress`, `diagError`, `iterations`, …) are populated regardless
  * of `output`. The returned `Layout` is discriminated on `mode`.
  */
-export function fit(options: FitOptions): Layout {
+export function euler(options: EulerOptions): Layout {
   const {
     sets,
     inputType = "exclusive",
@@ -434,24 +434,24 @@ export function fit(options: FitOptions): Layout {
   } = options;
 
   if (!sets || typeof sets !== "object") {
-    throw new TypeError("fit: `sets` must be an object of name → size");
+    throw new TypeError("euler: `sets` must be an object of name → size");
   }
 
   const specs = buildSpecs(sets);
   if (specs.length === 0) {
     throw new Error(
-      "fit: `sets` must contain at least one entry with size > 0",
+      "euler: `sets` must contain at least one entry with size > 0",
     );
   }
 
   const seedArg = toSeed(seed);
   const optimizerArg = OPTIMIZER_MAP[optimizer];
   if (optimizerArg === undefined) {
-    throw new RangeError(`fit: unknown optimizer "${optimizer}"`);
+    throw new RangeError(`euler: unknown optimizer "${optimizer}"`);
   }
   const lossArg = loss !== undefined ? LOSS_MAP[loss] : undefined;
   if (loss !== undefined && lossArg === undefined) {
-    throw new RangeError(`fit: unknown loss "${loss}"`);
+    throw new RangeError(`euler: unknown loss "${loss}"`);
   }
   const tolArg = tolerance && tolerance > 0 ? tolerance : undefined;
   const nVerts = Math.max(3, Math.floor(polygonVertices));
