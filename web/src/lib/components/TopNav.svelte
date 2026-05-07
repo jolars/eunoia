@@ -1,25 +1,26 @@
 <script lang="ts">
-  // Shared nav for every route. Active route is highlighted by matching
-  // `currentPath` against each entry's `match` predicate.
-  interface Props {
-    currentPath: string;
-  }
-  let { currentPath }: Props = $props();
+// Shared nav for every route. Active route is highlighted by matching
+// `currentPath` against each entry's `match` predicate.
+interface Props {
+  currentPath: string;
+}
+let { currentPath }: Props = $props();
 
-  type NavItem = {
-    label: string;
-    href: string;
-    match: (path: string) => boolean;
-  };
+type NavItem = {
+  label: string;
+  href: string;
+  match: (path: string) => boolean;
+};
 
-  // Order is left→right. Home gets the wordmark slot, not a nav button.
-  const items: NavItem[] = [
-    { label: "App", href: "/app/", match: (p) => p.startsWith("/app") },
-    { label: "About", href: "/about/", match: (p) => p.startsWith("/about") },
-    { label: "Cite", href: "/cite/", match: (p) => p.startsWith("/cite") },
-  ];
+// Order is left→right. Home gets the wordmark slot, not a nav button.
+const items: NavItem[] = [
+  { label: "Home", href: "/", match: (p) => p === "/" || p === "" },
+  { label: "App", href: "/app/", match: (p) => p.startsWith("/app") },
+  { label: "About", href: "/about/", match: (p) => p.startsWith("/about") },
+  { label: "Cite", href: "/cite/", match: (p) => p.startsWith("/cite") },
+];
 
-  const isHome = $derived(currentPath === "/" || currentPath === "");
+const isHome = $derived(currentPath === "/" || currentPath === "");
 </script>
 
 <nav class="border-b border-gray-200 bg-white">
@@ -45,14 +46,6 @@
           >{item.label}</a>
         </li>
       {/each}
-      <li class="ml-2">
-        <a
-          href="https://github.com/jolars/eunoia"
-          class="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900"
-          target="_blank"
-          rel="noreferrer"
-        >GitHub →</a>
-      </li>
     </ul>
   </div>
 </nav>

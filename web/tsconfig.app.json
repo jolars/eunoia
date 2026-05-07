@@ -5,7 +5,7 @@
     "target": "ES2022",
     "useDefineForClassFields": true,
     "module": "ESNext",
-    "types": ["svelte", "vite/client"],
+    "types": ["svelte", "vite/client", "unplugin-icons/types/svelte"],
     "noEmit": true,
     /**
      * Typecheck JS in `.svelte` and `.js` files by default.

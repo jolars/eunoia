@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import Icons from "unplugin-icons/vite";
 import { defineConfig, type Plugin } from "vite";
 import viteCompression from "vite-plugin-compression";
 import Sitemap from "vite-plugin-sitemap";
@@ -33,6 +34,7 @@ export default defineConfig({
     wasm(),
     topLevelAwait(),
     svelte(),
+    Icons({ compiler: "svelte" }),
     Sitemap({
       hostname: "https://eunoia.bz",
       dynamicRoutes: ["/", "/app/", "/about/", "/cite/"],
