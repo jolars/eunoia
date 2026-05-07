@@ -44,15 +44,20 @@
         appState.loading = false;
         return;
       }
-      if (msg.id !== pendingId) return;
-      appState.fitting = false;
+      // Errors are surfaced regardless of `pendingId` — boot failures (init
+      // throws before any fit is dispatched) would otherwise be filtered out
+      // and present as an infinite spinner.
       if ("error" in msg) {
+        appState.loading = false;
+        appState.fitting = false;
         appState.error = msg.error;
         appState.result = null;
-      } else {
-        appState.error = "";
-        appState.result = msg.result;
+        return;
       }
+      if (msg.id !== pendingId) return;
+      appState.fitting = false;
+      appState.error = "";
+      appState.result = msg.result;
     };
     w.onerror = (e) => {
       appState.loading = false;

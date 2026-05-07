@@ -9,7 +9,8 @@
   "packages": {
     ".": {
       "exclude-paths": [
-        "ts/"
+        "ts/",
+        "web/"
       ]
     },
     "ts": {
