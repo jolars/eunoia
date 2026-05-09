@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@jolars/eunoia':
-        specifier: file:../npm
-        version: file:../npm
+        specifier: link:../npm
+        version: link:../npm
       '@tailwindcss/postcss':
         specifier: ^4.1.17
         version: 4.2.4
@@ -277,9 +277,6 @@ packages:
 
   '@iconify/utils@3.1.2':
     resolution: {integrity: sha512-jVf75icVVgSVGf9+QWBeCHdFL35yZ06HMHl9sCa059pITTP781lOacvRazfwAmXDKiBiUdQQMWVnuiw/RaQNhQ==}
-
-  '@jolars/eunoia@file:../npm':
-    resolution: {directory: ../npm, type: directory}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1607,8 +1604,6 @@ snapshots:
       '@antfu/install-pkg': 1.1.0
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
-
-  '@jolars/eunoia@file:../npm': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

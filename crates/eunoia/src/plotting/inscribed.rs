@@ -11,8 +11,11 @@
 //! produced by [`crate::plotting::decompose_regions`] (or
 //! [`crate::Layout::region_polygons`]).
 
+use crate::geometry::primitives::Point;
 use crate::geometry::shapes::{Polygon, Rectangle};
-use crate::plotting::regions::{poi_with_holes, signed_clearance, RegionPiece};
+use crate::plotting::regions::{poi_with_holes, signed_clearance, RegionPiece, RegionPolygons};
+use crate::spec::Combination;
+use std::collections::HashMap;
 
 /// Best-effort largest axis-aligned rectangle of the given `aspect_ratio`
 /// (width / height) inscribed in the union of `pieces` (each piece's outer
@@ -223,6 +226,144 @@ pub fn principal_axis(piece: &RegionPiece) -> (f64, f64) {
     let elongation = (lambda_max / lambda_min).sqrt();
     let angle = 0.5 * (2.0 * mu_xy).atan2(mu_xx - mu_yy);
     (angle, elongation)
+}
+
+/// Tries to inscribe an axis-aligned `w × h` rectangle inside `pieces` and
+/// returns its centre on success, `None` on failure.
+///
+/// This is a thin predicate over [`largest_inscribed_rect`]: we ask for the
+/// largest rectangle of aspect ratio `w / h` and accept the answer when its
+/// width (and therefore, given the preserved aspect ratio, its height) meets
+/// the request.
+///
+/// # Anchor convention
+///
+/// The returned point is the **centre** of the inscribed rectangle, matching
+/// every other label-anchor in the crate (e.g.
+/// [`RegionPolygons::label_points`]). Renderers using SVG
+/// `text-anchor="middle" dominant-baseline="central"` or grid
+/// `gpar(hjust=0.5, vjust=0.5)` can use the point directly without offsetting
+/// by the box dimensions.
+///
+/// # Failure modes
+///
+/// Returns `None` when:
+/// * `w` or `h` is non-positive or non-finite.
+/// * `pieces` is empty or every piece has non-positive signed clearance
+///   (degenerate input).
+/// * The largest inscribed rectangle of aspect `w / h` is strictly smaller
+///   than the request.
+///
+/// # Caveat (radial-conservative bound)
+///
+/// `largest_inscribed_rect` uses a radial-conservative bound (it inscribes
+/// the rectangle inside the largest empty disc), which is conservative for
+/// very anisotropic regions. A `None` return can therefore be a *false
+/// negative* in wide-and-short or tall-and-narrow regions where a
+/// directional-clearance solver would have found a fit. A tighter solver
+/// is a planned follow-up; until then, the predicate is sound (a `Some`
+/// rectangle is always strictly inscribed) but conservative.
+///
+/// # Examples
+///
+/// ```
+/// use eunoia::geometry::primitives::Point;
+/// use eunoia::geometry::shapes::Polygon;
+/// use eunoia::plotting::{fit_label_in_region, RegionPiece};
+///
+/// let outer = Polygon::new(vec![
+///     Point::new(0.0, 0.0),
+///     Point::new(10.0, 0.0),
+///     Point::new(10.0, 10.0),
+///     Point::new(0.0, 10.0),
+/// ]);
+/// let pieces = vec![RegionPiece { outer, holes: vec![] }];
+///
+/// // A 2×1 label fits comfortably inside a 10×10 region.
+/// assert!(fit_label_in_region(&pieces, 2.0, 1.0, 0.01).is_some());
+///
+/// // An 11×1 label is wider than the region's bounding box.
+/// assert!(fit_label_in_region(&pieces, 11.0, 1.0, 0.01).is_none());
+/// ```
+pub fn fit_label_in_region(
+    pieces: &[RegionPiece],
+    w: f64,
+    h: f64,
+    precision: f64,
+) -> Option<Point> {
+    if !(w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    let (rect, _score) = largest_inscribed_rect(pieces, w / h, precision)?;
+    // Aspect is preserved by `largest_inscribed_rect`, so checking width
+    // suffices; we still check height for FP-safety against the tiny
+    // rounding wobble in `1 / sqrt(1 + a^2)`.
+    let eps = 1e-9 * w.max(h);
+    if rect.width() + eps >= w && rect.height() + eps >= h {
+        Some(*rect.center())
+    } else {
+        None
+    }
+}
+
+/// Batch [`fit_label_in_region`] over every region of a [`RegionPolygons`].
+///
+/// `sizes` is keyed by the canonical [`Combination::to_string`] form (use
+/// `""` for the complement region). Regions absent from `sizes`, regions
+/// whose key fails to parse, and regions whose label does not fit are all
+/// omitted from the returned map — every present key has a real anchor.
+///
+/// Use this when you have a freshly-decomposed [`RegionPolygons`] in hand
+/// (typical when measuring labels post-fit). For lower-level control over
+/// individual pieces, call [`fit_label_in_region`] directly.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+/// use eunoia::geometry::shapes::Circle;
+/// use eunoia::plotting::fit_labels_in_regions;
+///
+/// let spec = DiagramSpecBuilder::new()
+///     .set("A", 5.0)
+///     .set("B", 3.0)
+///     .intersection(&["A", "B"], 1.0)
+///     .input_type(InputType::Exclusive)
+///     .build()
+///     .unwrap();
+///
+/// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+/// let regions = layout.region_polygons(&spec, 64);
+///
+/// let mut sizes = HashMap::new();
+/// sizes.insert("A".to_string(), (0.5, 0.2));
+/// sizes.insert("B".to_string(), (0.5, 0.2));
+///
+/// let placements = fit_labels_in_regions(&regions, &sizes, 0.01);
+/// // Both labels are tiny relative to the regions, so both fit.
+/// assert!(placements.contains_key("A"));
+/// assert!(placements.contains_key("B"));
+/// ```
+pub fn fit_labels_in_regions(
+    regions: &RegionPolygons,
+    sizes: &HashMap<String, (f64, f64)>,
+    precision: f64,
+) -> HashMap<String, Point> {
+    let mut out = HashMap::with_capacity(sizes.len());
+    for (key, &(w, h)) in sizes {
+        let combo: Combination = match key.parse() {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let Some(pieces) = regions.get(&combo) else {
+            continue;
+        };
+        if let Some(point) = fit_label_in_region(pieces, w, h, precision) {
+            out.insert(key.clone(), point);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -455,5 +596,196 @@ mod tests {
         };
         let (_angle, elongation) = principal_axis(&piece);
         assert!(elongation > 1.0, "elongation = {}", elongation);
+    }
+
+    #[test]
+    fn test_fit_label_comfortably_fits_square() {
+        // 10×10 region, label (2, 1). Aspect 2 → max-inscribed (8.94, 4.47),
+        // both ≫ request, so the predicate returns the centre near (5, 5).
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        let anchor = fit_label_in_region(&pieces, 2.0, 1.0, 0.01).unwrap();
+        assert!((anchor.x() - 5.0).abs() < 0.2, "x = {}", anchor.x());
+        assert!((anchor.y() - 5.0).abs() < 0.2, "y = {}", anchor.y());
+    }
+
+    #[test]
+    fn test_fit_label_too_wide_returns_none() {
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        // 11.0 > region's bbox short side (10.0); even at aspect 11 the
+        // radial-conservative fit can't span 11 units of width.
+        assert!(fit_label_in_region(&pieces, 11.0, 1.0, 0.01).is_none());
+    }
+
+    #[test]
+    fn test_fit_label_too_tall_returns_none() {
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        assert!(fit_label_in_region(&pieces, 1.0, 11.0, 0.01).is_none());
+    }
+
+    #[test]
+    fn test_fit_label_larger_than_bbox_returns_none() {
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        assert!(fit_label_in_region(&pieces, 20.0, 20.0, 0.01).is_none());
+    }
+
+    #[test]
+    fn test_fit_label_with_hole_shrinks_fit() {
+        // Same outer + hole as `test_inscribed_with_hole`. A square label
+        // that fits in the unholed region should be rejected when the hole
+        // carves out clearance; a small enough label still fits and lands
+        // outside the hole.
+        let outer = Polygon::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 10.0),
+            Point::new(0.0, 10.0),
+        ]);
+        let hole = Polygon::new(vec![
+            Point::new(4.0, 4.0),
+            Point::new(4.0, 6.0),
+            Point::new(6.0, 6.0),
+            Point::new(6.0, 4.0),
+        ]);
+        let pieces = vec![RegionPiece {
+            outer,
+            holes: vec![hole],
+        }];
+
+        // (5, 5) square: fits in the unholed 10×10 (max inscribed ≈ 7.07²)
+        // but doesn't fit when the hole truncates clearance. Hard-pin the
+        // contrast against the unholed baseline so the test rejects any
+        // future regression that drops hole-awareness.
+        let unholed = vec![axis_aligned_square_piece(10.0)];
+        assert!(fit_label_in_region(&unholed, 5.0, 5.0, 0.01).is_some());
+        assert!(fit_label_in_region(&pieces, 5.0, 5.0, 0.01).is_none());
+
+        // A 0.5×0.5 label fits and the centre must lie outside the hole.
+        let small = fit_label_in_region(&pieces, 0.5, 0.5, 0.01).unwrap();
+        let inside_hole = (4.0..=6.0).contains(&small.x()) && (4.0..=6.0).contains(&small.y());
+        assert!(
+            !inside_hole,
+            "small-label centre ({}, {}) lies inside the hole",
+            small.x(),
+            small.y()
+        );
+    }
+
+    #[test]
+    fn test_fit_label_complement_region() {
+        // Synthetic complement: 10×10 container, two unit holes far from
+        // the edges and from each other. The decomposed complement region
+        // has one outer + two holes (mirrors
+        // test_complement_with_strictly_nested_shapes_yields_outer_plus_holes).
+        let outer = Polygon::new(vec![
+            Point::new(-5.0, -5.0),
+            Point::new(5.0, -5.0),
+            Point::new(5.0, 5.0),
+            Point::new(-5.0, 5.0),
+        ]);
+        // Two CW unit "holes" at (-3, 0) and (3, 0).
+        let hole_a = Polygon::new(vec![
+            Point::new(-2.5, -0.5),
+            Point::new(-2.5, 0.5),
+            Point::new(-3.5, 0.5),
+            Point::new(-3.5, -0.5),
+        ]);
+        let hole_b = Polygon::new(vec![
+            Point::new(2.5, -0.5),
+            Point::new(2.5, 0.5),
+            Point::new(3.5, 0.5),
+            Point::new(3.5, -0.5),
+        ]);
+        let pieces = vec![RegionPiece {
+            outer,
+            holes: vec![hole_a, hole_b],
+        }];
+
+        // A small label fits and the anchor lands inside the container,
+        // outside both holes.
+        let anchor = fit_label_in_region(&pieces, 1.0, 0.4, 0.01).unwrap();
+        assert!(anchor.x() >= -5.0 && anchor.x() <= 5.0);
+        assert!(anchor.y() >= -5.0 && anchor.y() <= 5.0);
+        let in_hole_a = (-3.5..=-2.5).contains(&anchor.x()) && (-0.5..=0.5).contains(&anchor.y());
+        let in_hole_b = (2.5..=3.5).contains(&anchor.x()) && (-0.5..=0.5).contains(&anchor.y());
+        assert!(!in_hole_a && !in_hole_b);
+    }
+
+    #[test]
+    fn test_fit_label_invalid_dimensions() {
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        assert!(fit_label_in_region(&pieces, 0.0, 1.0, 0.01).is_none());
+        assert!(fit_label_in_region(&pieces, 1.0, 0.0, 0.01).is_none());
+        assert!(fit_label_in_region(&pieces, -1.0, 1.0, 0.01).is_none());
+        assert!(fit_label_in_region(&pieces, 1.0, -1.0, 0.01).is_none());
+        assert!(fit_label_in_region(&pieces, f64::NAN, 1.0, 0.01).is_none());
+        assert!(fit_label_in_region(&pieces, 1.0, f64::INFINITY, 0.01).is_none());
+    }
+
+    #[test]
+    fn test_fit_labels_in_regions_batch() {
+        // Two-circle decomposition; ask for one comfortable label and one
+        // that obviously doesn't fit. Non-fitting region must be absent.
+        use crate::fitter::Fitter;
+        use crate::geometry::shapes::Circle;
+        use crate::plotting::decompose_regions;
+        use crate::spec::{DiagramSpecBuilder, InputType};
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|n| *layout.shape_for_set(n).unwrap())
+            .collect();
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
+
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (0.2, 0.1));
+        // 1000-unit label in a few-unit region: never fits.
+        sizes.insert("A&B".to_string(), (1000.0, 1000.0));
+
+        let placements = fit_labels_in_regions(&regions, &sizes, 0.01);
+        assert!(placements.contains_key("A"));
+        assert!(!placements.contains_key("A&B"));
+
+        // The fitting anchor should land inside its region's bbox.
+        let pieces = regions.get(&Combination::new(&["A"])).unwrap();
+        let anchor = placements.get("A").unwrap();
+        let largest = pieces
+            .iter()
+            .max_by(|a, b| a.area().partial_cmp(&b.area()).unwrap())
+            .unwrap();
+        let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
+        let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for v in largest.outer.vertices() {
+            min_x = min_x.min(v.x());
+            min_y = min_y.min(v.y());
+            max_x = max_x.max(v.x());
+            max_y = max_y.max(v.y());
+        }
+        assert!(anchor.x() >= min_x - 1e-9 && anchor.x() <= max_x + 1e-9);
+        assert!(anchor.y() >= min_y - 1e-9 && anchor.y() <= max_y + 1e-9);
+    }
+
+    #[test]
+    fn test_fit_labels_in_regions_skips_unknown_keys() {
+        // Keys with no matching region (e.g. typo'd combo) are silently
+        // dropped — this is a feature, not a bug, since callers measure
+        // labels speculatively.
+        let mut regions = RegionPolygons::new();
+        regions.insert(
+            Combination::new(&["A"]),
+            vec![axis_aligned_square_piece(10.0)],
+        );
+        let mut sizes = HashMap::new();
+        sizes.insert("Z".to_string(), (1.0, 1.0));
+        let placements = fit_labels_in_regions(&regions, &sizes, 0.01);
+        assert!(placements.is_empty());
     }
 }

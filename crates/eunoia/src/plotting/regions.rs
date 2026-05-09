@@ -110,6 +110,23 @@ impl RegionPolygons {
         self.regions.insert(combination, pieces);
     }
 
+    /// Wraps a pre-built `combination → pieces` map into a [`RegionPolygons`]
+    /// without further validation.
+    ///
+    /// The caller is responsible for the [`RegionPiece`] orientation contract
+    /// (outer rings CCW, hole rings CW, holes strictly inside their outer)
+    /// and for region disjointness. **Most callers should use
+    /// [`decompose_regions`]** (or [`crate::Layout::region_polygons`])
+    /// instead — those guarantee the contract.
+    ///
+    /// This entry point exists for downstream bindings (WASM, R, Python,
+    /// Julia) that already have a decomposed layout in hand and want to
+    /// thread it back through APIs like [`crate::plotting::place_labels`]
+    /// without re-running the fitter.
+    pub fn from_map(regions: HashMap<Combination, Vec<RegionPiece>>) -> Self {
+        Self { regions }
+    }
+
     /// Returns the pieces for a given region, or `None` if the combination
     /// has no fitted (non-empty) area.
     pub fn get(&self, combination: &Combination) -> Option<&Vec<RegionPiece>> {

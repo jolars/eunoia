@@ -130,6 +130,23 @@
     </label>
   </div>
 
+  <div>
+    <label for="labelPlacement" class="block text-xs font-medium text-gray-600 mb-1">
+      Label placement
+    </label>
+    <select
+      id="labelPlacement"
+      bind:value={appState.style.labelPlacement}
+      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+    >
+      <option value="interiorPlusRaycast">Inside + raycast outside</option>
+      <option value="interiorOnly">Inside only (hide if too big)</option>
+    </select>
+    <p class="text-xs text-gray-500 mt-1">
+      Strict interior fit; raycast places overflowing labels outside with a leader line.
+    </p>
+  </div>
+
   {#if appState.style.showLegend}
     <div>
       <label for="legendPos" class="block text-xs font-medium text-gray-600 mb-1">

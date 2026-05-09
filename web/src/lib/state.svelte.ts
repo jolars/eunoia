@@ -29,6 +29,7 @@ const DEFAULT_STYLE: DiagramStyle = {
   strokeWidth: 1,
   labelSize: 6,
   showCounts: false,
+  labelPlacement: "interiorPlusRaycast",
 };
 
 const DEFAULT_ADVANCED: AdvancedOptions = {

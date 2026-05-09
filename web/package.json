@@ -34,7 +34,7 @@
     "vite-plugin-wasm": "^3.5.0"
   },
   "dependencies": {
-    "@jolars/eunoia": "file:../npm",
+    "@jolars/eunoia": "link:../npm",
     "@tailwindcss/postcss": "^4.1.17",
     "esbuild": "^0.25.12",
     "jspdf": "^4.2.1",

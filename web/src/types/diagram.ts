@@ -125,6 +125,8 @@ export type LossName =
   | "DiagError";
 export type ExportFormat = "svg" | "png" | "pdf" | "json";
 
+export type LabelPlacementMode = "interiorOnly" | "interiorPlusRaycast";
+
 export interface DiagramStyle {
   /** Per-set fill colors keyed by set name. Missing sets fall back to the default palette. */
   colors: Record<string, string>;
@@ -138,6 +140,17 @@ export interface DiagramStyle {
   /** Label font size in user units. */
   labelSize: number;
   showCounts: boolean;
+  /**
+   * Label placement strategy:
+   *
+   * - `"interiorOnly"` — hide region labels that don't fit (predicate behaviour).
+   * - `"interiorPlusRaycast"` — place such labels outside the diagram with a
+   *   leader line back to the region's POI (default).
+   *
+   * Future strategy variants (`Loose`, `ForceDirected`) live in the eunoia
+   * core surface but are not yet wired into the demo.
+   */
+  labelPlacement: LabelPlacementMode;
 }
 
 export interface RasterSize {

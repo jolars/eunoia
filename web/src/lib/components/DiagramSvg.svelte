@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { placeLabelsForRegions } from "@jolars/eunoia";
+  import type { LabelPlacement } from "@jolars/eunoia";
   import type {
     DiagramStyle,
     FitResult,
@@ -93,6 +95,25 @@
       const c = result.container;
       consume({ x: c.x - c.width / 2, y: c.y - c.height / 2 });
       consume({ x: c.x + c.width / 2, y: c.y + c.height / 2 });
+    }
+
+    // Extend bounds to cover label boxes — raycast can place exterior
+    // anchors well outside the diagram bbox; without this the viewBox
+    // clips them off-screen.
+    if (
+      result.shapeMode === "region" &&
+      style.labelPlacement === "interiorPlusRaycast"
+    ) {
+      const sizes = measuredSizes;
+      for (const r of result.regions) {
+        const placement = regionPlacements[r.combination];
+        if (!placement) continue;
+        const size = sizes[r.combination];
+        const halfW = size ? size.w / 2 : 0;
+        const halfH = size ? size.h / 2 : 0;
+        consume({ x: placement.anchor.x - halfW, y: placement.anchor.y - halfH });
+        consume({ x: placement.anchor.x + halfW, y: placement.anchor.y + halfH });
+      }
     }
 
     if (!isFinite(minX)) {
@@ -223,6 +244,115 @@
   let fontWeight = $derived(style.fontBold ? 700 : 400);
   let fontItalic = $derived(style.fontItalic ? "italic" : "normal");
 
+  /**
+   * Per-region label-fit map. Demo wiring: measure each region's combined
+   * label via a hidden `<text>` element + `getBBox()` (so we use actual
+   * rendered dimensions instead of a char-width heuristic), then call into
+   * the eunoia core's `fit_label_in_region` (via
+   * `placeRegionLabelsForRegions`) to check whether an axis-aligned `(w, h)`
+   * rectangle inscribes inside the region polygon (with holes). Visible
+   * labels are gated on the result.
+   *
+   * The measurement is keyed by `region.combination` and uses a
+   * `<text data-fit-region="…">` element rendered in a hidden `<g>` below
+   * (see the `fit-measure` block in the SVG body).
+   */
+  let measureContainer: SVGGElement | null = $state(null);
+  let measuredSizes: Record<string, { w: number; h: number }> = $state({});
+
+  $effect(() => {
+    // Re-measure when result changes, font scales, or showCounts toggles.
+    // Reading these explicitly so Svelte tracks them as dependencies.
+    void result;
+    void style.labelSize;
+    void style.fontBold;
+    void style.fontItalic;
+    void style.showCounts;
+    console.debug("[fit-measure] effect run", {
+      hasContainer: !!measureContainer,
+      mode: result?.shapeMode,
+      labelSize: style.labelSize,
+    });
+    if (!measureContainer || !result || result.shapeMode !== "region") {
+      measuredSizes = {};
+      return;
+    }
+    const sizes: Record<string, { w: number; h: number }> = {};
+    const nodes = measureContainer.querySelectorAll<SVGGraphicsElement>(
+      "text[data-fit-region]",
+    );
+    console.debug("[fit-measure] nodes found", nodes.length);
+    for (const t of Array.from(nodes)) {
+      const combo = t.getAttribute("data-fit-region");
+      if (combo === null) continue;
+      const bb = t.getBBox();
+      console.debug("[fit-measure] node", combo, {
+        text: t.textContent,
+        bb: { x: bb.x, y: bb.y, w: bb.width, h: bb.height },
+      });
+      const cur = sizes[combo];
+      if (cur) {
+        sizes[combo] = {
+          w: Math.max(cur.w, bb.width),
+          h: cur.h + bb.height + style.labelSize * 0.1,
+        };
+      } else {
+        sizes[combo] = { w: bb.width, h: bb.height };
+      }
+    }
+    measuredSizes = sizes;
+  });
+
+  /**
+   * Per-region placement decision from the eunoia core. Defaults to the
+   * `Strict + Raycast` strategy: each region's label sits at its POI when
+   * the box fits inside the polygon, otherwise the anchor is raycast
+   * outside the diagram bbox (or container, when complement is set) with
+   * a leader line drawn back to the region's POI.
+   *
+   * Until the first DOM measurement runs (or for regions we didn't
+   * measure — typically intersection regions with showCounts off), we
+   * fall back to the region's own POI from the fit result.
+   */
+  let regionPlacements: Record<string, LabelPlacement> = $derived.by(() => {
+    if (!result || result.shapeMode !== "region") return {};
+    const sizes = measuredSizes;
+    if (Object.keys(sizes).length === 0) {
+      return {};
+    }
+    try {
+      const placements = placeLabelsForRegions({
+        regions: result.regions,
+        container: result.container,
+        sizes,
+        strategy: {
+          precision: Math.max(0.05, style.labelSize * 0.05),
+        },
+      });
+      console.debug("[place]", {
+        labelSize: style.labelSize,
+        sizes,
+        placements: Object.fromEntries(
+          Object.entries(placements).map(([k, p]) => [k, p.kind]),
+        ),
+      });
+      return placements;
+    } catch (err) {
+      console.warn("[place] failed, falling back to region POIs:", err);
+      return {};
+    }
+  });
+
+  function regionAnchor(
+    combo: string,
+    fallbackX: number,
+    fallbackY: number,
+  ): { x: number; y: number } {
+    const p = regionPlacements[combo];
+    if (p) return p.anchor;
+    return { x: fallbackX, y: fallbackY };
+  }
+
   let viewBox = $derived.by(() => {
     let { minX, minY, maxX, maxY } = bounds;
     let w = maxX - minX;
@@ -340,6 +470,36 @@
   preserveAspectRatio="xMidYMid meet"
   xmlns="http://www.w3.org/2000/svg"
 >
+  {#if result && result.shapeMode === "region"}
+    <g
+      bind:this={measureContainer}
+      visibility="hidden"
+      aria-hidden="true"
+      data-fit-measure
+    >
+      {#each result.regions as region}
+        {@const isSetRegion = !region.combination.includes("&")}
+        {#if isSetRegion}
+          <text
+            data-fit-region={region.combination}
+            font-size={style.labelSize}
+            font-weight={fontWeight}
+            font-style={fontItalic}
+          >
+            {region.combination}
+          </text>
+        {/if}
+        {#if style.showCounts}
+          <text
+            data-fit-region={region.combination}
+            font-size={style.labelSize * 0.75}
+          >
+            {fmt(region.totalArea)}
+          </text>
+        {/if}
+      {/each}
+    </g>
+  {/if}
   {#if result}
     {#if result.container}
       {@const c = result.container}
@@ -392,10 +552,32 @@
       {/if}
       {#each result.regions as region}
         {@const isSetRegion = !region.combination.includes("&")}
-        {#if isSetRegion}
+        {@const placement = regionPlacements[region.combination]}
+        {@const isExterior =
+          placement?.kind === "exteriorRaycast" ||
+          placement?.kind === "exteriorForceDirected"}
+        {@const renderLabel =
+          style.labelPlacement === "interiorPlusRaycast" || !isExterior}
+        {@const anchor = regionAnchor(
+          region.combination,
+          region.labelX,
+          region.labelY,
+        )}
+        {#if renderLabel && isExterior && placement?.tether}
+          <line
+            x1={placement.tether.x}
+            y1={placement.tether.y}
+            x2={anchor.x}
+            y2={anchor.y}
+            stroke="#6b7280"
+            stroke-width={Math.max(strokeW * 0.5, 0.3)}
+            stroke-opacity="0.6"
+          />
+        {/if}
+        {#if renderLabel && isSetRegion}
           <text
-            x={region.labelX}
-            y={region.labelY}
+            x={anchor.x}
+            y={anchor.y}
             text-anchor="middle"
             dominant-baseline="central"
             font-size={style.labelSize}
@@ -406,10 +588,10 @@
             {region.combination}
           </text>
         {/if}
-        {#if style.showCounts}
+        {#if renderLabel && style.showCounts}
           <text
-            x={region.labelX}
-            y={isSetRegion ? region.labelY + style.labelSize : region.labelY}
+            x={anchor.x}
+            y={isSetRegion ? anchor.y + style.labelSize : anchor.y}
             text-anchor="middle"
             dominant-baseline="central"
             font-size={style.labelSize * 0.75}

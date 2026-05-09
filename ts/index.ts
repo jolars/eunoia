@@ -217,6 +217,143 @@ export interface EulerOptions {
   complement?: number;
 }
 
+export interface LabelSize {
+  /** Label width in diagram coordinates (same units as fitted shapes). */
+  w: number;
+  /** Label height in diagram coordinates. */
+  h: number;
+}
+
+export interface PlaceLabelsOptions extends EulerOptions {
+  /**
+   * Label dimensions per region, keyed by canonical combination
+   * (e.g. `"A"`, `"A&B"`, `""` for the complement region).
+   *
+   * Measure your label text once with the renderer (e.g. SVG `getBBox()`,
+   * canvas `measureText`, R `grid::grobWidth`/`grobHeight`) before calling.
+   */
+  sizes: Record<string, LabelSize>;
+  /**
+   * Polylabel-style search precision in diagram coordinates. Smaller values
+   * yield more accurate anchors at higher cost. Default `0.01`.
+   */
+  precision?: number;
+}
+
+/**
+ * Minimal region shape accepted by [`placeRegionLabelsForRegions`]. Both
+ * the wrapper's [`Region`] type and the web app's `RegionPolygon` satisfy
+ * this — only `combination` and `pieces` (with outer + holes vertex lists)
+ * are read.
+ */
+export interface RegionInput {
+  combination: string;
+  pieces: ReadonlyArray<{
+    outer: { vertices: ReadonlyArray<Point> };
+    holes: ReadonlyArray<{ vertices: ReadonlyArray<Point> }>;
+  }>;
+}
+
+export interface PlaceLabelsForRegionsOptions {
+  /**
+   * Already-decomposed regions in any coordinate space — the fit-check is
+   * scale-invariant as long as `sizes` are in the same units as the
+   * polygon vertices.
+   */
+  regions: ReadonlyArray<RegionInput>;
+  /**
+   * Label dimensions per region, keyed by canonical combination
+   * (e.g. `"A"`, `"A&B"`, `""` for the complement region).
+   */
+  sizes: Record<string, LabelSize>;
+  /** Polylabel-style search precision. Default `0.01`. */
+  precision?: number;
+}
+
+/**
+ * What to do when a label box would (or would not) fit inside its region.
+ *
+ * - `"strict"` — anchor at the POI only when the box fits; otherwise fall
+ *   through to the exterior fallback.
+ * - `"loose"` — always anchor at the POI, even when the box overflows the
+ *   polygon. **Not implemented yet.**
+ */
+export type InteriorPolicy = "strict" | "loose";
+
+/**
+ * What to do for regions where the strict interior check says "doesn't fit".
+ *
+ * - `"raycast"` — deterministic ray from the diagram centroid through the
+ *   region's POI; anchor lands outside the diagram bbox (or container, when
+ *   complement is set), padded by `margin`.
+ * - `"none"` — omit the region from the result. **Not implemented yet** —
+ *   callers wanting that behaviour should use [`placeRegionLabelsForRegions`]
+ *   directly.
+ * - `"forceDirected"` — iterative spring/repulsion solve. **Not implemented yet.**
+ */
+export type ExteriorPolicyName = "raycast" | "none" | "forceDirected";
+
+export interface PlacementStrategy {
+  /** Default `"strict"`. */
+  interior?: InteriorPolicy;
+  /** Default `"raycast"`. */
+  exterior?: ExteriorPolicyName;
+  /**
+   * Margin around the diagram bbox/container when `exterior === "raycast"`.
+   * Omit to use a per-region proportional default of
+   * `0.5 * max(label_w, label_h)`.
+   */
+  margin?: number;
+  /** Polylabel-style search precision. Default `0.01`. */
+  precision?: number;
+}
+
+/**
+ * Discriminator on [`LabelPlacement`] — tells the renderer whether the
+ * anchor is inside or outside the region.
+ */
+export type PlacementKind =
+  | "interior"
+  | "interiorOverflow"
+  | "exteriorRaycast"
+  | "exteriorForceDirected";
+
+export interface LabelPlacement {
+  /** Centre of the label box, in the same coordinates as the regions. */
+  anchor: Point;
+  /** Where the placement landed. */
+  kind: PlacementKind;
+  /**
+   * Inside-region point to draw a leader line to. `undefined` for interior
+   * placements; set for exterior placements. Renderers draw the tether
+   * from `anchor` toward `tether`.
+   */
+  tether?: Point;
+}
+
+export interface PlaceLabelsForRegionsStrategicOptions {
+  /**
+   * Already-decomposed regions in any coordinate space — the placement is
+   * scale-invariant as long as `sizes` are in the same units as the
+   * polygon vertices.
+   */
+  regions: ReadonlyArray<RegionInput>;
+  /**
+   * The complement container (universe rectangle), when the spec was built
+   * with a complement. Pass [`Layout.container`] (from `euler({ complement })`
+   * / `venn({ complement })`) here so exterior raycasts land outside the
+   * frame rather than just outside the cluster.
+   */
+  container?: Container;
+  /**
+   * Label dimensions per region, keyed by canonical combination
+   * (e.g. `"A"`, `"A&B"`, `""` for the complement region).
+   */
+  sizes: Record<string, LabelSize>;
+  /** Strategy knobs. Defaults to `Strict + Raycast`. */
+  strategy?: PlacementStrategy;
+}
+
 export interface VennOptions {
   /** Number of sets in the Venn diagram (1 ≤ n ≤ 5). */
   n: number;
@@ -716,4 +853,354 @@ export function venn(options: VennOptions): Layout {
   } finally {
     result.free();
   }
+}
+
+/**
+ * Per-region label-fit predicate.
+ *
+ * Re-fits the diagram and, for each entry in `sizes`, asks whether an
+ * axis-aligned rectangle of the given `w × h` fits inside the corresponding
+ * exclusive region (hole-aware). On success, returns the rectangle's centre
+ * as the label anchor; on failure, the region is omitted from the result.
+ *
+ * The fit-check is shape-agnostic — the `shape` field of `options` only
+ * affects how the diagram is fitted before its regions are decomposed.
+ *
+ * Caveat: the underlying inscribed-rectangle bound is radial-conservative,
+ * so `None` for very wide-and-short or tall-and-narrow regions can be a
+ * false negative. A directional-clearance solver is a planned follow-up.
+ *
+ * @example
+ * ```ts
+ * import { placeRegionLabels } from "@jolars/eunoia";
+ *
+ * const placements = placeRegionLabels({
+ *   sets: { A: 5, B: 3, "A&B": 1 },
+ *   sizes: {
+ *     A: { w: 0.4, h: 0.2 },
+ *     B: { w: 0.4, h: 0.2 },
+ *     "A&B": { w: 0.2, h: 0.1 },
+ *   },
+ * });
+ * // placements: { A: { x, y }, B: { x, y }, "A&B": { x, y } } — any
+ * // region whose label didn't fit is absent.
+ * ```
+ */
+export function placeRegionLabels(
+  options: PlaceLabelsOptions,
+): Record<string, Point> {
+  const {
+    sets,
+    sizes,
+    inputType = "exclusive",
+    shape = "circle",
+    seed,
+    optimizer = "cmaEsLm",
+    loss,
+    tolerance,
+    polygonVertices = 256,
+    complement,
+    precision,
+  } = options;
+
+  if (!sets || typeof sets !== "object") {
+    throw new TypeError(
+      "placeRegionLabels: `sets` must be an object of name → size",
+    );
+  }
+  if (!sizes || typeof sizes !== "object") {
+    throw new TypeError(
+      "placeRegionLabels: `sizes` must be an object of region → { w, h }",
+    );
+  }
+
+  const specs = buildSpecs(sets);
+  if (specs.length === 0) {
+    throw new Error(
+      "placeRegionLabels: `sets` must contain at least one entry with size > 0",
+    );
+  }
+
+  const seedArg = toSeed(seed);
+  const optimizerArg = OPTIMIZER_MAP[optimizer];
+  if (optimizerArg === undefined) {
+    throw new RangeError(`placeRegionLabels: unknown optimizer "${optimizer}"`);
+  }
+  const lossArg = loss !== undefined ? LOSS_MAP[loss] : undefined;
+  if (loss !== undefined && lossArg === undefined) {
+    throw new RangeError(`placeRegionLabels: unknown loss "${loss}"`);
+  }
+  const tolArg = tolerance && tolerance > 0 ? tolerance : undefined;
+  const nVerts = Math.max(3, Math.floor(polygonVertices));
+
+  const sizesPayload: Record<string, [number, number]> = {};
+  for (const [k, v] of Object.entries(sizes)) {
+    if (
+      v &&
+      Number.isFinite(v.w) &&
+      Number.isFinite(v.h) &&
+      v.w > 0 &&
+      v.h > 0
+    ) {
+      sizesPayload[k] = [v.w, v.h];
+    }
+  }
+
+  try {
+    const json = wasm.compute_region_label_placements(
+      specs,
+      inputType,
+      shape,
+      nVerts,
+      JSON.stringify(sizesPayload),
+      precision,
+      seedArg,
+      optimizerArg,
+      lossArg,
+      tolArg,
+      complement,
+    );
+    const raw = JSON.parse(json) as Record<string, [number, number]>;
+    const out: Record<string, Point> = {};
+    for (const [k, v] of Object.entries(raw)) out[k] = { x: v[0], y: v[1] };
+    return out;
+  } finally {
+    freeAll(specs);
+  }
+}
+
+/**
+ * Per-region label-fit predicate operating on already-decomposed regions
+ * (no re-fit). Use this when you already have a fitted layout (e.g. the
+ * `regions` from `euler({ output: "regions" })` or the web app's
+ * `result.regions`) and want to ask "does my label of size `(w, h)` fit?"
+ * cheaply, without paying for a full diagram re-fit on every label-size
+ * change.
+ *
+ * Returns a map of fitting region anchor by canonical combination string.
+ * Regions whose label does not fit are absent from the result.
+ *
+ * The fit-check is scale-invariant: pass `regions` and `sizes` in whatever
+ * coordinate space you have (original fit units, normalised SVG units,
+ * pixels — as long as both sides agree).
+ */
+export function placeRegionLabelsForRegions(
+  options: PlaceLabelsForRegionsOptions,
+): Record<string, Point> {
+  const { regions, sizes, precision } = options;
+  if (!regions || !Array.isArray(regions)) {
+    throw new TypeError(
+      "placeRegionLabelsForRegions: `regions` must be an array",
+    );
+  }
+  if (!sizes || typeof sizes !== "object") {
+    throw new TypeError(
+      "placeRegionLabelsForRegions: `sizes` must be an object of region → { w, h }",
+    );
+  }
+
+  const polygonsPayload: Record<
+    string,
+    { outer: [number, number][]; holes: [number, number][][] }[]
+  > = {};
+  for (const r of regions) {
+    polygonsPayload[r.combination] = r.pieces.map(
+      (p: RegionInput["pieces"][number]) => ({
+        outer: p.outer.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        holes: p.holes.map((h: { vertices: ReadonlyArray<Point> }) =>
+          h.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        ),
+      }),
+    );
+  }
+
+  const sizesPayload: Record<string, [number, number]> = {};
+  for (const [k, v] of Object.entries(sizes)) {
+    if (
+      v &&
+      Number.isFinite(v.w) &&
+      Number.isFinite(v.h) &&
+      v.w > 0 &&
+      v.h > 0
+    ) {
+      sizesPayload[k] = [v.w, v.h];
+    }
+  }
+
+  const json = wasm.fit_labels_for_polygons(
+    JSON.stringify(polygonsPayload),
+    JSON.stringify(sizesPayload),
+    precision,
+  );
+  const raw = JSON.parse(json) as Record<string, [number, number]>;
+  const out: Record<string, Point> = {};
+  for (const [k, v] of Object.entries(raw)) out[k] = { x: v[0], y: v[1] };
+  return out;
+}
+
+const INTERIOR_POLICY_MAP: Record<InteriorPolicy, "Strict" | "Loose"> = {
+  strict: "Strict",
+  loose: "Loose",
+};
+
+const EXTERIOR_POLICY_MAP: Record<
+  ExteriorPolicyName,
+  "Raycast" | "None" | "ForceDirected"
+> = {
+  raycast: "Raycast",
+  none: "None",
+  forceDirected: "ForceDirected",
+};
+
+const PLACEMENT_KIND_MAP: Record<
+  "Interior" | "InteriorOverflow" | "ExteriorRaycast" | "ExteriorForceDirected",
+  PlacementKind
+> = {
+  Interior: "interior",
+  InteriorOverflow: "interiorOverflow",
+  ExteriorRaycast: "exteriorRaycast",
+  ExteriorForceDirected: "exteriorForceDirected",
+};
+
+/**
+ * Strategy-driven label placement on already-decomposed regions (no re-fit).
+ *
+ * Unlike [`placeRegionLabelsForRegions`] (a predicate that omits regions
+ * where the label doesn't fit), this function returns a position for **every**
+ * requested region. The returned [`LabelPlacement.kind`] tells the renderer
+ * whether the anchor is inside the region (`"interior"`) or outside it
+ * (`"exteriorRaycast"`, with a `tether` pointing back at the region's POI).
+ *
+ * The default strategy is `Strict + Raycast` — anchor at the POI when the
+ * label fits inside the region, otherwise raycast from the diagram centroid
+ * through the POI to land outside the diagram bbox (or container, when
+ * complement is set), padded by a per-label proportional margin.
+ *
+ * Selecting unimplemented strategy variants (`interior: "loose"`,
+ * `exterior: "none"`, `exterior: "forceDirected"`) throws — pattern-match
+ * on the error and fall back to a different strategy or to the predicate
+ * [`placeRegionLabelsForRegions`].
+ *
+ * @example
+ * ```ts
+ * import { placeLabelsForRegions } from "@jolars/eunoia";
+ *
+ * const placements = placeLabelsForRegions({
+ *   regions: layout.regions,           // from euler({ output: "regions" })
+ *   container: layout.container,       // optional; when complement was set
+ *   sizes: { A: { w: 0.4, h: 0.2 }, "A&B": { w: 0.3, h: 0.15 } },
+ * });
+ * for (const [combo, p] of Object.entries(placements)) {
+ *   if (p.kind === "interior") {
+ *     drawLabelInside(combo, p.anchor);
+ *   } else {
+ *     drawLabelOutsideWithLeaderLine(combo, p.anchor, p.tether!);
+ *   }
+ * }
+ * ```
+ */
+export function placeLabelsForRegions(
+  options: PlaceLabelsForRegionsStrategicOptions,
+): Record<string, LabelPlacement> {
+  const { regions, container, sizes, strategy } = options;
+  if (!regions || !Array.isArray(regions)) {
+    throw new TypeError("placeLabelsForRegions: `regions` must be an array");
+  }
+  if (!sizes || typeof sizes !== "object") {
+    throw new TypeError(
+      "placeLabelsForRegions: `sizes` must be an object of region → { w, h }",
+    );
+  }
+
+  const polygonsPayload: Record<
+    string,
+    { outer: [number, number][]; holes: [number, number][][] }[]
+  > = {};
+  for (const r of regions) {
+    polygonsPayload[r.combination] = r.pieces.map(
+      (p: RegionInput["pieces"][number]) => ({
+        outer: p.outer.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        holes: p.holes.map((h: { vertices: ReadonlyArray<Point> }) =>
+          h.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        ),
+      }),
+    );
+  }
+
+  const sizesPayload: Record<string, [number, number]> = {};
+  for (const [k, v] of Object.entries(sizes)) {
+    if (
+      v &&
+      Number.isFinite(v.w) &&
+      Number.isFinite(v.h) &&
+      v.w > 0 &&
+      v.h > 0
+    ) {
+      sizesPayload[k] = [v.w, v.h];
+    }
+  }
+
+  const containerJson = container
+    ? JSON.stringify({
+        x: container.x,
+        y: container.y,
+        width: container.width,
+        height: container.height,
+      })
+    : undefined;
+
+  let strategyJson: string | undefined;
+  if (strategy) {
+    const payload: {
+      interior?: "Strict" | "Loose";
+      exterior?: "Raycast" | "None" | "ForceDirected";
+      margin?: number;
+      precision?: number;
+    } = {};
+    if (strategy.interior !== undefined) {
+      const mapped = INTERIOR_POLICY_MAP[strategy.interior];
+      if (mapped === undefined) {
+        throw new RangeError(
+          `placeLabelsForRegions: unknown interior policy "${strategy.interior}"`,
+        );
+      }
+      payload.interior = mapped;
+    }
+    if (strategy.exterior !== undefined) {
+      const mapped = EXTERIOR_POLICY_MAP[strategy.exterior];
+      if (mapped === undefined) {
+        throw new RangeError(
+          `placeLabelsForRegions: unknown exterior policy "${strategy.exterior}"`,
+        );
+      }
+      payload.exterior = mapped;
+    }
+    if (strategy.margin !== undefined) payload.margin = strategy.margin;
+    if (strategy.precision !== undefined)
+      payload.precision = strategy.precision;
+    strategyJson = JSON.stringify(payload);
+  }
+
+  const json = wasm.place_region_labels(
+    JSON.stringify(polygonsPayload),
+    containerJson,
+    JSON.stringify(sizesPayload),
+    strategyJson,
+  );
+  type RawPlacement = {
+    anchor: [number, number];
+    kind: keyof typeof PLACEMENT_KIND_MAP;
+    tether?: [number, number];
+  };
+  const raw = JSON.parse(json) as Record<string, RawPlacement>;
+  const out: Record<string, LabelPlacement> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const placement: LabelPlacement = {
+      anchor: { x: v.anchor[0], y: v.anchor[1] },
+      kind: PLACEMENT_KIND_MAP[v.kind],
+    };
+    if (v.tether) placement.tether = { x: v.tether[0], y: v.tether[1] };
+    out[k] = placement;
+  }
+  return out;
 }
