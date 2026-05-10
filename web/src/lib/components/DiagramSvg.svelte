@@ -6,7 +6,7 @@
     FitResult,
     Polygon,
     RegionPiece,
-  } from "../../types/diagram";
+  } from "../types/diagram";
   import { defaultColorFor } from "../colors";
   import { appState } from "../state.svelte";
 

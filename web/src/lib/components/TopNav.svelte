@@ -1,10 +1,9 @@
 <script lang="ts">
+import { page } from "$app/state";
+
 // Shared nav for every route. Active route is highlighted by matching
-// `currentPath` against each entry's `match` predicate.
-interface Props {
-  currentPath: string;
-}
-let { currentPath }: Props = $props();
+// the current pathname against each entry's `match` predicate.
+const currentPath = $derived(page.url.pathname);
 
 type NavItem = {
   label: string;
@@ -14,13 +13,13 @@ type NavItem = {
 
 // Order is left→right. Home gets the wordmark slot, not a nav button.
 const items: NavItem[] = [
-  { label: "Home", href: "/", match: (p) => p === "/" || p === "" },
+  { label: "Home", href: "/", match: (p) => p === "/" },
   { label: "App", href: "/app/", match: (p) => p.startsWith("/app") },
   { label: "About", href: "/about/", match: (p) => p.startsWith("/about") },
   { label: "Cite", href: "/cite/", match: (p) => p.startsWith("/cite") },
 ];
 
-const isHome = $derived(currentPath === "/" || currentPath === "");
+const isHome = $derived(currentPath === "/");
 </script>
 
 <nav class="border-b border-gray-200 bg-white">

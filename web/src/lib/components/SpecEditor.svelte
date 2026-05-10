@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appState } from "../state.svelte";
-  import type { VennSetCount } from "../../types/diagram";
+  import type { VennSetCount } from "../types/diagram";
 </script>
 
 <div class="space-y-4">

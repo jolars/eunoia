@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { appState, saveToStorage } from "../state.svelte";
-  import type { FitInputs } from "../fit";
-  import type { FitResult } from "../../types/diagram";
-  import Section from "../components/Section.svelte";
-  import SpecEditor from "../components/SpecEditor.svelte";
-  import StyleControls from "../components/StyleControls.svelte";
-  import AdvancedControls from "../components/AdvancedControls.svelte";
-  import DebugPanel from "../components/DebugPanel.svelte";
-  import ExportToolbar from "../components/ExportToolbar.svelte";
-  import MetricsPanel from "../components/MetricsPanel.svelte";
-  import FitTable from "../components/FitTable.svelte";
-  import DiagramSvg from "../components/DiagramSvg.svelte";
+  import { appState, saveToStorage } from "$lib/state.svelte";
+  import type { FitInputs } from "$lib/fit";
+  import type { FitResult } from "$lib/types/diagram";
+  import Section from "$lib/components/Section.svelte";
+  import SpecEditor from "$lib/components/SpecEditor.svelte";
+  import StyleControls from "$lib/components/StyleControls.svelte";
+  import AdvancedControls from "$lib/components/AdvancedControls.svelte";
+  import DebugPanel from "$lib/components/DebugPanel.svelte";
+  import ExportToolbar from "$lib/components/ExportToolbar.svelte";
+  import MetricsPanel from "$lib/components/MetricsPanel.svelte";
+  import FitTable from "$lib/components/FitTable.svelte";
+  import DiagramSvg from "$lib/components/DiagramSvg.svelte";
 
   type WorkerResponse =
     | { id: number; ready: true }
@@ -34,7 +34,7 @@
 
   onMount(() => {
     const w = new Worker(
-      new URL("../fit.worker.ts", import.meta.url),
+      new URL("../../lib/fit.worker.ts", import.meta.url),
       { type: "module" },
     );
     worker = w;

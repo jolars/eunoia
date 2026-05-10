@@ -9,7 +9,7 @@ import type {
   Row,
   ShapeType,
   VennSetCount,
-} from "../types/diagram";
+} from "./types/diagram";
 
 const STORAGE_KEY = "eunoia.app.v1";
 

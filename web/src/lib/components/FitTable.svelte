@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { FitMetrics } from "../../types/diagram";
+  import type { FitMetrics } from "../types/diagram";
 
   let { metrics }: { metrics: FitMetrics | null } = $props();
 

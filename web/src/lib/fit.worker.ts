@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
-import type { FitResult } from "../types/diagram";
 import type { FitInputs } from "./fit";
+import type { FitResult } from "./types/diagram";
 
 declare const self: DedicatedWorkerGlobalScope;
 

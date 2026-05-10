@@ -18,7 +18,7 @@ import type {
   Row,
   ShapeType,
   VennSetCount,
-} from "../types/diagram";
+} from "./types/diagram";
 
 const POLYGON_VERTICES = 256;
 

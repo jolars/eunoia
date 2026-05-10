@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appState } from "../state.svelte";
-  import type { AdvancedOptions, DiagramType, InputType, Row, ShapeType, VennSetCount } from "../../types/diagram";
+  import type { AdvancedOptions, DiagramType, InputType, Row, ShapeType, VennSetCount } from "../types/diagram";
 
   interface Repro {
     rows: Row[];

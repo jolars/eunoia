@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.svelte-kit
 *.local
 
 # Editor directories and files
