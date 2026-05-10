@@ -2959,3 +2959,84 @@ pub fn place_region_labels(
 
     serde_json::to_string(&out).map_err(|e| JsValue::from_str(&format!("{}", e)))
 }
+
+/// Bounding box of every placed label box.
+///
+/// `placements_json` is `{ [combination: string]: { anchor: [x, y], kind:
+/// string, tether?: [x, y] } }` — exactly the shape returned by
+/// [`place_region_labels`]. `sizes_json` is `{ [combination: string]: [w,
+/// h] }`.
+///
+/// Returns the JSON-encoded `{x, y, width, height}` of the union AABB
+/// (centre + extents, matching [`WasmRectangle`]) or `null` when no
+/// placement contributed (empty input, sizes missing, or every entry
+/// invalid).
+///
+/// Useful in resize loops: the canvas extent for an Euler/Venn diagram
+/// is `union(region_bbox, container?, placements_bbox)`. JS callers can
+/// drive the size → place → measure → re-place fixed point in their
+/// own loop using this helper.
+#[wasm_bindgen]
+pub fn placements_bbox(
+    placements_json: String,
+    sizes_json: String,
+) -> Result<Option<String>, JsValue> {
+    use eunoia::geometry::primitives::Point;
+    use eunoia::plotting::{
+        placements_bbox as core_placements_bbox, LabelPlacement, PlacementKind,
+    };
+
+    #[derive(serde::Deserialize)]
+    struct PlacementJson {
+        anchor: [f64; 2],
+        #[serde(default)]
+        #[allow(dead_code)] // tether is part of the public JSON shape but ignored here
+        kind: Option<String>,
+        #[serde(default)]
+        #[allow(dead_code)]
+        tether: Option<[f64; 2]>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct BboxJson {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    }
+
+    let placements_in: std::collections::HashMap<String, PlacementJson> =
+        serde_json::from_str(&placements_json)
+            .map_err(|e| JsValue::from_str(&format!("invalid placements_json: {}", e)))?;
+    let sizes: std::collections::HashMap<String, (f64, f64)> = serde_json::from_str(&sizes_json)
+        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {}", e)))?;
+
+    let placements: std::collections::HashMap<String, LabelPlacement> = placements_in
+        .into_iter()
+        .map(|(k, p)| {
+            // The kind field doesn't affect bbox computation (only anchor +
+            // size do), so we can pick any discriminant; Interior is the
+            // cheapest sentinel since the core helper ignores it.
+            let placement = LabelPlacement {
+                anchor: Point::new(p.anchor[0], p.anchor[1]),
+                kind: PlacementKind::Interior,
+                tether: None,
+            };
+            (k, placement)
+        })
+        .collect();
+
+    let bbox = match core_placements_bbox(&placements, &sizes) {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let payload = BboxJson {
+        x: bbox.center().x(),
+        y: bbox.center().y(),
+        width: bbox.width(),
+        height: bbox.height(),
+    };
+    serde_json::to_string(&payload)
+        .map(Some)
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))
+}

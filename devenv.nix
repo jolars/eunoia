@@ -19,8 +19,6 @@
     wasm-pack
     bashInteractive
     perf
-    go-task
-    quartoMinimal
     shfmt
     biome
   ];

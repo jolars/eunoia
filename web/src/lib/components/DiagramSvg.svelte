@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { placeLabelsForRegions } from "@jolars/eunoia";
+  import { placeLabelsForRegions, placementsBbox } from "@jolars/eunoia";
   import type { LabelPlacement } from "@jolars/eunoia";
   import type {
     DiagramStyle,
@@ -99,21 +99,22 @@
 
     // Extend bounds to cover label boxes — both exterior strategies place
     // anchors well outside the diagram bbox; without this the viewBox
-    // clips them off-screen.
+    // clips them off-screen. `placementsBbox` returns the union of every
+    // (anchor ± half-label) so we just consume its corners.
     if (
       result.shapeMode === "region" &&
       (style.labelPlacement === "interiorPlusRaycast" ||
         style.labelPlacement === "interiorPlusForceDirected")
     ) {
-      const sizes = measuredSizes;
-      for (const r of result.regions) {
-        const placement = regionPlacements[r.combination];
-        if (!placement) continue;
-        const size = sizes[r.combination];
-        const halfW = size ? size.w / 2 : 0;
-        const halfH = size ? size.h / 2 : 0;
-        consume({ x: placement.anchor.x - halfW, y: placement.anchor.y - halfH });
-        consume({ x: placement.anchor.x + halfW, y: placement.anchor.y + halfH });
+      const labelBbox = placementsBbox({
+        placements: regionPlacements,
+        sizes: measuredSizes,
+      });
+      if (labelBbox) {
+        const halfW = labelBbox.width / 2;
+        const halfH = labelBbox.height / 2;
+        consume({ x: labelBbox.x - halfW, y: labelBbox.y - halfH });
+        consume({ x: labelBbox.x + halfW, y: labelBbox.y + halfH });
       }
     }
 

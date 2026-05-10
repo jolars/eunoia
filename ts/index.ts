@@ -1217,3 +1217,99 @@ export function placeLabelsForRegions(
   }
   return out;
 }
+
+export interface PlacementsBboxOptions {
+  /**
+   * Placements as returned from [`placeLabelsForRegions`] (or any other
+   * source that produces the same `Record<string, LabelPlacement>` shape).
+   */
+  placements: Record<string, LabelPlacement>;
+  /**
+   * Label dimensions per region, keyed by canonical combination. Entries
+   * with no matching placement, or with non-finite or non-positive
+   * dimensions, are skipped.
+   */
+  sizes: Record<string, LabelSize>;
+}
+
+/**
+ * Bounding box of every placed label box.
+ *
+ * Returns the union AABB of every `(anchor.x ± w/2, anchor.y ± h/2)`,
+ * shaped like the existing [`Container`] type (centre + extents). Returns
+ * `undefined` when no placement contributed.
+ *
+ * Useful in resize loops: the canvas extent of a diagram is
+ * `union(region_bbox, container?, placementsBbox(...))`. Pair it with
+ * [`placeLabelsForRegions`] to drive the size → place → measure → re-place
+ * fixed point in your own loop (font size in physical units, label size
+ * in user coords = `font_pt / scale`).
+ *
+ * @example
+ * ```ts
+ * import { placeLabelsForRegions, placementsBbox } from "@jolars/eunoia";
+ *
+ * const placements = placeLabelsForRegions({ regions, sizes });
+ * const labelBbox = placementsBbox({ placements, sizes });
+ * if (labelBbox) {
+ *   // Extend the canvas viewBox to cover exterior labels.
+ *   extendViewport(labelBbox);
+ * }
+ * ```
+ */
+export function placementsBbox(
+  options: PlacementsBboxOptions,
+): Container | undefined {
+  const { placements, sizes } = options;
+  if (!placements || typeof placements !== "object") {
+    throw new TypeError(
+      "placementsBbox: `placements` must be a record of region → LabelPlacement",
+    );
+  }
+  if (!sizes || typeof sizes !== "object") {
+    throw new TypeError(
+      "placementsBbox: `sizes` must be a record of region → { w, h }",
+    );
+  }
+
+  const placementsPayload: Record<
+    string,
+    { anchor: [number, number]; kind: string }
+  > = {};
+  for (const [k, v] of Object.entries(placements)) {
+    if (!v || !v.anchor) continue;
+    placementsPayload[k] = {
+      anchor: [v.anchor.x, v.anchor.y],
+      // The Rust helper only reads `anchor`; we still ship `kind` so the
+      // JSON shape matches `place_region_labels`'s output and the WASM
+      // deserializer doesn't reject it.
+      kind: "Interior",
+    };
+  }
+
+  const sizesPayload: Record<string, [number, number]> = {};
+  for (const [k, v] of Object.entries(sizes)) {
+    if (
+      v &&
+      Number.isFinite(v.w) &&
+      Number.isFinite(v.h) &&
+      v.w > 0 &&
+      v.h > 0
+    ) {
+      sizesPayload[k] = [v.w, v.h];
+    }
+  }
+
+  const json = wasm.placements_bbox(
+    JSON.stringify(placementsPayload),
+    JSON.stringify(sizesPayload),
+  );
+  if (!json) return undefined;
+  const raw = JSON.parse(json) as {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  return { x: raw.x, y: raw.y, width: raw.width, height: raw.height };
+}

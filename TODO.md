@@ -219,3 +219,89 @@ roadmap didn't require but would tighten the surface.
       one means deciding the right label ("complement", "outside", a
       user-supplied name?) and surfacing it through the existing legend
       build path.
+
+## Documentation
+
+- [ ] **Add `/docs/` routes to the existing Svelte site** (alongside
+      rustdoc / tsdoc / `AGENTS.md`). Rustdoc + tsdoc are reference
+      docs; `AGENTS.md` is contributor-internal. There's no narrative
+      that serves end users (R/Python wrappers) or binding authors
+      wiring up downstream packages.
+
+      **Why expand the existing site rather than ship a separate
+      mdbook**: eunoia.bz already has the brand, Tailwind styling,
+      `LandingPage.svelte`, the embedded `/app/`, the `/cite/` page,
+      and one deploy pipeline. A separate mdbook subdomain would
+      duplicate all of that with a different theme. The real win of
+      keeping it in Svelte is **embedded live `<DiagramViewer>`
+      examples** — "here's force-directed vs raycast on the same
+      n=4 spec, drag the label-size slider yourself" — which a
+      static mdbook can't do.
+
+      Stack: render markdown chapters with
+      [`mdsvex`](https://mdsvex.pngwn.io/) (Svelte-native, supports
+      Svelte components inside markdown so live demos drop straight
+      in). Nav generated from a small `web/src/lib/docs/SUMMARY.ts`
+      that mirrors mdbook's `SUMMARY.md` convention.
+
+      Suggested initial route structure (~8 starter pages, most
+      stubbed):
+
+      ```
+      web/src/lib/docs/
+        SUMMARY.ts                   # nav definition
+        introduction.md              # what is eunoia, who is this for
+        quickstart/
+          rust.md
+          javascript.md
+        concepts/
+          fitter-pipeline.md         # MDS init → final stage → normalize → pack
+          shapes.md                  # circle/ellipse/square/rectangle, generic design
+          label-placement.md         # full guide — see below
+          complement.md              # universe / container
+        bindings/
+          wasm-contract.md           # JSON shapes, RegionPolygons::from_map
+          resize-loops.md            # the size→place→measure pattern, in R/JS/Py
+        reference.md                 # links to rustdoc, npm types, AGENTS.md
+      ```
+
+      Routing: a single `/docs/[...slug]/+page.svelte` (or whatever
+      the project's Svelte router uses) that resolves the slug
+      against the markdown tree. Sidebar component reads `SUMMARY.ts`
+      so adding a chapter only touches one nav file. Cross-link from
+      `LandingPage.svelte` ("Docs" button next to the existing
+      "Try it in the browser" / "Source code"). Doc pages can deep-
+      link into `/app/` with URL-param-encoded specs and strategy
+      knobs; the app's existing controls become the interactive
+      sandbox the docs reference.
+
+      Write the **label placement** chapter end-to-end as the first
+      real content — it's the gap downstream consumers (eulerr R
+      bindings, future Python/Julia wrappers) will hit immediately
+      and the API just landed (`place_labels`, `placements_bbox`,
+      `place_labels_to_fixed_point`, polygon-aware `ForceDirected`).
+      Other chapters can stay as one-line "TODO: cover X" stubs until
+      a downstream consumer hits the gap. Cover in the label-placement
+      chapter:
+
+      1. Mental model — predicate (`fit_labels_in_regions`) vs
+         strategy-driven (`place_labels`); raycast vs force-directed.
+      2. Size measurement contract — caller measures in user coords,
+         eunoia has no font/text knowledge; what `(w, h)` means.
+      3. The resize loop — sketched in R, JS, and Python (six lines
+         each), with `placements_bbox` as the canvas-extent helper.
+         Note that native Rust callers can shortcut to
+         `place_labels_to_fixed_point`; FFI callers iterate in their
+         host language.
+      4. Strategy decision tree — when to pick raycast vs
+         force-directed; which params matter (`margin`, `iterations`).
+         **Embed a live `<DiagramViewer>`** showing the same spec
+         under both strategies side-by-side.
+      5. Rendering recipe — `PlacementKind` switch, leader-line
+         drawing for exterior placements (kind ∈
+         {`ExteriorRaycast`, `ExteriorForceDirected`}), complement-
+         region keying (`""`).
+
+      Hosting: same deploy pipeline as the rest of the Svelte site
+      (no new workflow). README should keep its quickstart and add a
+      one-line link to `eunoia.bz/docs/`.

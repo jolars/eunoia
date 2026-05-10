@@ -39,8 +39,8 @@ pub use inscribed::{
 };
 #[cfg(feature = "plotting")]
 pub use placement::{
-    place_labels, ExteriorPolicy, InteriorPolicy, LabelPlacement, PlacementError, PlacementKind,
-    PlacementStrategy,
+    place_labels, place_labels_to_fixed_point, placements_bbox, ExteriorPolicy, InteriorPolicy,
+    LabelPlacement, PlacementError, PlacementKind, PlacementStrategy,
 };
 #[cfg(feature = "plotting")]
 pub use plot_data::{PlotData, PlotOptions};

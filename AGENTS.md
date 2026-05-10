@@ -182,7 +182,7 @@ Interactive diagram viewer built with Svelte + TypeScript.
 - Prefer explicit types for clarity in geometric code
 - Keep functions focused and single-purpose
 - Use traits for polymorphism over shapes
-- **Use Rust Edition 2021** for the core `eunoia` crate (for compatibility with rextendr R bindings). The `eunoia-wasm` crate uses Edition 2024 (MSRV 1.85) since some WASM-side transitive dependencies require it.
+- **Use Rust Edition 2021** workspace-wide (set at the root `Cargo.toml`; both `eunoia` and `eunoia-wasm` inherit via `edition.workspace = true`). The pin is for compatibility with rextendr (R's MSRV is 1.84.1).
 - **Use modern module organization** (Rust 2018+): `module.rs` + `module/`
   instead of `module/mod.rs`
 - **Format code with `cargo fmt`** before committing
@@ -502,7 +502,7 @@ eulerr's `input` argument is:
 - ❌ Rotated squares / rotated rectangles not implemented
 - ❌ Triangle shape not implemented
 - ✅ Label-anchor + label-fit utilities. Hole-aware POI per region and per set (`PlotData::region_anchors`, `PlotData::set_anchors`, `RegionPolygons::label_points`), largest inscribed axis-aligned rectangle for an aspect ratio (`largest_inscribed_rect` in `crates/eunoia/src/plotting/inscribed.rs`), and a per-region label-fit predicate (`fit_label_in_region` / `fit_labels_in_regions`) that tests whether an axis-aligned `w × h` box fits inside a region's polygon (with holes) and returns the box centre on success. Exposed end-to-end via WASM as `compute_region_label_placements(specs, input_type, shape, n_vertices, sizes_json, …)` and via the npm wrapper as `placeRegionLabels({ sets, sizes, … })`. Returns `Some(anchor)` only when the label fits; callers (eulerr, future Python/Julia, the web app) handle exterior placement / leader lines / smaller-font fallback themselves. Uses the existing radial-conservative inscribed-rectangle bound, so a "doesn't fit" can be a false negative for very anisotropic regions — a directional-clearance solver is a planned follow-up (already noted in `largest_inscribed_rect`'s rustdoc).
-- ✅ Strategy-driven label placement (`place_labels` in `crates/eunoia/src/plotting/placement.rs`). Always returns a position per region with a [`PlacementKind`] discriminator (`Interior`, `InteriorOverflow`, `ExteriorRaycast`, `ExteriorForceDirected`); on exterior placements, the returned `LabelPlacement.tether` points back at the region's POI for leader-line drawing. Strategy is two-axis (`InteriorPolicy::{Strict, Loose}` × `ExteriorPolicy::{None, Raycast { margin }, ForceDirected { margin, iterations }}`); default is `Strict + Raycast` with a per-label proportional margin (`0.5 * max(label_w, label_h)`). `Strict + Raycast` and `Strict + ForceDirected` are implemented end-to-end; `Loose` and `None` return `Err(PlacementError::Unimplemented)` so callers can pattern-match and fall back. The `ForceDirected` solver warm-starts from the raycast positions, then iterates a soft spring (back to home) plus three repulsive constraints: label-vs-label AABB overlap, bbox containment along the raycast direction, and label-vs-foreign-region polygon repulsion via signed-clearance + closest-boundary-point on each ring. Per outer iteration the label-label sweep loops until disjointness so spring re-overlap doesn't leak into the converged result; default cap is 200 outer iterations (`DEFAULT_FORCE_DIRECTED_ITERATIONS`). Diagram bbox = container if `Some`, else union of region piece outers. Direction tiebreak when POI ≈ centroid uses `principal_axis(largest_piece)` (gated on elongation ≥ 1.05); fully isotropic regions fall back to `+y`. Exposed via WASM as `place_region_labels(polygons_json, container_json, sizes_json, strategy_json)` (polygon-handle, no re-fit; `strategy_json` accepts `iterations` for the force-directed cap) and via the npm wrapper as `placeLabelsForRegions({ regions, container?, sizes, strategy? })`. The web demo (`DiagramSvg.svelte`) renders every label at its returned anchor and draws a leader line for both exterior kinds; the style picker lets users switch between raycast and force-directed exteriors. Predicate `fit_labels_in_regions` stays as a separate primitive — same hole-aware inscribed-rect call, different "omit on miss" semantics. Reconstructing decomposed regions from FFI is supported via `RegionPolygons::from_map` (caller-validated; production code should still go through `decompose_regions`).
+- ✅ Strategy-driven label placement (`place_labels` in `crates/eunoia/src/plotting/placement.rs`). Always returns a position per region with a [`PlacementKind`] discriminator (`Interior`, `InteriorOverflow`, `ExteriorRaycast`, `ExteriorForceDirected`); on exterior placements, the returned `LabelPlacement.tether` points back at the region's POI for leader-line drawing. Strategy is two-axis (`InteriorPolicy::{Strict, Loose}` × `ExteriorPolicy::{None, Raycast { margin }, ForceDirected { margin, iterations }}`); default is `Strict + Raycast` with a per-label proportional margin (`0.5 * max(label_w, label_h)`). `Strict + Raycast` and `Strict + ForceDirected` are implemented end-to-end; `Loose` and `None` return `Err(PlacementError::Unimplemented)` so callers can pattern-match and fall back. The `ForceDirected` solver warm-starts from the raycast positions, then iterates a soft spring (back to home) plus three repulsive constraints: label-vs-label AABB overlap, bbox containment along the raycast direction, and label-vs-foreign-region polygon repulsion via signed-clearance + closest-boundary-point on each ring. Per outer iteration the label-label sweep loops until disjointness so spring re-overlap doesn't leak into the converged result; default cap is 200 outer iterations (`DEFAULT_FORCE_DIRECTED_ITERATIONS`). Diagram bbox = container if `Some`, else union of region piece outers. Direction tiebreak when POI ≈ centroid uses `principal_axis(largest_piece)` (gated on elongation ≥ 1.05); fully isotropic regions fall back to `+y`. Exposed via WASM as `place_region_labels(polygons_json, container_json, sizes_json, strategy_json)` (polygon-handle, no re-fit; `strategy_json` accepts `iterations` for the force-directed cap) and via the npm wrapper as `placeLabelsForRegions({ regions, container?, sizes, strategy? })`. The web demo (`DiagramSvg.svelte`) renders every label at its returned anchor and draws a leader line for both exterior kinds; the style picker lets users switch between raycast and force-directed exteriors. Predicate `fit_labels_in_regions` stays as a separate primitive — same hole-aware inscribed-rect call, different "omit on miss" semantics. Reconstructing decomposed regions from FFI is supported via `RegionPolygons::from_map` (caller-validated; production code should still go through `decompose_regions`). Resize loops: `placements_bbox(placements, sizes) -> Option<Rectangle>` (Rust + WASM `placements_bbox` + npm `placementsBbox`) returns the union AABB of every label box, so callers can extend the canvas to cover exterior labels. Native Rust callers can also use `place_labels_to_fixed_point(regions, container, initial_sizes, strategy, measure_fn, bbox_tolerance, max_iters)`, which loops `place → measure(bbox) → re-place` until the canvas short side stabilises (typical convergence: 1–3 iterations); FFI bindings drive the same loop in their host language because passing a Rust closure across the WASM/extendr boundary buys nothing.
 - ❌ C/FFI or extendr bindings for R not yet started
 
 ## Dependencies
@@ -550,12 +550,13 @@ considered for:
 - Maintenance burden
 - License compatibility
 
-**Note**: The core `eunoia` crate uses **Rust Edition 2021** (MSRV 1.84.1)
-for compatibility with rextendr (R bindings framework — R's MSRV is 1.84.1).
-This is set at the workspace level in the root `Cargo.toml` and should not be
-changed without consideration for downstream binding compatibility. The
-`eunoia-wasm` crate overrides this with **Edition 2024** (MSRV 1.85) because
-some transitive WASM-only dependencies (e.g. `wit-bindgen`) require it.
+**Note**: Both crates use **Rust Edition 2021** (MSRV 1.84.1), set at the
+workspace level in the root `Cargo.toml` and inherited via
+`edition.workspace = true` / `rust-version.workspace = true` in
+`crates/eunoia/Cargo.toml` and `crates/eunoia-wasm/Cargo.toml`. The pin is
+for compatibility with rextendr (R bindings framework — R's MSRV is
+1.84.1) and should not be changed without consideration for downstream
+binding compatibility.
 
 ## Working with This Codebase
 
@@ -697,7 +698,7 @@ The project uses a Cargo workspace with multiple crates:
 - **Uses Cargo workspace** with `crates/eunoia/` (core) and `crates/eunoia-wasm/` (bindings)
 - Core library is platform-independent Rust with no WASM dependencies
 - WASM bindings are a thin wrapper in a separate crate
-- **Core `eunoia` crate uses Rust Edition 2021** (MSRV 1.84.1) for compatibility with rextendr (R bindings); `eunoia-wasm` uses Edition 2024 (MSRV 1.85)
+- **Both crates use Rust Edition 2021** (MSRV 1.84.1) for compatibility with rextendr (R bindings); set at the workspace level and inherited via `edition.workspace = true` / `rust-version.workspace = true`
 - **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0 (alpha)
 - **Breaking changes are acceptable** in pre-1.0.0 versions
 - **Uses Conventional Commits** for clear change history

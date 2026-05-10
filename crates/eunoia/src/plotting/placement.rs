@@ -331,6 +331,221 @@ pub fn place_labels(
     Ok(out)
 }
 
+/// Axis-aligned bounding box of every placed label box.
+///
+/// For each entry in `placements`, expands the AABB by
+/// `(anchor.x ± w/2, anchor.y ± h/2)` where `(w, h)` comes from the
+/// matching entry in `sizes`. Placements with no matching size, or sizes
+/// with non-finite or non-positive dimensions, are skipped.
+///
+/// Returns [`None`] when no placement contributed (empty input, or every
+/// entry was skipped) — distinct from "zero-area bbox".
+///
+/// # Why callers want this
+///
+/// Renderers and resize loops need to extend the canvas so exterior
+/// labels (which routinely sit well outside the diagram bbox) aren't
+/// clipped. The naive walk is "for each placement, union with `anchor ±
+/// half_label`"; this helper canonicalises it so every binding doesn't
+/// reinvent the loop. Pair with [`crate::Layout::container`] and the
+/// region polygons' own bbox to compute the full canvas extent.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use eunoia::plotting::{
+///     placements_bbox, LabelPlacement, PlacementKind,
+/// };
+/// use eunoia::geometry::primitives::Point;
+///
+/// let mut placements = HashMap::new();
+/// placements.insert("A".to_string(), LabelPlacement {
+///     anchor: Point::new(0.0, 0.0),
+///     kind: PlacementKind::Interior,
+///     tether: None,
+/// });
+/// placements.insert("B".to_string(), LabelPlacement {
+///     anchor: Point::new(10.0, 5.0),
+///     kind: PlacementKind::ExteriorRaycast,
+///     tether: Some(Point::new(8.0, 4.0)),
+/// });
+///
+/// let mut sizes = HashMap::new();
+/// sizes.insert("A".to_string(), (4.0, 2.0));
+/// sizes.insert("B".to_string(), (4.0, 2.0));
+///
+/// let bbox = placements_bbox(&placements, &sizes).unwrap();
+/// // A spans [-2, 2] × [-1, 1]; B spans [8, 12] × [4, 6].
+/// // Union: [-2, 12] × [-1, 6] → centre (5, 2.5), 14 × 7.
+/// assert!((bbox.center().x() - 5.0).abs() < 1e-9);
+/// assert!((bbox.center().y() - 2.5).abs() < 1e-9);
+/// assert!((bbox.width() - 14.0).abs() < 1e-9);
+/// assert!((bbox.height() - 7.0).abs() < 1e-9);
+/// ```
+pub fn placements_bbox(
+    placements: &HashMap<String, LabelPlacement>,
+    sizes: &HashMap<String, (f64, f64)>,
+) -> Option<Rectangle> {
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    let mut found = false;
+    for (key, placement) in placements {
+        let Some(&(w, h)) = sizes.get(key) else {
+            continue;
+        };
+        if !(w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
+            continue;
+        }
+        let half_w = 0.5 * w;
+        let half_h = 0.5 * h;
+        let cx = placement.anchor.x();
+        let cy = placement.anchor.y();
+        if !(cx.is_finite() && cy.is_finite()) {
+            continue;
+        }
+        min_x = min_x.min(cx - half_w);
+        max_x = max_x.max(cx + half_w);
+        min_y = min_y.min(cy - half_h);
+        max_y = max_y.max(cy + half_h);
+        found = true;
+    }
+    if !found {
+        return None;
+    }
+    let cx = 0.5 * (min_x + max_x);
+    let cy = 0.5 * (min_y + max_y);
+    Some(Rectangle::new(
+        Point::new(cx, cy),
+        max_x - min_x,
+        max_y - min_y,
+    ))
+}
+
+/// Iteratively place labels and remeasure on bbox change until the
+/// canvas bbox stabilises.
+///
+/// Label sizes in user coordinates depend on the diagram bbox (font is
+/// in physical units; user-coord size = `font_pt / scale`). Placement
+/// extends the bbox by the exterior label boxes, which changes the
+/// scale, which changes the sizes — a fixed-point loop. This helper
+/// drives that loop for native Rust callers; FFI bindings (R, Python,
+/// JS) typically iterate in their host language because passing a Rust
+/// closure across the boundary buys nothing.
+///
+/// `measure(&bbox) -> sizes` is called at the start of each iteration
+/// (after the first). The caller is responsible for the
+/// `bbox → physical scale → user-coord size` mapping — eunoia has no
+/// font/text knowledge.
+///
+/// # Convergence
+///
+/// Stops when the relative change in `bbox.short_side()` between
+/// consecutive iterations drops below `bbox_tolerance`, or after
+/// `max_iters` iterations (best-effort return). Typical diagrams
+/// converge in 1–3 iterations.
+///
+/// # Returns
+///
+/// The placements from the final iteration. Any [`PlacementError`]
+/// from the inner [`place_labels`] call short-circuits the loop.
+pub fn place_labels_to_fixed_point<F>(
+    regions: &RegionPolygons,
+    container: Option<&Rectangle>,
+    initial_sizes: HashMap<String, (f64, f64)>,
+    strategy: &PlacementStrategy,
+    mut measure: F,
+    bbox_tolerance: f64,
+    max_iters: usize,
+) -> Result<HashMap<String, LabelPlacement>, PlacementError>
+where
+    F: FnMut(&Rectangle) -> HashMap<String, (f64, f64)>,
+{
+    let mut sizes = initial_sizes;
+    let mut placements = place_labels(regions, &sizes, container, strategy)?;
+    let mut prev_short =
+        canvas_bbox(regions, container, &placements, &sizes).map(|r| r.width().min(r.height()));
+
+    for _ in 0..max_iters {
+        let Some(prev_bbox) = canvas_bbox(regions, container, &placements, &sizes) else {
+            return Ok(placements);
+        };
+        let new_sizes = measure(&prev_bbox);
+        let new_placements = place_labels(regions, &new_sizes, container, strategy)?;
+        let new_short = canvas_bbox(regions, container, &new_placements, &new_sizes)
+            .map(|r| r.width().min(r.height()));
+
+        // Convergence check: relative change in short side. Falls back
+        // to "converged" when either side has no measurable bbox (every
+        // input was degenerate) — the alternative is an infinite loop.
+        let converged = match (prev_short, new_short) {
+            (Some(a), Some(b)) if a > 0.0 => (a - b).abs() / a <= bbox_tolerance,
+            _ => true,
+        };
+
+        sizes = new_sizes;
+        placements = new_placements;
+        prev_short = new_short;
+
+        if converged {
+            return Ok(placements);
+        }
+    }
+    Ok(placements)
+}
+
+/// Union AABB of `regions`, `container` (when set), and the placed
+/// label boxes. Returns [`None`] only when every input is empty or
+/// degenerate.
+fn canvas_bbox(
+    regions: &RegionPolygons,
+    container: Option<&Rectangle>,
+    placements: &HashMap<String, LabelPlacement>,
+    sizes: &HashMap<String, (f64, f64)>,
+) -> Option<Rectangle> {
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    let mut found = false;
+
+    let mut consume = |xmin: f64, xmax: f64, ymin: f64, ymax: f64| {
+        if xmin.is_finite() && xmax.is_finite() && ymin.is_finite() && ymax.is_finite() {
+            min_x = min_x.min(xmin);
+            max_x = max_x.max(xmax);
+            min_y = min_y.min(ymin);
+            max_y = max_y.max(ymax);
+            found = true;
+        }
+    };
+
+    if let Some(r) = union_bbox(regions) {
+        let (xmin, xmax, ymin, ymax) = r.bounds();
+        consume(xmin, xmax, ymin, ymax);
+    }
+    if let Some(c) = container {
+        let (xmin, xmax, ymin, ymax) = c.bounds();
+        consume(xmin, xmax, ymin, ymax);
+    }
+    if let Some(b) = placements_bbox(placements, sizes) {
+        let (xmin, xmax, ymin, ymax) = b.bounds();
+        consume(xmin, xmax, ymin, ymax);
+    }
+
+    if !found {
+        return None;
+    }
+    let cx = 0.5 * (min_x + max_x);
+    let cy = 0.5 * (min_y + max_y);
+    Some(Rectangle::new(
+        Point::new(cx, cy),
+        max_x - min_x,
+        max_y - min_y,
+    ))
+}
+
 /// Default iteration cap for [`ExteriorPolicy::ForceDirected`] when the
 /// caller doesn't override it. Generous enough for crowded 4–5 set
 /// diagrams to converge under the soft-spring schedule below; cheap
@@ -1456,5 +1671,214 @@ mod tests {
         // isotropic +y tiebreak, anchor.y ≥ bbox_top + margin + half_h = 30.
         assert!((p.anchor.x() - 5.0).abs() < 1e-6);
         assert!(p.anchor.y() >= 30.0 - 1e-6);
+    }
+
+    // ----- placements_bbox -----------------------------------------------
+
+    fn placement(x: f64, y: f64, kind: PlacementKind) -> LabelPlacement {
+        LabelPlacement {
+            anchor: Point::new(x, y),
+            kind,
+            tether: None,
+        }
+    }
+
+    #[test]
+    fn test_placements_bbox_unions_label_boxes() {
+        let mut placements = HashMap::new();
+        placements.insert(
+            "A".to_string(),
+            placement(0.0, 0.0, PlacementKind::Interior),
+        );
+        placements.insert(
+            "B".to_string(),
+            placement(10.0, 5.0, PlacementKind::ExteriorRaycast),
+        );
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (4.0, 2.0));
+        sizes.insert("B".to_string(), (4.0, 2.0));
+        let bbox = placements_bbox(&placements, &sizes).expect("bbox");
+        // A: [-2, 2] × [-1, 1]; B: [8, 12] × [4, 6]; union [-2, 12] × [-1, 6].
+        assert!((bbox.center().x() - 5.0).abs() < 1e-9);
+        assert!((bbox.center().y() - 2.5).abs() < 1e-9);
+        assert!((bbox.width() - 14.0).abs() < 1e-9);
+        assert!((bbox.height() - 7.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_placements_bbox_single_placement() {
+        let mut placements = HashMap::new();
+        placements.insert(
+            "A".to_string(),
+            placement(3.0, 4.0, PlacementKind::Interior),
+        );
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (2.0, 2.0));
+        let bbox = placements_bbox(&placements, &sizes).expect("bbox");
+        assert!((bbox.center().x() - 3.0).abs() < 1e-9);
+        assert!((bbox.center().y() - 4.0).abs() < 1e-9);
+        assert!((bbox.width() - 2.0).abs() < 1e-9);
+        assert!((bbox.height() - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_placements_bbox_empty_returns_none() {
+        let placements: HashMap<String, LabelPlacement> = HashMap::new();
+        let sizes: HashMap<String, (f64, f64)> = HashMap::new();
+        assert!(placements_bbox(&placements, &sizes).is_none());
+    }
+
+    #[test]
+    fn test_placements_bbox_skips_missing_sizes() {
+        // A has a placement but no measured size — skip it. B provides
+        // both, so the bbox covers only B.
+        let mut placements = HashMap::new();
+        placements.insert(
+            "A".to_string(),
+            placement(0.0, 0.0, PlacementKind::Interior),
+        );
+        placements.insert(
+            "B".to_string(),
+            placement(10.0, 0.0, PlacementKind::Interior),
+        );
+        let mut sizes = HashMap::new();
+        sizes.insert("B".to_string(), (4.0, 2.0));
+        let bbox = placements_bbox(&placements, &sizes).expect("bbox");
+        assert!((bbox.center().x() - 10.0).abs() < 1e-9);
+        assert!((bbox.width() - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_placements_bbox_skips_invalid_dimensions() {
+        let mut placements = HashMap::new();
+        placements.insert(
+            "A".to_string(),
+            placement(0.0, 0.0, PlacementKind::Interior),
+        );
+        placements.insert(
+            "B".to_string(),
+            placement(5.0, 5.0, PlacementKind::Interior),
+        );
+        placements.insert(
+            "C".to_string(),
+            placement(8.0, 8.0, PlacementKind::Interior),
+        );
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (0.0, 1.0)); // zero width — skip
+        sizes.insert("B".to_string(), (f64::NAN, 1.0)); // NaN — skip
+        sizes.insert("C".to_string(), (2.0, 2.0)); // valid
+        let bbox = placements_bbox(&placements, &sizes).expect("bbox");
+        assert!((bbox.center().x() - 8.0).abs() < 1e-9);
+        assert!((bbox.center().y() - 8.0).abs() < 1e-9);
+    }
+
+    // ----- place_labels_to_fixed_point -----------------------------------
+
+    #[test]
+    fn test_fixed_point_converges_with_inverse_scaling() {
+        // Single region; the "measure" closure pretends label size is
+        // proportional to canvas short side (the realistic case where
+        // font is in physical units and `user_coord_size = font_pt /
+        // scale`, with scale = canvas_px / bbox_extent — so label size
+        // in user coords scales with bbox extent). The fixed-point
+        // loop should converge in a handful of iterations and the
+        // returned sizes should be self-consistent: re-running
+        // `measure` on the converged bbox should produce the same sizes
+        // again (within the tolerance).
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+
+        // Initial size: too big for the 10×10 region → exterior on the
+        // first iteration. As the loop runs, the inverse coupling will
+        // either drop the label below the fit threshold (interior) or
+        // settle into a steady-state exterior bbox.
+        let mut initial = HashMap::new();
+        initial.insert("A".to_string(), (20.0, 20.0));
+
+        let mut iter_count = 0usize;
+        let mut last_size: f64 = 0.0;
+        let placements = place_labels_to_fixed_point(
+            &regions,
+            None,
+            initial,
+            &PlacementStrategy::default(),
+            |bbox| {
+                iter_count += 1;
+                let s = bbox.width().min(bbox.height()) * 0.6;
+                last_size = s;
+                let mut out = HashMap::new();
+                out.insert("A".to_string(), (s, s));
+                out
+            },
+            1e-3,
+            10,
+        )
+        .unwrap();
+
+        let p = placements.get("A").expect("A placed");
+        // Either interior or exterior is fine — the property under test
+        // is convergence, not the discriminator.
+        assert!(matches!(
+            p.kind,
+            PlacementKind::Interior | PlacementKind::ExteriorRaycast
+        ));
+        assert!(iter_count >= 1, "measure closure was never called");
+        assert!(iter_count < 10, "loop didn't converge within 10 iters");
+        assert!(last_size > 0.0, "measure produced a zero size");
+    }
+
+    #[test]
+    fn test_fixed_point_returns_after_max_iters() {
+        // Pathological: every iteration grows the canvas by at least
+        // `bbox_tolerance + ε`. The loop must return after `max_iters`
+        // rather than spin forever.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut initial = HashMap::new();
+        initial.insert("A".to_string(), (20.0, 20.0));
+
+        let mut iter_count = 0usize;
+        let placements = place_labels_to_fixed_point(
+            &regions,
+            None,
+            initial,
+            &PlacementStrategy::default(),
+            |bbox| {
+                iter_count += 1;
+                let grow = bbox.width().max(bbox.height()) * 1.5;
+                let mut out = HashMap::new();
+                out.insert("A".to_string(), (grow, grow));
+                out
+            },
+            1e-3,
+            5,
+        )
+        .unwrap();
+
+        assert_eq!(iter_count, 5, "expected exactly max_iters measure calls");
+        assert!(placements.contains_key("A"));
+    }
+
+    #[test]
+    fn test_fixed_point_propagates_placement_error() {
+        // Loose interior policy still returns Unimplemented from
+        // place_labels — the fixed-point helper must propagate that
+        // error rather than swallow it.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut initial = HashMap::new();
+        initial.insert("A".to_string(), (1.0, 1.0));
+        let strategy = PlacementStrategy {
+            interior: InteriorPolicy::Loose,
+            ..PlacementStrategy::default()
+        };
+        let err = place_labels_to_fixed_point(
+            &regions,
+            None,
+            initial,
+            &strategy,
+            |_| HashMap::new(),
+            1e-3,
+            5,
+        )
+        .unwrap_err();
+        assert!(matches!(err, PlacementError::Unimplemented(_)));
     }
 }
