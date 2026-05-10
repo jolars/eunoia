@@ -140,10 +140,13 @@
       class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
     >
       <option value="interiorPlusRaycast">Inside + raycast outside</option>
+      <option value="interiorPlusForceDirected">Inside + force-directed outside</option>
       <option value="interiorOnly">Inside only (hide if too big)</option>
     </select>
     <p class="text-xs text-gray-500 mt-1">
-      Strict interior fit; raycast places overflowing labels outside with a leader line.
+      Strict interior fit. Raycast places overflowing labels outside along the
+      centroid→POI ray; force-directed adds polygon-aware repulsion so labels
+      avoid both other labels and unrelated regions.
     </p>
   </div>
 

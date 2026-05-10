@@ -97,12 +97,13 @@
       consume({ x: c.x + c.width / 2, y: c.y + c.height / 2 });
     }
 
-    // Extend bounds to cover label boxes — raycast can place exterior
+    // Extend bounds to cover label boxes — both exterior strategies place
     // anchors well outside the diagram bbox; without this the viewBox
     // clips them off-screen.
     if (
       result.shapeMode === "region" &&
-      style.labelPlacement === "interiorPlusRaycast"
+      (style.labelPlacement === "interiorPlusRaycast" ||
+        style.labelPlacement === "interiorPlusForceDirected")
     ) {
       const sizes = measuredSizes;
       for (const r of result.regions) {
@@ -326,11 +327,16 @@
         container: result.container,
         sizes,
         strategy: {
+          exterior:
+            style.labelPlacement === "interiorPlusForceDirected"
+              ? "forceDirected"
+              : "raycast",
           precision: Math.max(0.05, style.labelSize * 0.05),
         },
       });
       console.debug("[place]", {
         labelSize: style.labelSize,
+        mode: style.labelPlacement,
         sizes,
         placements: Object.fromEntries(
           Object.entries(placements).map(([k, p]) => [k, p.kind]),
@@ -557,7 +563,9 @@
           placement?.kind === "exteriorRaycast" ||
           placement?.kind === "exteriorForceDirected"}
         {@const renderLabel =
-          style.labelPlacement === "interiorPlusRaycast" || !isExterior}
+          style.labelPlacement === "interiorPlusRaycast" ||
+          style.labelPlacement === "interiorPlusForceDirected" ||
+          !isExterior}
         {@const anchor = regionAnchor(
           region.combination,
           region.labelX,

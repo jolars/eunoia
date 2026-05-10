@@ -2793,16 +2793,21 @@ pub fn fit_labels_for_polygons(
 ///   "interior": "Strict" | "Loose",
 ///   "exterior": "Raycast" | "None" | "ForceDirected",
 ///   "margin": 5.0,
+///   "iterations": 200,
 ///   "precision": 0.01
 /// }
 /// ```
+///
+/// `margin` applies to both `Raycast` and `ForceDirected` (the per-region
+/// proportional default kicks in when omitted). `iterations` only affects
+/// `ForceDirected` (defaults to 200).
 ///
 /// Returns a JSON object mapping each placed region to
 /// `{ "anchor": [x, y], "kind": "...", "tether"?: [x, y] }`. Regions with
 /// degenerate input (no POI, invalid label dimensions, etc.) are absent.
 ///
 /// Returns `Err` when the requested strategy variant is not yet
-/// implemented (`Loose`, exterior `None`, `ForceDirected`).
+/// implemented (`Loose`, exterior `None`).
 #[wasm_bindgen]
 pub fn place_region_labels(
     polygons_json: String,
@@ -2838,6 +2843,8 @@ pub fn place_region_labels(
         interior: Option<String>,
         exterior: Option<String>,
         margin: Option<f64>,
+        /// Iteration cap for `ForceDirected` exteriors; ignored otherwise.
+        iterations: Option<usize>,
         precision: Option<f64>,
     }
 
@@ -2884,7 +2891,10 @@ pub fn place_region_labels(
             margin: strategy_in.margin,
         },
         Some("None") => ExteriorPolicy::None,
-        Some("ForceDirected") => ExteriorPolicy::ForceDirected,
+        Some("ForceDirected") => ExteriorPolicy::ForceDirected {
+            margin: strategy_in.margin,
+            iterations: strategy_in.iterations,
+        },
         Some(other) => {
             return Err(JsValue::from_str(&format!(
                 "invalid strategy.exterior '{other}' (expected 'Raycast', 'None', or 'ForceDirected')"

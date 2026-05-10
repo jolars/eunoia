@@ -14,10 +14,15 @@
 //! policy and exterior fallback — so callers can opt into different
 //! trade-offs without forking the implementation.
 //!
-//! v1 implements [`InteriorPolicy::Strict`] + [`ExteriorPolicy::Raycast`]
-//! end-to-end (the default). The other variants are present in the enum so
-//! the surface is forward-compatible, but selecting them returns
-//! [`PlacementError::Unimplemented`] until the corresponding solver is built.
+//! [`InteriorPolicy::Strict`] is implemented end-to-end with two exterior
+//! solvers: [`ExteriorPolicy::Raycast`] (the default — closed-form anchor
+//! along the centroid→POI ray) and [`ExteriorPolicy::ForceDirected`] (an
+//! iterative spring-and-repulsion solve that's polygon-aware: each label
+//! repels both other labels *and* foreign region pieces, so labels are
+//! prevented from drifting across unrelated regions). The other variants
+//! ([`InteriorPolicy::Loose`], [`ExteriorPolicy::None`]) are present in the
+//! enum so the surface is forward-compatible, but selecting them returns
+//! [`PlacementError::Unimplemented`].
 
 use std::collections::HashMap;
 use std::fmt;
@@ -25,7 +30,7 @@ use std::fmt;
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Rectangle;
 use crate::plotting::inscribed::{fit_label_in_region, principal_axis};
-use crate::plotting::regions::{RegionPiece, RegionPolygons};
+use crate::plotting::regions::{signed_clearance, RegionPiece, RegionPolygons};
 use crate::spec::Combination;
 
 /// Result of placing one label.
@@ -51,9 +56,8 @@ pub enum PlacementKind {
     InteriorOverflow,
     /// Anchor is outside the diagram, ray-cast from centroid through POI.
     ExteriorRaycast,
-    /// Anchor is outside the diagram, decided by the force-directed solver.
-    /// Reserved for the future `ForceDirected` exterior policy; v1 never
-    /// emits it.
+    /// Anchor is outside the diagram, decided by the force-directed solver
+    /// — emitted by [`ExteriorPolicy::ForceDirected`].
     ExteriorForceDirected,
 }
 
@@ -83,9 +87,30 @@ pub enum ExteriorPolicy {
     /// when complement is set), padded by `margin`. `margin = None` selects
     /// a proportional default of `0.5 * max(label_w, label_h)` per region.
     Raycast { margin: Option<f64> },
-    /// Iterative spring/repulsion solve, polygon-aware. **Not implemented in
-    /// v1** — selecting this returns [`PlacementError::Unimplemented`].
-    ForceDirected,
+    /// Iterative spring/repulsion solve. Initial positions come from the
+    /// raycast geometry (so labels start in the right halfspace), then a
+    /// damped relaxation balances three forces:
+    ///
+    /// * a soft spring pulling each label back toward its raycast home,
+    /// * label-vs-label AABB repulsion (any pair of overlapping label boxes
+    ///   gets pushed apart), and
+    /// * label-vs-foreign-region repulsion — every label avoids every
+    ///   region piece **except its own**, treating each foreign piece as a
+    ///   no-go zone and pushing along the polygon boundary normal.
+    ///
+    /// The polygon-vs-label repulsion is what differentiates this from
+    /// ggrepel-style point/box repulsion: labels can be constrained to not
+    /// drift across unrelated regions, which the centroid-through-POI
+    /// raycast can't enforce on its own.
+    ///
+    /// `margin = None` selects the same per-region proportional default as
+    /// [`ExteriorPolicy::Raycast`]. `iterations = None` selects 200 — fine
+    /// for typical 3–5 label exteriors, raise it for crowded diagrams that
+    /// haven't converged.
+    ForceDirected {
+        margin: Option<f64>,
+        iterations: Option<usize>,
+    },
 }
 
 /// Configuration bundle for [`place_labels`].
@@ -193,16 +218,15 @@ pub fn place_labels(
     if matches!(strategy.interior, InteriorPolicy::Loose) {
         return Err(PlacementError::Unimplemented("InteriorPolicy::Loose"));
     }
-    let raycast_margin = match strategy.exterior {
-        ExteriorPolicy::Raycast { margin } => margin,
+    let exterior_kind = match strategy.exterior {
+        ExteriorPolicy::Raycast { margin } => ExteriorPlan::Raycast { margin },
         ExteriorPolicy::None => {
             return Err(PlacementError::Unimplemented("ExteriorPolicy::None"));
         }
-        ExteriorPolicy::ForceDirected => {
-            return Err(PlacementError::Unimplemented(
-                "ExteriorPolicy::ForceDirected",
-            ));
-        }
+        ExteriorPolicy::ForceDirected { margin, iterations } => ExteriorPlan::ForceDirected {
+            margin,
+            iterations: iterations.unwrap_or(DEFAULT_FORCE_DIRECTED_ITERATIONS),
+        },
     };
 
     // Diagram bounding box: container if set, else the union of every
@@ -218,6 +242,11 @@ pub fn place_labels(
     let mut out: HashMap<String, LabelPlacement> = HashMap::with_capacity(sizes.len());
     let mut exteriors: Vec<ExteriorEntry> = Vec::new();
 
+    let raycast_margin_opt = match exterior_kind {
+        ExteriorPlan::Raycast { margin } => margin,
+        ExteriorPlan::ForceDirected { margin, .. } => margin,
+    };
+
     for (key, &(w, h)) in sizes {
         if !(w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
             continue;
@@ -230,7 +259,7 @@ pub fn place_labels(
             continue;
         };
 
-        // Strict: try interior first, fall through to raycast on miss.
+        // Strict: try interior first, fall through to exterior on miss.
         if let Some(anchor) = fit_label_in_region(pieces, w, h, strategy.precision) {
             out.insert(
                 key.clone(),
@@ -243,10 +272,11 @@ pub fn place_labels(
             continue;
         }
 
-        // Need exterior. Raycast requires a diagram bbox / centroid /
-        // region POI; if any of those is missing the input is degenerate
-        // and we silently skip the region (caller still sees a missing
-        // entry, which they can fall back on however they choose).
+        // Need exterior. Both Raycast and ForceDirected require a diagram
+        // bbox / centroid / region POI to compute initial positions; if any
+        // is missing the input is degenerate and we silently skip the region
+        // (caller still sees a missing entry, which they can fall back on
+        // however they choose).
         let Some(bbox) = diagram_bbox else { continue };
         let Some(centroid) = centroid else { continue };
         let Some(poi) = pois.get(&combo).copied() else {
@@ -254,31 +284,45 @@ pub fn place_labels(
         };
 
         let direction = direction_from(&poi, &centroid, pieces);
-        let margin = raycast_margin.unwrap_or_else(|| 0.5 * w.max(h));
+        let margin = raycast_margin_opt.unwrap_or_else(|| 0.5 * w.max(h));
         let anchor = raycast_anchor(&poi, w, h, &bbox, margin, direction);
         exteriors.push(ExteriorEntry {
             key: key.clone(),
+            combo,
             anchor,
+            home: anchor,
             poi,
             direction,
+            margin,
             w,
             h,
         });
     }
 
-    // Resolve overlaps between exterior labels. The raycast geometry pushes
-    // every "doesn't fit" label out along (POI − centroid), so regions with
-    // similar POI angles pile up at similar exterior positions. A handful
-    // of tangential-push iterations is much cheaper than a full
-    // force-directed solve and is enough for typical 3–5 label exteriors.
-    resolve_exterior_collisions(&mut exteriors, 50);
+    // Resolve overlaps between exterior labels. Different solvers per
+    // strategy: Raycast uses a cheap tangential-push collision sweep that's
+    // ideal when labels share an exterior side; ForceDirected adds spring
+    // and polygon-aware repulsion so labels avoid both other labels and
+    // foreign region pieces.
+    let exterior_kind_label = match exterior_kind {
+        ExteriorPlan::Raycast { .. } => {
+            resolve_exterior_collisions(&mut exteriors, 50);
+            PlacementKind::ExteriorRaycast
+        }
+        ExteriorPlan::ForceDirected { iterations, .. } => {
+            if let Some(bbox) = diagram_bbox {
+                resolve_force_directed(&mut exteriors, regions, &bbox, iterations);
+            }
+            PlacementKind::ExteriorForceDirected
+        }
+    };
 
     for entry in exteriors {
         out.insert(
             entry.key,
             LabelPlacement {
                 anchor: entry.anchor,
-                kind: PlacementKind::ExteriorRaycast,
+                kind: exterior_kind_label,
                 tether: Some(entry.poi),
             },
         );
@@ -287,15 +331,46 @@ pub fn place_labels(
     Ok(out)
 }
 
+/// Default iteration cap for [`ExteriorPolicy::ForceDirected`] when the
+/// caller doesn't override it. Generous enough for crowded 4–5 set
+/// diagrams to converge under the soft-spring schedule below; cheap
+/// enough that the typical 3-set diagram runs in under a millisecond.
+const DEFAULT_FORCE_DIRECTED_ITERATIONS: usize = 200;
+
+/// Internal expansion of the user-facing [`ExteriorPolicy`] with defaults
+/// resolved (e.g. `iterations = None` → 200).
+#[derive(Clone, Copy)]
+enum ExteriorPlan {
+    Raycast {
+        margin: Option<f64>,
+    },
+    ForceDirected {
+        margin: Option<f64>,
+        iterations: usize,
+    },
+}
+
 /// In-flight bookkeeping for an exterior label between raycast placement
 /// and collision resolution. The fields after the resolution pass are
 /// re-packed into a [`LabelPlacement`].
 struct ExteriorEntry {
     key: String,
+    /// Combination this label belongs to — used by the force-directed
+    /// solver to identify foreign region pieces.
+    combo: Combination,
+    /// Mutable: current label-box centre, updated by the resolver.
     anchor: Point,
+    /// Immutable: the raycast position; the force-directed spring pulls
+    /// the anchor back toward this point so labels don't drift unboundedly.
+    home: Point,
     poi: Point,
-    /// Unit-length raycast direction; tangent is its 90° rotation.
+    /// Unit-length raycast direction; tangent is its 90° rotation, also
+    /// the natural "outward" axis the bbox containment force uses.
     direction: (f64, f64),
+    /// Per-label margin around the diagram bbox. The force-directed
+    /// solver re-uses this so the polygon-aware solve and the initial
+    /// raycast agree on how far outside the bbox a label belongs.
+    margin: f64,
     w: f64,
     h: f64,
 }
@@ -375,6 +450,298 @@ fn resolve_exterior_collisions(entries: &mut [ExteriorEntry], max_iters: usize) 
             break;
         }
     }
+}
+
+/// Polygon-aware force-directed relaxation for exterior labels.
+///
+/// Each label starts at its raycast `home` and is pulled back toward it by
+/// a soft spring (so labels don't drift unboundedly). Three repulsive
+/// constraints push labels away from one another and from any region they
+/// shouldn't overlap:
+///
+/// * **Label–label**: any two labels whose AABBs overlap get pushed apart
+///   along their centre-to-centre direction by the smaller of the two
+///   penetration depths (matching the cheap collision sweep used for the
+///   pure-Raycast path).
+/// * **Bbox containment**: if the label centre drifts inside
+///   `bbox + margin + half_label`, push it back along the raycast
+///   direction so it ends up just outside that envelope. The raycast
+///   direction is the natural exit axis — perpendicular pushes would
+///   trade one bbox-side overlap for another.
+/// * **Foreign-region repulsion**: for every region piece that does *not*
+///   belong to this label's combo, treat the polygon as a no-go zone with
+///   a `buffer = 0.5 * max(label_w, label_h)` skin. When the label centre
+///   sits inside the buffer (or, worse, inside the polygon itself), push
+///   along the polygon-boundary normal until the buffer clears. This is
+///   the polygon-awareness the strategy is named for: ggrepel-style
+///   point/box repulsion can't see polygon geometry, so labels routinely
+///   land on top of unrelated regions.
+///
+/// Convergence: the spring + repulsion fixed-point is linear in the worst
+/// case, so we iterate until either the largest per-iteration displacement
+/// drops below a tolerance proportional to the diagram's short side, or
+/// `max_iters` is hit. We don't add velocity / momentum because the
+/// repulsion forces are penetration-resolving (they apply exactly the
+/// displacement needed to clear the violation) and the spring is small,
+/// so under-relaxation isn't required.
+fn resolve_force_directed(
+    entries: &mut [ExteriorEntry],
+    regions: &RegionPolygons,
+    bbox: &Rectangle,
+    max_iters: usize,
+) {
+    if entries.is_empty() || max_iters == 0 {
+        return;
+    }
+
+    let bbox_short = bbox.width().min(bbox.height()).max(1e-6);
+    let tolerance = 1e-4 * bbox_short;
+    let spring = 0.05_f64;
+
+    // Cache the foreign-piece set for each label once: parsing the
+    // combination map per iteration would dominate the inner loop. The
+    // owning combo is *excluded* — labels are free to overlap their own
+    // region's pieces (that's the whole point of an exterior label,
+    // which originated because the label couldn't fit inside).
+    let foreign_pieces: Vec<Vec<&RegionPiece>> = entries
+        .iter()
+        .map(|entry| {
+            let mut foreign: Vec<&RegionPiece> = Vec::new();
+            for (combo, pieces) in regions.iter() {
+                if combo == &entry.combo {
+                    continue;
+                }
+                for piece in pieces {
+                    foreign.push(piece);
+                }
+            }
+            foreign
+        })
+        .collect();
+
+    for _ in 0..max_iters {
+        let mut max_move: f64 = 0.0;
+
+        // 1. Soft spring toward home + per-label constraint resolution.
+        //    Done in a single pass per label so each constraint check
+        //    sees the latest position from the previous label.
+        for i in 0..entries.len() {
+            let prev = entries[i].anchor;
+
+            // Spring nudge.
+            let dx = entries[i].home.x() - entries[i].anchor.x();
+            let dy = entries[i].home.y() - entries[i].anchor.y();
+            entries[i].anchor = Point::new(prev.x() + spring * dx, prev.y() + spring * dy);
+
+            // Bbox containment (push along the raycast direction).
+            let (bx, by) = bbox_push_along(
+                &entries[i].anchor,
+                0.5 * entries[i].w,
+                0.5 * entries[i].h,
+                bbox,
+                entries[i].margin,
+                entries[i].direction,
+            );
+            entries[i].anchor = Point::new(entries[i].anchor.x() + bx, entries[i].anchor.y() + by);
+
+            // Foreign-region repulsion.
+            let buffer = 0.5 * entries[i].w.max(entries[i].h);
+            for piece in &foreign_pieces[i] {
+                let (px, py) = polygon_push(&entries[i].anchor, buffer, piece);
+                entries[i].anchor =
+                    Point::new(entries[i].anchor.x() + px, entries[i].anchor.y() + py);
+            }
+
+            let moved = ((entries[i].anchor.x() - prev.x()).powi(2)
+                + (entries[i].anchor.y() - prev.y()).powi(2))
+            .sqrt();
+            max_move = max_move.max(moved);
+        }
+
+        // 2. Resolve label-label AABB overlaps to disjointness. Sub-
+        //    iterating here matters: the spring step above can re-introduce
+        //    an overlap the previous outer iteration just resolved, and a
+        //    single pairwise pass only guarantees per-pair disjointness
+        //    (not transitive — moving A out of B can shove A into C). The
+        //    inner loop terminates as soon as a sweep makes no moves, so
+        //    converged configurations cost one cheap O(n²) pass per outer
+        //    iteration.
+        const MAX_LABEL_COLLISION_SWEEPS: usize = 50;
+        for _ in 0..MAX_LABEL_COLLISION_SWEEPS {
+            let mut moved_any = false;
+            for i in 0..entries.len() {
+                for j in (i + 1)..entries.len() {
+                    let (left, right) = entries.split_at_mut(j);
+                    let a = &mut left[i];
+                    let b = &mut right[0];
+                    let dx = a.anchor.x() - b.anchor.x();
+                    let dy = a.anchor.y() - b.anchor.y();
+                    let half_sum_w = 0.5 * (a.w + b.w);
+                    let half_sum_h = 0.5 * (a.h + b.h);
+                    let ox = half_sum_w - dx.abs();
+                    let oy = half_sum_h - dy.abs();
+                    if ox <= 0.0 || oy <= 0.0 {
+                        continue;
+                    }
+                    let len = (dx * dx + dy * dy).sqrt();
+                    let (nx, ny) = if len > 1e-9 {
+                        (dx / len, dy / len)
+                    } else {
+                        // Perfectly stacked labels — pick a deterministic
+                        // separation axis so the next sweep has a usable
+                        // gradient.
+                        (1.0, 0.0)
+                    };
+                    let push = 0.5 * (ox.min(oy) + 1e-6);
+                    a.anchor = Point::new(a.anchor.x() + push * nx, a.anchor.y() + push * ny);
+                    b.anchor = Point::new(b.anchor.x() - push * nx, b.anchor.y() - push * ny);
+                    max_move = max_move.max(push);
+                    moved_any = true;
+                }
+            }
+            if !moved_any {
+                break;
+            }
+        }
+
+        if max_move < tolerance {
+            break;
+        }
+    }
+}
+
+/// Push the label box back outside `bbox + margin + half_label` along the
+/// raycast direction `dir` if it currently violates that envelope.
+///
+/// Returns the displacement to apply to the anchor; `(0, 0)` when no
+/// violation. We push along `dir` rather than the shortest exit axis
+/// because the shortest axis can pop a label across the diagram into a
+/// completely different exterior halfspace, which other forces would then
+/// have to undo.
+fn bbox_push_along(
+    center: &Point,
+    half_w: f64,
+    half_h: f64,
+    bbox: &Rectangle,
+    margin: f64,
+    dir: (f64, f64),
+) -> (f64, f64) {
+    let (xmin, xmax, ymin, ymax) = bbox.bounds();
+    let xmin = xmin - margin - half_w;
+    let xmax = xmax + margin + half_w;
+    let ymin = ymin - margin - half_h;
+    let ymax = ymax + margin + half_h;
+
+    let inside = center.x() > xmin && center.x() < xmax && center.y() > ymin && center.y() < ymax;
+    if !inside {
+        return (0.0, 0.0);
+    }
+
+    // Smallest positive `t` along `dir` that exits the envelope.
+    let eps = 1e-9;
+    let mut t_min = f64::INFINITY;
+    if dir.0 > eps {
+        let t = (xmax - center.x()) / dir.0;
+        if t > 0.0 && t < t_min {
+            t_min = t;
+        }
+    } else if dir.0 < -eps {
+        let t = (xmin - center.x()) / dir.0;
+        if t > 0.0 && t < t_min {
+            t_min = t;
+        }
+    }
+    if dir.1 > eps {
+        let t = (ymax - center.y()) / dir.1;
+        if t > 0.0 && t < t_min {
+            t_min = t;
+        }
+    } else if dir.1 < -eps {
+        let t = (ymin - center.y()) / dir.1;
+        if t > 0.0 && t < t_min {
+            t_min = t;
+        }
+    }
+
+    if t_min.is_finite() {
+        let push = t_min + eps;
+        (push * dir.0, push * dir.1)
+    } else {
+        (0.0, 0.0)
+    }
+}
+
+/// Push the label centre out of (or away from) a foreign region piece.
+///
+/// `buffer` is a "skin" the label wants around itself; the function applies
+/// a displacement whenever `signed_clearance(centre, piece) + buffer > 0`,
+/// i.e. whenever the centre is closer to the polygon than `buffer` (or
+/// inside it). The push direction is the polygon-boundary outward normal
+/// at the closest boundary point, with the sign flipped when the centre
+/// lies inside the piece — which keeps the gradient pointing toward the
+/// nearest exit instead of deeper in.
+fn polygon_push(center: &Point, buffer: f64, piece: &RegionPiece) -> (f64, f64) {
+    let signed = signed_clearance(center.x(), center.y(), piece);
+    let penetration = buffer + signed;
+    if penetration <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let (qx, qy) = closest_point_on_piece(center.x(), center.y(), piece);
+    let dx = center.x() - qx;
+    let dy = center.y() - qy;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-12 {
+        // Centre coincides with a polygon vertex — fall back to a fixed
+        // offset so the next iteration has a usable gradient.
+        return (penetration, 0.0);
+    }
+    // `(center - closest)` points outward when the centre is outside the
+    // piece, inward when it's inside; flip in the inside case so the push
+    // always points toward (then beyond) the boundary.
+    let sign = if signed > 0.0 { -1.0 } else { 1.0 };
+    let nx = sign * dx / len;
+    let ny = sign * dy / len;
+    let push = penetration + 1e-9;
+    (push * nx, push * ny)
+}
+
+/// Closest point to `(px, py)` on any ring of `piece` (outer + holes).
+fn closest_point_on_piece(px: f64, py: f64, piece: &RegionPiece) -> (f64, f64) {
+    let mut best_d2 = f64::INFINITY;
+    let mut best = (px, py);
+    let mut update_with = |ring: &crate::geometry::shapes::Polygon| {
+        let v = ring.vertices();
+        let n = v.len();
+        if n < 2 {
+            return;
+        }
+        for i in 0..n {
+            let a = v[i];
+            let b = v[(i + 1) % n];
+            let ex = b.x() - a.x();
+            let ey = b.y() - a.y();
+            let len2 = ex * ex + ey * ey;
+            let t = if len2 > 0.0 {
+                (((px - a.x()) * ex + (py - a.y()) * ey) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let qx = a.x() + t * ex;
+            let qy = a.y() + t * ey;
+            let dx = px - qx;
+            let dy = py - qy;
+            let d2 = dx * dx + dy * dy;
+            if d2 < best_d2 {
+                best_d2 = d2;
+                best = (qx, qy);
+            }
+        }
+    };
+    update_with(&piece.outer);
+    for h in &piece.holes {
+        update_with(h);
+    }
+    best
 }
 
 /// Bounding box of the union of every region piece's outer ring. Returns
@@ -733,18 +1100,6 @@ mod tests {
     }
 
     #[test]
-    fn test_exterior_force_directed_returns_unimplemented() {
-        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
-        let sizes = HashMap::new();
-        let strategy = PlacementStrategy {
-            exterior: ExteriorPolicy::ForceDirected,
-            ..PlacementStrategy::default()
-        };
-        let err = place_labels(&regions, &sizes, None, &strategy).unwrap_err();
-        assert!(matches!(err, PlacementError::Unimplemented(_)));
-    }
-
-    #[test]
     fn test_unknown_keys_skipped() {
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
         let mut sizes = HashMap::new();
@@ -875,5 +1230,231 @@ mod tests {
         let ab = placements.get("A&B").expect("A&B should be placed");
         assert_eq!(ab.kind, PlacementKind::ExteriorRaycast);
         assert!(ab.tether.is_some());
+    }
+
+    fn force_directed_strategy() -> PlacementStrategy {
+        PlacementStrategy {
+            interior: InteriorPolicy::Strict,
+            exterior: ExteriorPolicy::ForceDirected {
+                margin: None,
+                iterations: None,
+            },
+            precision: 0.01,
+        }
+    }
+
+    #[test]
+    fn test_force_directed_interior_fit_unchanged() {
+        // A label that fits inside its region must stay at its POI under
+        // ForceDirected — the solver only runs on exteriors.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (1.0, 0.5));
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        let p = placements.get("A").unwrap();
+        assert_eq!(p.kind, PlacementKind::Interior);
+        assert!(p.tether.is_none());
+    }
+
+    #[test]
+    fn test_force_directed_exterior_kind_and_tether() {
+        // A too-big label still gets placed exteriorly; kind should be
+        // ExteriorForceDirected and tether should be the region's POI
+        // (mirroring the Raycast contract).
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        let p = placements.get("A").unwrap();
+        assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
+        let tether = p.tether.expect("force-directed exterior must have tether");
+        // Region POI is ≈ (5, 5).
+        assert!((tether.x() - 5.0).abs() < 0.5);
+        assert!((tether.y() - 5.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn test_force_directed_resolves_label_label_overlap() {
+        // Three centred isotropic regions — same warm-start collision as
+        // the Raycast collision test, but routed through the force-directed
+        // solver. Pairwise AABBs must end up disjoint.
+        let outer = || {
+            Polygon::new(vec![
+                Point::new(-5.0, -5.0),
+                Point::new(5.0, -5.0),
+                Point::new(5.0, 5.0),
+                Point::new(-5.0, 5.0),
+            ])
+        };
+        let mut regions_map = HashMap::new();
+        for combo in &[&["A"][..], &["B"][..], &["C"][..]] {
+            regions_map.insert(
+                Combination::new(combo),
+                vec![RegionPiece {
+                    outer: outer(),
+                    holes: vec![],
+                }],
+            );
+        }
+        let regions = RegionPolygons::from_map(regions_map);
+
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        sizes.insert("B".to_string(), (20.0, 20.0));
+        sizes.insert("C".to_string(), (20.0, 20.0));
+
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        let entries: Vec<&LabelPlacement> = ["A", "B", "C"]
+            .iter()
+            .map(|k| placements.get(*k).expect("placed"))
+            .collect();
+        for p in &entries {
+            assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
+        }
+        for i in 0..entries.len() {
+            for j in (i + 1)..entries.len() {
+                let dx = (entries[i].anchor.x() - entries[j].anchor.x()).abs();
+                let dy = (entries[i].anchor.y() - entries[j].anchor.y()).abs();
+                assert!(
+                    dx >= 20.0 - 1e-3 || dy >= 20.0 - 1e-3,
+                    "pair ({}, {}) overlaps after ForceDirected: dx = {}, dy = {}",
+                    i,
+                    j,
+                    dx,
+                    dy
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_force_directed_avoids_foreign_polygon() {
+        // Two regions arranged side-by-side: A on the left, B on the right.
+        // A's label is too big for A but a *deliberately small* label box
+        // (smaller than A's bbox short side) — under Raycast the centroid
+        // of A and B together is between them, and the (POI_A − centroid)
+        // ray for A points LEFT (away from B). Good. Now we use a label
+        // size that would naturally overlap B if we forced the anchor to
+        // sit between the two regions; we then assert that the
+        // force-directed anchor does NOT overlap B's polygon.
+        let mut regions_map = HashMap::new();
+        // A: 4×4 square at (0..4, 0..4).
+        regions_map.insert(
+            Combination::new(&["A"]),
+            vec![RegionPiece {
+                outer: Polygon::new(vec![
+                    Point::new(0.0, 0.0),
+                    Point::new(4.0, 0.0),
+                    Point::new(4.0, 4.0),
+                    Point::new(0.0, 4.0),
+                ]),
+                holes: vec![],
+            }],
+        );
+        // B: 4×4 square at (10..14, 0..4).
+        regions_map.insert(
+            Combination::new(&["B"]),
+            vec![RegionPiece {
+                outer: Polygon::new(vec![
+                    Point::new(10.0, 0.0),
+                    Point::new(14.0, 0.0),
+                    Point::new(14.0, 4.0),
+                    Point::new(10.0, 4.0),
+                ]),
+                holes: vec![],
+            }],
+        );
+        let regions = RegionPolygons::from_map(regions_map);
+
+        // Label too big to fit inside A, but not absurdly so. With margin=0
+        // and the union bbox = (0..14, 0..4), the (POI_A − centroid)
+        // direction for A points up-and-left, and for B points up-and-right.
+        // Either way the force-directed solver must keep A's anchor box
+        // out of B's polygon.
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (5.0, 5.0));
+        let strategy = PlacementStrategy {
+            interior: InteriorPolicy::Strict,
+            exterior: ExteriorPolicy::ForceDirected {
+                margin: Some(0.5),
+                iterations: Some(300),
+            },
+            precision: 0.05,
+        };
+        let placements = place_labels(&regions, &sizes, None, &strategy).unwrap();
+        let p = placements.get("A").unwrap();
+        assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
+
+        // A's label box (centred on `anchor`, 5×5) must not overlap B's
+        // polygon (axis-aligned rectangle [10..14] × [0..4]).
+        let half = 2.5;
+        let label_xmin = p.anchor.x() - half;
+        let label_xmax = p.anchor.x() + half;
+        let label_ymin = p.anchor.y() - half;
+        let label_ymax = p.anchor.y() + half;
+        let overlap_x = label_xmax > 10.0 && label_xmin < 14.0;
+        let overlap_y = label_ymax > 0.0 && label_ymin < 4.0;
+        assert!(
+            !(overlap_x && overlap_y),
+            "A's label box at ({}, {}) overlaps B's region",
+            p.anchor.x(),
+            p.anchor.y()
+        );
+    }
+
+    #[test]
+    fn test_force_directed_two_circle_decomposition() {
+        // End-to-end through the real decomposer with the force-directed
+        // exterior: every region asked for gets a placement back, with
+        // the right kind discriminator.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|n| *layout.shape_for_set(n).unwrap())
+            .collect();
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
+
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (0.2, 0.1));
+        sizes.insert("A&B".to_string(), (100.0, 100.0));
+
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        assert!(placements.contains_key("A"));
+        let ab = placements.get("A&B").expect("A&B should be placed");
+        assert_eq!(ab.kind, PlacementKind::ExteriorForceDirected);
+        assert!(ab.tether.is_some());
+    }
+
+    #[test]
+    fn test_force_directed_zero_iterations_keeps_raycast_anchor() {
+        // iterations = 0 short-circuits the solver, so the anchor stays at
+        // the raycast warm-start position — confirms initialisation is
+        // correct independent of the solver's relaxation.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let strategy = PlacementStrategy {
+            interior: InteriorPolicy::Strict,
+            exterior: ExteriorPolicy::ForceDirected {
+                margin: None,
+                iterations: Some(0),
+            },
+            precision: 0.01,
+        };
+        let placements = place_labels(&regions, &sizes, None, &strategy).unwrap();
+        let p = placements.get("A").unwrap();
+        assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
+        // Same expected anchor as the raycast variant: POI ≈ (5, 5),
+        // isotropic +y tiebreak, anchor.y ≥ bbox_top + margin + half_h = 30.
+        assert!((p.anchor.x() - 5.0).abs() < 1e-6);
+        assert!(p.anchor.y() >= 30.0 - 1e-6);
     }
 }

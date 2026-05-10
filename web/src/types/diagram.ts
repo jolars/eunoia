@@ -125,7 +125,10 @@ export type LossName =
   | "DiagError";
 export type ExportFormat = "svg" | "png" | "pdf" | "json";
 
-export type LabelPlacementMode = "interiorOnly" | "interiorPlusRaycast";
+export type LabelPlacementMode =
+  | "interiorOnly"
+  | "interiorPlusRaycast"
+  | "interiorPlusForceDirected";
 
 export interface DiagramStyle {
   /** Per-set fill colors keyed by set name. Missing sets fall back to the default palette. */
@@ -146,9 +149,11 @@ export interface DiagramStyle {
    * - `"interiorOnly"` — hide region labels that don't fit (predicate behaviour).
    * - `"interiorPlusRaycast"` — place such labels outside the diagram with a
    *   leader line back to the region's POI (default).
-   *
-   * Future strategy variants (`Loose`, `ForceDirected`) live in the eunoia
-   * core surface but are not yet wired into the demo.
+   * - `"interiorPlusForceDirected"` — same fall-back path as `interiorPlusRaycast`,
+   *   but resolves overlap and foreign-region collisions via the polygon-aware
+   *   force-directed solver in the eunoia core. Slower than raycast; better for
+   *   crowded layouts where exterior labels otherwise pile up or land on top of
+   *   unrelated regions.
    */
   labelPlacement: LabelPlacementMode;
 }

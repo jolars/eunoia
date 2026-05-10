@@ -289,7 +289,12 @@ export type InteriorPolicy = "strict" | "loose";
  * - `"none"` — omit the region from the result. **Not implemented yet** —
  *   callers wanting that behaviour should use [`placeRegionLabelsForRegions`]
  *   directly.
- * - `"forceDirected"` — iterative spring/repulsion solve. **Not implemented yet.**
+ * - `"forceDirected"` — iterative spring + repulsion solve. Initial
+ *   positions come from the raycast, then each label is pulled toward
+ *   that "home" by a soft spring while being repelled from other labels
+ *   *and* from foreign region polygons (the eunoia-specific bit: ggrepel
+ *   can only see labels). Use this when raycast labels visually overlap
+ *   unrelated regions or pile up at similar angles.
  */
 export type ExteriorPolicyName = "raycast" | "none" | "forceDirected";
 
@@ -299,11 +304,16 @@ export interface PlacementStrategy {
   /** Default `"raycast"`. */
   exterior?: ExteriorPolicyName;
   /**
-   * Margin around the diagram bbox/container when `exterior === "raycast"`.
-   * Omit to use a per-region proportional default of
-   * `0.5 * max(label_w, label_h)`.
+   * Margin around the diagram bbox/container, applied to both
+   * `"raycast"` and `"forceDirected"` exteriors. Omit to use a per-region
+   * proportional default of `0.5 * max(label_w, label_h)`.
    */
   margin?: number;
+  /**
+   * Iteration cap for the `"forceDirected"` solver. Ignored otherwise.
+   * Defaults to 200; raise for crowded diagrams that haven't converged.
+   */
+  iterations?: number;
   /** Polylabel-style search precision. Default `0.01`. */
   precision?: number;
 }
@@ -1077,8 +1087,8 @@ const PLACEMENT_KIND_MAP: Record<
  * complement is set), padded by a per-label proportional margin.
  *
  * Selecting unimplemented strategy variants (`interior: "loose"`,
- * `exterior: "none"`, `exterior: "forceDirected"`) throws — pattern-match
- * on the error and fall back to a different strategy or to the predicate
+ * `exterior: "none"`) throws — pattern-match on the error and fall back
+ * to a different strategy or to the predicate
  * [`placeRegionLabelsForRegions`].
  *
  * @example
@@ -1155,6 +1165,7 @@ export function placeLabelsForRegions(
       interior?: "Strict" | "Loose";
       exterior?: "Raycast" | "None" | "ForceDirected";
       margin?: number;
+      iterations?: number;
       precision?: number;
     } = {};
     if (strategy.interior !== undefined) {
@@ -1176,6 +1187,8 @@ export function placeLabelsForRegions(
       payload.exterior = mapped;
     }
     if (strategy.margin !== undefined) payload.margin = strategy.margin;
+    if (strategy.iterations !== undefined)
+      payload.iterations = strategy.iterations;
     if (strategy.precision !== undefined)
       payload.precision = strategy.precision;
     strategyJson = JSON.stringify(payload);
