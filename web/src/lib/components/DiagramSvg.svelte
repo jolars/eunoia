@@ -567,8 +567,8 @@
           <line
             x1={placement.tether.x}
             y1={placement.tether.y}
-            x2={anchor.x}
-            y2={anchor.y}
+            x2={placement.leaderEnd?.x ?? anchor.x}
+            y2={placement.leaderEnd?.y ?? anchor.y}
             stroke="#6b7280"
             stroke-width={Math.max(strokeW * 0.5, 0.3)}
             stroke-opacity="0.6"

@@ -2615,8 +2615,11 @@ pub fn generate_venn_regions(
 /// `ForceDirected` (defaults to 200).
 ///
 /// Returns a JSON object mapping each placed region to
-/// `{ "anchor": [x, y], "kind": "...", "tether"?: [x, y] }`. Regions with
-/// degenerate input (no POI, invalid label dimensions, etc.) are absent.
+/// `{ "anchor": [x, y], "kind": "...", "tether"?: [x, y], "leaderEnd"?: [x, y] }`.
+/// Regions with degenerate input (no POI, invalid label dimensions, etc.)
+/// are absent. `leaderEnd` is the point on the label's bounding box where
+/// the leader line should terminate, so renderers can stop the leader at
+/// the box edge rather than at the anchor (which sits at the centre).
 #[wasm_bindgen]
 pub fn place_region_labels(
     polygons_json: String,
@@ -2665,6 +2668,8 @@ pub fn place_region_labels(
         kind: &'static str,
         #[serde(skip_serializing_if = "Option::is_none")]
         tether: Option<[f64; 2]>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "leaderEnd")]
+        leader_end: Option<[f64; 2]>,
     }
 
     let regions_in: std::collections::HashMap<String, Vec<PieceJson>> =
@@ -2755,6 +2760,7 @@ pub fn place_region_labels(
                 anchor: [p.anchor.x(), p.anchor.y()],
                 kind: kind_str,
                 tether: p.tether.map(|t| [t.x(), t.y()]),
+                leader_end: p.leader_end.map(|t| [t.x(), t.y()]),
             },
         );
     }
@@ -2765,8 +2771,8 @@ pub fn place_region_labels(
 /// Bounding box of every placed label box.
 ///
 /// `placements_json` is `{ [combination: string]: { anchor: [x, y], kind:
-/// string, tether?: [x, y] } }` — exactly the shape returned by
-/// [`place_region_labels`]. `sizes_json` is `{ [combination: string]: [w,
+/// string, tether?: [x, y], leaderEnd?: [x, y] } }` — exactly the shape
+/// returned by [`place_region_labels`]. `sizes_json` is `{ [combination: string]: [w,
 /// h] }`.
 ///
 /// Returns the JSON-encoded `{x, y, width, height}` of the union AABB
@@ -2823,6 +2829,7 @@ pub fn placements_bbox(
                 anchor: Point::new(p.anchor[0], p.anchor[1]),
                 kind: PlacementKind::Interior,
                 tether: None,
+                leader_end: None,
             };
             (k, placement)
         })

@@ -49,6 +49,15 @@ the polygon's outer ring instead — the rendered leader then starts
 on the polygon edge, matching the standard labeling convention.
 Recommended when your renderer draws shape strokes.
 
+On the **label side**, the placer returns `placement.leaderEnd` —
+the point on the label's bounding box where the leader should
+terminate. Draw the leader from `tether` to `leaderEnd` (rather
+than to `anchor`, which is the box centre) so the line stops at
+the box edge instead of running through the rendered text. The box
+used for clipping is the size you passed in for that region, so
+any half-gap padding the caller adds (see the gotchas below) is
+preserved as the visible gap between the leader tip and the text.
+
 Independently of the tether choice, both exterior solvers run a
 **leader-vs-interior-label avoidance** pass: when an exterior
 label's leader segment would visually cross another region's
@@ -209,16 +218,18 @@ Strategy knobs (defaults in parentheses):
 ## Rendering recipe
 
 Pattern-match on `placement.kind`. Interior placements just need an
-anchor; exterior placements also need a leader line back to
+anchor; exterior placements also need a leader line from
 `placement.tether` (the region's POI by default, or the polygon
-exit point when `strategy.tether = 'boundary'`):
+exit point when `strategy.tether = 'boundary'`) to
+`placement.leaderEnd` (the point on the label's bounding box where
+the leader should terminate, so it doesn't run through the text):
 
 ```ts
 for (const region of regions) {
   const p = placements[region.combination];
   if (!p) continue;
   if (p.kind === "exteriorRaycast" || p.kind === "exteriorForceDirected") {
-    drawLine(p.tether!, p.anchor);   // leader line
+    drawLine(p.tether!, p.leaderEnd!);   // leader line, clipped at the box edge
   }
   drawLabel(p.anchor, region.combination);
 }
@@ -245,7 +256,9 @@ A few gotchas worth knowing:
   you usually do), pad the sizes you pass in by your desired
   half-gap on every side, then render text at the original
   measured size. The two examples above use a 1-user-unit per-side
-  pad for visible spacing.
+  pad for visible spacing. The same padding also shows up as the
+  visible gap between the leader tip (`placement.leaderEnd`) and
+  the rendered text, since `leaderEnd` sits on the padded box edge.
 - **The interior fit-check uses a radial-conservative bound.** It
   never returns false positives (the inscribed rectangle is always
   strictly inside the region), but it can return false negatives

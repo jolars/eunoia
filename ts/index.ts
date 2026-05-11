@@ -311,6 +311,13 @@ export interface LabelPlacement {
    * from `anchor` toward `tether`.
    */
   tether?: Point;
+  /**
+   * Point on the label's bounding box where the leader line should
+   * terminate. `undefined` for interior placements; set for exterior. Use
+   * this as the leader's terminus instead of `anchor` so the line stops at
+   * the box edge rather than continuing through the rendered text.
+   */
+  leaderEnd?: Point;
 }
 
 export interface PlaceLabelsForRegionsOptions {
@@ -989,6 +996,7 @@ export function placeLabelsForRegions(
     anchor: [number, number];
     kind: keyof typeof PLACEMENT_KIND_MAP;
     tether?: [number, number];
+    leaderEnd?: [number, number];
   };
   const raw = JSON.parse(json) as Record<string, RawPlacement>;
   const out: Record<string, LabelPlacement> = {};
@@ -998,6 +1006,8 @@ export function placeLabelsForRegions(
       kind: PLACEMENT_KIND_MAP[v.kind],
     };
     if (v.tether) placement.tether = { x: v.tether[0], y: v.tether[1] };
+    if (v.leaderEnd)
+      placement.leaderEnd = { x: v.leaderEnd[0], y: v.leaderEnd[1] };
     out[k] = placement;
   }
   return out;

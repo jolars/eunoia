@@ -37,6 +37,14 @@ pub struct LabelPlacement {
     /// placements; `Some` for exterior. Renderers use this to draw the
     /// tether from `anchor` toward `tether`.
     pub tether: Option<Point>,
+    /// Point on the label's bounding box where the leader line should
+    /// terminate, so the line stops at the box edge instead of continuing
+    /// through the rendered text. `None` for interior placements (no
+    /// leader); `Some` for exterior. Sits on the AABB of size `(w, h)`
+    /// centred on `anchor` — the AABB the caller supplied in `sizes`, so
+    /// any half-gap padding the caller added is preserved as the visible
+    /// gap between the leader tip and the text.
+    pub leader_end: Option<Point>,
 }
 
 /// Discriminator on [`LabelPlacement`].
@@ -251,6 +259,7 @@ pub fn place_labels(
                     anchor,
                     kind: PlacementKind::Interior,
                     tether: None,
+                    leader_end: None,
                 },
             );
             continue;
@@ -355,12 +364,14 @@ pub fn place_labels(
                 }
             }
         };
+        let leader_end = leader_end_on_label_box(&tether_pt, &entry.anchor, entry.w, entry.h);
         out.insert(
             entry.key,
             LabelPlacement {
                 anchor: entry.anchor,
                 kind: exterior_kind_label,
                 tether: Some(tether_pt),
+                leader_end: Some(leader_end),
             },
         );
     }
@@ -401,11 +412,13 @@ pub fn place_labels(
 ///     anchor: Point::new(0.0, 0.0),
 ///     kind: PlacementKind::Interior,
 ///     tether: None,
+///     leader_end: None,
 /// });
 /// placements.insert("B".to_string(), LabelPlacement {
 ///     anchor: Point::new(10.0, 5.0),
 ///     kind: PlacementKind::ExteriorRaycast,
 ///     tether: Some(Point::new(8.0, 4.0)),
+///     leader_end: Some(Point::new(8.0, 5.0)),
 /// });
 ///
 /// let mut sizes = HashMap::new();
@@ -1478,6 +1491,37 @@ fn leader_avoidance_push(
     Some((sign * mag * tx, sign * mag * ty))
 }
 
+/// Where the leader from `tether` to `anchor` first enters the label box of
+/// size `(w, h)` centred on `anchor` — the point a renderer should use as
+/// the leader's terminus so the line stops at the box edge instead of
+/// continuing through the rendered text.
+///
+/// Falls back to `anchor` when the tether sits inside the label box (which
+/// can only happen with degenerately small margins where the label
+/// overlaps its own region's POI). In that case there is no meaningful
+/// "edge entry" and stopping at the centre is the least-bad option; the
+/// renderer simply draws a zero-length leader.
+fn leader_end_on_label_box(tether: &Point, anchor: &Point, w: f64, h: f64) -> Point {
+    let half_w = 0.5 * w;
+    let half_h = 0.5 * h;
+    let xmin = anchor.x() - half_w;
+    let xmax = anchor.x() + half_w;
+    let ymin = anchor.y() - half_h;
+    let ymax = anchor.y() + half_h;
+    let Some((t_enter, _)) = segment_vs_aabb(tether, anchor, xmin, ymin, xmax, ymax) else {
+        return *anchor;
+    };
+    // t_enter == 0 means the tether is already on/inside the box edge: no
+    // meaningful entry point exists, so fall back to the anchor and let
+    // the renderer draw a zero-length leader.
+    if t_enter <= 0.0 {
+        return *anchor;
+    }
+    let dx = anchor.x() - tether.x();
+    let dy = anchor.y() - tether.y();
+    Point::new(tether.x() + t_enter * dx, tether.y() + t_enter * dy)
+}
+
 /// Segment vs axis-aligned box intersection (Liang-Barsky slab method).
 ///
 /// Returns `Some((t_enter, t_exit))` with both clamped to `[0, 1]` when the
@@ -1601,6 +1645,116 @@ mod tests {
             "anchor y = {}",
             p.anchor.y()
         );
+    }
+
+    #[test]
+    fn test_interior_placement_has_no_leader_end() {
+        // Interior placements never carry a leader endpoint — the renderer
+        // draws no leader line, so there's nothing to clip.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (1.0, 0.5));
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+        let p = placements.get("A").expect("A should be placed");
+        assert_eq!(p.kind, PlacementKind::Interior);
+        assert!(p.leader_end.is_none());
+    }
+
+    #[test]
+    fn test_exterior_raycast_leader_end_on_box_edge() {
+        // Same setup as test_strict_raycast_exterior_fallback: exterior
+        // raycast places A's label above the region. leader_end should
+        // land on the bottom edge of the label box (the edge facing the
+        // tether) and sit on the tether→anchor segment.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let (w, h) = (20.0, 20.0);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (w, h));
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+        let p = placements.get("A").expect("A should be placed");
+        let tether = p.tether.expect("exterior placement should have a tether");
+        let le = p
+            .leader_end
+            .expect("exterior placement should have leader_end");
+
+        // leader_end on the label AABB boundary.
+        let half_w = 0.5 * w;
+        let half_h = 0.5 * h;
+        let xmin = p.anchor.x() - half_w;
+        let xmax = p.anchor.x() + half_w;
+        let ymin = p.anchor.y() - half_h;
+        let ymax = p.anchor.y() + half_h;
+        let on_left = (le.x() - xmin).abs() < 1e-6;
+        let on_right = (le.x() - xmax).abs() < 1e-6;
+        let on_bottom = (le.y() - ymin).abs() < 1e-6;
+        let on_top = (le.y() - ymax).abs() < 1e-6;
+        let in_x = le.x() >= xmin - 1e-6 && le.x() <= xmax + 1e-6;
+        let in_y = le.y() >= ymin - 1e-6 && le.y() <= ymax + 1e-6;
+        assert!(
+            (on_left || on_right || on_bottom || on_top) && in_x && in_y,
+            "leader_end {:?} should lie on the label AABB edge ({:?} × {:?})",
+            (le.x(), le.y()),
+            (xmin, xmax),
+            (ymin, ymax),
+        );
+
+        // leader_end on the tether→anchor segment: parameterise the
+        // segment and check t ∈ [0, 1] and the point matches.
+        let dx = p.anchor.x() - tether.x();
+        let dy = p.anchor.y() - tether.y();
+        let denom = dx * dx + dy * dy;
+        assert!(denom > 0.0, "anchor and tether should not coincide");
+        let t = ((le.x() - tether.x()) * dx + (le.y() - tether.y()) * dy) / denom;
+        assert!(
+            (0.0..=1.0).contains(&t),
+            "leader_end should sit on the tether→anchor segment (t = {})",
+            t
+        );
+        let reconstructed_x = tether.x() + t * dx;
+        let reconstructed_y = tether.y() + t * dy;
+        assert!((reconstructed_x - le.x()).abs() < 1e-6);
+        assert!((reconstructed_y - le.y()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_exterior_force_directed_emits_leader_end() {
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let strategy = PlacementStrategy {
+            exterior: ExteriorPolicy::ForceDirected {
+                margin: None,
+                iterations: Some(10),
+            },
+            ..PlacementStrategy::default()
+        };
+        let placements = place_labels(&regions, &sizes, None, &strategy);
+        let p = placements.get("A").expect("A should be placed");
+        assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
+        assert!(p.leader_end.is_some());
+    }
+
+    #[test]
+    fn test_leader_end_on_label_box_basic() {
+        // Tether directly below the box centre → leader_end on the bottom edge.
+        let tether = Point::new(5.0, -5.0);
+        let anchor = Point::new(5.0, 10.0);
+        let le = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0);
+        // Box is [3, 7] × [9, 11]; the leader from (5, -5) to (5, 10) enters
+        // the box at y = 9.
+        assert!((le.x() - 5.0).abs() < 1e-9);
+        assert!((le.y() - 9.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_leader_end_falls_back_when_tether_inside_box() {
+        // Pathological case: tether sits inside the label box. There is no
+        // meaningful edge entry, so leader_end falls back to the anchor.
+        let anchor = Point::new(5.0, 5.0);
+        let tether = Point::new(5.0, 5.0);
+        let le = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0);
+        assert!((le.x() - anchor.x()).abs() < 1e-9);
+        assert!((le.y() - anchor.y()).abs() < 1e-9);
     }
 
     #[test]
@@ -2174,6 +2328,7 @@ mod tests {
             anchor: Point::new(x, y),
             kind,
             tether: None,
+            leader_end: None,
         }
     }
 
