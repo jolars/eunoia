@@ -134,18 +134,32 @@ pub struct PlacementStrategy {
     /// Where the leader tether attaches on the source region for exterior
     /// placements. Defaults to [`TetherSource::Poi`].
     pub tether: TetherSource,
+    /// Visible gap (in the same coordinate units as the label sizes)
+    /// between the leader-line tip and the label's bounding box. Inflates
+    /// the box used to compute [`LabelPlacement::leader_end`] by `leader_gap`
+    /// on every side, so the leader stops `leader_gap` units short of the
+    /// rendered text edge. Negative values are clamped to `0.0`. Defaults
+    /// to `0.0` (leader ends exactly at the box edge).
+    ///
+    /// Use this when your renderer hands raw measured text bboxes to the
+    /// placer and you want visible breathing room between the leader tip
+    /// and the glyphs. If you instead pre-pad the sizes you pass in (per
+    /// the label-vs-label gap convention), keep `leader_gap = 0.0` — the
+    /// padding you already added shows up as the visible gap.
+    pub leader_gap: f64,
 }
 
 impl Default for PlacementStrategy {
     /// [`ExteriorPolicy::Raycast`] with proportional margin,
-    /// `precision = 0.01`, and POI tether (the rendered leader runs from
+    /// `precision = 0.01`, POI tether (the rendered leader runs from
     /// the region's POI to the exterior anchor — safe for any rendering
-    /// style).
+    /// style), and `leader_gap = 0.0`.
     fn default() -> Self {
         Self {
             exterior: ExteriorPolicy::Raycast { margin: None },
             precision: 0.01,
             tether: TetherSource::Poi,
+            leader_gap: 0.0,
         }
     }
 }
@@ -364,7 +378,13 @@ pub fn place_labels(
                 }
             }
         };
-        let leader_end = leader_end_on_label_box(&tether_pt, &entry.anchor, entry.w, entry.h);
+        let leader_end = leader_end_on_label_box(
+            &tether_pt,
+            &entry.anchor,
+            entry.w,
+            entry.h,
+            strategy.leader_gap,
+        );
         out.insert(
             entry.key,
             LabelPlacement {
@@ -1492,18 +1512,24 @@ fn leader_avoidance_push(
 }
 
 /// Where the leader from `tether` to `anchor` first enters the label box of
-/// size `(w, h)` centred on `anchor` — the point a renderer should use as
-/// the leader's terminus so the line stops at the box edge instead of
-/// continuing through the rendered text.
+/// size `(w, h)` centred on `anchor`, inflated by `gap` on every side — the
+/// point a renderer should use as the leader's terminus so the line stops
+/// at the (possibly padded) box edge instead of continuing through the
+/// rendered text.
 ///
-/// Falls back to `anchor` when the tether sits inside the label box (which
-/// can only happen with degenerately small margins where the label
-/// overlaps its own region's POI). In that case there is no meaningful
-/// "edge entry" and stopping at the centre is the least-bad option; the
-/// renderer simply draws a zero-length leader.
-fn leader_end_on_label_box(tether: &Point, anchor: &Point, w: f64, h: f64) -> Point {
-    let half_w = 0.5 * w;
-    let half_h = 0.5 * h;
+/// `gap` is the configured `leader_gap` from [`PlacementStrategy`]. It's
+/// clamped to `[0, ∞)`: negative values behave like `0.0`. With
+/// `gap = 0.0` the leader terminates exactly at the visible text box
+/// edge; with `gap > 0.0` it stops `gap` units short of every edge.
+///
+/// Falls back to `anchor` when the tether sits inside the (inflated)
+/// label box. In that case there is no meaningful "edge entry" and
+/// stopping at the centre is the least-bad option; the renderer simply
+/// draws a zero-length leader.
+fn leader_end_on_label_box(tether: &Point, anchor: &Point, w: f64, h: f64, gap: f64) -> Point {
+    let gap = gap.max(0.0);
+    let half_w = 0.5 * w + gap;
+    let half_h = 0.5 * h + gap;
     let xmin = anchor.x() - half_w;
     let xmax = anchor.x() + half_w;
     let ymin = anchor.y() - half_h;
@@ -1511,9 +1537,9 @@ fn leader_end_on_label_box(tether: &Point, anchor: &Point, w: f64, h: f64) -> Po
     let Some((t_enter, _)) = segment_vs_aabb(tether, anchor, xmin, ymin, xmax, ymax) else {
         return *anchor;
     };
-    // t_enter == 0 means the tether is already on/inside the box edge: no
-    // meaningful entry point exists, so fall back to the anchor and let
-    // the renderer draw a zero-length leader.
+    // t_enter == 0 means the tether is already on/inside the (inflated)
+    // box edge: no meaningful entry point exists, so fall back to the
+    // anchor and let the renderer draw a zero-length leader.
     if t_enter <= 0.0 {
         return *anchor;
     }
@@ -1739,11 +1765,37 @@ mod tests {
         // Tether directly below the box centre → leader_end on the bottom edge.
         let tether = Point::new(5.0, -5.0);
         let anchor = Point::new(5.0, 10.0);
-        let le = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0);
+        let le = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0, 0.0);
         // Box is [3, 7] × [9, 11]; the leader from (5, -5) to (5, 10) enters
         // the box at y = 9.
         assert!((le.x() - 5.0).abs() < 1e-9);
         assert!((le.y() - 9.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_leader_end_with_gap_sits_on_inflated_box_edge() {
+        // gap = 0.5 inflates a 4×2 box to 5×3; the perpendicular leader
+        // from below enters the inflated box at y = 10 - 1.5 = 8.5
+        // instead of the raw-edge y = 9.0.
+        let tether = Point::new(5.0, -5.0);
+        let anchor = Point::new(5.0, 10.0);
+        let le = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0, 0.5);
+        assert!((le.x() - 5.0).abs() < 1e-9);
+        assert!((le.y() - 8.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_leader_end_negative_gap_clamped_to_zero() {
+        // Negative gap should behave the same as gap = 0 — the contract
+        // says "visible breathing room", and a negative gap would extend
+        // the leader past the box edge into the text which is never
+        // desirable.
+        let tether = Point::new(5.0, -5.0);
+        let anchor = Point::new(5.0, 10.0);
+        let le_neg = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0, -1.0);
+        let le_zero = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0, 0.0);
+        assert!((le_neg.x() - le_zero.x()).abs() < 1e-9);
+        assert!((le_neg.y() - le_zero.y()).abs() < 1e-9);
     }
 
     #[test]
@@ -1752,9 +1804,46 @@ mod tests {
         // meaningful edge entry, so leader_end falls back to the anchor.
         let anchor = Point::new(5.0, 5.0);
         let tether = Point::new(5.0, 5.0);
-        let le = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0);
+        let le = leader_end_on_label_box(&tether, &anchor, 4.0, 2.0, 0.0);
         assert!((le.x() - anchor.x()).abs() < 1e-9);
         assert!((le.y() - anchor.y()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_strategy_leader_gap_inflates_leader_end() {
+        // End-to-end: a non-zero leader_gap on the strategy should shift
+        // the exterior leader_end inward by `gap` units along the leader.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let (w, h) = (20.0, 20.0);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (w, h));
+        let base_strategy = PlacementStrategy::default();
+        let gap = 1.5;
+        let gap_strategy = PlacementStrategy {
+            leader_gap: gap,
+            ..base_strategy
+        };
+
+        let base = place_labels(&regions, &sizes, None, &base_strategy)
+            .remove("A")
+            .expect("A placed");
+        let gapped = place_labels(&regions, &sizes, None, &gap_strategy)
+            .remove("A")
+            .expect("A placed");
+
+        let le0 = base.leader_end.expect("leader_end");
+        let le1 = gapped.leader_end.expect("leader_end");
+        // Direction of the perpendicular leader (anchor above POI) is +y,
+        // so the gapped endpoint sits `gap` units below the base endpoint.
+        assert!((le0.x() - le1.x()).abs() < 1e-6);
+        assert!(
+            (le0.y() - le1.y() - gap).abs() < 1e-6,
+            "gapped leader_end should sit `gap` units before the raw edge: \
+             base.y = {}, gapped.y = {}, gap = {}",
+            le0.y(),
+            le1.y(),
+            gap,
+        );
     }
 
     #[test]
@@ -2243,6 +2332,7 @@ mod tests {
             },
             precision: 0.05,
             tether: TetherSource::Poi,
+            leader_gap: 0.0,
         };
         let placements = place_labels(&regions, &sizes, None, &strategy);
         let p = placements.get("A").unwrap();
@@ -2311,6 +2401,7 @@ mod tests {
             },
             precision: 0.01,
             tether: TetherSource::Poi,
+            leader_gap: 0.0,
         };
         let placements = place_labels(&regions, &sizes, None, &strategy);
         let p = placements.get("A").unwrap();
@@ -2713,6 +2804,7 @@ mod tests {
             },
             precision: 0.01,
             tether: TetherSource::Poi,
+            leader_gap: 0.0,
         };
         let placements = place_labels(&regions, &sizes, None, &strategy);
         let a = placements.get("A").expect("A should be placed");

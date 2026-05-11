@@ -327,6 +327,12 @@
           exterior: style.labelPlacement,
           precision: Math.max(0.05, style.labelSize * 0.05),
           tether: style.labelTether,
+          // Stop the leader a fraction of a glyph-height short of the
+          // text box edge so the line doesn't kiss the glyph contours.
+          // `sizes` here are raw measured bboxes (no pre-padding), so
+          // without this the leader would terminate exactly at the
+          // outermost glyph edge.
+          leaderGap: style.labelSize * 0.25,
         },
       });
       console.debug("[place]", {

@@ -214,6 +214,16 @@ Strategy knobs (defaults in parentheses):
   on the polygon edge; recommended when your renderer draws shape
   strokes. Falls back to the POI if no ray-vs-edge intersection is
   found.
+- `leaderGap` *(`0`)* — visible gap (in the same coordinate units
+  as the label sizes) between the leader tip
+  (`placement.leaderEnd`) and the label's bounding box. The placer
+  inflates the box used to compute `leaderEnd` by this amount on
+  every side, so the leader stops `leaderGap` units short of the
+  rendered text edge. Negative values are clamped to `0`. Set this
+  when you hand raw measured bboxes to the placer and want
+  breathing room between the leader tip and the glyphs; leave at
+  `0` when you already pre-pad sizes for the label-vs-label gap
+  (the same padding then acts as the leader gap automatically).
 
 ## Rendering recipe
 
@@ -259,6 +269,10 @@ A few gotchas worth knowing:
   pad for visible spacing. The same padding also shows up as the
   visible gap between the leader tip (`placement.leaderEnd`) and
   the rendered text, since `leaderEnd` sits on the padded box edge.
+  If you hand the placer raw measured bboxes instead of pre-padded
+  ones, use `strategy.leaderGap` to introduce the leader-side gap
+  independently — it only affects `leaderEnd`, not label-vs-label
+  separation.
 - **The interior fit-check uses a radial-conservative bound.** It
   never returns false positives (the inscribed rectangle is always
   strictly inside the region), but it can return false negatives

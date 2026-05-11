@@ -289,6 +289,20 @@ export interface PlacementStrategy {
    * placements. Default `"poi"`.
    */
   tether?: TetherSource;
+  /**
+   * Visible gap (in the same coordinate units as the label sizes) between
+   * the leader-line tip (`placement.leaderEnd`) and the label's bounding
+   * box. The placer inflates the box used to compute `leaderEnd` by this
+   * amount on every side, so the leader stops `leaderGap` units short of
+   * the rendered text edge. Negative values are clamped to `0`. Default
+   * `0` (leader ends exactly at the box edge).
+   *
+   * Set this when your renderer hands raw measured text bboxes to the
+   * placer and you want breathing room between the leader tip and the
+   * glyphs. If you instead pre-pad the sizes you pass in, keep
+   * `leaderGap = 0` — the padding shows up as the visible gap.
+   */
+  leaderGap?: number;
 }
 
 /**
@@ -959,6 +973,7 @@ export function placeLabelsForRegions(
       iterations?: number;
       precision?: number;
       tether?: "Poi" | "Boundary";
+      leaderGap?: number;
     } = {};
     if (strategy.exterior !== undefined) {
       const mapped = EXTERIOR_POLICY_MAP[strategy.exterior];
@@ -983,6 +998,8 @@ export function placeLabelsForRegions(
       }
       payload.tether = mapped;
     }
+    if (strategy.leaderGap !== undefined)
+      payload.leaderGap = strategy.leaderGap;
     strategyJson = JSON.stringify(payload);
   }
 

@@ -2606,13 +2606,17 @@ pub fn generate_venn_regions(
 ///   "margin": 5.0,
 ///   "iterations": 200,
 ///   "precision": 0.01,
-///   "tether": "Poi" | "Boundary"
+///   "tether": "Poi" | "Boundary",
+///   "leaderGap": 0.0
 /// }
 /// ```
 ///
 /// `margin` applies to both `Raycast` and `ForceDirected` (the per-region
 /// proportional default kicks in when omitted). `iterations` only affects
-/// `ForceDirected` (defaults to 200).
+/// `ForceDirected` (defaults to 200). `leaderGap` is the visible gap (in
+/// the same coordinate units as the label sizes) between the leader-line
+/// tip and the label's bounding box; defaults to `0.0` (leader stops
+/// exactly at the box edge). Negative values are clamped to `0.0`.
 ///
 /// Returns a JSON object mapping each placed region to
 /// `{ "anchor": [x, y], "kind": "...", "tether"?: [x, y], "leaderEnd"?: [x, y] }`.
@@ -2660,6 +2664,10 @@ pub fn place_region_labels(
         /// `"Poi"` (default) or `"Boundary"`; controls where the exterior
         /// leader tether attaches to the source region.
         tether: Option<String>,
+        /// Visible gap between the leader tip and the label box edge; see
+        /// [`eunoia::plotting::PlacementStrategy::leader_gap`].
+        #[serde(rename = "leaderGap")]
+        leader_gap: Option<f64>,
     }
 
     #[derive(serde::Serialize)]
@@ -2720,6 +2728,7 @@ pub fn place_region_labels(
         exterior,
         precision: strategy_in.precision.unwrap_or(0.01),
         tether,
+        leader_gap: strategy_in.leader_gap.unwrap_or(0.0),
     };
 
     let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
