@@ -222,51 +222,48 @@ roadmap didn't require but would tighten the surface.
 
 ## Label placement follow-ups
 
-- [ ] **Raycast against the diagram's union polygon, not its AABB**.
-      `crates/eunoia/src/plotting/placement.rs:232-238` builds
-      `diagram_bbox` as the AABB of all region piece outers (or the
-      container, when set), and the raycast / force-directed solvers
-      both use it as the "diagram boundary" for exterior anchor
-      computation. For circle/square diagrams the AABB is a tight
-      proxy, but for ellipse arrangements (and any future rotated
-      shapes) the AABB corners can be tens of user units away from
-      any actual fitted shape — so a label raycast diagonally lands
-      far out into empty space, with `margin` then *added* on top.
+- [ ] **Leader lines crossing interior labels**. Exterior label
+      leaders run from `LabelPlacement.tether` (the region's POI,
+      deep inside the region) to the exterior anchor, which means
+      a leader can visually cross other regions' interior labels.
+      Most visible in dense n=4+ ellipse diagrams where several
+      exterior labels' rays sweep across the central interior
+      labels. Three approaches, increasing in effort:
 
-      The fix is to ray-cast against the union of region piece outer
-      rings. Sketch:
-      1. Build the union polygon once per `place_labels` call (the
-         `i_overlay`-backed clip path is already wired up via the
-         `plotting` feature; reuse `plotting::clip::union` or the
-         decomposed-regions output).
-      2. In `raycast_anchor` (placement.rs ~line 288), intersect the
-         centroid→POI ray with the union polygon's outer boundary
-         instead of the AABB.
-      3. Place the label `margin` units past that intersection along
-         the ray direction.
-      4. Keep the AABB-based path as a fallback for degenerate
-         layouts where the union is empty / non-simple.
+      1. **Move the tether to the polygon boundary** — set the
+         tether to the first ray-vs-region-boundary intersection
+         (the point where the ray *exits* the region) instead of
+         the POI. The leader then lives entirely outside the
+         region; eliminates most leader-vs-interior-label
+         crossings since interior labels also sit at POIs inside
+         their regions. Cheap — one ray-vs-polygon intersection
+         per exterior label, reusing the scan in
+         `last_vertex_clearance_t`. Already noted under
+         `AGENTS.md` "Future Considerations" as "Exterior
+         leader-line entry-point refinement".
 
-      Force-directed needs a parallel update — its bbox-containment
-      constraint (placement.rs:104, 313-314) currently keeps labels
-      outside `diagram_bbox`; that should become "outside the union
-      polygon" so the spring can pull labels into AABB corners that
-      have no shape in them.
+      2. **Add leader-vs-interior-label repulsion to
+         ForceDirected**. Treat each leader as a line segment;
+         when an interior label's AABB intersects the segment,
+         push the exterior anchor tangentially until the segment
+         clears. Moderate effort; only affects ForceDirected.
+         Some tension with existing forces — convergence not
+         guaranteed but a few extra iterations usually settle it.
 
-      Surfaced by the docs-site `<DiagramExample>` n=4 ellipse demo
-      (2026-05-10): users perceive long exterior labels as
-      "very far off" because the AABB is generous on diagonal
-      directions. Tightening `margin` and the per-side `padding` in
-      the demo helps but doesn't fix the underlying geometry.
+      3. **Route leaders as polylines around obstacles**. Most
+         general; works for both Raycast and ForceDirected. Highest
+         effort and changes the visual idiom from "straight ray"
+         to "polyline". Skip unless bent leaders are explicitly
+         desired.
 
-      Worth doing alongside the **directional-clearance inscribed-
-      rectangle solver** already noted in `AGENTS.md` "Future
-      Considerations" — both improve the realism of the placement
-      surface for anisotropic diagrams.
+      Recommendation: do (1) first — cheap, on the existing TODO,
+      removes the common case. Reach for (2) only if real diagrams
+      still show crossings after (1). Surfaced 2026-05-11 during
+      the union-polygon raycast refinement.
 
 ## Documentation
 
-- [ ] **Add `/docs/` routes to the existing Svelte site** (alongside
+- [x] **Add `/docs/` routes to the existing Svelte site** (alongside
       rustdoc / tsdoc / `AGENTS.md`). Rustdoc + tsdoc are reference
       docs; `AGENTS.md` is contributor-internal. There's no narrative
       that serves end users (R/Python wrappers) or binding authors

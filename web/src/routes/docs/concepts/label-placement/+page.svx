@@ -143,13 +143,15 @@ The default strategy is `Strict` interior with `Raycast` exterior:
   otherwise fall through to the exterior policy.
 - **`Raycast` exterior** — deterministic ray from the diagram
   centroid through the region's POI; anchor lands outside the
-  diagram bbox (or container, if you set one) padded by `margin`.
-  Cheap, predictable, no surprises.
+  union polygon of the fitted shapes (or container, if you set
+  one), padded by `margin`. Clearance is checked per-vertex with
+  the label's full footprint, so width and height are honoured
+  even on diagonal rays. Cheap, predictable, no surprises.
 - **`ForceDirected` exterior** — warm-starts from the raycast
   positions, then iterates a soft spring (back to home) plus three
-  repulsions: label-vs-label, label-vs-bbox containment along the
-  raycast direction, and label-vs-foreign-region polygon repulsion.
-  Default cap is 200 outer iterations.
+  repulsions: label-vs-label, label-vs-union-polygon containment
+  along the raycast direction, and label-vs-foreign-region polygon
+  repulsion. Default cap is 200 outer iterations.
 
 Pick `Raycast` for typical n=2..3 diagrams or any case where labels
 naturally spread around the perimeter. Reach for `ForceDirected`
@@ -229,15 +231,6 @@ A few gotchas worth knowing:
   half-gap on every side, then render text at the original
   measured size. The two examples above use a 1-user-unit per-side
   pad for visible spacing.
-- **Exterior anchors are placed relative to the diagram's
-  axis-aligned bounding box**, not the union polygon of the fitted
-  shapes. For circles and squares this is a tight proxy, but for
-  ellipse arrangements it means a diagonal raycast can land in an
-  AABB corner where no ellipse is anywhere near, with `margin`
-  added past that. A tighter ray-vs-union-polygon implementation
-  is on the roadmap; until then, override `margin` with a small
-  fixed value if exterior labels look too far away on ellipse
-  diagrams.
 - **The interior fit-check uses a radial-conservative bound.** It
   never returns false positives (the inscribed rectangle is always
   strictly inside the region), but it can return false negatives

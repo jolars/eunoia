@@ -28,9 +28,12 @@ use std::collections::HashMap;
 use std::fmt;
 
 use crate::geometry::primitives::Point;
-use crate::geometry::shapes::Rectangle;
+use crate::geometry::shapes::{Polygon, Rectangle};
+use crate::plotting::clip::polygon_union_many;
 use crate::plotting::inscribed::{fit_label_in_region, principal_axis};
-use crate::plotting::regions::{signed_clearance, RegionPiece, RegionPolygons};
+use crate::plotting::regions::{
+    classify_into_pieces, signed_clearance, RegionPiece, RegionPolygons,
+};
 use crate::spec::Combination;
 
 /// Result of placing one label.
@@ -83,9 +86,15 @@ pub enum ExteriorPolicy {
     /// should call `fit_labels_in_regions` directly.
     None,
     /// Deterministic ray from the diagram centroid through the region's POI.
-    /// The anchor is placed outside the diagram bounding box (or container,
-    /// when complement is set), padded by `margin`. `margin = None` selects
-    /// a proportional default of `0.5 * max(label_w, label_h)` per region.
+    /// The anchor is placed outside the union polygon of the fitted shapes
+    /// (or the container, when complement is set), padded by `margin`.
+    /// `margin = None` selects a proportional default of
+    /// `0.5 * max(label_w, label_h)` per region.
+    ///
+    /// Clearance against the union polygon is checked per-vertex with the
+    /// full label box footprint — width and height — so a long label on a
+    /// diagonal ray doesn't dip back into a curving boundary. Falls back
+    /// to AABB-based separation when the union is degenerate.
     Raycast { margin: Option<f64> },
     /// Iterative spring/repulsion solve. Initial positions come from the
     /// raycast geometry (so labels start in the right halfspace), then a
@@ -229,9 +238,17 @@ pub fn place_labels(
         },
     };
 
-    // Diagram bounding box: container if set, else the union of every
-    // region piece's outer-ring bbox. Returning `Ok(empty)` for an empty
-    // input is fine — there's nothing to place.
+    // Diagram boundary: when there's no container, we ray-cast against the
+    // union of all region piece outer rings (a tight polygon-shaped
+    // boundary). The AABB stays around as a fallback for degenerate
+    // layouts where the union is empty or the union pass produces no
+    // pieces; it's also what we use unmodified when a container rectangle
+    // is provided, since the container is already axis-aligned by design.
+    let union_pieces: Vec<RegionPiece> = if container.is_none() {
+        build_diagram_union(regions)
+    } else {
+        Vec::new()
+    };
     let diagram_bbox = match container {
         Some(rect) => Some(*rect),
         None => union_bbox(regions),
@@ -285,7 +302,8 @@ pub fn place_labels(
 
         let direction = direction_from(&poi, &centroid, pieces);
         let margin = raycast_margin_opt.unwrap_or_else(|| 0.5 * w.max(h));
-        let anchor = raycast_anchor(&poi, w, h, &bbox, margin, direction);
+        let anchor = raycast_anchor_union(&poi, w, h, &union_pieces, margin, direction)
+            .unwrap_or_else(|| raycast_anchor(&poi, w, h, &bbox, margin, direction));
         exteriors.push(ExteriorEntry {
             key: key.clone(),
             combo,
@@ -311,7 +329,7 @@ pub fn place_labels(
         }
         ExteriorPlan::ForceDirected { iterations, .. } => {
             if let Some(bbox) = diagram_bbox {
-                resolve_force_directed(&mut exteriors, regions, &bbox, iterations);
+                resolve_force_directed(&mut exteriors, regions, &union_pieces, &bbox, iterations);
             }
             PlacementKind::ExteriorForceDirected
         }
@@ -702,6 +720,7 @@ fn resolve_exterior_collisions(entries: &mut [ExteriorEntry], max_iters: usize) 
 fn resolve_force_directed(
     entries: &mut [ExteriorEntry],
     regions: &RegionPolygons,
+    union_pieces: &[RegionPiece],
     bbox: &Rectangle,
     max_iters: usize,
 ) {
@@ -748,15 +767,30 @@ fn resolve_force_directed(
             let dy = entries[i].home.y() - entries[i].anchor.y();
             entries[i].anchor = Point::new(prev.x() + spring * dx, prev.y() + spring * dy);
 
-            // Bbox containment (push along the raycast direction).
-            let (bx, by) = bbox_push_along(
-                &entries[i].anchor,
-                0.5 * entries[i].w,
-                0.5 * entries[i].h,
-                bbox,
-                entries[i].margin,
-                entries[i].direction,
-            );
+            // Diagram-boundary containment (push along the raycast
+            // direction). Uses the union polygon when available so labels
+            // can settle into AABB corners that contain no actual shape;
+            // falls back to the AABB envelope when the union is empty
+            // (degenerate input, or when a container is in play).
+            let (bx, by) = if union_pieces.is_empty() {
+                bbox_push_along(
+                    &entries[i].anchor,
+                    0.5 * entries[i].w,
+                    0.5 * entries[i].h,
+                    bbox,
+                    entries[i].margin,
+                    entries[i].direction,
+                )
+            } else {
+                union_push_along(
+                    &entries[i].anchor,
+                    0.5 * entries[i].w,
+                    0.5 * entries[i].h,
+                    union_pieces,
+                    entries[i].margin,
+                    entries[i].direction,
+                )
+            };
             entries[i].anchor = Point::new(entries[i].anchor.x() + bx, entries[i].anchor.y() + by);
 
             // Foreign-region repulsion.
@@ -1023,6 +1057,178 @@ fn direction_from(poi: &Point, centroid: &Point, pieces: &[RegionPiece]) -> (f64
         }
     }
     (0.0, 1.0)
+}
+
+/// Build the diagram's outer-boundary polygon as a list of pieces
+/// (outer + holes), in the same coordinate space as `regions`.
+///
+/// Used by the polygon-aware raycast / force-directed paths. Returns an
+/// empty vec when every region is empty or every union ring is degenerate
+/// — callers fall back to the AABB envelope in that case.
+fn build_diagram_union(regions: &RegionPolygons) -> Vec<RegionPiece> {
+    let mut outers: Vec<Polygon> = Vec::new();
+    for (_, pieces) in regions.iter() {
+        for piece in pieces {
+            if !piece.outer.vertices().is_empty() {
+                outers.push(piece.outer.clone());
+            }
+        }
+    }
+    if outers.is_empty() {
+        return Vec::new();
+    }
+    let rings = polygon_union_many(&outers);
+    classify_into_pieces(rings)
+}
+
+/// Smallest `t > 0` such that, for every union-polygon vertex, the
+/// `(half_w_m, half_h_m)`-expanded label AABB centred at
+/// `origin + t·dir` no longer contains the vertex.
+///
+/// Returns [`None`] when no vertex is ever inside the expanded box on the
+/// forward ray (degenerate input, or a POI that's already clear of every
+/// vertex on the outgoing side) — callers fall back to the AABB envelope.
+///
+/// Per-vertex SAT — for each vertex `(px, py)`:
+///   * `|px - cx| <= half_w_m` is satisfied on a t-interval `[tx_lo, tx_hi]`
+///     (or always / never when `dx ≈ 0`).
+///   * `|py - cy| <= half_h_m` likewise gives `[ty_lo, ty_hi]`.
+///   * The vertex is inside the expanded box iff `t` is in the intersection
+///     of these two intervals. The smallest `t` at which the box has
+///     fully passed the vertex along `+dir` is the upper end of the
+///     intersection (`t_in_hi`).
+///
+/// Taking the max of `t_in_hi` over every vertex gives a tight clearance
+/// that accounts for the box's full footprint — width and height — on
+/// curving boundaries. Only outer rings contribute; hole rings sit inside
+/// the polygon and can't constrain an exterior placement.
+fn last_vertex_clearance_t(
+    origin: &Point,
+    dir: (f64, f64),
+    half_w_m: f64,
+    half_h_m: f64,
+    union_pieces: &[RegionPiece],
+) -> Option<f64> {
+    let (ox, oy) = (origin.x(), origin.y());
+    let (dx, dy) = dir;
+    let eps = 1e-12;
+    let mut t_max = f64::NEG_INFINITY;
+    let mut found = false;
+
+    for piece in union_pieces {
+        for v in piece.outer.vertices() {
+            let px = v.x();
+            let py = v.y();
+
+            let (tx_lo, tx_hi) = if dx.abs() < eps {
+                if (px - ox).abs() <= half_w_m {
+                    (f64::NEG_INFINITY, f64::INFINITY)
+                } else {
+                    continue;
+                }
+            } else {
+                let a = (px - ox - half_w_m) / dx;
+                let b = (px - ox + half_w_m) / dx;
+                if a < b {
+                    (a, b)
+                } else {
+                    (b, a)
+                }
+            };
+            let (ty_lo, ty_hi) = if dy.abs() < eps {
+                if (py - oy).abs() <= half_h_m {
+                    (f64::NEG_INFINITY, f64::INFINITY)
+                } else {
+                    continue;
+                }
+            } else {
+                let a = (py - oy - half_h_m) / dy;
+                let b = (py - oy + half_h_m) / dy;
+                if a < b {
+                    (a, b)
+                } else {
+                    (b, a)
+                }
+            };
+
+            let t_in_lo = tx_lo.max(ty_lo);
+            let t_in_hi = tx_hi.min(ty_hi);
+            if t_in_lo < t_in_hi && t_in_hi > 0.0 {
+                if t_in_hi > t_max {
+                    t_max = t_in_hi;
+                }
+                found = true;
+            }
+        }
+    }
+
+    if found {
+        Some(t_max)
+    } else {
+        None
+    }
+}
+
+/// Polygon-aware analog of [`raycast_anchor`]: place the `w × h` label
+/// box's centre at the smallest `t > 0` past `poi` along `direction` such
+/// that the expanded box (with `margin` skin) doesn't contain any union
+/// polygon vertex.
+///
+/// Returns [`None`] when no vertex was ever inside the expanded box on
+/// the outgoing ray (degenerate input, or POI already clear of every
+/// vertex on the `+direction` side) — caller falls back to the AABB
+/// path.
+///
+/// Width and height of the label are folded into the clearance test
+/// directly (via the expanded-box check), so on boundaries that curve
+/// obliquely to the ray — most importantly ellipses — the label's
+/// perpendicular extent can't dip back into the polygon. For a centred
+/// circle/ellipse the controlling vertex coincides with the ray-exit
+/// point, so the result is still tight; for off-centre or bulging
+/// boundaries the perpendicular slab catches the closer vertex.
+fn raycast_anchor_union(
+    poi: &Point,
+    w: f64,
+    h: f64,
+    union_pieces: &[RegionPiece],
+    margin: f64,
+    direction: (f64, f64),
+) -> Option<Point> {
+    if union_pieces.is_empty() {
+        return None;
+    }
+    let half_w_m = 0.5 * w + margin;
+    let half_h_m = 0.5 * h + margin;
+    let t = last_vertex_clearance_t(poi, direction, half_w_m, half_h_m, union_pieces)?;
+    let t = t.max(0.0);
+    Some(Point::new(
+        poi.x() + t * direction.0,
+        poi.y() + t * direction.1,
+    ))
+}
+
+/// Polygon-aware analog of [`bbox_push_along`]: if any union-polygon
+/// vertex is still inside the label's expanded box on the forward ray,
+/// push along `+dir` to the smallest `t` that clears every vertex.
+/// Returns `(0, 0)` when no vertex constrains the forward ray — the
+/// label is already outside.
+fn union_push_along(
+    center: &Point,
+    half_w: f64,
+    half_h: f64,
+    union_pieces: &[RegionPiece],
+    margin: f64,
+    dir: (f64, f64),
+) -> (f64, f64) {
+    let half_w_m = half_w + margin;
+    let half_h_m = half_h + margin;
+    let Some(t) = last_vertex_clearance_t(center, dir, half_w_m, half_h_m, union_pieces) else {
+        return (0.0, 0.0);
+    };
+    if t <= 0.0 {
+        return (0.0, 0.0);
+    }
+    (t * dir.0, t * dir.1)
 }
 
 /// Closed-form anchor: walk along `direction` from `poi` until the
@@ -1445,6 +1651,106 @@ mod tests {
         let ab = placements.get("A&B").expect("A&B should be placed");
         assert_eq!(ab.kind, PlacementKind::ExteriorRaycast);
         assert!(ab.tether.is_some());
+    }
+
+    /// Diamond (rotated square) centered at `(cx, cy)` with vertex offset
+    /// `r`. Vertices: `(cx±r, cy)`, `(cx, cy±r)`. The AABB is
+    /// `[cx-r, cx+r] × [cy-r, cy+r]` but the diagonal-direction boundary
+    /// sits at distance `r/√2` from the center — exactly the "AABB is
+    /// generous on the diagonal" pathology the union-polygon raycast is
+    /// meant to handle.
+    fn diamond_piece(cx: f64, cy: f64, r: f64) -> RegionPiece {
+        RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(cx + r, cy),
+                Point::new(cx, cy + r),
+                Point::new(cx - r, cy),
+                Point::new(cx, cy - r),
+            ]),
+            holes: vec![],
+        }
+    }
+
+    #[test]
+    fn test_raycast_uses_union_polygon_on_diagonal_direction() {
+        // Two regions arranged so the centroid → POI direction for B is
+        // diagonal (+45°), not axis-aligned. Otherwise the AABB and the
+        // union polygon would give the same anchor and the test wouldn't
+        // distinguish the new path from the old one.
+        //
+        // Region A: rectangle filling the SW quadrant — its job is to drag
+        // the union AABB centre away from B's POI.
+        // Region B: diamond at NE with center (10, 10), vertex offset 5.
+        //   Diamond NE edge crosses the +45° ray from (10, 10) at distance
+        //   5/√2 ≈ 3.54 — much tighter than the AABB corner at (15, 15),
+        //   which is at distance 5√2 ≈ 7.07 from (10, 10).
+        let mut map = HashMap::new();
+        let a_piece = RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(-10.0, -10.0),
+                Point::new(0.0, -10.0),
+                Point::new(0.0, 0.0),
+                Point::new(-10.0, 0.0),
+            ]),
+            holes: vec![],
+        };
+        map.insert(Combination::new(&["A"]), vec![a_piece]);
+        map.insert(
+            Combination::new(&["B"]),
+            vec![diamond_piece(10.0, 10.0, 5.0)],
+        );
+        let regions = RegionPolygons::from_map(map);
+        // Union AABB: [-10, 15] × [-10, 15]; centre ≈ (2.5, 2.5).
+        // B's POI ≈ (10, 10) (diamond centre). Direction from centre→POI
+        // ≈ (+1, +1)/√2.
+        //
+        // Label 10×10 doesn't fit inside the diamond (the largest
+        // axis-aligned rect inscribed in |x|+|y|≤5 is 5×5 at most), so
+        // the placement falls through to ExteriorRaycast.
+        //
+        // AABB-only path: smallest t such that the label clears both the
+        // x and y sides at (15, 15). With margin = 0.5·10 = 5 and half_w
+        // = 5: per-axis t = ((15 + 5 + 5) − 10)/(1/√2) = 15√2 ≈ 21.2
+        // along the diagonal. Anchor distance from POI ≈ 21.2.
+        //
+        // Union path (per-vertex clearance): the controlling diamond
+        // vertex on the +45° outgoing ray is (15, 10) or (10, 15). For
+        // either, the expanded box (margin 5) leaves the vertex at the t
+        // returned by the SAT check — strictly tighter than the AABB.
+        let mut sizes = HashMap::new();
+        sizes.insert("B".to_string(), (10.0, 10.0));
+        let placements =
+            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let p = placements.get("B").expect("B should be placed");
+        assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
+
+        let dx = p.anchor.x() - 10.0;
+        let dy = p.anchor.y() - 10.0;
+        let dist_from_poi = (dx * dx + dy * dy).sqrt();
+        // AABB-only path distance ≈ 15√2 ≈ 21.2 — assert the union path
+        // gets noticeably tighter than that.
+        let aabb_only = 15.0 * std::f64::consts::SQRT_2;
+        assert!(
+            dist_from_poi < aabb_only - 1.0,
+            "expected union-polygon raycast to be tighter than AABB ({aabb_only}); got {dist_from_poi}",
+        );
+        // The real correctness check: the label AABB (10×10 centred at
+        // the anchor) must be at least `margin = 5` away from every
+        // diamond vertex. Vertices: (15, 10), (10, 15), (5, 10), (10, 5).
+        let half = 5.0;
+        let margin = 5.0;
+        let cx = p.anchor.x();
+        let cy = p.anchor.y();
+        for (vx, vy) in [(15.0_f64, 10.0_f64), (10.0, 15.0), (5.0, 10.0), (10.0, 5.0)] {
+            let qx = vx.clamp(cx - half, cx + half);
+            let qy = vy.clamp(cy - half, cy + half);
+            let d = ((vx - qx).powi(2) + (vy - qy).powi(2)).sqrt();
+            assert!(
+                d >= margin - 1e-6,
+                "diamond vertex ({vx}, {vy}) too close to label box at ({cx}, {cy}): \
+                 distance {d} < margin {margin}",
+            );
+        }
     }
 
     fn force_directed_strategy() -> PlacementStrategy {

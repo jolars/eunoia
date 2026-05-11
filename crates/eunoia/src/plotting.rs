@@ -32,7 +32,7 @@ mod plot_data;
 mod regions;
 
 #[cfg(feature = "plotting")]
-pub use clip::{polygon_clip, polygon_difference, ClipOperation};
+pub use clip::{polygon_clip, polygon_difference, polygon_union_many, ClipOperation};
 #[cfg(feature = "plotting")]
 pub use inscribed::{
     fit_label_in_region, fit_labels_in_regions, largest_inscribed_rect, principal_axis,

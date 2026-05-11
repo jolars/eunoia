@@ -191,6 +191,84 @@ pub fn polygon_clip_many(
 /// }).sum();
 /// assert!((signed_sum.abs() - 29.0).abs() < 1e-6);
 /// ```
+/// Union of a flat list of polygons in a single multi-resource overlay
+/// pass.
+///
+/// Returns a flat list of rings — outer rings and holes are intermixed,
+/// matching the output shape of [`polygon_clip`]. Use
+/// [`crate::plotting::classify_into_pieces`] to recover the outer-with-holes
+/// piece structure.
+///
+/// # Why a dedicated helper
+///
+/// Iterating `polygon_clip_many(running, &next, Union)` works for two
+/// inputs but loses pairing as soon as `running` becomes multi-polygon and
+/// `next` would bridge two existing pieces — the iterative result is
+/// `[A ∪ next, B ∪ next]`, two overlapping polygons instead of the single
+/// connected piece. Handing all rings to i_overlay as a single Contours
+/// resource lets it compute the union end-to-end without that loss.
+///
+/// # Examples
+///
+/// ```
+/// use eunoia::geometry::primitives::Point;
+/// use eunoia::geometry::shapes::Polygon;
+/// use eunoia::plotting::polygon_union_many;
+///
+/// // Three rectangles arranged in an L. Adjacent and overlapping inputs
+/// // are merged into a single connected piece.
+/// let a = Polygon::new(vec![
+///     Point::new(0.0, 0.0),
+///     Point::new(2.0, 0.0),
+///     Point::new(2.0, 1.0),
+///     Point::new(0.0, 1.0),
+/// ]);
+/// let b = Polygon::new(vec![
+///     Point::new(0.0, 1.0),
+///     Point::new(1.0, 1.0),
+///     Point::new(1.0, 2.0),
+///     Point::new(0.0, 2.0),
+/// ]);
+/// let c = Polygon::new(vec![
+///     Point::new(1.5, 0.5),
+///     Point::new(3.0, 0.5),
+///     Point::new(3.0, 1.5),
+///     Point::new(1.5, 1.5),
+/// ]);
+///
+/// let rings = polygon_union_many(&[a, b, c]);
+/// // Net area: a (2) + b (1) + c (1.5) − overlap(a ∩ c) (0.25) = 4.25.
+/// // (a ∩ b shares only an edge — zero area; b and c are disjoint.)
+/// let signed_sum: f64 = rings.iter().map(|r| {
+///     let v = r.vertices();
+///     let n = v.len();
+///     let mut s = 0.0;
+///     for i in 0..n {
+///         let j = (i + 1) % n;
+///         s += v[i].x() * v[j].y() - v[j].x() * v[i].y();
+///     }
+///     0.5 * s
+/// }).sum();
+/// assert!((signed_sum.abs() - 4.25).abs() < 1e-6);
+/// ```
+pub fn polygon_union_many(polygons: &[Polygon]) -> Vec<Polygon> {
+    let rings: Vec<Vec<Point>> = polygons
+        .iter()
+        .filter(|p| !p.vertices().is_empty())
+        .map(|p| p.vertices().to_vec())
+        .collect();
+    if rings.is_empty() {
+        return vec![];
+    }
+    let empty: Vec<Vec<Point>> = Vec::new();
+    let result = rings.overlay(&empty, OverlayRule::Union, FillRule::NonZero);
+    result
+        .into_iter()
+        .flat_map(|shape| shape.into_iter())
+        .map(Polygon::new)
+        .collect()
+}
+
 pub fn polygon_difference(subject: &Polygon, clips: &[Polygon]) -> Vec<Polygon> {
     if subject.vertices().is_empty() {
         return vec![];
