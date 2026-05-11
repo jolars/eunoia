@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.14.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.13.0...eunoia-npm-v0.14.0) (2026-05-11)
+
+### Breaking changes
+- remove strict placement API ([`33c1bf0`](https://github.com/jolars/eunoia/commit/33c1bf00397e728224a12ebf1d097b1a77cb0d46))
+
+### Features
+- remove strict placement API ([`33c1bf0`](https://github.com/jolars/eunoia/commit/33c1bf00397e728224a12ebf1d097b1a77cb0d46))
+- add simple labeling api entrypoit ([`40ef7c7`](https://github.com/jolars/eunoia/commit/40ef7c7c1074522e38f2ec88da0e5afbab7fb10f))
+- implement force-directed labeling strategy ([`988a3cf`](https://github.com/jolars/eunoia/commit/988a3cf95cb1c1a2128613dce5548da1c4e7eab1))
+- add label placement strategies ([`e1a72ff`](https://github.com/jolars/eunoia/commit/e1a72ff1c35ee2bf9178caa075c7a6c39b9efcc8))
+- rename `fit` to `euler` ([`8cd1e16`](https://github.com/jolars/eunoia/commit/8cd1e1663109f96320436dba2094d65d89ec01af))
 ## [0.13.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.12.0...eunoia-npm-v0.13.0) (2026-05-07)
 
 ### Features
