@@ -146,7 +146,7 @@ impl Default for PlacementStrategy {
 ///
 /// `regions` is typically obtained from [`crate::Layout::region_polygons`]
 /// (or [`crate::plotting::decompose_regions`] directly). `sizes` is keyed by
-/// the canonical [`Combination::to_string`] form (use `""` for the
+/// the canonical [`Combination`] string form (use `""` for the
 /// complement region). `container` is the jointly-fitted complement
 /// container, when the spec carried a complement — pass [`None`] otherwise.
 ///

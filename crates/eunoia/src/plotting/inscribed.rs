@@ -238,7 +238,7 @@ pub fn principal_axis(piece: &RegionPiece) -> (f64, f64) {
 ///
 /// The returned point is the **centre** of the inscribed rectangle, matching
 /// every other label-anchor in the crate (e.g.
-/// [`RegionPolygons::label_points`]). Renderers using SVG
+/// [`crate::plotting::regions::RegionPolygons::label_points`]). Renderers using SVG
 /// `text-anchor="middle" dominant-baseline="central"` or grid
 /// `gpar(hjust=0.5, vjust=0.5)` can use the point directly without offsetting
 /// by the box dimensions.
