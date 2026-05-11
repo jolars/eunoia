@@ -220,6 +220,50 @@ roadmap didn't require but would tighten the surface.
       user-supplied name?) and surfacing it through the existing legend
       build path.
 
+## Label placement follow-ups
+
+- [ ] **Raycast against the diagram's union polygon, not its AABB**.
+      `crates/eunoia/src/plotting/placement.rs:232-238` builds
+      `diagram_bbox` as the AABB of all region piece outers (or the
+      container, when set), and the raycast / force-directed solvers
+      both use it as the "diagram boundary" for exterior anchor
+      computation. For circle/square diagrams the AABB is a tight
+      proxy, but for ellipse arrangements (and any future rotated
+      shapes) the AABB corners can be tens of user units away from
+      any actual fitted shape — so a label raycast diagonally lands
+      far out into empty space, with `margin` then *added* on top.
+
+      The fix is to ray-cast against the union of region piece outer
+      rings. Sketch:
+      1. Build the union polygon once per `place_labels` call (the
+         `i_overlay`-backed clip path is already wired up via the
+         `plotting` feature; reuse `plotting::clip::union` or the
+         decomposed-regions output).
+      2. In `raycast_anchor` (placement.rs ~line 288), intersect the
+         centroid→POI ray with the union polygon's outer boundary
+         instead of the AABB.
+      3. Place the label `margin` units past that intersection along
+         the ray direction.
+      4. Keep the AABB-based path as a fallback for degenerate
+         layouts where the union is empty / non-simple.
+
+      Force-directed needs a parallel update — its bbox-containment
+      constraint (placement.rs:104, 313-314) currently keeps labels
+      outside `diagram_bbox`; that should become "outside the union
+      polygon" so the spring can pull labels into AABB corners that
+      have no shape in them.
+
+      Surfaced by the docs-site `<DiagramExample>` n=4 ellipse demo
+      (2026-05-10): users perceive long exterior labels as
+      "very far off" because the AABB is generous on diagonal
+      directions. Tightening `margin` and the per-side `padding` in
+      the demo helps but doesn't fix the underlying geometry.
+
+      Worth doing alongside the **directional-clearance inscribed-
+      rectangle solver** already noted in `AGENTS.md` "Future
+      Considerations" — both improve the realism of the placement
+      surface for anisotropic diagrams.
+
 ## Documentation
 
 - [ ] **Add `/docs/` routes to the existing Svelte site** (alongside

@@ -1,0 +1,11 @@
+# Fitter pipeline
+
+> TODO: cover the four stages — initial MDS layout (positions only,
+> sizes derived from set areas), conversion to shape-specific
+> optimizer parameters, final shape-specific optimisation
+> (selectable optimizer + loss), and post-fit normalisation
+> (clustering, rotation, centring, skyline-packing of disjoint
+> clusters).
+
+See the [Architecture section in `AGENTS.md`](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
+for now.

@@ -1,0 +1,247 @@
+<script>
+import DiagramExample from "$lib/components/DiagramExample.svelte";
+
+const FOUR_SET_SPEC = {
+  A: 10, B: 10, C: 10, D: 10,
+  "A&B": 4, "A&C": 4, "A&D": 4,
+  "B&C": 4, "B&D": 4, "C&D": 4,
+  "A&B&C": 1.5, "A&B&D": 1.5, "A&C&D": 1.5, "B&C&D": 1.5,
+  "A&B&C&D": 0.5,
+};
+</script>
+
+# Label placement
+
+Eunoia exposes two label-placement entry points: a **predicate**
+(does my label fit?) and a **strategy-driven** placer (where should
+my label go?). Both work in the same coordinate frame as the fitted
+diagram and neither requires eunoia to know anything about your
+fonts or text metrics — you measure, eunoia places.
+
+## Mental model
+
+Two functions, two return shapes:
+
+| Entry point | Behaviour | Return |
+| --- | --- | --- |
+| `fit_labels_in_regions` (Rust) / `placeRegionLabelsForRegions` (npm) | Predicate: anchors the label at the region's pole of inaccessibility (POI) **only when** an axis-aligned `(w, h)` box fits inside the region polygon (with holes). | Map of regions where the label fits, omitting the rest. |
+| `place_labels` (Rust) / `placeLabelsForRegions` (npm) | Strategy-driven: every requested region gets a position. Interior when the box fits; otherwise the chosen exterior policy decides. | Map of `LabelPlacement` per region, with a `kind` discriminator. |
+
+Use the predicate when you want full control over what to do with
+"doesn't fit" cases (smaller font, omit, exterior placement of your
+own design). Use the strategy-driven placer when you want a sensible
+default — it ships an exterior fallback with leader lines so you
+never end up with a region that has nowhere to put its label.
+
+`PlacementKind` carries which branch fired:
+
+- `interior` — the box fits; anchor sits at the region's POI.
+- `interiorOverflow` — reserved for the not-yet-implemented
+  `loose` interior policy.
+- `exteriorRaycast` — anchored outside the diagram bbox along the
+  ray from the diagram centroid through the region's POI.
+- `exteriorForceDirected` — initialised from the raycast position,
+  then iteratively settled against label-vs-label collisions and
+  foreign-region polygon repulsion.
+
+For exterior kinds, `placement.tether` points back at the region's
+POI so you can draw a leader line from the label to the region.
+
+## Size measurement contract
+
+**You measure, eunoia places.** Eunoia has no font or text metric
+knowledge — it accepts label dimensions `(w, h)` in the same
+coordinate units as the fitted shapes and tests whether an
+axis-aligned rectangle of those dimensions inscribes inside the
+region. How you measure is up to your renderer:
+
+| Host | Typical measurement |
+| --- | --- |
+| SVG (DOM) | Render hidden `<text>` then `getBBox()`. |
+| Canvas | `ctx.measureText(label)` (width) + font size (height). |
+| R `grid` | `grid::convertWidth(grid::grobWidth(grob), "native")` and friends. |
+| Python `matplotlib` | Renderer's `get_window_extent(...).transformed(ax.transData.inverted())`. |
+
+Sizes are keyed by the **canonical combination string**:
+
+- A single-set region is its set name: `"A"`.
+- An intersection joins set names with `&` in canonical (sorted)
+  order: `"A&B"`, `"A&B&C"`.
+- The **complement region** (universe minus all sets, present when
+  you fit with `complement: N`) keys as the empty string: `""`.
+
+## Resize loop (size → place → measure)
+
+Label sizes in user coordinates depend on the rendered canvas size
+(font px / canvas-px ratio). For diagrams where labels land
+exterior, the canvas extent in turn depends on label sizes —
+labels stretch the bbox out. The fixed point typically converges in
+one to three iterations.
+
+### Native Rust — `place_labels_to_fixed_point`
+
+```rust
+use eunoia::plotting::{
+    place_labels_to_fixed_point, ExteriorPolicy, InteriorPolicy,
+    PlacementStrategy,
+};
+
+let placements = place_labels_to_fixed_point(
+    &regions,
+    container.as_ref(),
+    initial_sizes,
+    &PlacementStrategy::default(),
+    |bbox| measure(bbox),       // your closure: bbox → sizes
+    1e-3,                       // bbox tolerance (relative)
+    8,                          // max iterations
+)?;
+```
+
+### JavaScript / TypeScript
+
+The npm wrapper doesn't ship a fixed-point helper because passing a
+JS closure across the WASM boundary buys nothing — drive the loop in
+JS:
+
+```ts
+import { placeLabelsForRegions, placementsBbox } from "@jolars/eunoia";
+
+let sizes = measureLabels(initialBbox);
+let placements = {};
+for (let i = 0; i < 8; i++) {
+  placements = placeLabelsForRegions({ regions, container, sizes });
+  const bbox = placementsBbox({ placements, sizes });
+  if (!bbox) break;
+  const newSizes = measureLabels(bbox);
+  if (closeEnough(sizes, newSizes)) break;
+  sizes = newSizes;
+}
+```
+
+### R / Python (sketch)
+
+Same shape as the JS loop — host language drives `place →
+placements_bbox → re-measure` until the canvas short side stops
+moving.
+
+```r
+sizes <- measure_labels(initial_bbox)
+for (i in 1:8) {
+  placements <- place_region_labels(regions, container, sizes)
+  bbox <- placements_bbox(placements, sizes)
+  new_sizes <- measure_labels(bbox)
+  if (close_enough(sizes, new_sizes)) break
+  sizes <- new_sizes
+}
+```
+
+## Strategy decision tree
+
+The default strategy is `Strict` interior with `Raycast` exterior:
+
+- **`Strict` interior** — anchor at POI only when the box fits;
+  otherwise fall through to the exterior policy.
+- **`Raycast` exterior** — deterministic ray from the diagram
+  centroid through the region's POI; anchor lands outside the
+  diagram bbox (or container, if you set one) padded by `margin`.
+  Cheap, predictable, no surprises.
+- **`ForceDirected` exterior** — warm-starts from the raycast
+  positions, then iterates a soft spring (back to home) plus three
+  repulsions: label-vs-label, label-vs-bbox containment along the
+  raycast direction, and label-vs-foreign-region polygon repulsion.
+  Default cap is 200 outer iterations.
+
+Pick `Raycast` for typical n=2..3 diagrams or any case where labels
+naturally spread around the perimeter. Reach for `ForceDirected`
+when raycast labels visually overlap each other or land on top of
+unrelated regions — for example, dense n=4 ellipse diagrams where
+several intersection regions push their labels outward at similar
+angles.
+
+The two examples below are the same n=4 spec under each strategy.
+Drag the page wider to see them side by side; the difference is
+visible mostly when labels need exterior placement.
+
+<DiagramExample
+  sets={FOUR_SET_SPEC}
+  shape="ellipse"
+  strategy="raycast"
+  caption="Strict + Raycast (default). Exterior labels follow the centroid→POI ray; collisions are resolved by a sweep that nudges along the perimeter."
+/>
+
+<DiagramExample
+  sets={FOUR_SET_SPEC}
+  shape="ellipse"
+  strategy="forceDirected"
+  caption="Strict + ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion."
+/>
+
+Strategy knobs (defaults in parentheses):
+
+- `margin` *(per-label proportional: `0.5 * max(w, h)`)* — padding
+  between the diagram bbox / container and the label. The default
+  scales with each label's own size, so a long string like
+  `A&B&C&D` ends up further out than a short one. Override with a
+  fixed value (e.g. `margin: 2`) when you want every exterior
+  label flush to the diagram regardless of length.
+- `iterations` *(200, ForceDirected only)* — outer iteration cap;
+  inner label-vs-label sweep loops to disjointness so spring
+  re-overlap doesn't leak into the converged result.
+- `precision` *(0.01)* — polylabel-style search precision for the
+  interior fit-check; smaller is more accurate, costlier.
+
+## Rendering recipe
+
+Pattern-match on `placement.kind`. Interior placements just need an
+anchor; exterior placements also need a leader line back to
+`placement.tether` (the region's POI):
+
+```ts
+for (const region of regions) {
+  const p = placements[region.combination];
+  if (!p) continue;
+  if (p.kind === "exteriorRaycast" || p.kind === "exteriorForceDirected") {
+    drawLine(p.tether!, p.anchor);   // leader line
+  }
+  drawLabel(p.anchor, region.combination);
+}
+```
+
+The web app's [`DiagramSvg.svelte`](https://github.com/jolars/eunoia/blob/main/web/src/lib/components/DiagramSvg.svelte)
+is the canonical SVG version — see the leader-line block around
+line 575 and the `placementsBbox` canvas-extent block around line
+100 for a complete reference renderer.
+
+A few gotchas worth knowing:
+
+- **Complement region key is the empty string.** When fitting with
+  `complement: N`, the regions map includes a `combination === ""`
+  entry whose pieces are the container minus the union of fitted
+  shapes. Provide a size for `""` if you want to label it; omit it
+  to leave the complement unlabelled.
+- **Canvas extent depends on label sizes.** Use `placementsBbox`
+  (or `placements_bbox` in Rust) to extend your viewBox / canvas to
+  cover exterior labels — without it, exterior anchors land
+  off-screen.
+- **The placer separates labels to non-overlap, not to a visible
+  gap.** If you want breathing room between adjacent labels (and
+  you usually do), pad the sizes you pass in by your desired
+  half-gap on every side, then render text at the original
+  measured size. The two examples above use a 1-user-unit per-side
+  pad for visible spacing.
+- **Exterior anchors are placed relative to the diagram's
+  axis-aligned bounding box**, not the union polygon of the fitted
+  shapes. For circles and squares this is a tight proxy, but for
+  ellipse arrangements it means a diagonal raycast can land in an
+  AABB corner where no ellipse is anywhere near, with `margin`
+  added past that. A tighter ray-vs-union-polygon implementation
+  is on the roadmap; until then, override `margin` with a small
+  fixed value if exterior labels look too far away on ellipse
+  diagrams.
+- **The interior fit-check uses a radial-conservative bound.** It
+  never returns false positives (the inscribed rectangle is always
+  strictly inside the region), but it can return false negatives
+  for highly anisotropic regions. A tighter directional-clearance
+  solver is on the roadmap; until then, prefer the strategy-driven
+  placer over the predicate when you'd rather have *some* anchor
+  than none.

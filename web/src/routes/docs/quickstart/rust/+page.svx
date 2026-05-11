@@ -1,0 +1,8 @@
+# Quickstart: Rust
+
+> TODO: cover installing the `eunoia` crate, building a `DiagramSpec`
+> with `DiagramSpecBuilder`, fitting via `Fitter::<Circle>::new(spec).fit()`,
+> and reading shapes / regions out of `Layout`.
+
+For now, see the rustdoc on [docs.rs/eunoia](https://docs.rs/eunoia/) and
+the in-tree `examples/` directory.

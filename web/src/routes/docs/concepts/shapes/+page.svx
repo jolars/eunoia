@@ -1,0 +1,7 @@
+# Shapes
+
+> TODO: cover the four shape primitives currently supported (circles,
+> ellipses, axis-aligned squares, axis-aligned rectangles), the generic
+> `DiagramShape` trait that backs them, and how to choose a shape for a
+> given spec (n=2..3 forgiving with circles; n=4..5 typically needs
+> ellipses; squares/rectangles for layout-board style diagrams).

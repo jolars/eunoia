@@ -1,0 +1,34 @@
+# Introduction
+
+Eunoia is a Rust library for area-proportional Euler and Venn diagrams.
+It is the engine behind the [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)
+npm package and (planned) R, Python, and Julia wrappers, and a modern
+rewrite of the C++ backend behind the [eulerr](https://github.com/jolars/eulerr)
+R package.
+
+## Who this is for
+
+These docs are aimed at two audiences:
+
+- **End users of language wrappers** (R, Python, JavaScript, Julia)
+  who want to understand what the underlying library does, what its
+  knobs mean, and how to read its outputs.
+- **Binding authors** wiring up downstream packages — the chapters
+  under [Bindings](/docs/bindings/wasm-contract/) describe the JSON
+  shapes, the size-measurement contract, and the resize-loop pattern.
+
+For Rust API reference see [docs.rs/eunoia](https://docs.rs/eunoia/);
+for the TypeScript surface see the type definitions shipped with
+[`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia).
+This site is the narrative companion.
+
+## Where to start
+
+- New here — [Quickstart: JavaScript](/docs/quickstart/javascript/) or
+  [Quickstart: Rust](/docs/quickstart/rust/).
+- Writing a binding — [WASM contract](/docs/bindings/wasm-contract/)
+  and [Resize loops](/docs/bindings/resize-loops/).
+- Placing labels in a downstream renderer —
+  [Label placement](/docs/concepts/label-placement/) (the only fully
+  written chapter so far; the rest are stubs that will fill in as
+  consumers hit the gap).

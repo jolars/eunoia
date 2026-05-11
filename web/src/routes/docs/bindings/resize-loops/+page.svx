@@ -1,0 +1,7 @@
+# Resize loops
+
+> TODO: cover the size→place→measure pattern for label placement
+> across hosts (R, Python, Julia, JS). The pattern lives in [Label
+> placement](/docs/concepts/label-placement/) under "Resize loop";
+> this chapter will eventually expand it with worked examples per
+> host language.

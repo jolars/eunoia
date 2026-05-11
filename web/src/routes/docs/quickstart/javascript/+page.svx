@@ -1,0 +1,23 @@
+# Quickstart: JavaScript
+
+> TODO: cover installing `@jolars/eunoia` from npm, calling `euler({ sets, ... })`
+> and `venn({ n, ... })`, choosing between `output: "shapes" | "polygons" | "regions"`,
+> and rendering the result with SVG / Canvas / D3.
+
+For now:
+
+```bash
+npm install @jolars/eunoia
+```
+
+```js
+import { euler } from "@jolars/eunoia";
+
+const layout = euler({
+  sets: { A: 5, B: 3, "A&B": 1.5 },
+  output: "regions",
+});
+```
+
+See the [npm package page](https://www.npmjs.com/package/@jolars/eunoia)
+for the full API surface.

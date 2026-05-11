@@ -7,6 +7,9 @@ A Rust library for Euler and Venn Diagrams. This is a rewrite of the eulerr R
 package, designed to be more flexible, faster, and support multiple language
 bindings.
 
+Narrative documentation lives at [eunoia.bz/docs/](https://eunoia.bz/docs/);
+the rustdoc reference is at [docs.rs/eunoia](https://docs.rs/eunoia/).
+
 ## JavaScript / TypeScript
 
 WebAssembly bindings are published as

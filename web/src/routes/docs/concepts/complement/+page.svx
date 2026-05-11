@@ -1,0 +1,8 @@
+# Complement (universe / container)
+
+> TODO: cover the opt-in complement support — passing `complement: N`
+> to `euler` / `venn` jointly fits an axis-aligned bounding rectangle
+> whose area minus the union of the (clipped) shapes matches the
+> requested complement target. Also covers the `""` (empty string)
+> region key for the complement region, and how to render the
+> container as a frame.
