@@ -2583,194 +2583,6 @@ pub fn generate_venn_regions(
     })
 }
 
-/// Per-region label-fit predicate, shape-generic.
-///
-/// `sizes_json` is a JSON object mapping each region's canonical combination
-/// string (e.g. `"A"`, `"A&B"`, `""` for the complement) to a `[w, h]` pair
-/// of label dimensions in diagram coordinates.
-///
-/// `shape` selects the shape family used to fit the layout (`"circle"`,
-/// `"ellipse"`, `"square"`, or `"rectangle"`); the fit-check itself is
-/// shape-agnostic and runs against the decomposed region polygons.
-///
-/// Returns a JSON object mapping each region whose label fits to its anchor
-/// `[x, y]`. Regions where the label does not fit are simply absent from the
-/// result.
-#[wasm_bindgen]
-pub fn compute_region_label_placements(
-    specs: Vec<DiagramSpec>,
-    input_type: String,
-    shape: String,
-    n_vertices: usize,
-    sizes_json: String,
-    precision: Option<f64>,
-    seed: Option<u64>,
-    optimizer: Option<WasmOptimizer>,
-    loss_type: Option<WasmLossType>,
-    tolerance: Option<f64>,
-    complement: Option<f64>,
-) -> Result<String, JsValue> {
-    use eunoia::fitter::Fitter;
-    use eunoia::geometry::traits::DiagramShape;
-    use eunoia::plotting::fit_labels_in_regions;
-
-    let sizes: std::collections::HashMap<String, (f64, f64)> = serde_json::from_str(&sizes_json)
-        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {}", e)))?;
-    let precision = precision.unwrap_or(0.01);
-    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
-
-    fn place<S>(
-        spec: &eunoia::spec::DiagramSpec,
-        n_vertices: usize,
-        sizes: &std::collections::HashMap<String, (f64, f64)>,
-        precision: f64,
-        seed: Option<u64>,
-        optimizer: Option<WasmOptimizer>,
-        loss_type: Option<WasmLossType>,
-        tolerance: Option<f64>,
-    ) -> Result<std::collections::HashMap<String, (f64, f64)>, JsValue>
-    where
-        S: DiagramShape + Polygonize + Copy + 'static,
-    {
-        let mut fitter = Fitter::<S>::new(spec);
-        if let Some(s) = seed {
-            fitter = fitter.seed(s);
-        }
-        if let Some(opt) = optimizer {
-            fitter = fitter.optimizer(opt.into());
-        }
-        if let Some(lt) = loss_type {
-            fitter = fitter.loss_type(lt.into());
-        }
-        if let Some(tol) = tolerance {
-            fitter = fitter.tolerance(tol);
-        }
-        let layout = fitter
-            .fit()
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
-        let regions = layout.region_polygons(spec, n_vertices);
-        Ok(fit_labels_in_regions(&regions, sizes, precision)
-            .into_iter()
-            .map(|(k, p)| (k, (p.x(), p.y())))
-            .collect())
-    }
-
-    let placements = match shape.as_str() {
-        "circle" => place::<Circle>(
-            &diagram_spec,
-            n_vertices,
-            &sizes,
-            precision,
-            seed,
-            optimizer,
-            loss_type,
-            tolerance,
-        )?,
-        "ellipse" => place::<Ellipse>(
-            &diagram_spec,
-            n_vertices,
-            &sizes,
-            precision,
-            seed,
-            optimizer,
-            loss_type,
-            tolerance,
-        )?,
-        "square" => place::<Square>(
-            &diagram_spec,
-            n_vertices,
-            &sizes,
-            precision,
-            seed,
-            optimizer,
-            loss_type,
-            tolerance,
-        )?,
-        "rectangle" => place::<Rectangle>(
-            &diagram_spec,
-            n_vertices,
-            &sizes,
-            precision,
-            seed,
-            optimizer,
-            loss_type,
-            tolerance,
-        )?,
-        other => {
-            return Err(JsValue::from_str(&format!(
-                "unknown shape '{other}' (expected 'circle', 'ellipse', 'square', or 'rectangle')"
-            )));
-        }
-    };
-
-    serde_json::to_string(&placements).map_err(|e| JsValue::from_str(&format!("{}", e)))
-}
-
-/// Per-region label-fit predicate operating on already-decomposed region
-/// polygons (no re-fit).
-///
-/// `polygons_json` is a JSON object keyed by canonical combination string,
-/// where each value is an array of pieces; each piece is
-/// `{ "outer": [[x, y], ...], "holes": [[[x, y], ...], ...] }`.
-///
-/// `sizes_json` mirrors [`compute_region_label_placements`]: a map of
-/// combination string → `[w, h]`.
-///
-/// Returns a JSON object mapping each region whose label fits to its anchor
-/// `[x, y]`. Regions where the label does not fit are absent.
-///
-/// Use this when you already have decomposed region polygons in hand (e.g.
-/// the web demo wants to fit-check labels without re-running the fitter on
-/// every label-size change). The polygons are consumed in their own
-/// coordinate space — pass label sizes in the same units.
-#[wasm_bindgen]
-pub fn fit_labels_for_polygons(
-    polygons_json: String,
-    sizes_json: String,
-    precision: Option<f64>,
-) -> Result<String, JsValue> {
-    use eunoia::geometry::primitives::Point;
-    use eunoia::geometry::shapes::Polygon;
-    use eunoia::plotting::{fit_label_in_region, RegionPiece};
-
-    #[derive(serde::Deserialize)]
-    struct PieceJson {
-        outer: Vec<[f64; 2]>,
-        holes: Vec<Vec<[f64; 2]>>,
-    }
-
-    let regions_in: std::collections::HashMap<String, Vec<PieceJson>> =
-        serde_json::from_str(&polygons_json)
-            .map_err(|e| JsValue::from_str(&format!("invalid polygons_json: {}", e)))?;
-    let sizes: std::collections::HashMap<String, (f64, f64)> = serde_json::from_str(&sizes_json)
-        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {}", e)))?;
-    let precision = precision.unwrap_or(0.01);
-
-    let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
-        Polygon::new(pts.into_iter().map(|p| Point::new(p[0], p[1])).collect())
-    };
-
-    let mut placements: std::collections::HashMap<String, (f64, f64)> =
-        std::collections::HashMap::new();
-    for (key, &(w, h)) in &sizes {
-        let Some(pieces_json) = regions_in.get(key) else {
-            continue;
-        };
-        let pieces: Vec<RegionPiece> = pieces_json
-            .iter()
-            .map(|p| RegionPiece {
-                outer: to_polygon(p.outer.clone()),
-                holes: p.holes.iter().cloned().map(to_polygon).collect(),
-            })
-            .collect();
-        if let Some(point) = fit_label_in_region(&pieces, w, h, precision) {
-            placements.insert(key.clone(), (point.x(), point.y()));
-        }
-    }
-
-    serde_json::to_string(&placements).map_err(|e| JsValue::from_str(&format!("{}", e)))
-}
-
 /// Strategy-driven label placement on already-decomposed region polygons
 /// (no re-fit).
 ///
@@ -2786,15 +2598,15 @@ pub fn fit_labels_for_polygons(
 /// `sizes_json` is `{ combination: [w, h] }`.
 ///
 /// `strategy_json` is an optional JSON object — when `None`, the default
-/// `Strict + Raycast` strategy is used. The accepted shape is:
+/// `Raycast` strategy is used. The accepted shape is:
 ///
 /// ```json
 /// {
-///   "interior": "Strict" | "Loose",
-///   "exterior": "Raycast" | "None" | "ForceDirected",
+///   "exterior": "Raycast" | "ForceDirected",
 ///   "margin": 5.0,
 ///   "iterations": 200,
-///   "precision": 0.01
+///   "precision": 0.01,
+///   "tether": "Poi" | "Boundary"
 /// }
 /// ```
 ///
@@ -2805,9 +2617,6 @@ pub fn fit_labels_for_polygons(
 /// Returns a JSON object mapping each placed region to
 /// `{ "anchor": [x, y], "kind": "...", "tether"?: [x, y] }`. Regions with
 /// degenerate input (no POI, invalid label dimensions, etc.) are absent.
-///
-/// Returns `Err` when the requested strategy variant is not yet
-/// implemented (`Loose`, exterior `None`).
 #[wasm_bindgen]
 pub fn place_region_labels(
     polygons_json: String,
@@ -2818,8 +2627,8 @@ pub fn place_region_labels(
     use eunoia::geometry::primitives::Point;
     use eunoia::geometry::shapes::{Polygon, Rectangle};
     use eunoia::plotting::{
-        place_labels, ExteriorPolicy, InteriorPolicy, PlacementError, PlacementKind,
-        PlacementStrategy, RegionPiece, RegionPolygons,
+        place_labels, ExteriorPolicy, PlacementKind, PlacementStrategy, RegionPiece,
+        RegionPolygons, TetherSource,
     };
     use eunoia::spec::Combination;
 
@@ -2840,12 +2649,14 @@ pub fn place_region_labels(
     #[derive(serde::Deserialize, Default)]
     #[serde(default)]
     struct StrategyJson {
-        interior: Option<String>,
         exterior: Option<String>,
         margin: Option<f64>,
         /// Iteration cap for `ForceDirected` exteriors; ignored otherwise.
         iterations: Option<usize>,
         precision: Option<f64>,
+        /// `"Poi"` (default) or `"Boundary"`; controls where the exterior
+        /// leader tether attaches to the source region.
+        tether: Option<String>,
     }
 
     #[derive(serde::Serialize)]
@@ -2877,34 +2688,33 @@ pub fn place_region_labels(
         None => StrategyJson::default(),
     };
 
-    let interior = match strategy_in.interior.as_deref() {
-        None | Some("Strict") => InteriorPolicy::Strict,
-        Some("Loose") => InteriorPolicy::Loose,
-        Some(other) => {
-            return Err(JsValue::from_str(&format!(
-                "invalid strategy.interior '{other}' (expected 'Strict' or 'Loose')"
-            )));
-        }
-    };
     let exterior = match strategy_in.exterior.as_deref() {
         None | Some("Raycast") => ExteriorPolicy::Raycast {
             margin: strategy_in.margin,
         },
-        Some("None") => ExteriorPolicy::None,
         Some("ForceDirected") => ExteriorPolicy::ForceDirected {
             margin: strategy_in.margin,
             iterations: strategy_in.iterations,
         },
         Some(other) => {
             return Err(JsValue::from_str(&format!(
-                "invalid strategy.exterior '{other}' (expected 'Raycast', 'None', or 'ForceDirected')"
+                "invalid strategy.exterior '{other}' (expected 'Raycast' or 'ForceDirected')"
+            )));
+        }
+    };
+    let tether = match strategy_in.tether.as_deref() {
+        None | Some("Poi") => TetherSource::Poi,
+        Some("Boundary") => TetherSource::Boundary,
+        Some(other) => {
+            return Err(JsValue::from_str(&format!(
+                "invalid strategy.tether '{other}' (expected 'Poi' or 'Boundary')"
             )));
         }
     };
     let strategy = PlacementStrategy {
-        interior,
         exterior,
         precision: strategy_in.precision.unwrap_or(0.01),
+        tether,
     };
 
     let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
@@ -2929,21 +2739,13 @@ pub fn place_region_labels(
     }
     let regions = RegionPolygons::from_map(region_map);
 
-    let placements = match place_labels(&regions, &sizes, container.as_ref(), &strategy) {
-        Ok(p) => p,
-        Err(PlacementError::Unimplemented(variant)) => {
-            return Err(JsValue::from_str(&format!(
-                "placement strategy variant `{variant}` is not implemented yet"
-            )));
-        }
-    };
+    let placements = place_labels(&regions, &sizes, container.as_ref(), &strategy);
 
     let mut out: std::collections::HashMap<String, PlacementJson> =
         std::collections::HashMap::with_capacity(placements.len());
     for (key, p) in placements {
         let kind_str = match p.kind {
             PlacementKind::Interior => "Interior",
-            PlacementKind::InteriorOverflow => "InteriorOverflow",
             PlacementKind::ExteriorRaycast => "ExteriorRaycast",
             PlacementKind::ExteriorForceDirected => "ExteriorForceDirected",
         };

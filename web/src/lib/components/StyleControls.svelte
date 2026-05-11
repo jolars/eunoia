@@ -132,21 +132,40 @@
 
   <div>
     <label for="labelPlacement" class="block text-xs font-medium text-gray-600 mb-1">
-      Label placement
+      Exterior label solver
     </label>
     <select
       id="labelPlacement"
       bind:value={appState.style.labelPlacement}
       class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
     >
-      <option value="interiorPlusRaycast">Inside + raycast outside</option>
-      <option value="interiorPlusForceDirected">Inside + force-directed outside</option>
-      <option value="interiorOnly">Inside only (hide if too big)</option>
+      <option value="raycast">Raycast</option>
+      <option value="forceDirected">Force-directed</option>
     </select>
     <p class="text-xs text-gray-500 mt-1">
-      Strict interior fit. Raycast places overflowing labels outside along the
-      centroid→POI ray; force-directed adds polygon-aware repulsion so labels
+      Labels that fit inside their region anchor at the POI. For labels that
+      don't fit, raycast emits a deterministic ray from the diagram centroid
+      through the POI; force-directed adds polygon-aware repulsion so labels
       avoid both other labels and unrelated regions.
+    </p>
+  </div>
+
+  <div>
+    <label for="labelTether" class="block text-xs font-medium text-gray-600 mb-1">
+      Leader tether
+    </label>
+    <select
+      id="labelTether"
+      bind:value={appState.style.labelTether}
+      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+    >
+      <option value="poi">Region POI (deep inside)</option>
+      <option value="boundary">Polygon edge</option>
+    </select>
+    <p class="text-xs text-gray-500 mt-1">
+      Where exterior leader lines anchor on the source region. POI is safe
+      with any rendering style; polygon edge looks cleaner when the shape
+      has a visible border (raise the border width above).
     </p>
   </div>
 

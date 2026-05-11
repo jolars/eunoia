@@ -13,9 +13,7 @@
 
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::{Polygon, Rectangle};
-use crate::plotting::regions::{poi_with_holes, signed_clearance, RegionPiece, RegionPolygons};
-use crate::spec::Combination;
-use std::collections::HashMap;
+use crate::plotting::regions::{poi_with_holes, signed_clearance, RegionPiece};
 
 /// Best-effort largest axis-aligned rectangle of the given `aspect_ratio`
 /// (width / height) inscribed in the union of `pieces` (each piece's outer
@@ -304,66 +302,6 @@ pub fn fit_label_in_region(
     } else {
         None
     }
-}
-
-/// Batch [`fit_label_in_region`] over every region of a [`RegionPolygons`].
-///
-/// `sizes` is keyed by the canonical [`Combination::to_string`] form (use
-/// `""` for the complement region). Regions absent from `sizes`, regions
-/// whose key fails to parse, and regions whose label does not fit are all
-/// omitted from the returned map — every present key has a real anchor.
-///
-/// Use this when you have a freshly-decomposed [`RegionPolygons`] in hand
-/// (typical when measuring labels post-fit). For lower-level control over
-/// individual pieces, call [`fit_label_in_region`] directly.
-///
-/// # Examples
-///
-/// ```
-/// use std::collections::HashMap;
-/// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
-/// use eunoia::geometry::shapes::Circle;
-/// use eunoia::plotting::fit_labels_in_regions;
-///
-/// let spec = DiagramSpecBuilder::new()
-///     .set("A", 5.0)
-///     .set("B", 3.0)
-///     .intersection(&["A", "B"], 1.0)
-///     .input_type(InputType::Exclusive)
-///     .build()
-///     .unwrap();
-///
-/// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
-/// let regions = layout.region_polygons(&spec, 64);
-///
-/// let mut sizes = HashMap::new();
-/// sizes.insert("A".to_string(), (0.5, 0.2));
-/// sizes.insert("B".to_string(), (0.5, 0.2));
-///
-/// let placements = fit_labels_in_regions(&regions, &sizes, 0.01);
-/// // Both labels are tiny relative to the regions, so both fit.
-/// assert!(placements.contains_key("A"));
-/// assert!(placements.contains_key("B"));
-/// ```
-pub fn fit_labels_in_regions(
-    regions: &RegionPolygons,
-    sizes: &HashMap<String, (f64, f64)>,
-    precision: f64,
-) -> HashMap<String, Point> {
-    let mut out = HashMap::with_capacity(sizes.len());
-    for (key, &(w, h)) in sizes {
-        let combo: Combination = match key.parse() {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        let Some(pieces) = regions.get(&combo) else {
-            continue;
-        };
-        if let Some(point) = fit_label_in_region(pieces, w, h, precision) {
-            out.insert(key.clone(), point);
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -719,73 +657,5 @@ mod tests {
         assert!(fit_label_in_region(&pieces, 1.0, -1.0, 0.01).is_none());
         assert!(fit_label_in_region(&pieces, f64::NAN, 1.0, 0.01).is_none());
         assert!(fit_label_in_region(&pieces, 1.0, f64::INFINITY, 0.01).is_none());
-    }
-
-    #[test]
-    fn test_fit_labels_in_regions_batch() {
-        // Two-circle decomposition; ask for one comfortable label and one
-        // that obviously doesn't fit. Non-fitting region must be absent.
-        use crate::fitter::Fitter;
-        use crate::geometry::shapes::Circle;
-        use crate::plotting::decompose_regions;
-        use crate::spec::{DiagramSpecBuilder, InputType};
-
-        let spec = DiagramSpecBuilder::new()
-            .set("A", 5.0)
-            .set("B", 3.0)
-            .intersection(&["A", "B"], 1.0)
-            .input_type(InputType::Exclusive)
-            .build()
-            .unwrap();
-        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
-        let shapes: Vec<Circle> = spec
-            .set_names()
-            .iter()
-            .map(|n| *layout.shape_for_set(n).unwrap())
-            .collect();
-        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
-
-        let mut sizes = HashMap::new();
-        sizes.insert("A".to_string(), (0.2, 0.1));
-        // 1000-unit label in a few-unit region: never fits.
-        sizes.insert("A&B".to_string(), (1000.0, 1000.0));
-
-        let placements = fit_labels_in_regions(&regions, &sizes, 0.01);
-        assert!(placements.contains_key("A"));
-        assert!(!placements.contains_key("A&B"));
-
-        // The fitting anchor should land inside its region's bbox.
-        let pieces = regions.get(&Combination::new(&["A"])).unwrap();
-        let anchor = placements.get("A").unwrap();
-        let largest = pieces
-            .iter()
-            .max_by(|a, b| a.area().partial_cmp(&b.area()).unwrap())
-            .unwrap();
-        let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
-        let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
-        for v in largest.outer.vertices() {
-            min_x = min_x.min(v.x());
-            min_y = min_y.min(v.y());
-            max_x = max_x.max(v.x());
-            max_y = max_y.max(v.y());
-        }
-        assert!(anchor.x() >= min_x - 1e-9 && anchor.x() <= max_x + 1e-9);
-        assert!(anchor.y() >= min_y - 1e-9 && anchor.y() <= max_y + 1e-9);
-    }
-
-    #[test]
-    fn test_fit_labels_in_regions_skips_unknown_keys() {
-        // Keys with no matching region (e.g. typo'd combo) are silently
-        // dropped — this is a feature, not a bug, since callers measure
-        // labels speculatively.
-        let mut regions = RegionPolygons::new();
-        regions.insert(
-            Combination::new(&["A"]),
-            vec![axis_aligned_square_piece(10.0)],
-        );
-        let mut sizes = HashMap::new();
-        sizes.insert("Z".to_string(), (1.0, 1.0));
-        let placements = fit_labels_in_regions(&regions, &sizes, 0.01);
-        assert!(placements.is_empty());
     }
 }

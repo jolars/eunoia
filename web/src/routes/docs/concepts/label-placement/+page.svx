@@ -12,40 +12,51 @@ const FOUR_SET_SPEC = {
 
 # Label placement
 
-Eunoia exposes two label-placement entry points: a **predicate**
-(does my label fit?) and a **strategy-driven** placer (where should
-my label go?). Both work in the same coordinate frame as the fitted
-diagram and neither requires eunoia to know anything about your
-fonts or text metrics — you measure, eunoia places.
+Eunoia's label placer takes a decomposed diagram plus the dimensions
+of each label and hands back a position per region. Labels that fit
+inside their region anchor at the region's pole of inaccessibility
+(POI); labels that don't fit are placed outside the diagram by the
+exterior solver of your choice, with a `tether` so you can draw a
+leader line back to the region.
+
+The placer works in the same coordinate frame as the fitted diagram
+and never needs to know anything about your fonts or text metrics —
+**you measure, eunoia places.**
 
 ## Mental model
 
-Two functions, two return shapes:
-
-| Entry point | Behaviour | Return |
-| --- | --- | --- |
-| `fit_labels_in_regions` (Rust) / `placeRegionLabelsForRegions` (npm) | Predicate: anchors the label at the region's pole of inaccessibility (POI) **only when** an axis-aligned `(w, h)` box fits inside the region polygon (with holes). | Map of regions where the label fits, omitting the rest. |
-| `place_labels` (Rust) / `placeLabelsForRegions` (npm) | Strategy-driven: every requested region gets a position. Interior when the box fits; otherwise the chosen exterior policy decides. | Map of `LabelPlacement` per region, with a `kind` discriminator. |
-
-Use the predicate when you want full control over what to do with
-"doesn't fit" cases (smaller font, omit, exterior placement of your
-own design). Use the strategy-driven placer when you want a sensible
-default — it ships an exterior fallback with leader lines so you
-never end up with a region that has nowhere to put its label.
-
-`PlacementKind` carries which branch fired:
+Call `place_labels` (Rust) / `placeLabelsForRegions` (npm) with a
+decomposed diagram and a `{ combination → (w, h) }` map. You get a
+`LabelPlacement` per region — interior when the box fits, exterior
+otherwise. The returned `kind` tells the renderer which branch
+fired:
 
 - `interior` — the box fits; anchor sits at the region's POI.
-- `interiorOverflow` — reserved for the not-yet-implemented
-  `loose` interior policy.
 - `exteriorRaycast` — anchored outside the diagram bbox along the
   ray from the diagram centroid through the region's POI.
 - `exteriorForceDirected` — initialised from the raycast position,
   then iteratively settled against label-vs-label collisions and
   foreign-region polygon repulsion.
 
-For exterior kinds, `placement.tether` points back at the region's
-POI so you can draw a leader line from the label to the region.
+For exterior kinds, `placement.tether` points back into the region
+so you can draw a leader line from the label to the region. By
+default the tether is the region's **pole of inaccessibility**
+(deep inside the polygon) — safe for any rendering style,
+including stroke-less fills, because the leader endpoint sits well
+inside the visible colored area. Set `strategy.tether =
+'boundary'` to attach it at the point where the outgoing ray exits
+the polygon's outer ring instead — the rendered leader then starts
+on the polygon edge, matching the standard labeling convention.
+Recommended when your renderer draws shape strokes.
+
+Independently of the tether choice, both exterior solvers run a
+**leader-vs-interior-label avoidance** pass: when an exterior
+label's leader segment would visually cross another region's
+interior label, the exterior anchor is pushed tangentially until
+the segment clears. This is always on — no opt-out — because
+crossings are visually wrong and the push is purely tangential
+(it doesn't change which side of the diagram the label ends up
+on).
 
 ## Size measurement contract
 
@@ -81,10 +92,7 @@ one to three iterations.
 ### Native Rust — `place_labels_to_fixed_point`
 
 ```rust
-use eunoia::plotting::{
-    place_labels_to_fixed_point, ExteriorPolicy, InteriorPolicy,
-    PlacementStrategy,
-};
+use eunoia::plotting::{place_labels_to_fixed_point, PlacementStrategy};
 
 let placements = place_labels_to_fixed_point(
     &regions,
@@ -94,7 +102,7 @@ let placements = place_labels_to_fixed_point(
     |bbox| measure(bbox),       // your closure: bbox → sizes
     1e-3,                       // bbox tolerance (relative)
     8,                          // max iterations
-)?;
+);
 ```
 
 ### JavaScript / TypeScript
@@ -135,15 +143,13 @@ for (i in 1:8) {
 }
 ```
 
-## Strategy decision tree
+## Strategy knobs
 
-The default strategy is `Strict` interior with `Raycast` exterior:
+The default strategy uses the `Raycast` exterior solver:
 
-- **`Strict` interior** — anchor at POI only when the box fits;
-  otherwise fall through to the exterior policy.
-- **`Raycast` exterior** — deterministic ray from the diagram
-  centroid through the region's POI; anchor lands outside the
-  union polygon of the fitted shapes (or container, if you set
+- **`Raycast` exterior** *(default)* — deterministic ray from the
+  diagram centroid through the region's POI; anchor lands outside
+  the union polygon of the fitted shapes (or container, if you set
   one), padded by `margin`. Clearance is checked per-vertex with
   the label's full footprint, so width and height are honoured
   even on diagonal rays. Cheap, predictable, no surprises.
@@ -168,14 +174,14 @@ visible mostly when labels need exterior placement.
   sets={FOUR_SET_SPEC}
   shape="ellipse"
   strategy="raycast"
-  caption="Strict + Raycast (default). Exterior labels follow the centroid→POI ray; collisions are resolved by a sweep that nudges along the perimeter."
+  caption="Raycast (default). Exterior labels follow the centroid→POI ray; collisions are resolved by a sweep that nudges along the perimeter."
 />
 
 <DiagramExample
   sets={FOUR_SET_SPEC}
   shape="ellipse"
   strategy="forceDirected"
-  caption="Strict + ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion."
+  caption="ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion."
 />
 
 Strategy knobs (defaults in parentheses):
@@ -191,12 +197,21 @@ Strategy knobs (defaults in parentheses):
   re-overlap doesn't leak into the converged result.
 - `precision` *(0.01)* — polylabel-style search precision for the
   interior fit-check; smaller is more accurate, costlier.
+- `tether` *(`'poi'`)* — where the exterior leader tether attaches
+  on the source region. `'poi'` (default) keeps the tether at the
+  region's pole of inaccessibility — safe for any rendering style.
+  `'boundary'` attaches at the point where the outgoing ray exits
+  the region's outer polygon ring, so the rendered leader starts
+  on the polygon edge; recommended when your renderer draws shape
+  strokes. Falls back to the POI if no ray-vs-edge intersection is
+  found.
 
 ## Rendering recipe
 
 Pattern-match on `placement.kind`. Interior placements just need an
 anchor; exterior placements also need a leader line back to
-`placement.tether` (the region's POI):
+`placement.tether` (the region's POI by default, or the polygon
+exit point when `strategy.tether = 'boundary'`):
 
 ```ts
 for (const region of regions) {
@@ -235,6 +250,4 @@ A few gotchas worth knowing:
   never returns false positives (the inscribed rectangle is always
   strictly inside the region), but it can return false negatives
   for highly anisotropic regions. A tighter directional-clearance
-  solver is on the roadmap; until then, prefer the strategy-driven
-  placer over the predicate when you'd rather have *some* anchor
-  than none.
+  solver is on the roadmap.

@@ -29,7 +29,8 @@ const DEFAULT_STYLE: DiagramStyle = {
   strokeWidth: 1,
   labelSize: 6,
   showCounts: false,
-  labelPlacement: "interiorPlusRaycast",
+  labelPlacement: "raycast",
+  labelTether: "poi",
 };
 
 const DEFAULT_ADVANCED: AdvancedOptions = {

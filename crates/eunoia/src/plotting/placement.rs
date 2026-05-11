@@ -1,31 +1,21 @@
-//! Strategy-driven label placement.
+//! Label placement.
 //!
-//! [`fit_labels_in_regions`](super::fit_labels_in_regions) is a *predicate* —
-//! it returns interior anchors for regions where the label fits and silently
-//! omits the rest. That is occasionally what callers want, but as a default
-//! placement API it leaves users without a position for any region whose
-//! label is too big.
+//! [`place_labels`] is the single entry point: every requested region gets
+//! a [`LabelPlacement`] back, with [`PlacementKind`] telling the renderer
+//! whether the anchor lies inside the region or outside. When a label
+//! doesn't fit inside its region's polygon, the exterior solver selected
+//! by the [`PlacementStrategy`] takes over and positions the label outside
+//! the diagram, returning a `tether` point so the caller can draw a leader
+//! line back to the region.
 //!
-//! [`place_labels`] is the high-level entry: every input region gets a
-//! [`LabelPlacement`] back (or an explicit absence in the rare degenerate
-//! case), with the placement [`PlacementKind`] telling the renderer whether
-//! the anchor is inside the region or outside. The behaviour is configured
-//! through a [`PlacementStrategy`] with two orthogonal axes — interior
-//! policy and exterior fallback — so callers can opt into different
-//! trade-offs without forking the implementation.
-//!
-//! [`InteriorPolicy::Strict`] is implemented end-to-end with two exterior
-//! solvers: [`ExteriorPolicy::Raycast`] (the default — closed-form anchor
-//! along the centroid→POI ray) and [`ExteriorPolicy::ForceDirected`] (an
+//! Two exterior solvers ship in the box: [`ExteriorPolicy::Raycast`] (the
+//! default — closed-form anchor along the centroid→POI ray, with
+//! collision resolution) and [`ExteriorPolicy::ForceDirected`] (an
 //! iterative spring-and-repulsion solve that's polygon-aware: each label
 //! repels both other labels *and* foreign region pieces, so labels are
-//! prevented from drifting across unrelated regions). The other variants
-//! ([`InteriorPolicy::Loose`], [`ExteriorPolicy::None`]) are present in the
-//! enum so the surface is forward-compatible, but selecting them returns
-//! [`PlacementError::Unimplemented`].
+//! prevented from drifting across unrelated regions).
 
 use std::collections::HashMap;
-use std::fmt;
 
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::{Polygon, Rectangle};
@@ -52,11 +42,8 @@ pub struct LabelPlacement {
 /// Discriminator on [`LabelPlacement`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacementKind {
-    /// Box fits inside the region's polygon (Strict success).
+    /// Box fits inside the region's polygon — anchor at the region's POI.
     Interior,
-    /// Loose policy: anchor is at the POI but the box overflows the region.
-    /// Reserved for the future `Loose` interior policy; v1 never emits it.
-    InteriorOverflow,
     /// Anchor is outside the diagram, ray-cast from centroid through POI.
     ExteriorRaycast,
     /// Anchor is outside the diagram, decided by the force-directed solver
@@ -64,27 +51,10 @@ pub enum PlacementKind {
     ExteriorForceDirected,
 }
 
-/// What to do when a label box would (or would not) fit inside its region.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InteriorPolicy {
-    /// Anchor at the POI only when [`fit_label_in_region`] says yes;
-    /// otherwise fall through to [`ExteriorPolicy`].
-    Strict,
-    /// Always anchor at the POI, even when the box overflows the polygon.
-    /// `exterior` is ignored. **Not implemented in v1** — selecting this
-    /// returns [`PlacementError::Unimplemented`].
-    Loose,
-}
-
-/// What to do for regions where `Strict` says "doesn't fit".
+/// Exterior fallback solver to use when a label doesn't fit inside its
+/// region's polygon.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ExteriorPolicy {
-    /// Omit the region from the result. Equivalent to the
-    /// [`fit_labels_in_regions`](super::fit_labels_in_regions) predicate.
-    /// **Not implemented in v1** — selecting this returns
-    /// [`PlacementError::Unimplemented`]; callers wanting that behaviour
-    /// should call `fit_labels_in_regions` directly.
-    None,
     /// Deterministic ray from the diagram centroid through the region's POI.
     /// The anchor is placed outside the union polygon of the fitted shapes
     /// (or the container, when complement is set), padded by `margin`.
@@ -122,50 +92,55 @@ pub enum ExteriorPolicy {
     },
 }
 
+/// Where the exterior-leader tether attaches to the source region.
+///
+/// Only consulted for exterior placements
+/// ([`PlacementKind::ExteriorRaycast`] / [`PlacementKind::ExteriorForceDirected`]);
+/// interior placements always carry `tether: None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TetherSource {
+    /// Tether is the region's pole of inaccessibility (deep inside the
+    /// region). The rendered leader line runs from a point inside the
+    /// polygon out to the exterior anchor. Default — safe for any
+    /// rendering style, including stroke-less fills.
+    #[default]
+    Poi,
+    /// Tether is the first intersection of the `(poi → anchor)` ray with
+    /// the source region's outer polygon ring — i.e. the point where the
+    /// outgoing ray exits the polygon. The rendered leader starts on the
+    /// polygon boundary, matching the standard labeling convention; opt
+    /// in for stroked rendering styles where the polygon edge is drawn.
+    /// Falls back to the POI if no exit intersection is found (degenerate
+    /// input).
+    Boundary,
+}
+
 /// Configuration bundle for [`place_labels`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlacementStrategy {
-    pub interior: InteriorPolicy,
+    /// Exterior solver to use when a label doesn't fit inside its region.
     pub exterior: ExteriorPolicy,
     /// Polylabel-style search precision, in the same units as the region
     /// polygons. Smaller values yield more accurate POIs at higher cost.
     pub precision: f64,
+    /// Where the leader tether attaches on the source region for exterior
+    /// placements. Defaults to [`TetherSource::Poi`].
+    pub tether: TetherSource,
 }
 
 impl Default for PlacementStrategy {
-    /// `Strict + Raycast` with proportional margin and `precision = 0.01`.
+    /// [`ExteriorPolicy::Raycast`] with proportional margin,
+    /// `precision = 0.01`, and POI tether (the rendered leader runs from
+    /// the region's POI to the exterior anchor — safe for any rendering
+    /// style).
     fn default() -> Self {
         Self {
-            interior: InteriorPolicy::Strict,
             exterior: ExteriorPolicy::Raycast { margin: None },
             precision: 0.01,
+            tether: TetherSource::Poi,
         }
     }
 }
-
-/// Errors returned by [`place_labels`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PlacementError {
-    /// The selected strategy variant is not implemented in this version.
-    /// Callers can pattern-match on this and fall back to an alternative
-    /// strategy or to a direct [`fit_labels_in_regions`] call.
-    Unimplemented(&'static str),
-}
-
-impl fmt::Display for PlacementError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PlacementError::Unimplemented(variant) => {
-                write!(
-                    f,
-                    "placement strategy variant `{variant}` is not implemented yet"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for PlacementError {}
 
 /// Place a label per region.
 ///
@@ -175,17 +150,17 @@ impl std::error::Error for PlacementError {}
 /// complement region). `container` is the jointly-fitted complement
 /// container, when the spec carried a complement — pass [`None`] otherwise.
 ///
-/// Regions absent from `sizes`, regions whose key fails to parse, and
-/// regions whose POI cannot be computed (degenerate input) are omitted from
-/// the result map. Every present key has a real [`LabelPlacement`].
+/// Every requested region for which a position can be computed gets a
+/// [`LabelPlacement`] back. Regions absent from `sizes`, regions whose key
+/// fails to parse, and regions whose POI cannot be computed (degenerate
+/// input) are omitted from the result map.
 ///
 /// # Caveats
 ///
-/// The `Strict` interior fit-check inherits the radial-conservative bound
-/// from [`fit_label_in_region`]; very anisotropic regions may bounce a
-/// fitting label out to the exterior fallback. Tighter bounds and the
-/// `Loose` / `None` / `ForceDirected` strategy variants are planned
-/// follow-ups.
+/// The interior fit-check inherits the radial-conservative bound from
+/// [`fit_label_in_region`]; very anisotropic regions may bounce a fitting
+/// label out to the exterior fallback. A tighter directional-clearance
+/// solver is a planned follow-up.
 ///
 /// # Examples
 ///
@@ -211,10 +186,8 @@ impl std::error::Error for PlacementError {}
 /// sizes.insert("B".to_string(), (0.4, 0.2));
 /// sizes.insert("A&B".to_string(), (0.4, 0.2));
 ///
-/// let strategy = PlacementStrategy::default();
-/// let placements = place_labels(&regions, &sizes, None, &strategy).unwrap();
+/// let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
 /// for placement in placements.values() {
-///     // Every region that was asked for got a position back.
 ///     assert!(placement.anchor.x().is_finite());
 /// }
 /// ```
@@ -223,15 +196,9 @@ pub fn place_labels(
     sizes: &HashMap<String, (f64, f64)>,
     container: Option<&Rectangle>,
     strategy: &PlacementStrategy,
-) -> Result<HashMap<String, LabelPlacement>, PlacementError> {
-    if matches!(strategy.interior, InteriorPolicy::Loose) {
-        return Err(PlacementError::Unimplemented("InteriorPolicy::Loose"));
-    }
+) -> HashMap<String, LabelPlacement> {
     let exterior_kind = match strategy.exterior {
         ExteriorPolicy::Raycast { margin } => ExteriorPlan::Raycast { margin },
-        ExteriorPolicy::None => {
-            return Err(PlacementError::Unimplemented("ExteriorPolicy::None"));
-        }
         ExteriorPolicy::ForceDirected { margin, iterations } => ExteriorPlan::ForceDirected {
             margin,
             iterations: iterations.unwrap_or(DEFAULT_FORCE_DIRECTED_ITERATIONS),
@@ -317,6 +284,28 @@ pub fn place_labels(
         });
     }
 
+    // Interior placements are finalised in `out` before any exterior
+    // entries; cache their AABBs once so both exterior solvers can keep
+    // leader lines (tether → anchor) from crossing them. Labels whose
+    // size was missing from `sizes` or whose dimensions are non-finite /
+    // non-positive contribute no AABB.
+    let interior_aabbs: Vec<InteriorAabb> = out
+        .iter()
+        .filter(|(_, p)| p.kind == PlacementKind::Interior)
+        .filter_map(|(k, p)| {
+            let (w, h) = *sizes.get(k)?;
+            if !(w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0) {
+                return None;
+            }
+            Some(InteriorAabb {
+                xmin: p.anchor.x() - 0.5 * w,
+                ymin: p.anchor.y() - 0.5 * h,
+                xmax: p.anchor.x() + 0.5 * w,
+                ymax: p.anchor.y() + 0.5 * h,
+            })
+        })
+        .collect();
+
     // Resolve overlaps between exterior labels. Different solvers per
     // strategy: Raycast uses a cheap tangential-push collision sweep that's
     // ideal when labels share an exterior side; ForceDirected adds spring
@@ -324,29 +313,59 @@ pub fn place_labels(
     // foreign region pieces.
     let exterior_kind_label = match exterior_kind {
         ExteriorPlan::Raycast { .. } => {
-            resolve_exterior_collisions(&mut exteriors, 50);
+            resolve_exterior_collisions(&mut exteriors, &interior_aabbs, 50);
             PlacementKind::ExteriorRaycast
         }
         ExteriorPlan::ForceDirected { iterations, .. } => {
             if let Some(bbox) = diagram_bbox {
-                resolve_force_directed(&mut exteriors, regions, &union_pieces, &bbox, iterations);
+                resolve_force_directed(
+                    &mut exteriors,
+                    regions,
+                    &union_pieces,
+                    &bbox,
+                    &interior_aabbs,
+                    iterations,
+                );
             }
             PlacementKind::ExteriorForceDirected
         }
     };
 
     for entry in exteriors {
+        // `direction = (anchor - poi)` is what the renderer actually draws,
+        // and the resolver may have moved `anchor` from its raycast warm-start,
+        // so recompute the ray direction here instead of reusing
+        // `entry.direction`. This keeps the boundary tether geometrically
+        // consistent with the rendered leader.
+        let tether_pt = match strategy.tether {
+            TetherSource::Poi => entry.poi,
+            TetherSource::Boundary => {
+                let dx = entry.anchor.x() - entry.poi.x();
+                let dy = entry.anchor.y() - entry.poi.y();
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < 1e-12 {
+                    entry.poi
+                } else {
+                    let dir = (dx / len, dy / len);
+                    let pieces = regions
+                        .get(&entry.combo)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(&[]);
+                    ray_first_edge_exit(&entry.poi, dir, pieces).unwrap_or(entry.poi)
+                }
+            }
+        };
         out.insert(
             entry.key,
             LabelPlacement {
                 anchor: entry.anchor,
                 kind: exterior_kind_label,
-                tether: Some(entry.poi),
+                tether: Some(tether_pt),
             },
         );
     }
 
-    Ok(out)
+    out
 }
 
 /// Axis-aligned bounding box of every placed label box.
@@ -467,8 +486,7 @@ pub fn placements_bbox(
 ///
 /// # Returns
 ///
-/// The placements from the final iteration. Any [`PlacementError`]
-/// from the inner [`place_labels`] call short-circuits the loop.
+/// The placements from the final iteration.
 pub fn place_labels_to_fixed_point<F>(
     regions: &RegionPolygons,
     container: Option<&Rectangle>,
@@ -477,21 +495,21 @@ pub fn place_labels_to_fixed_point<F>(
     mut measure: F,
     bbox_tolerance: f64,
     max_iters: usize,
-) -> Result<HashMap<String, LabelPlacement>, PlacementError>
+) -> HashMap<String, LabelPlacement>
 where
     F: FnMut(&Rectangle) -> HashMap<String, (f64, f64)>,
 {
     let mut sizes = initial_sizes;
-    let mut placements = place_labels(regions, &sizes, container, strategy)?;
+    let mut placements = place_labels(regions, &sizes, container, strategy);
     let mut prev_short =
         canvas_bbox(regions, container, &placements, &sizes).map(|r| r.width().min(r.height()));
 
     for _ in 0..max_iters {
         let Some(prev_bbox) = canvas_bbox(regions, container, &placements, &sizes) else {
-            return Ok(placements);
+            return placements;
         };
         let new_sizes = measure(&prev_bbox);
-        let new_placements = place_labels(regions, &new_sizes, container, strategy)?;
+        let new_placements = place_labels(regions, &new_sizes, container, strategy);
         let new_short = canvas_bbox(regions, container, &new_placements, &new_sizes)
             .map(|r| r.width().min(r.height()));
 
@@ -508,10 +526,10 @@ where
         prev_short = new_short;
 
         if converged {
-            return Ok(placements);
+            return placements;
         }
     }
-    Ok(placements)
+    placements
 }
 
 /// Union AABB of `regions`, `container` (when set), and the placed
@@ -583,6 +601,15 @@ enum ExteriorPlan {
     },
 }
 
+/// Axis-aligned bounding box of an already-placed interior label, used by
+/// the exterior solvers to keep leader lines from visually crossing it.
+struct InteriorAabb {
+    xmin: f64,
+    ymin: f64,
+    xmax: f64,
+    ymax: f64,
+}
+
 /// In-flight bookkeeping for an exterior label between raycast placement
 /// and collision resolution. The fields after the resolution pass are
 /// re-packed into a [`LabelPlacement`].
@@ -610,16 +637,53 @@ struct ExteriorEntry {
 
 /// Iteratively push overlapping exterior label boxes apart along their
 /// tangents (perpendicular to each label's raycast direction). Each
-/// pairwise overlap moves both labels half the smaller AABB-overlap; the
-/// loop terminates early when a pass makes no moves, and is capped at
-/// `max_iters` to bound worst-case cost.
-fn resolve_exterior_collisions(entries: &mut [ExteriorEntry], max_iters: usize) {
-    if entries.len() < 2 {
+/// pairwise overlap moves both labels half the smaller AABB-overlap.
+///
+/// Also pushes the anchor tangentially when the leader segment (POI →
+/// anchor) would visually cross an interior label's AABB, so leaders
+/// don't sweep across the diagram's interior text. The two passes share
+/// the outer iteration: the loop terminates early when neither pass
+/// moves anything, and is capped at `max_iters` to bound worst-case
+/// cost.
+fn resolve_exterior_collisions(
+    entries: &mut [ExteriorEntry],
+    interior_aabbs: &[InteriorAabb],
+    max_iters: usize,
+) {
+    if entries.is_empty() {
         return;
     }
     let eps = 1e-9;
     for _ in 0..max_iters {
         let mut moved = false;
+
+        // Leader-vs-interior-label avoidance: for each exterior entry,
+        // check whether the POI→anchor segment intersects any interior
+        // label's AABB. On a hit, push the anchor along the tangent
+        // (perpendicular to the raycast direction) far enough that the
+        // segment, pivoted around the fixed POI, clears the AABB.
+        for entry in entries.iter_mut() {
+            for aabb in interior_aabbs {
+                let Some((t_enter, t_exit)) = segment_vs_aabb(
+                    &entry.poi,
+                    &entry.anchor,
+                    aabb.xmin,
+                    aabb.ymin,
+                    aabb.xmax,
+                    aabb.ymax,
+                ) else {
+                    continue;
+                };
+                let push = leader_avoidance_push(entry, aabb, t_enter, t_exit);
+                if push.is_none() {
+                    continue;
+                }
+                let (dx, dy) = push.unwrap();
+                entry.anchor = Point::new(entry.anchor.x() + dx, entry.anchor.y() + dy);
+                moved = true;
+            }
+        }
+
         for i in 0..entries.len() {
             for j in (i + 1)..entries.len() {
                 let (left, right) = entries.split_at_mut(j);
@@ -722,6 +786,7 @@ fn resolve_force_directed(
     regions: &RegionPolygons,
     union_pieces: &[RegionPiece],
     bbox: &Rectangle,
+    interior_aabbs: &[InteriorAabb],
     max_iters: usize,
 ) {
     if entries.is_empty() || max_iters == 0 {
@@ -799,6 +864,29 @@ fn resolve_force_directed(
                 let (px, py) = polygon_push(&entries[i].anchor, buffer, piece);
                 entries[i].anchor =
                     Point::new(entries[i].anchor.x() + px, entries[i].anchor.y() + py);
+            }
+
+            // Leader-vs-interior-label avoidance: push the anchor
+            // tangentially when the POI→anchor segment crosses an
+            // interior label's AABB. Penetration-resolving (each pass
+            // moves the anchor just enough that the segment pivots
+            // around the POI past the AABB), so the spring + repulsion
+            // fixed-point stays well-behaved.
+            for aabb in interior_aabbs {
+                let Some((t_enter, t_exit)) = segment_vs_aabb(
+                    &entries[i].poi,
+                    &entries[i].anchor,
+                    aabb.xmin,
+                    aabb.ymin,
+                    aabb.xmax,
+                    aabb.ymax,
+                ) else {
+                    continue;
+                };
+                if let Some((dx, dy)) = leader_avoidance_push(&entries[i], aabb, t_enter, t_exit) {
+                    entries[i].anchor =
+                        Point::new(entries[i].anchor.x() + dx, entries[i].anchor.y() + dy);
+                }
             }
 
             let moved = ((entries[i].anchor.x() - prev.x()).powi(2)
@@ -1296,6 +1384,143 @@ fn raycast_anchor(
     Point::new(poi.x() + t * dx, poi.y() + t * dy)
 }
 
+/// First intersection of the ray `origin + t * dir` (t > 0) with any outer
+/// ring of the source region, returned as a [`Point`]. Used by
+/// [`TetherSource::Boundary`] to anchor the rendered leader on the polygon
+/// edge instead of at the POI.
+///
+/// Scans every edge of every outer ring and keeps the smallest forward `t`.
+/// Holes are intentionally ignored — the visual goal is to start the
+/// leader where the ray leaves the *region*, and the outer ring is what
+/// renders as the region's silhouette.
+///
+/// Returns [`None`] when the ray hits nothing (degenerate input, origin
+/// outside the polygon and aimed away, or `dir` is the zero vector).
+/// Callers fall back to the POI in that case.
+fn ray_first_edge_exit(origin: &Point, dir: (f64, f64), pieces: &[RegionPiece]) -> Option<Point> {
+    let (ox, oy) = (origin.x(), origin.y());
+    let (rx, ry) = dir;
+    if rx.abs() < f64::EPSILON && ry.abs() < f64::EPSILON {
+        return None;
+    }
+    let eps = 1e-9;
+    let mut best_t = f64::INFINITY;
+    for piece in pieces {
+        let verts = piece.outer.vertices();
+        let n = verts.len();
+        if n < 2 {
+            continue;
+        }
+        for i in 0..n {
+            let a = &verts[i];
+            let b = &verts[(i + 1) % n];
+            let sx = b.x() - a.x();
+            let sy = b.y() - a.y();
+            // r × s
+            let denom = rx * sy - ry * sx;
+            if denom.abs() < eps {
+                continue; // parallel
+            }
+            let wx = a.x() - ox;
+            let wy = a.y() - oy;
+            // t = (w × s) / (r × s); s = (w × r) / (r × s)
+            let t = (wx * sy - wy * sx) / denom;
+            let u = (wx * ry - wy * rx) / denom;
+            if t > eps && (-eps..=1.0 + eps).contains(&u) && t < best_t {
+                best_t = t;
+            }
+        }
+    }
+    if best_t.is_finite() {
+        Some(Point::new(ox + best_t * rx, oy + best_t * ry))
+    } else {
+        None
+    }
+}
+
+/// Tangential displacement to apply to `entry.anchor` so the leader
+/// segment `poi → anchor`, pivoting around the fixed POI, clears the
+/// AABB.
+///
+/// Geometry: a perpendicular push `delta` at the anchor moves the
+/// segment by `t * delta` at parameter `t ∈ [0, 1]`. To clear an AABB
+/// whose midline along the segment sits at `t_mid = (t_enter + t_exit) /
+/// 2` and whose half-extent projected onto the tangent direction is
+/// `half_tan`, the anchor must move by at least `(half_tan + eps) /
+/// t_mid` perpendicular to the segment direction. Side is chosen so the
+/// push moves the anchor away from the AABB centre, projected onto the
+/// tangent. Returns [`None`] when the displacement isn't well-defined
+/// (degenerate `t_mid`).
+fn leader_avoidance_push(
+    entry: &ExteriorEntry,
+    aabb: &InteriorAabb,
+    t_enter: f64,
+    t_exit: f64,
+) -> Option<(f64, f64)> {
+    let t_mid = 0.5 * (t_enter + t_exit);
+    if !t_mid.is_finite() || t_mid <= 1e-6 {
+        return None;
+    }
+    // Tangent = 90° rotation of the raycast direction. The raycast
+    // direction is preserved as a stable "outward" axis even when the
+    // resolver moves the anchor; using it (instead of the live
+    // anchor−poi direction) keeps the push axis fixed across iterations
+    // and avoids feedback when several AABBs collide on the same label.
+    let tx = -entry.direction.1;
+    let ty = entry.direction.0;
+    let cx = 0.5 * (aabb.xmin + aabb.xmax);
+    let cy = 0.5 * (aabb.ymin + aabb.ymax);
+    let half_tan =
+        0.5 * (aabb.xmax - aabb.xmin) * tx.abs() + 0.5 * (aabb.ymax - aabb.ymin) * ty.abs();
+    let proj = (entry.anchor.x() - cx) * tx + (entry.anchor.y() - cy) * ty;
+    let sign = if proj >= 0.0 { 1.0 } else { -1.0 };
+    let mag = (half_tan + 1e-6) / t_mid;
+    Some((sign * mag * tx, sign * mag * ty))
+}
+
+/// Segment vs axis-aligned box intersection (Liang-Barsky slab method).
+///
+/// Returns `Some((t_enter, t_exit))` with both clamped to `[0, 1]` when the
+/// segment from `p0` to `p1` intersects the closed AABB `[xmin, xmax] ×
+/// [ymin, ymax]`; [`None`] otherwise. Endpoints touching the box edges
+/// count as a hit. Used by the interior-label leader-avoidance pass in
+/// both exterior resolvers.
+fn segment_vs_aabb(
+    p0: &Point,
+    p1: &Point,
+    xmin: f64,
+    ymin: f64,
+    xmax: f64,
+    ymax: f64,
+) -> Option<(f64, f64)> {
+    let dx = p1.x() - p0.x();
+    let dy = p1.y() - p0.y();
+    let mut t_min = 0.0_f64;
+    let mut t_max = 1.0_f64;
+
+    for &(o, d, lo, hi) in &[(p0.x(), dx, xmin, xmax), (p0.y(), dy, ymin, ymax)] {
+        if d.abs() < f64::EPSILON {
+            if o < lo || o > hi {
+                return None;
+            }
+        } else {
+            let t1 = (lo - o) / d;
+            let t2 = (hi - o) / d;
+            let (t_lo, t_hi) = if t1 <= t2 { (t1, t2) } else { (t2, t1) };
+            if t_lo > t_min {
+                t_min = t_lo;
+            }
+            if t_hi < t_max {
+                t_max = t_hi;
+            }
+            if t_min > t_max {
+                return None;
+            }
+        }
+    }
+    Some((t_min, t_max))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1326,14 +1551,14 @@ mod tests {
     }
 
     #[test]
-    fn test_default_strategy_is_strict_raycast() {
+    fn test_default_strategy_is_raycast() {
         let s = PlacementStrategy::default();
-        assert_eq!(s.interior, InteriorPolicy::Strict);
         assert!(matches!(
             s.exterior,
             ExteriorPolicy::Raycast { margin: None }
         ));
         assert!((s.precision - 0.01).abs() < 1e-12);
+        assert_eq!(s.tether, TetherSource::Poi);
     }
 
     #[test]
@@ -1342,8 +1567,7 @@ mod tests {
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (1.0, 0.5));
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         let p = placements.get("A").expect("A should be placed");
         assert_eq!(p.kind, PlacementKind::Interior);
         assert!(p.tether.is_none());
@@ -1363,8 +1587,7 @@ mod tests {
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (20.0, 20.0));
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         let p = placements.get("A").expect("A should be placed");
         assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
         let tether = p.tether.expect("exterior placement should have a tether");
@@ -1420,8 +1643,7 @@ mod tests {
         // the union bbox, so raycast pushes it outside the union bbox.
         sizes.insert("A".to_string(), (5.0, 5.0));
 
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         let p = placements.get("A").expect("A should be placed");
         assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
 
@@ -1447,8 +1669,7 @@ mod tests {
             &sizes,
             Some(&container),
             &PlacementStrategy::default(),
-        )
-        .unwrap();
+        );
         let p = placements.get("A").expect("A should be placed");
         assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
 
@@ -1486,8 +1707,7 @@ mod tests {
         );
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (20.0, 20.0));
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         let p = placements.get("A").expect("A should be placed");
         assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
         // +y fallback: anchor's x ≈ POI's x (≈ 0), y >> 5.
@@ -1496,37 +1716,11 @@ mod tests {
     }
 
     #[test]
-    fn test_loose_returns_unimplemented() {
-        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
-        let mut sizes = HashMap::new();
-        sizes.insert("A".to_string(), (1.0, 1.0));
-        let strategy = PlacementStrategy {
-            interior: InteriorPolicy::Loose,
-            ..PlacementStrategy::default()
-        };
-        let err = place_labels(&regions, &sizes, None, &strategy).unwrap_err();
-        assert!(matches!(err, PlacementError::Unimplemented(_)));
-    }
-
-    #[test]
-    fn test_exterior_none_returns_unimplemented() {
-        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
-        let sizes = HashMap::new();
-        let strategy = PlacementStrategy {
-            exterior: ExteriorPolicy::None,
-            ..PlacementStrategy::default()
-        };
-        let err = place_labels(&regions, &sizes, None, &strategy).unwrap_err();
-        assert!(matches!(err, PlacementError::Unimplemented(_)));
-    }
-
-    #[test]
     fn test_unknown_keys_skipped() {
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
         let mut sizes = HashMap::new();
         sizes.insert("Z".to_string(), (1.0, 1.0));
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         assert!(placements.is_empty());
     }
 
@@ -1536,8 +1730,7 @@ mod tests {
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (0.0, 1.0));
         sizes.insert("B".to_string(), (f64::NAN, 1.0));
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         assert!(placements.is_empty());
     }
 
@@ -1574,8 +1767,7 @@ mod tests {
         sizes.insert("B".to_string(), (20.0, 20.0));
         sizes.insert("C".to_string(), (20.0, 20.0));
 
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         assert_eq!(placements.len(), 3);
 
         let entries: Vec<&LabelPlacement> = ["A", "B", "C"]
@@ -1610,8 +1802,7 @@ mod tests {
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (20.0, 20.0));
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         let p = placements.get("A").unwrap();
         // Same expected anchor as test_strict_raycast_exterior_fallback:
         // POI ≈ (5, 5), isotropic tiebreak → +y, anchor.y ≥ bbox_top (10)
@@ -1645,8 +1836,7 @@ mod tests {
         // Way too big for the intersection — forces ExteriorRaycast.
         sizes.insert("A&B".to_string(), (100.0, 100.0));
 
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         assert!(placements.contains_key("A"));
         let ab = placements.get("A&B").expect("A&B should be placed");
         assert_eq!(ab.kind, PlacementKind::ExteriorRaycast);
@@ -1719,8 +1909,7 @@ mod tests {
         // returned by the SAT check — strictly tighter than the AABB.
         let mut sizes = HashMap::new();
         sizes.insert("B".to_string(), (10.0, 10.0));
-        let placements =
-            place_labels(&regions, &sizes, None, &PlacementStrategy::default()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
         let p = placements.get("B").expect("B should be placed");
         assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
 
@@ -1755,12 +1944,11 @@ mod tests {
 
     fn force_directed_strategy() -> PlacementStrategy {
         PlacementStrategy {
-            interior: InteriorPolicy::Strict,
             exterior: ExteriorPolicy::ForceDirected {
                 margin: None,
                 iterations: None,
             },
-            precision: 0.01,
+            ..PlacementStrategy::default()
         }
     }
 
@@ -1771,7 +1959,7 @@ mod tests {
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (1.0, 0.5));
-        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy());
         let p = placements.get("A").unwrap();
         assert_eq!(p.kind, PlacementKind::Interior);
         assert!(p.tether.is_none());
@@ -1785,7 +1973,7 @@ mod tests {
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (20.0, 20.0));
-        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy());
         let p = placements.get("A").unwrap();
         assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
         let tether = p.tether.expect("force-directed exterior must have tether");
@@ -1824,7 +2012,7 @@ mod tests {
         sizes.insert("B".to_string(), (20.0, 20.0));
         sizes.insert("C".to_string(), (20.0, 20.0));
 
-        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy());
         let entries: Vec<&LabelPlacement> = ["A", "B", "C"]
             .iter()
             .map(|k| placements.get(*k).expect("placed"))
@@ -1895,14 +2083,14 @@ mod tests {
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (5.0, 5.0));
         let strategy = PlacementStrategy {
-            interior: InteriorPolicy::Strict,
             exterior: ExteriorPolicy::ForceDirected {
                 margin: Some(0.5),
                 iterations: Some(300),
             },
             precision: 0.05,
+            tether: TetherSource::Poi,
         };
-        let placements = place_labels(&regions, &sizes, None, &strategy).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &strategy);
         let p = placements.get("A").unwrap();
         assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
 
@@ -1947,7 +2135,7 @@ mod tests {
         sizes.insert("A".to_string(), (0.2, 0.1));
         sizes.insert("A&B".to_string(), (100.0, 100.0));
 
-        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy()).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &force_directed_strategy());
         assert!(placements.contains_key("A"));
         let ab = placements.get("A&B").expect("A&B should be placed");
         assert_eq!(ab.kind, PlacementKind::ExteriorForceDirected);
@@ -1963,14 +2151,14 @@ mod tests {
         let mut sizes = HashMap::new();
         sizes.insert("A".to_string(), (20.0, 20.0));
         let strategy = PlacementStrategy {
-            interior: InteriorPolicy::Strict,
             exterior: ExteriorPolicy::ForceDirected {
                 margin: None,
                 iterations: Some(0),
             },
             precision: 0.01,
+            tether: TetherSource::Poi,
         };
-        let placements = place_labels(&regions, &sizes, None, &strategy).unwrap();
+        let placements = place_labels(&regions, &sizes, None, &strategy);
         let p = placements.get("A").unwrap();
         assert_eq!(p.kind, PlacementKind::ExteriorForceDirected);
         // Same expected anchor as the raycast variant: POI ≈ (5, 5),
@@ -2117,8 +2305,7 @@ mod tests {
             },
             1e-3,
             10,
-        )
-        .unwrap();
+        );
 
         let p = placements.get("A").expect("A placed");
         // Either interior or exterior is fine — the property under test
@@ -2156,35 +2343,244 @@ mod tests {
             },
             1e-3,
             5,
-        )
-        .unwrap();
+        );
 
         assert_eq!(iter_count, 5, "expected exactly max_iters measure calls");
         assert!(placements.contains_key("A"));
     }
 
+    fn rect_piece(x: f64, y: f64, w: f64, h: f64) -> RegionPiece {
+        RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(x, y),
+                Point::new(x + w, y),
+                Point::new(x + w, y + h),
+                Point::new(x, y + h),
+            ]),
+            holes: vec![],
+        }
+    }
+
     #[test]
-    fn test_fixed_point_propagates_placement_error() {
-        // Loose interior policy still returns Unimplemented from
-        // place_labels — the fixed-point helper must propagate that
-        // error rather than swallow it.
+    fn test_segment_vs_aabb_hit_and_miss() {
+        // Hit along the +x axis.
+        let p0 = Point::new(0.0, 1.0);
+        let p1 = Point::new(10.0, 1.0);
+        let hit = segment_vs_aabb(&p0, &p1, 3.0, 0.5, 5.0, 1.5);
+        let (te, tx) = hit.expect("segment should hit");
+        assert!((te - 0.3).abs() < 1e-9);
+        assert!((tx - 0.5).abs() < 1e-9);
+        // Miss: segment far above the AABB.
+        let p2 = Point::new(0.0, 10.0);
+        let p3 = Point::new(10.0, 10.0);
+        assert!(segment_vs_aabb(&p2, &p3, 3.0, 0.5, 5.0, 1.5).is_none());
+    }
+
+    #[test]
+    fn test_ray_first_edge_exit_centred() {
+        // Ray from the centre of a 10×10 square pointing +x must exit at
+        // x = 10 on the right edge.
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        let exit = ray_first_edge_exit(&Point::new(5.0, 5.0), (1.0, 0.0), &pieces)
+            .expect("ray should exit through the right edge");
+        assert!((exit.x() - 10.0).abs() < 1e-9);
+        assert!((exit.y() - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_ray_first_edge_exit_no_hit() {
+        // Origin outside the polygon and pointing away — no forward
+        // intersection. Caller falls back to the POI.
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        assert!(ray_first_edge_exit(&Point::new(-1.0, 5.0), (-1.0, 0.0), &pieces).is_none());
+    }
+
+    #[test]
+    fn test_boundary_tether_lands_on_polygon_edge() {
+        // 10×10 region, label too big to fit interior. With
+        // `TetherSource::Boundary`, the tether must lie on the region's
+        // boundary, not at the POI (5, 5).
         let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
-        let mut initial = HashMap::new();
-        initial.insert("A".to_string(), (1.0, 1.0));
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
         let strategy = PlacementStrategy {
-            interior: InteriorPolicy::Loose,
+            tether: TetherSource::Boundary,
             ..PlacementStrategy::default()
         };
-        let err = place_labels_to_fixed_point(
-            &regions,
-            None,
-            initial,
-            &strategy,
-            |_| HashMap::new(),
-            1e-3,
-            5,
-        )
-        .unwrap_err();
-        assert!(matches!(err, PlacementError::Unimplemented(_)));
+        let placements = place_labels(&regions, &sizes, None, &strategy);
+        let p = placements.get("A").expect("A should be placed");
+        assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
+        let tether = p.tether.expect("exterior placement should have a tether");
+        // Tether is on the square's outer ring (one of x ∈ {0, 10} or
+        // y ∈ {0, 10}, with the other coordinate ∈ [0, 10]).
+        let on_left = (tether.x()).abs() < 1e-6;
+        let on_right = (tether.x() - 10.0).abs() < 1e-6;
+        let on_bottom = (tether.y()).abs() < 1e-6;
+        let on_top = (tether.y() - 10.0).abs() < 1e-6;
+        assert!(
+            (on_left || on_right || on_bottom || on_top)
+                && (0.0..=10.0).contains(&tether.x())
+                && (0.0..=10.0).contains(&tether.y()),
+            "tether ({}, {}) should lie on the 10×10 boundary",
+            tether.x(),
+            tether.y(),
+        );
+    }
+
+    #[test]
+    fn test_poi_tether_is_default() {
+        // Default strategy keeps the tether at the region's POI so that
+        // rendered leaders stay anchored well inside the visible region
+        // regardless of whether the caller draws shape strokes.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+        let p = placements.get("A").expect("A should be placed");
+        let tether = p.tether.expect("exterior placement should have a tether");
+        assert!((tether.x() - 5.0).abs() < 0.5);
+        assert!((tether.y() - 5.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn test_boundary_tether_falls_back_to_poi_on_degenerate_ray() {
+        // Zero-length raycast (anchor coincides with POI). The boundary
+        // helper short-circuits to the POI rather than panicking on
+        // `1 / 0` in the direction normalisation.
+        let entry = ExteriorEntry {
+            key: "A".to_string(),
+            combo: Combination::new(&["A"]),
+            anchor: Point::new(5.0, 5.0),
+            home: Point::new(5.0, 5.0),
+            poi: Point::new(5.0, 5.0),
+            direction: (1.0, 0.0),
+            margin: 0.0,
+            w: 1.0,
+            h: 1.0,
+        };
+        // Sanity: with a zero-length displacement the boundary tether
+        // code path falls back to the POI (covered via
+        // `place_labels` in the test below).
+        let pieces = vec![axis_aligned_square_piece(10.0)];
+        // No forward intersection from the centre pointing into a zero
+        // direction → None → caller falls back to POI.
+        assert!(ray_first_edge_exit(&entry.poi, (0.0, 0.0), &pieces).is_none());
+    }
+
+    #[test]
+    fn test_leader_avoidance_raycast_pushes_anchor_clear_of_interior_label() {
+        // Three-region layout where, by construction, region A's natural
+        // raycast direction sweeps the leader segment over region C's
+        // interior label AABB. With the always-on avoidance pass, the
+        // resolved anchor must move so the segment misses C's AABB.
+        let mut map = HashMap::new();
+        map.insert(
+            Combination::new(&["A"]),
+            vec![rect_piece(4.0, 0.0, 2.0, 2.0)],
+        );
+        map.insert(
+            Combination::new(&["B"]),
+            vec![rect_piece(0.0, 0.0, 3.0, 2.0)],
+        );
+        map.insert(
+            Combination::new(&["C"]),
+            vec![rect_piece(7.0, 0.0, 2.0, 2.0)],
+        );
+        let regions = RegionPolygons::from_map(map);
+
+        let mut sizes = HashMap::new();
+        // A's label is huge — forces exterior, the natural raycast
+        // direction is (+1, 0) (poi_A ≈ (5,1), centroid ≈ (4.5, 1)).
+        sizes.insert("A".to_string(), (20.0, 10.0));
+        // B's label fits comfortably interior.
+        sizes.insert("B".to_string(), (1.0, 0.5));
+        // C's label fits interior and sits squarely on A's ray. Keep
+        // it small enough that the radial-conservative inscribed-rect
+        // bound in `fit_label_in_region` accepts it.
+        sizes.insert("C".to_string(), (1.0, 0.5));
+
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+        let a = placements.get("A").expect("A should be placed");
+        let c = placements.get("C").expect("C should be placed");
+        assert_eq!(a.kind, PlacementKind::ExteriorRaycast);
+        assert_eq!(c.kind, PlacementKind::Interior);
+
+        let tether = a.tether.expect("A should have a tether");
+        let c_xmin = c.anchor.x() - 0.5 * 1.0;
+        let c_xmax = c.anchor.x() + 0.5 * 1.0;
+        let c_ymin = c.anchor.y() - 0.5 * 0.5;
+        let c_ymax = c.anchor.y() + 0.5 * 0.5;
+        // The rendered leader runs from `tether` to `anchor`. The
+        // avoidance pass must have pushed `anchor` enough that the
+        // segment no longer crosses C's AABB.
+        assert!(
+            segment_vs_aabb(&tether, &a.anchor, c_xmin, c_ymin, c_xmax, c_ymax).is_none(),
+            "leader segment ({}, {}) → ({}, {}) still crosses C's AABB ({}, {}, {}, {})",
+            tether.x(),
+            tether.y(),
+            a.anchor.x(),
+            a.anchor.y(),
+            c_xmin,
+            c_ymin,
+            c_xmax,
+            c_ymax,
+        );
+    }
+
+    #[test]
+    fn test_leader_avoidance_force_directed_pushes_anchor_clear_of_interior_label() {
+        // Same setup as the Raycast avoidance test, with the
+        // ForceDirected exterior solver instead.
+        let mut map = HashMap::new();
+        map.insert(
+            Combination::new(&["A"]),
+            vec![rect_piece(4.0, 0.0, 2.0, 2.0)],
+        );
+        map.insert(
+            Combination::new(&["B"]),
+            vec![rect_piece(0.0, 0.0, 3.0, 2.0)],
+        );
+        map.insert(
+            Combination::new(&["C"]),
+            vec![rect_piece(7.0, 0.0, 2.0, 2.0)],
+        );
+        let regions = RegionPolygons::from_map(map);
+
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 10.0));
+        sizes.insert("B".to_string(), (1.0, 0.5));
+        sizes.insert("C".to_string(), (1.0, 0.5));
+
+        let strategy = PlacementStrategy {
+            exterior: ExteriorPolicy::ForceDirected {
+                margin: None,
+                iterations: Some(300),
+            },
+            precision: 0.01,
+            tether: TetherSource::Poi,
+        };
+        let placements = place_labels(&regions, &sizes, None, &strategy);
+        let a = placements.get("A").expect("A should be placed");
+        let c = placements.get("C").expect("C should be placed");
+        assert_eq!(a.kind, PlacementKind::ExteriorForceDirected);
+        assert_eq!(c.kind, PlacementKind::Interior);
+
+        let tether = a.tether.expect("A should have a tether");
+        let c_xmin = c.anchor.x() - 0.5 * 1.0;
+        let c_xmax = c.anchor.x() + 0.5 * 1.0;
+        let c_ymin = c.anchor.y() - 0.5 * 0.5;
+        let c_ymax = c.anchor.y() + 0.5 * 0.5;
+        assert!(
+            segment_vs_aabb(&tether, &a.anchor, c_xmin, c_ymin, c_xmax, c_ymax).is_none(),
+            "leader segment ({}, {}) → ({}, {}) still crosses C's AABB ({}, {}, {}, {})",
+            tether.x(),
+            tether.y(),
+            a.anchor.x(),
+            a.anchor.y(),
+            c_xmin,
+            c_ymin,
+            c_xmax,
+            c_ymax,
+        );
     }
 }

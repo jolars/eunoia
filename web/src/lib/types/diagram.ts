@@ -125,10 +125,7 @@ export type LossName =
   | "DiagError";
 export type ExportFormat = "svg" | "png" | "pdf" | "json";
 
-export type LabelPlacementMode =
-  | "interiorOnly"
-  | "interiorPlusRaycast"
-  | "interiorPlusForceDirected";
+export type LabelPlacementMode = "raycast" | "forceDirected";
 
 export interface DiagramStyle {
   /** Per-set fill colors keyed by set name. Missing sets fall back to the default palette. */
@@ -144,18 +141,26 @@ export interface DiagramStyle {
   labelSize: number;
   showCounts: boolean;
   /**
-   * Label placement strategy:
+   * Exterior-fallback solver used when a label doesn't fit inside its
+   * region:
    *
-   * - `"interiorOnly"` — hide region labels that don't fit (predicate behaviour).
-   * - `"interiorPlusRaycast"` — place such labels outside the diagram with a
-   *   leader line back to the region's POI (default).
-   * - `"interiorPlusForceDirected"` — same fall-back path as `interiorPlusRaycast`,
-   *   but resolves overlap and foreign-region collisions via the polygon-aware
-   *   force-directed solver in the eunoia core. Slower than raycast; better for
-   *   crowded layouts where exterior labels otherwise pile up or land on top of
-   *   unrelated regions.
+   * - `"raycast"` (default) — deterministic ray from the diagram centroid
+   *   through the region's POI.
+   * - `"forceDirected"` — iterative spring + polygon-aware repulsion;
+   *   slower than raycast but better for crowded layouts where raycast
+   *   labels pile up or land on top of unrelated regions.
    */
   labelPlacement: LabelPlacementMode;
+  /**
+   * Where the exterior-leader tether attaches on the source region:
+   *
+   * - `"poi"` (default) — region's pole of inaccessibility (deep inside the
+   *   polygon). Safe for any rendering style, including stroke-less fills.
+   * - `"boundary"` — point where the outgoing ray exits the polygon's outer
+   *   ring. Rendered leader starts on the polygon edge; recommended when
+   *   the renderer draws shape strokes.
+   */
+  labelTether: "poi" | "boundary";
 }
 
 export interface RasterSize {

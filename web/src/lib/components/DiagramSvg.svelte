@@ -101,11 +101,7 @@
     // anchors well outside the diagram bbox; without this the viewBox
     // clips them off-screen. `placementsBbox` returns the union of every
     // (anchor ± half-label) so we just consume its corners.
-    if (
-      result.shapeMode === "region" &&
-      (style.labelPlacement === "interiorPlusRaycast" ||
-        style.labelPlacement === "interiorPlusForceDirected")
-    ) {
+    if (result.shapeMode === "region") {
       const labelBbox = placementsBbox({
         placements: regionPlacements,
         sizes: measuredSizes,
@@ -328,11 +324,9 @@
         container: result.container,
         sizes,
         strategy: {
-          exterior:
-            style.labelPlacement === "interiorPlusForceDirected"
-              ? "forceDirected"
-              : "raycast",
+          exterior: style.labelPlacement,
           precision: Math.max(0.05, style.labelSize * 0.05),
+          tether: style.labelTether,
         },
       });
       console.debug("[place]", {
@@ -563,10 +557,7 @@
         {@const isExterior =
           placement?.kind === "exteriorRaycast" ||
           placement?.kind === "exteriorForceDirected"}
-        {@const renderLabel =
-          style.labelPlacement === "interiorPlusRaycast" ||
-          style.labelPlacement === "interiorPlusForceDirected" ||
-          !isExterior}
+        {@const renderLabel = true}
         {@const anchor = regionAnchor(
           region.combination,
           region.labelX,
