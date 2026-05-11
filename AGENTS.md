@@ -1,423 +1,170 @@
-# Eunoia - Copilot Instructions
-
-**IMPORTANT**: When making changes that affect the architecture, API, or patterns described in this file, **always update this file** to reflect those changes. This file should always represent the current state of the project.
-
-## Project Overview
-
-Eunoia is a Rust library for creating Euler and Venn diagrams using various
-geometric shapes. It's a modern rewrite of the eulerr R package (which uses C++
-as backend), designed to be more flexible and support multiple language
-bindings.
-
-## Purpose
-
-Generate area-proportional Euler and Venn diagrams by:
-
-1. Computing optimal layouts using multi-dimensional scaling (MDS) with
-   fixed-size shapes
-2. Optimizing shape positions and sizes using comprehensive loss functions
-   (RegionError or stress from venneuler)
-3. Providing utilities for polygon conversion, intersection computation, and
-   label placement (poles of inaccessibility, centroids)
-
-## Supported Shapes
-
-- **Current**: Circles, Ellipses, Squares (axis-aligned), Rectangles (axis-aligned)
-- **Planned**: Rotated squares / rotated rectangles, triangles
-
-## Features
-
-### Core Features (always available)
-- Diagram specification and building
-- Layout optimization with multiple shape types
-- Loss function computation
-- Normalization and packing
-
-### Plotting Feature (optional, behind `plotting` feature flag)
-- Polygon clipping operations (intersection, union, difference, xor)
-- Region decomposition into exclusive polygons for visualization
-- Integration with i_overlay library for robust boolean operations
-- Support for all shape types (circles, ellipses, etc.)
-
-To enable: Add `features = ["plotting"]` to your Cargo.toml or use `--features plotting`
-
-## Target Bindings
-
-- **WebAssembly (WASM)** — published as
-  [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) on npm; built
-  from `crates/eunoia-wasm/` via `task pack-npm` and lives in this repository
-- **R package** (thin wrapper) - separate repository (planned)
-- **Python package** (thin wrapper) - separate repository (planned)
-- **Julia package** (thin wrapper) - separate repository (planned)
-
-**Note**: Only WASM/npm bindings are maintained in this repository.
-Language-specific bindings (R, Python, Julia) live in their own dedicated
-repositories as thin wrappers around this core library.
-
-## Architecture
-
-The project uses a **Cargo workspace** with separate crates:
-
-### Core Library (`crates/eunoia/`)
-
-Pure Rust library with no platform-specific dependencies.
-
-#### Core Modules
-
-- **`lib.rs`**: Main library interface
-- **`spec/`**: Diagram specification and construction
-  - `combination.rs`: Set combination representation
-  - `input.rs`: Input type specification (disjoint vs union)
-  - `spec_builder.rs`: DiagramSpecBuilder for fluent API
-- **`geometry/`**: Geometric primitives and operations
-  - `primitives/`: Basic geometric elements
-    - `point.rs`: 2D point representation
-    - `line.rs`: Line representation
-  - `traits.rs`: Trait definitions for geometric capabilities
-    - Composable traits: `Distance`, `Area`, `Centroid`, `Perimeter`, `BoundingBox`
-    - `Closed`: Trait for closed shapes (bundles geometric properties + spatial relations)
-    - `DiagramShape`: Trait for shapes usable in diagrams (adds optimization methods)
-  - `shapes/`: Shape implementations
-    - `circle.rs`: Circle shape implementation
-    - `ellipse.rs`: Ellipse shape implementation (exact conic intersections, incl. 3+)
-    - `rectangle.rs`: Axis-aligned rectangle. Doubles as a primitive (used by every shape's `BoundingBox` impl) and as a `DiagramShape` (4 params: `[x, y, width, height]`). Geometric and optimizer encodings differ — see the [`Rectangle`](#rectangle-vs-square) bullet below.
-    - `square.rs`: Square shape implementation (axis-aligned, 3 params: `[x, y, side]`; n-way intersections are exact axis-aligned rectangles)
-    - `polygon.rs`: Polygon primitive for visualization output
-  - `operations/`: Specialized geometric operations (currently `overlaps.rs`)
-  - `projective.rs`: Projective geometry helpers
-  - `diagram.rs`: Diagram-specific logic (region discovery, area computation)
-- **`fitter/`**: Layout optimization
-  - `layout.rs`: Layout representation (result of fitting)
-  - `initial_layout.rs`: Initial MDS-based layout computation
-  - `final_layout.rs`: Final shape-specific optimization (with pluggable optimizer)
-  - `clustering.rs`: Disjoint-cluster detection for post-fit normalization
-  - `normalize.rs`: Rotation/centering of fitted layouts
-  - `packing.rs`: Skyline packing of multiple disjoint clusters
-- **`plotting/`** (optional, behind `plotting` feature): Polygon-based visualization utilities
-  - `clip.rs`: Polygon clipping operations using i_overlay
-  - `regions.rs`: Region decomposition into exclusive polygons
-- **`loss.rs`**: Loss functions (SSE, RMSE, stress, region errors, DiagError, etc.)
-- **`error.rs`**: Error types
-- **`math/`**: Mathematical utilities (`linear_algebra.rs`, `polynomial.rs`)
-- **`constants.rs`**: Shared numeric constants
-
-### WASM Bindings (`crates/eunoia-wasm/`)
-
-WebAssembly bindings that depend on the core library.
-
-- Thin wrapper around `eunoia` crate
-- Exports JavaScript-compatible API
-- Handles serialization/deserialization for web use
-- Built with `wasm-pack` to generate TypeScript bindings
-
-### Web Application (`web/`)
-
-Interactive diagram viewer built with Svelte + TypeScript.
-
-- **`src/`**: Svelte components and TypeScript code
-  - `lib/DiagramViewer.svelte`: Main UI for diagram specification and
-    visualization
-- **`pkg/`**: Generated WASM bindings (built with wasm-pack)
-- Uses Vite (rolldown-vite) for development and building
-- Tailwind CSS for styling
-- Real-time diagram updates as specification changes
-
-### Optimization Strategy
-
-1. **Initial Layout (positional MDS, shape-aware target distances)**:
-   - Compute pairwise relationships between sets
-   - For each pair, ask the shape `S` to invert its own pairwise overlap formula via `DiagramShape::mds_target_distance(area_i, area_j, target_overlap)`. The MDS solver itself optimises 2D positions only; sizes are derived from set areas.
-   - Circle: closed-form lens-area inversion (Brent root-finding on the analytic overlap formula).
-   - Ellipse: same as Circle — the MDS warm-start treats every ellipse as a circle of equal area.
-   - Square (axis-aligned): inverts overlap along the diagonal `|dx| = |dy|`, giving `d = √2 · ((s_i + s_j)/2 − √target_overlap)`.
-   - Rectangle (axis-aligned): same diagonal-direction inversion as Square — the MDS phase treats each rectangle as a square of equal area; aspect ratio is recovered by the final stage.
-   - This produces initial `(x, y)` positions per set, consistent with each shape's own overlap geometry.
-
-2. **Convert to Shape-Specific Optimizer Parameters**:
-   - MDS positions plus the size derived from the set area are mapped to target shape parameters via `DiagramShape::optimizer_params_from_circle()`. The output is the *optimizer* encoding (per-impl, possibly non-geometric), **not** geometric values — see the `DiagramShape` rustdoc.
-   - Circle: `[x, y, r]` → `[x, y, r]` (identity, linear)
-   - Ellipse: `[x, y, r]` → `[x, y, ln(r), ln(r), 0.0]` (semi-axes in **log space** for the unbounded LM solver)
-   - Square: `[x, y, r]` → `[x, y, r·√π]` (equal-area mapping — the resulting square has area `πr²`)
-   - Rectangle: `[x, y, r]` → `[x, y, ln(π·r²), 0.0]` (square of equal area; `ln(area) + ln(ratio)` optimizer encoding decouples size from aspect ratio)
-
-3. **Final Optimization (shape-specific)**:
-   - Optimizes actual shape parameters (not circles!)
-   - Uses `DiagramShape::compute_exclusive_regions()` for exact area computation
-     (exact conic/polysegments for circles and ellipses, including 3+ way)
-   - Minimizes a selectable loss function via argmin
-     (Nelder-Mead, L-BFGS, TrustRegion)
-   - Constructs final shapes via `DiagramShape::from_optimizer_params()`. FFI / downstream consumers that want **geometric** values should use the per-shape accessors (`Ellipse::semi_major`, `Ellipse::semi_minor`, `Circle::radius`, …), **not** `to_optimizer_params()`.
-
-4. **Layout Finalization**:
-   - Return fitted shapes with computed areas
-   - Normalize, rotate, center, and skyline-pack disjoint clusters
-   - Polygon conversion available via `Polygonize` trait and `plotting` feature
-   - Label fit-checks via `fit_label_in_region` / `fit_labels_in_regions` (caller supplies label dimensions; eunoia returns interior anchor or omits the region)
-   - TODO: Global-search fallback (GenSA-equivalent) for hard 3-ellipse cases
-
-## Code Standards
-
-### Documentation
-
-- **Required**: All public functions, structs, traits, and modules must have
-  rustdoc comments
-- Use `///` for item documentation and `//!` for module-level docs
-- Include examples in doc comments where appropriate
-- Target: 100% documentation coverage for public APIs
-
-### Testing
-
-- **Required**: Unit tests for all functions
-- Use `#[cfg(test)]` modules in each file
-- Target: 100% code coverage
-- Test edge cases, especially for geometric operations (tangent circles,
-  containment, no intersection, etc.)
-- Property-based testing for geometric invariants (consider using `proptest`
-  crate)
-
-### Code Style
-
-- Follow Rust idioms and conventions
-- Use descriptive variable names
-- Prefer explicit types for clarity in geometric code
-- Keep functions focused and single-purpose
-- Use traits for polymorphism over shapes
-- **Use Rust Edition 2021** workspace-wide (set at the root `Cargo.toml`; both `eunoia` and `eunoia-wasm` inherit via `edition.workspace = true`). The pin is for compatibility with rextendr (R's MSRV is 1.84.1).
-- **Use modern module organization** (Rust 2018+): `module.rs` + `module/`
-  instead of `module/mod.rs`
-- **Format code with `cargo fmt`** before committing
-- **All code must pass
-  `cargo clippy --all-targets --all-features -- -D warnings`**
-
-### Module Organization
-
-Use the Rust 2018+ module system:
-
-```
-src/
-├── lib.rs
-├── spec.rs              # Module definition
-├── spec/                # Submodules of spec
-│   ├── spec_builder.rs
-│   ├── combination.rs
-│   └── input.rs
-├── geometry.rs          # Module definition
-├── geometry/            # Submodules of geometry
-│   ├── primitives.rs    # Primitives module definition
-│   ├── primitives/
-│   │   ├── point.rs
-│   │   └── line.rs
-│   ├── traits.rs        # All trait definitions
-│   ├── shapes.rs        # Shapes module definition
-│   ├── shapes/
-│   │   ├── circle.rs
-│   │   └── rectangle.rs
-│   ├── operations.rs
-│   ├── operations/
-│   └── diagram.rs
-├── fitter.rs            # Module definition
-└── fitter/              # Submodules of fitter
-    ├── initial_layout.rs
-    └── final_layout.rs
-```
-
-**Do NOT use** the old `mod.rs` style:
-
-```
-src/
-├── spec/
-│   └── mod.rs          # ❌ Avoid this pattern
-```
-
-### Commit Guidelines
-
-- Use [Conventional Commits](https://www.conventionalcommits.org/) format
-- Commit message format: `<type>(<scope>): <description>`
-- Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- Examples:
-  - `feat(geometry): add ellipse shape implementation`
-  - `fix(circle): correct intersection area calculation`
-  - `docs(api): update DiagramBuilder examples`
-  - `test(shapes): add edge cases for containment`
-- Breaking changes: Add `!` after type/scope or `BREAKING CHANGE:` in footer
-- Keep commits atomic and focused on a single concern
-
-### Versioning
-
-- Follow [Semantic Versioning](https://semver.org/) (SemVer)
-- Version format: `MAJOR.MINOR.PATCH`
-- MAJOR: Incompatible API changes
-- MINOR: Backwards-compatible new functionality
-- PATCH: Backwards-compatible bug fixes
-- Pre-1.0.0: API is not yet stable (current status)
-
-### Error Handling
-
-- Use `Result<T, E>` for fallible operations
-- Define custom error types as needed
-- Avoid panics in library code; use `?` operator and return errors
-
-### Performance Considerations
-
-- Geometric calculations are performance-critical
-- Prefer stack allocation where possible
-- Consider SIMD optimization for bulk operations (future)
-- Profile before optimizing
-
-## Development Guidelines
-
-### Adding New Shapes
-
-To add a new shape type (e.g., Ellipse):
-
-1. **Create module in `src/geometry/shapes/`**:
-   ```rust
-   // src/geometry/shapes/ellipse.rs
-   use crate::geometry::primitives::Point;
-   use crate::geometry::shapes::Rectangle;
-   use crate::geometry::traits::{
-       Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter,
-   };
-   
-   pub struct Ellipse {
-       center: Point,
-       semi_major: f64,
-       semi_minor: f64,
-       angle: f64,  // rotation angle in radians
-   }
-   ```
-
-2. **Implement the component traits**:
-   ```rust
-   impl Area for Ellipse {
-       fn area(&self) -> f64 { ... }
-   }
-   
-   impl Centroid for Ellipse {
-       fn centroid(&self) -> (f64, f64) { ... }
-   }
-   
-   impl Distance for Ellipse {
-       fn distance(&self, other: &Self) -> f64 { ... }
-   }
-   
-   impl Perimeter for Ellipse {
-       fn perimeter(&self) -> f64 { ... }
-   }
-   
-   impl BoundingBox for Ellipse {
-       fn bounding_box(&self) -> Rectangle { ... }
-   }
-   
-   impl Closed for Ellipse {
-       fn contains(&self, other: &Self) -> bool { ... }
-       fn contains_point(&self, point: &Point) -> bool { ... }
-       fn intersects(&self, other: &Self) -> bool { ... }
-       fn intersection_area(&self, other: &Self) -> f64 { ... }
-       fn intersection_points(&self, other: &Self) -> Vec<Point> { ... }
-   }
-   
-   impl DiagramShape for Ellipse {
-       fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
-           // Implement exact intersection geometry for this shape.
-           // Prefer exact conic/polysegments (as done for Circle and Ellipse)
-           // over Monte Carlo — Monte Carlo should only be a last-resort
-           // fallback for numerically pathological cases.
-       }
-       
-       fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64> {
-           // Returns the optimizer encoding. Identical to the geometric
-           // encoding here (linear); the real `Ellipse` impl wraps the
-           // semi-axes with `ln` instead.
-           vec![x, y, radius, radius, 0.0]
-       }
-
-       fn n_params() -> usize {
-           5  // x, y, semi_major, semi_minor, angle
-       }
-
-       fn from_params(params: &[f64]) -> Self {
-           // Geometric encoding — what FFI / external callers see.
-           Ellipse::new(
-               Point::new(params[0], params[1]),
-               params[2],  // semi_major (linear)
-               params[3],  // semi_minor (linear)
-               params[4],  // angle
-           )
-       }
-
-       fn to_params(&self) -> Vec<f64> {
-           vec![self.center.x(), self.center.y(),
-                self.semi_major, self.semi_minor, self.rotation]
-       }
-
-       // `from_optimizer_params` / `to_optimizer_params` default to the
-       // geometric pair. Override only if your shape needs a distinct
-       // optimizer encoding (e.g. log-space semi-axes for Ellipse).
-   }
-   ```
-
-3. **Add unit tests** covering all trait implementations
-
-4. **Export new module** in `shapes.rs`:
-   ```rust
-   pub mod ellipse;
-   ```
-
-5. **Done!** The fitter will automatically:
-   - Use circles for initial MDS layout
-   - Convert circle parameters to ellipse parameters via `optimizer_params_from_circle()`
-   - Optimize ellipse-specific parameters (x, y, a, b, angle)
-   - Use exact ellipse geometry via `compute_exclusive_regions()`
-   - Construct final ellipses via `from_optimizer_params()`
-
-The entire optimization pipeline is **shape-generic** - no changes needed to fitter code!
-
-### Geometric Operations
-
-- All shapes share a common coordinate system (`Point`)
-- All shapes implement the `DiagramShape` trait (plus component traits like
-  `Area`, `Centroid`, `Closed`, ...) defined in `geometry/traits.rs`
-- Distance calculations should handle edge cases (overlapping, containment)
-- Intersection area formulas should be numerically stable
-- Consider numerical precision issues (use appropriate tolerances)
-- Specialized operations live in `geometry/operations/` module
-
-### Optimization Code
-
-- Lives in `fitter/` module
-- Uses argmin for optimization (Nelder-Mead, L-BFGS, TrustRegion — selectable via `Optimizer`)
-- Loss functions are pluggable via `LossType` in `loss.rs` (SSE, RMSE, stress,
-  sum/max absolute, sum/max squared, region-error variants, DiagError)
-- MDS-based initial layout (`initial_layout.rs`) with outer full-pipeline
-  restarts in `fitter.rs` (parallel on native targets, sequential on WASM)
-- Region discovery uses sparse bit-mask approach for efficiency
-- Final layout computes disjoint areas using inclusion-exclusion principle
-- TODO: Global-search fallback (e.g. simulated annealing) for hard 3-ellipse cases
-
-### Web Development
-
-- **Building WASM**: `wasm-pack build --target web --out-dir web/pkg`
-- **Dev server**: `cd web && npm run dev`
-- **Building web app**: `cd web && npm run build`
-- WASM module exports:
-  - `generate_from_spec(specs: Vec<DiagramSpec>)`: Main function for fitting
-    diagrams
-  - `generate_test_layout()`: Simple test layout
-  - `compute_layout(n_sets: usize)`: Generate circular arrangement
-- Web app uses reactive Svelte components for real-time updates
-
-## API Design
-
-### Shape-Agnostic Specifications
-
-The API is designed with a clear separation of concerns:
+# Eunoia — Copilot Instructions
+
+**Keep this file current.** When changes affect architecture, public API, or
+the patterns described here, update this file in the same PR.
+
+## What is Eunoia
+
+A Rust library for area-proportional Euler and Venn diagrams. Modern rewrite
+of the eulerr R package (C++). Designed for multiple language bindings; the
+core is platform-independent and the WASM bindings live in this repo.
+
+Pipeline:
+
+1. Initial layout via positional MDS with shape-aware target distances.
+2. Final shape-specific optimization minimising a selectable loss.
+3. Post-fit normalization (cluster, rotate, centre, skyline pack).
+4. Optional polygonisation and label placement.
+
+## Supported shapes
+
+Implemented as `DiagramShape`: `Circle`, `Ellipse`, `Square` (axis-aligned),
+`Rectangle` (axis-aligned). Planned: rotated rectangles, triangles.
+
+Geometric vs optimizer encodings (`to_params` / `to_optimizer_params`):
+
+| Shape     | Geometric           | Optimizer encoding                   |
+| --------- | ------------------- | ------------------------------------ |
+| Circle    | `[x, y, r]`         | identity                             |
+| Ellipse   | `[x, y, a, b, φ]`   | `[x, y, ln a, ln b, φ]`              |
+| Square    | `[x, y, side]`      | identity                             |
+| Rectangle | `[x, y, w, h]`      | `[x, y, ln(w·h), ln(w/h)]`           |
+
+FFI / external callers want the geometric encoding (`to_params`,
+`from_params`, and per-shape accessors). The optimizer encoding is internal
+to the fitter.
+
+For squares and rectangles, every n-way intersection is itself an
+axis-aligned rectangle, so `compute_exclusive_regions` is exact in closed
+form. For circles and ellipses the intersections use exact
+conic/polysegments, including 3+ way.
+
+## Workspace layout
+
+Cargo workspace, edition 2021, MSRV 1.84.1 (pinned for rextendr / R
+compatibility). Workspace version is shared.
+
+- `crates/eunoia/` — core library, no platform deps
+- `crates/eunoia-wasm/` — wasm-bindgen wrapper (`cdylib`+`rlib`), depends on
+  the core with `features = ["wasm", "plotting"]`
+- `ts/` — hand-written TypeScript surface (`euler`, `venn`, `Layout`,
+  `placeLabelsForRegions`, …) compiled to `npm/` by `prepare-package.mjs`
+- `npm/` — generated, gitignored; published as `@jolars/eunoia`
+- `web/` — SvelteKit app (Svelte 5, Vite/rolldown-vite, Tailwind v4),
+  consumes `@jolars/eunoia` via `file:../npm`
+
+### Core modules (`crates/eunoia/src/`)
+
+- `spec/` — `Combination`, `InputType` (`Exclusive` / `Inclusive`),
+  `DiagramSpecBuilder` (shape-agnostic; complement via `.complement(value)`)
+- `geometry/`
+  - `primitives/` — `Point`, `Line`, `LineSegment`
+  - `projective/` — projective helpers (`point`, `line`, `conic`)
+  - `traits.rs` — `Area`, `Centroid`, `Distance`, `Perimeter`,
+    `BoundingBox`, `Closed`, `DiagramShape`
+  - `shapes/` — `circle`, `ellipse`, `square`, `rectangle`, `polygon`
+  - `operations/overlaps.rs`
+  - `diagram.rs` — region discovery and inclusion–exclusion combiner
+- `fitter/`
+  - `initial_layout.rs` — MDS warm-start, `InitialSampler`, `MdsSolver`
+  - `final_layout.rs` — `Optimizer`, dispatch
+  - `cmaes.rs` — inline purecma-style CMA-ES (no extra dep)
+  - `clustering.rs`, `normalize.rs`, `packing.rs`
+  - `layout.rs` — `Layout<S>`, `Layout::container()`, quality metrics
+  - `corpus_quality.rs`, `synthetic_groundtruth.rs` — corpus-driven evaluation
+- `loss.rs` — `LossType` (`SumSquared` default, `Stress`, region-error and
+  smoothed variants, etc.)
+- `plotting/` (feature `plotting`) — `clip`, `regions`, `placement`,
+  `inscribed`, `plot_data`
+- `venn.rs` — canonical Venn templates (circles n≤3, Wilkinson/Edwards
+  ellipses n∈{4,5}, axis-aligned squares n∈{2,3}, rectangles n∈{1,2,3});
+  used as warm-start slot 0 in `Fitter`
+- `math/`, `error.rs`, `constants.rs`
+
+## Optimization strategy
+
+1. **MDS initial layout** — sizes derived from set areas; only `(x, y)` is
+   optimised. Each shape inverts its own pairwise overlap formula via
+   `DiagramShape::mds_target_distance`. Ellipses, squares, and rectangles
+   all warm-start through their equal-area circle/square approximation.
+
+2. **Optimizer parameter conversion** — `DiagramShape::optimizer_params_from_circle`
+   maps `[x, y, r]` into the per-shape optimizer encoding (see table above).
+
+3. **Final optimization** — argmin-driven, selectable via `Optimizer`:
+   - `LevenbergMarquardt`
+   - `Lbfgs`
+   - `NelderMead`
+   - `CmaEsLm` *(default)* — plain LM first; if it stays above
+     `Fitter::cmaes_fallback_threshold` (default `1e-3` on
+     `NormalizedSumSquared`), runs a CMA-ES → LM polish and keeps the lower
+     loss. Strictly non-regressing vs LM.
+
+   `MdsSolver` for the initial stage: `Lbfgs` (default), `TrustRegion`,
+   `NewtonCg`, `LevenbergMarquardt`.
+
+   Cycling pools available via `Fitter::initial_solver_pool` /
+   `Fitter::optimizer_pool`.
+
+4. **Analytical gradients** for circles and ellipses with `NormalizedSumSquared`
+   / `SumSquared`, derived from boundary-velocity on a CCW arc decomposition
+   and chained through inclusion–exclusion. Rectangles have analytical
+   edge-velocity gradients with full chain-rule into the log-area / log-ratio
+   basis. Falls back to central FD when the loss has no analytical form.
+
+5. **Venn warm-start** in slot 0 of `n_restarts` — replaces (not adds to)
+   the first random restart with the canonical Venn template for the shape
+   and `n_sets`. Auto-skipped when out of range or when the spec has any
+   disjoint pair (Venn topology requires all regions positive).
+
+## Complement / "container" support
+
+Opt-in via `DiagramSpecBuilder::complement(value)`. The fitter jointly
+optimises an axis-aligned bounding `Rectangle` (4 trailing optimizer params
+`[x, y, ln(area), ln(ratio)]`) so its area minus the (clipped) union of
+shapes matches the complement target. All four shapes implement
+`compute_exclusive_regions_clipped` and `compute_exclusive_regions_clipped_with_gradient`
+with analytical boundary-velocity gradients on the inside-container
+sub-arcs / box edges. Multi-cluster + complement is rejected by design (one
+universe per diagram). `Layout::container()` exposes the fitted rectangle;
+container-aware `Layout::normalize` translates shapes + container together
+(rotation/mirror/pack are out of scope — the container must stay
+axis-aligned). `VennDiagram::complement(value)` attaches a non-proportional
+padded-bounding-box container as a visual frame.
+
+## Label placement
+
+Two-axis strategy (`plotting/placement.rs`):
+
+- `InteriorPolicy::{Strict, Loose}` — only `Strict` is implemented
+- `ExteriorPolicy::{None, Raycast { margin }, ForceDirected { margin, iterations }}` —
+  `Raycast` and `ForceDirected` are implemented; `None` returns
+  `Err(PlacementError::Unimplemented)`
+
+Default is `Strict + Raycast` with a per-label proportional margin
+(`0.5 * max(label_w, label_h)`). Both exterior strategies work against the
+union polygon of the fitted shapes. Force-directed warm-starts from the
+raycast positions and iterates a soft spring plus three repulsive
+constraints: label–label AABB, union-polygon containment along the raycast
+direction, and label–foreign-region repulsion.
+
+Lower-level primitives: `fit_label_in_region` / `fit_labels_in_regions`
+(predicate — interior anchor or omit), `largest_inscribed_rect`,
+`PlotData::region_anchors` / `set_anchors` (hole-aware POI).
+
+Resize loops: `placements_bbox` returns the union AABB so callers can extend
+the canvas; native callers can use `place_labels_to_fixed_point` for the
+measure-then-replace loop.
+
+## API design
+
+Specifications are shape-agnostic; shape is chosen when constructing the
+`Fitter`:
 
 ```rust
 use eunoia::{DiagramSpecBuilder, Fitter, InputType};
 use eunoia::geometry::shapes::Circle;
 
-// 1. Build specification (shape-agnostic)
 let spec = DiagramSpecBuilder::new()
     .set("A", 5.0)
     .set("B", 2.0)
@@ -426,286 +173,115 @@ let spec = DiagramSpecBuilder::new()
     .build()
     .unwrap();
 
-// 2. Choose shape type when fitting
-let layout = Fitter::<Circle>::new(&spec)
-    .seed(42)
-    .fit()
-    .unwrap();
-
-// 3. Easy to try different shapes with same spec
-// let layout = Fitter::<Ellipse>::new(&spec).fit().unwrap();
+let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
 ```
 
-**Key points:**
-- `DiagramSpec` is shape-agnostic (no type parameter)
-- `DiagramSpecBuilder` is shape-agnostic (no type parameter)
-- `Fitter<S>` has the shape type parameter - this is where you choose the shape
-- `Layout<S>` contains the fitted shapes (has type parameter)
-- This allows reusing the same specification with different shape types
+`InputType::Exclusive` ↔ eulerr `"disjoint"`; `InputType::Inclusive` ↔
+eulerr `"union"` (decomposed via inclusion–exclusion, rejects negative
+regions with `DiagramError::InvalidValue`).
 
-### Input types (eulerr ↔ eunoia)
+`Layout::region_error()`, `diag_error()`, `stress()`, `residuals()` expose
+named quality metrics.
 
-eunoia uses `InputType::Exclusive` and `InputType::Inclusive`. The mapping to
-eulerr's `input` argument is:
+## Adding a new shape
 
-| eulerr           | eunoia                    | meaning                           |
-| ---------------- | ------------------------- | --------------------------------- |
-| `"disjoint"`     | `InputType::Exclusive`    | Values are disjoint subset sizes. |
-| `"union"`        | `InputType::Inclusive`    | Values are full set sizes (unions). |
+1. Create `crates/eunoia/src/geometry/shapes/<name>.rs`. Implement the
+   component traits (`Area`, `Centroid`, `Distance`, `Perimeter`,
+   `BoundingBox`, `Closed`) and `DiagramShape`. Mirror an existing impl
+   that's closest in topology — `Square`/`Rectangle` for polygonal,
+   `Circle`/`Ellipse` for curved.
+2. Implement `compute_exclusive_regions` exactly when possible. Prefer
+   exact conic/polysegment or closed-form rectangle intersection over Monte
+   Carlo (last-resort fallback only).
+3. Override `to_optimizer_params` / `from_optimizer_params` /
+   `optimizer_params_from_circle` only if the optimizer needs a different
+   encoding from the geometric one. Defaults delegate to `to_params` /
+   `from_params`.
+4. Export from `geometry/shapes.rs`; add unit tests.
 
-`InputType::Inclusive` performs inclusion–exclusion decomposition and returns
-`DiagramError::InvalidValue` if any resulting exclusive area is negative
-(matching eulerr's `fit_diagram.R` union-input validation).
+The fitter is shape-generic — no fitter changes needed. To get the canonical
+Venn warm-start, add an arm to `crate::venn::VennDiagram` and the dispatch
+in `fitter.rs::venn_warm_start_params` (TypeId-based because per-shape
+encodings aren't interchangeable).
 
-## Current Status
+## Conventions
 
-- ✅ Cargo workspace with separate crates for core and WASM
-- ✅ Basic project structure
-- ✅ Point-based coordinate system (`Point`)
-- ✅ **Shape trait with generic parameter system**
-- ✅ Circle implementation with full geometric operations and exact area computation
-- ✅ Rectangle implementation: doubles as a bounding-box primitive and as an axis-aligned `DiagramShape` (4 params: `[x, y, width, height]` geometric / `[x, y, ln(area), ln(ratio)]` optimizer where `area = w·h`, `ratio = w/h`). The optimizer encoding rotates `(ln w, ln h)` 45° in log-space so the size axis (constrained by singleton targets) and the aspect-ratio axis (constrained only by overlap geometry) decouple, giving the unbounded LM/CMA-ES solver a much better-conditioned Hessian than `[ln w, ln h]` would. See the `Rectangle` bullet below.
-- ✅ Line and LineSegment primitives
-- ✅ **Trait-based design with generic `Shape` trait**
-  - `compute_exclusive_regions()` - Shape-specific exact area computation
-  - `to_params()` / `from_params()` - Round-trip the shape through its **geometric** parameter encoding (linear values throughout — what FFI / external callers want)
-  - `to_optimizer_params()` / `from_optimizer_params()` / `optimizer_params_from_circle()` - The optimizer-internal encoding (identical to geometric for Circle/Square; **log-space semi-axes** for Ellipse). Default impls delegate to the geometric pair, so most shapes only implement `to_params`/`from_params`.
-  - `n_params()` - Number of parameters per shape (same length in both encodings)
-- ✅ DiagramSpecBuilder with fluent API for input (shape-agnostic)
-- ✅ **Shape-generic fitter with two-phase optimization**
-  - Specification is shape-agnostic (no type parameter on DiagramSpec)
-  - Shape type is chosen when creating Fitter (`Fitter::<Circle>::new(&spec)`)
-  - Initial layout: MDS with circles (always uses circles)
-  - Final optimization: Shape-specific parameter optimization
-- ✅ Region error loss function with sparse region discovery
-- ✅ Final layout with disjoint area computation using inclusion-exclusion
-- ✅ Layout representation with fitted areas (generic over shape type)
-- ✅ WASM bindings in separate crate (`crates/eunoia-wasm/`)
-- ✅ Web application (Svelte 5 + TypeScript + Vite + Tailwind v4)
-- ✅ Interactive diagram viewer with real-time updates
-- ✅ Comprehensive unit tests (325 unit tests passing)
-- ✅ Full documentation with doc tests (60 doc tests passing)
-- ✅ N-way intersection area computation implemented (exact for circles and ellipses, via conic/polysegments)
-- ✅ Random seed support for reproducible layouts
-- ✅ Stress loss function (venneuler-style) implemented, plus many other loss variants
-- ✅ Ellipse shape implemented with exact 3+ way intersections
-- ✅ Axis-aligned `Square` shape (`[x, y, side]`, 3 params). `compute_exclusive_regions` is exact in closed form: the n-way intersection of axis-aligned squares is itself one axis-aligned rectangle, so per-region areas come from `(max·xs_min, min·xs_max) × (max·ys_min, min·ys_max)` and inclusion-exclusion via the shape-generic `to_exclusive_areas` helper. MDS uses `Square::mds_target_distance`, which inverts overlap along the diagonal direction (`|dx| = |dy|`). Final-stage gradient is currently finite-difference (analytical edge-velocity derivation is a planned follow-up). Not yet wired into `examples/quality_report` (that requires adding `fittable_square` to every CorpusEntry — separate PR). Exposed via WASM bindings (`WasmSquare`, `SquareResult`, `generate_from_spec_square`, `generate_squares_as_polygons`, `generate_region_polygons_squares`) and selectable in the web app's shape picker.
-- ✅ Polygon conversion via `Polygonize` trait (+ `plotting` feature for clipping/regions)
-- ✅ Post-fit normalization: clustering, rotation, centering, skyline packing
-- ✅ Selectable final-stage optimizer (`Optimizer`: `CmaEsLm` (default), `LevenbergMarquardt`, `Lbfgs`, `NelderMead`) and selectable initial-layout MDS solver (`MdsSolver`: `Lbfgs` (default), `LevenbergMarquardt`) with cycling pool support via `Fitter::initial_solver_pool` / `Fitter::optimizer_pool`. Default final-stage pool is `[CmaEsLm]`; default MDS pool is `[Lbfgs]`.
-- ✅ Threshold-fired CMA-ES global escape as default via `Optimizer::CmaEsLm`. Inline purecma-style implementation in `fitter/cmaes.rs` (no new dependencies); plain LM runs first and the CMA-ES → LM polish step is skipped when LM lands at or below `Fitter::cmaes_fallback_threshold` (default `1e-3` on `NormalizedSumSquared`). Otherwise the lower-loss of {plain LM, CMA-ES → LM polish} is returned, so the path is strictly non-regressing vs LM. Closes specs LM gets stuck on (`issue92_3_set_dropped_pair`: median loss 1.3e-4 → 1.5e-29; `random_4_set`: 8.5e-3 → 4.1e-3) at \~3.8× ellipse / \~5× circle wall time vs the previous LM default; easy specs pay no extra cost.
-- ✅ Named quality metrics on `Layout`: `region_error()`, `diag_error()`, `stress()` (β-scaled venneuler form), `residuals()`.
-- ✅ Canonical Venn warm-start in slot 0 of `n_restarts` (always-on, no opt-in flag). Builds full shape parameters from `crate::venn::VennDiagram::new(n)` (rotationally-symmetric circles for `n ≤ 3`, Wilkinson/Edwards ellipses for `n ∈ {4, 5}`, axis-aligned squares for `n ∈ {2, 3}`), scales to the spec's mean radius (circles/ellipses) or mean side length (squares), and dispatches the final-stage optimizer directly via `final_layout::optimize_from_initial`. Replaces (does not add to) slot 0; remaining 9 slots run the standard MDS path. Auto-skipped when not applicable: `n_sets > 4` for circles, `> 5` for ellipses, `> 3` for squares, any disjoint pair in the spec (Venn topology forces every region positive), or shape `S` not in {Circle, Ellipse, Square}; in those cases slot 0 stays on the random MDS path. Dispatch is by `TypeId` since the per-shape parameter encodings (`[x,y,r]` vs `[x,y,ln a, ln b, phi]` vs `[x,y,side]`) are not interchangeable. Closes `issue92_3_set_dropped_pair` ellipse fits from a basin LM-on-LM-on-CMA-ES gets stuck at (median 1.309e-4 across all `QUALITY_SEEDS`) to ~1.4e-31 across all seeds; lifts ellipse spec wins from 18 → 19 in `examples/quality_report` at ~2% wall-time cost. No-op on circles (most circle specs are out of range or already at the optimum). Helpers in `fitter.rs::venn_warm_start_params` / `fitter.rs::spec_has_disjoint_pair`.
-- ✅ Analytical final-stage gradient for **circles and ellipses** with `NormalizedSumSquared` and `SumSquared` losses. Derived from boundary-velocity (`dA/dθ = ∮_∂R (v·n) ds`) on a CCW arc decomposition of each region; chained through inclusion-exclusion to exclusive-area gradients. Wired into `DiagramCost::gradient` and used transparently by L-BFGS / CG / TrustRegion. Falls back to central finite differences when the loss doesn't expose an analytical gradient. ~12-32× faster on circles (n=3 → n=8), ~14-32× faster on ellipses (gradient call only). Boundary builders: `geometry/shapes/circle.rs::region_boundary_arcs` (3 params/shape) and `geometry/shapes/ellipse.rs::region_boundary_arcs_ellipse` (5 params/shape, `t = atan2(v·a, u·b)` parameterisation, with index tiebreaker for boundary-coincident ellipses). Shared IE-gradient combiner in `geometry/diagram.rs::to_exclusive_areas_and_gradients`; loss derivative in `loss.rs::LossType::compute_with_gradient`; trait dispatch in `geometry/traits.rs::DiagramShape::compute_exclusive_regions_with_gradient`.
-- ✅ Axis-aligned `Rectangle` shape (`[x, y, w, h]` geometric; `[x, y, ln(w·h), ln(w/h)]` optimizer). `compute_exclusive_regions` mirrors `Square`: the n-way intersection of axis-aligned rectangles is itself one axis-aligned rectangle, exact in closed form. Analytical edge-velocity gradient with full chain-rule into the log-area / log-ratio basis (`compute_exclusive_regions_with_gradient_rectangles` in `geometry/shapes/rectangle.rs`); FD-verified to ~1e-7 in smooth configurations and ~1e-5 with edge ties. MDS uses `Rectangle::mds_target_distance` (same diagonal-direction inversion as Square, treating rectangles as equal-area squares — the final stage refines aspect ratio). Canonical Venn warm-start at `n ∈ {1, 2, 3}` (square footprint, ratio = 1) via `VENN_SEED_MAX_SETS_RECTANGLE`. Wired into `examples/quality_report` (29-entry corpus, all `Fittable::Normal`), into the WASM surface (`WasmRectangle`, `RectangleResult`, `generate_from_spec_rectangle`, `generate_rectangles_as_polygons`, `generate_region_polygons_rectangles`), the npm wrapper, and the web app's shape picker.
-- ✅ Complement / "container" support — opt-in via `DiagramSpecBuilder::complement(value)`. The fitter jointly optimises an axis-aligned bounding `Rectangle` (4 trailing optimizer params `[x, y, ln(area), ln(ratio)]`) so its area minus the union of the (clipped) shapes matches the complement target. Wired across every supported shape — Circle, Ellipse, Square, and Rectangle each implement `compute_exclusive_regions_clipped` and `compute_exclusive_regions_clipped_with_gradient` with analytical boundary-velocity gradients on the inside-container sub-arcs / box edges. Multi-cluster + complement is rejected by design (one universe per diagram; see the comment in `fitter.rs::fit_with_optimization`). `Layout::container()` exposes the fitted rectangle; container-aware `Layout::normalize` translates shapes + container together so the container is centred at the origin (rotation/mirror/pack are out of scope — the container must stay axis-aligned). `VennDiagram::complement(value)` attaches a non-proportional padded-bounding-box container as a visual frame (Venn is topological, no fitting). Exposed end-to-end through the WASM surface (`PolygonResult.container`, `WasmRegionPolygons.container`, optional `complement` argument on every `generate_*_as_polygons` / `generate_region_polygons_*` / `generate_venn_*` entry point) and the npm wrapper (`euler({ complement })`, `venn({ complement })`, `Layout.container`). Web app exposes a `Complement (universe)` toggle in the spec editor that draws the container as a dashed frame.
-- ❌ Rotated squares / rotated rectangles not implemented
-- ❌ Triangle shape not implemented
-- ✅ Label-anchor + label-fit utilities. Hole-aware POI per region and per set (`PlotData::region_anchors`, `PlotData::set_anchors`, `RegionPolygons::label_points`), largest inscribed axis-aligned rectangle for an aspect ratio (`largest_inscribed_rect` in `crates/eunoia/src/plotting/inscribed.rs`), and a per-region label-fit predicate (`fit_label_in_region` / `fit_labels_in_regions`) that tests whether an axis-aligned `w × h` box fits inside a region's polygon (with holes) and returns the box centre on success. Exposed end-to-end via WASM as `compute_region_label_placements(specs, input_type, shape, n_vertices, sizes_json, …)` and via the npm wrapper as `placeRegionLabels({ sets, sizes, … })`. Returns `Some(anchor)` only when the label fits; callers (eulerr, future Python/Julia, the web app) handle exterior placement / leader lines / smaller-font fallback themselves. Uses the existing radial-conservative inscribed-rectangle bound, so a "doesn't fit" can be a false negative for very anisotropic regions — a directional-clearance solver is a planned follow-up (already noted in `largest_inscribed_rect`'s rustdoc).
-- ✅ Strategy-driven label placement (`place_labels` in `crates/eunoia/src/plotting/placement.rs`). Always returns a position per region with a [`PlacementKind`] discriminator (`Interior`, `InteriorOverflow`, `ExteriorRaycast`, `ExteriorForceDirected`); on exterior placements, the returned `LabelPlacement.tether` points back at the region's POI for leader-line drawing. Strategy is two-axis (`InteriorPolicy::{Strict, Loose}` × `ExteriorPolicy::{None, Raycast { margin }, ForceDirected { margin, iterations }}`); default is `Strict + Raycast` with a per-label proportional margin (`0.5 * max(label_w, label_h)`). `Strict + Raycast` and `Strict + ForceDirected` are implemented end-to-end; `Loose` and `None` return `Err(PlacementError::Unimplemented)` so callers can pattern-match and fall back. Both the initial `Raycast` placement and the `ForceDirected` containment work against the **union polygon** of the fitted shapes (built via `polygon_union_many` + `classify_into_pieces` once per `place_labels` call). Clearance is a per-vertex SAT check: for each polygon vertex `(px, py)`, compute the t-interval on which the `(half_w + margin, half_h + margin)`-expanded label AABB centred at `poi + t·dir` contains the vertex, and take the max `t_in_hi` over all vertices. That folds the label's full footprint — width *and* height — into the clearance test, so curving boundaries (notably ellipses on diagonal rays) can't slice into the perpendicular extent of the label. For a centred circle/ellipse the controlling vertex coincides with the ray-exit point so the result is still tight on diagonals; for off-centre bulges the perpendicular-slab vertex catches the closer point. Falls back to the AABB envelope (`raycast_anchor` / `bbox_push_along`) when the union pass produces no pieces. The `ForceDirected` solver warm-starts from the raycast positions, then iterates a soft spring (back to home) plus three repulsive constraints: label-vs-label AABB overlap, union-polygon containment along the raycast direction, and label-vs-foreign-region polygon repulsion via signed-clearance + closest-boundary-point on each ring. Per outer iteration the label-label sweep loops until disjointness so spring re-overlap doesn't leak into the converged result; default cap is 200 outer iterations (`DEFAULT_FORCE_DIRECTED_ITERATIONS`). Diagram bbox = container if `Some`, else union of region piece outers (still used for the fallback path and for the canvas-extent helper). Direction tiebreak when POI ≈ centroid uses `principal_axis(largest_piece)` (gated on elongation ≥ 1.05); fully isotropic regions fall back to `+y`. Exposed via WASM as `place_region_labels(polygons_json, container_json, sizes_json, strategy_json)` (polygon-handle, no re-fit; `strategy_json` accepts `iterations` for the force-directed cap) and via the npm wrapper as `placeLabelsForRegions({ regions, container?, sizes, strategy? })`. The web demo (`DiagramSvg.svelte`) renders every label at its returned anchor and draws a leader line for both exterior kinds; the style picker lets users switch between raycast and force-directed exteriors. Predicate `fit_labels_in_regions` stays as a separate primitive — same hole-aware inscribed-rect call, different "omit on miss" semantics. Reconstructing decomposed regions from FFI is supported via `RegionPolygons::from_map` (caller-validated; production code should still go through `decompose_regions`). Resize loops: `placements_bbox(placements, sizes) -> Option<Rectangle>` (Rust + WASM `placements_bbox` + npm `placementsBbox`) returns the union AABB of every label box, so callers can extend the canvas to cover exterior labels. Native Rust callers can also use `place_labels_to_fixed_point(regions, container, initial_sizes, strategy, measure_fn, bbox_tolerance, max_iters)`, which loops `place → measure(bbox) → re-place` until the canvas short side stabilises (typical convergence: 1–3 iterations); FFI bindings drive the same loop in their host language because passing a Rust closure across the WASM/extendr boundary buys nothing.
-- ❌ C/FFI or extendr bindings for R not yet started
+- Edition 2021, MSRV 1.84.1 (workspace-level, inherited via
+  `edition.workspace = true` / `rust-version.workspace = true`).
+- Module layout: `module.rs` + `module/`, never `module/mod.rs`.
+- All public items must have rustdoc. Include examples where useful.
+- All code must pass `cargo fmt` and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+- Use `Result<T, E>`; library code does not panic.
+- Tests live in `#[cfg(test)]` modules in the file under test. Property
+  tests use `proptest`.
+- Conventional Commits (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`,
+  …; `!` or `BREAKING CHANGE:` for breaks). Atomic commits.
+- SemVer. Pre-1.0.0, so breaking changes are acceptable.
 
 ## Dependencies
 
-### Core Library (`crates/eunoia/`)
+Core (`crates/eunoia/`): `nalgebra` 0.32, `argmin` 0.10, `argmin-math` 0.4
+(`nalgebra_v0_32`), `levenberg-marquardt` 0.13, `finitediff`,
+`polylabel-mini`, `num-complex`, `log`, `rand` 0.9, `i_overlay` ~2.0
+(optional, `plotting`), `rayon` (non-wasm only).
 
-Core dependencies (platform-independent):
+Features: `wasm` (forwards to `argmin/wasm-bindgen`), `plotting`
+(`i_overlay`), `corpus` (exposes `test_utils::corpus` to example binaries —
+internal, not part of the public contract).
 
-- **`nalgebra`** (0.33) - Linear algebra for MDS and matrix operations
-- **`argmin`** (0.11.0) - Optimization algorithms (gradient-based and
-  derivative-free)
-- **`argmin-math`** (0.5.1) - Math support for argmin with nalgebra
-- **`rand`** (0.9) - Random number generation
-- Standard library for basic operations
+WASM (`crates/eunoia-wasm/`): `wasm-bindgen` 0.2, `serde` 1.0,
+`serde-wasm-bindgen` 0.6, `serde_json` 1.0, `console_error_panic_hook`,
+`web-sys`, `getrandom` 0.3 with `wasm_js`.
 
-### WASM Bindings (`crates/eunoia-wasm/`)
+Keep the dep footprint minimal — compile time, WASM binary size, license,
+and maintenance burden are all considerations.
 
-WASM-specific dependencies:
+## Workflows
 
-- **`eunoia`** (path dependency) - Core library
-- **`wasm-bindgen`** (0.2) - WASM bindings generation
-- **`serde`** (1.0) - Serialization framework
-- **`serde-wasm-bindgen`** (0.6) - Serde support for WASM
-- **`serde_json`** (1.0) - JSON serialization
-- **`console_error_panic_hook`** (0.1) - Better error messages in browser
-  console
-- **`web-sys`** (0.3) - Web APIs
+[Task](https://taskfile.dev) wraps the common commands. See `Taskfile.yml`:
 
-### Web Application (`web/`)
+- `task fmt` / `task fmt-check`
+- `task lint` — clippy with `-D warnings`
+- `task dev` — fmt + check + test + lint
+- `task test-debug` / `task test-quiet` / `task test-slow` (ignored tests)
+- `task coverage` / `task coverage-open`
+- `task build-release`
+- `task build-wasm` — wasm-pack only
+- `task pack-npm` — `build-wasm` + `prepare-package.mjs` (npm publish input)
 
-Web app dependencies:
+Direct cargo:
 
-- **Svelte** (5.43.8) - UI framework
-- **TypeScript** (~5.9.3) - Type safety
-- **Vite** (rolldown-vite@7.2.5) - Build tool and dev server
-- **Tailwind CSS** (4.1.17) - Styling
-- **vite-plugin-wasm** (3.5.0) - WASM support for Vite
-- **vite-plugin-top-level-await** (1.6.0) - Top-level await support
+- `cargo build --workspace`, `cargo test -p eunoia`
+- Slow regression / stochastic tests: `cargo test --workspace -- --ignored`
+- WASM: `wasm-pack build crates/eunoia-wasm --target bundler --out-dir ../../npm`
 
-Keep the dependency footprint minimal. New dependencies should be carefully
-considered for:
+Web dev server: `cd web && npm install --include=dev && npm run dev`.
+The web app and the `ts/` build pin pnpm via `packageManager`; run
+`corepack enable` once locally. Publishing is automated by
+`.github/workflows/publish-npm.yml` on `v*` tags.
 
-- Compile time impact
-- Binary size (important for WASM)
-- Maintenance burden
-- License compatibility
+The `eunoia` test profile is built at `opt-level = 3` (with
+`debug_assertions` on) so `cargo test -p eunoia --lib` runs in ~2–3 s
+instead of ~30 s. A `profiling` profile (release + full debuginfo, no
+strip) is configured for `cargo flamegraph`.
 
-**Note**: Both crates use **Rust Edition 2021** (MSRV 1.84.1), set at the
-workspace level in the root `Cargo.toml` and inherited via
-`edition.workspace = true` / `rust-version.workspace = true` in
-`crates/eunoia/Cargo.toml` and `crates/eunoia-wasm/Cargo.toml`. The pin is
-for compatibility with rextendr (R bindings framework — R's MSRV is
-1.84.1) and should not be changed without consideration for downstream
-binding compatibility.
+## References
 
-## Working with This Codebase
+- **eulerr** (R package, C++ backend) — reference for algorithms and edge
+  cases
+- **venneuler** — stress loss
+- Classic MDS for initialisation
+- Polylabel for poles of inaccessibility
 
-### Task Runner
+## Open work
 
-The project uses [Task](https://taskfile.dev) for common development workflows.
-See `Taskfile.yml` for available tasks:
-
-- `task fmt` - Format code with rustfmt
-- `task fmt-check` - Check if code is formatted
-- `task lint` - Run clippy with strict warnings
-- `task dev` - Full development workflow (format + check + test + lint)
-- `task test-debug` - Run tests with debug logging
-- `task test-quiet` - Run tests without debug output
-- `task test-slow` - Run ignored slow regression and stochastic tests
-- `task coverage` - Generate code coverage report
-- `task coverage-open` - Generate and open coverage report
-- `task build-release` - Build optimized release binary
-
-You can run these instead of manual cargo commands for convenience.
-
-### WASM and Web App Development
-
-The npm package is published as `@jolars/eunoia` and the build output lives in
-the top-level `npm/` directory (gitignored — purely generated). The public
-TypeScript surface (`euler`, `venn`, `Layout`, …) is hand-written in
-`ts/index.ts` and compiled into `npm/index.{js,d.ts}` by
-`ts/prepare-package.mjs` (which also patches `npm/package.json`). The raw
-wasm-bindgen surface remains accessible via `@jolars/eunoia/raw`. The Svelte
-web app consumes the package via a `file:../npm` dependency. Both the web app
-and the `ts/` build pin pnpm via `packageManager` and are driven through
-corepack — run `corepack enable` once locally to opt in.
-
-Building WASM and preparing the npm package:
-
-```bash
-# Using Task (recommended)
-task pack-npm                # build-wasm + prepare-package.mjs
-
-# Just the wasm-pack build (no package.json fixup)
-task build-wasm
-
-# Or directly with wasm-pack
-wasm-pack build crates/eunoia-wasm --target bundler --out-dir ../../npm
-```
-
-Publishing (handled by `.github/workflows/publish-npm.yml` on `v*` tags):
-
-```bash
-task pack-npm
-cd npm && npm publish --access public
-```
-
-Running web dev server:
-
-```bash
-cd web
-npm install --include=dev  # First time only
-npm run dev
-```
-
-Building web app for production:
-
-```bash
-cd web
-npm run build
-```
-
-**Note**: If you encounter "omit=dev" issues with npm, run:
-
-```bash
-npm config delete omit
-```
-
-### Working with the Workspace
-
-The project uses a Cargo workspace with multiple crates:
-
-- **Build all crates**: `cargo build --workspace`
-- **Build core library only**: `cargo build -p eunoia` (default)
-- **Build WASM bindings**: `cargo build -p eunoia-wasm`
-- **Test core library**: `cargo test -p eunoia`
-- **Run ignored slow tests**: `cargo test --workspace -- --ignored`
-- **Format all crates**: `cargo fmt` (workspace-level)
-- **Lint all crates**: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-
-### When Adding Code
-
-- Write tests first or alongside implementation (TDD encouraged)
-- Document public APIs immediately
-- **Run `cargo fmt` (or `task fmt`) to format code**
-- Run `cargo test` to ensure the default fast suite passes (or `cargo test -p eunoia` for core only)
-- Run `cargo test --workspace -- --ignored` when changes touch slow regression or stochastic coverage
-- Run `cargo doc --open` to verify documentation
-- **Run `cargo clippy --workspace --all-targets --all-features -- -D warnings` (or
-  `task lint`) for linting (must pass with no warnings)**
-- Or simply run `task dev` to run the full development workflow
-
-### When Working with WASM
-
-- WASM bindings live in `crates/eunoia-wasm/`
-- Depend on core library via `eunoia = { path = "../eunoia" }`
-- Keep WASM layer thin - just exports and type conversions
-- Core logic stays in `crates/eunoia/`
-- Test WASM builds with: `wasm-pack build crates/eunoia-wasm --target web`
-
-### When Reviewing Code
-
-- Verify geometric correctness with test cases
-- Check numerical stability (divide by zero, sqrt of negative, etc.)
-- Ensure proper error handling
-- Confirm documentation is clear and accurate
-- Verify code is formatted with `cargo fmt`
-- Ensure clippy passes with `-D warnings` flag
-
-### Mathematical References
-
-- **eulerr R package** - Reference implementation with C++
-  backend
-  - Consult for algorithm details, optimization strategies, and edge case
-    handling
-- venneuler for stress loss function
-- Classic MDS algorithms for initialization
-- Poles of inaccessibility: Polylabel algorithm
-
-## Future Considerations
-
-- **Other shapes**: Triangles (ellipses and rectangles done)
-- **Tighter inscribed-rectangle solver** (directional clearance instead of the current radial bound) so wide-and-short / tall-and-narrow regions report tighter `fit_label_in_region` decisions
-- **`InteriorPolicy::Loose` and `ExteriorPolicy::None`** for the strategy-driven `place_labels` API — variants exist on the enum surface but currently return `Err(PlacementError::Unimplemented)`. (`ExteriorPolicy::ForceDirected` is now implemented; see the strategy-driven label placement bullet under "Current Status".)
-- **Exterior leader-line entry-point refinement** for `place_labels` (currently the tether is the region's POI; ideally it would be the first ray-region intersection so the leader meets the polygon edge)
-- **R bindings** via extendr in a separate repository
-- Parallel optimization for large diagrams
-- GPU acceleration for polygon operations
-- Enhanced web UI features (export SVG, PNG, customization options)
-
-## Notes
-
-- **Uses Cargo workspace** with `crates/eunoia/` (core) and `crates/eunoia-wasm/` (bindings)
-- Core library is platform-independent Rust with no WASM dependencies
-- WASM bindings are a thin wrapper in a separate crate
-- **Both crates use Rust Edition 2021** (MSRV 1.84.1) for compatibility with rextendr (R bindings); set at the workspace level and inherited via `edition.workspace = true` / `rust-version.workspace = true`
-- **Uses Semantic Versioning (SemVer)** - currently pre-1.0.0 (alpha)
-- **Breaking changes are acceptable** in pre-1.0.0 versions
-- **Uses Conventional Commits** for clear change history
-- API stability will matter after 1.0.0 for language bindings (maintained in
-  separate repositories)
-- **Only WASM bindings** will be part of this repository
-- **R, Python, and Julia bindings** will be separate repositories that depend on
-  the core `eunoia` library
-- Geometric correctness over performance initially
-- Optimize after correctness is established and tested
+- Rotated squares / rectangles, triangles
+- Tighter inscribed-rectangle solver (directional clearance instead of the
+  current radial bound)
+- `InteriorPolicy::Loose` and `ExteriorPolicy::None` for `place_labels`
+- Leader-line entry-point refinement (use first ray–region intersection
+  rather than the POI)
+- R / Python / Julia bindings (separate repositories, thin wrappers)
+- Global-search fallback for hard 3-ellipse cases beyond what CMA-ES
+  already catches
