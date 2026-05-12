@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.15.0](https://github.com/jolars/eunoia/compare/v0.14.0...v0.15.0) (2026-05-12)
+
+### Features
+- **plotting:** expose `leader_gap` ([`33704a4`](https://github.com/jolars/eunoia/commit/33704a4787986aea46597235b25b9b126469d59f))
+- **plotting:** expose `leader_end` ([`bcb11ce`](https://github.com/jolars/eunoia/commit/bcb11ce47ad91ef99bf1a0faf2321000968ffb68))
 ## [0.14.0](https://github.com/jolars/eunoia/compare/v0.13.0...v0.14.0) (2026-05-11)
 
 ### Breaking changes

@@ -1,16 +1,16 @@
 {
   "manifest-version": 1,
-  "baseline-sha": "1ff5953c723863fa54d4bb5515f804c20a333c24",
+  "baseline-sha": "b9bf06f953a72e58342a3caed305da48bddac763",
   "release-targets": [
     {
       "path": ".",
-      "version": "0.14.0",
-      "tag": "v0.14.0"
+      "version": "0.15.0",
+      "tag": "v0.15.0"
     },
     {
       "path": "ts",
-      "version": "0.14.0",
-      "tag": "eunoia-npm-v0.14.0"
+      "version": "0.15.0",
+      "tag": "eunoia-npm-v0.15.0"
     },
     {
       "path": "ts/",
