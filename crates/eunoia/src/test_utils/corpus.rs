@@ -160,7 +160,7 @@ pub fn get(name: &str) -> Option<&'static CorpusEntry> {
 // that can't be fit at all (single-set #16) are marked `SanityOnly`.
 
 #[allow(clippy::too_many_lines)]
-static CORPUS: [CorpusEntry; 29] = [
+static CORPUS: [CorpusEntry; 30] = [
     CorpusEntry {
         name: "uniform_3_set",
         build: spec_uniform_3_set,
@@ -577,6 +577,27 @@ static CORPUS: [CorpusEntry; 29] = [
         max_diag_error_ellipse: Some(2e-2),
         max_diag_error_square: Some(5e-2),
         max_diag_error_rectangle: None,
+        fittable_circle: Fittable::Normal,
+        fittable_ellipse: Fittable::Normal,
+        fittable_square: Fittable::Normal,
+        fittable_rectangle: Fittable::Normal,
+    },
+    CorpusEntry {
+        name: "issue93_5_set_kinases",
+        build: spec_issue93_5_set_kinases,
+        category: Category::Medium,
+        // 5-set kinase example with eight small named intersections (all ≤3)
+        // sitting on top of much larger singletons (9-23) and five disjoint
+        // pairs. Every shape drops the largest missing region
+        // (camk&cmgc&tk&tkl=3), pinning `diag_error` near 3.26e-2 across all
+        // `TEST_SEEDS`. Diagnostic for the "small overlaps fit-to-zero"
+        // pathology at n=5 — the SumSquared loss is dominated by the five
+        // large singletons, so an optimum that abandons the smallest
+        // intersections is cheap.
+        max_diag_error_circle: Some(4e-2),
+        max_diag_error_ellipse: Some(4e-2),
+        max_diag_error_square: Some(5e-2),
+        max_diag_error_rectangle: Some(5e-2),
         fittable_circle: Fittable::Normal,
         fittable_ellipse: Fittable::Normal,
         fittable_square: Fittable::Normal,
@@ -1176,6 +1197,31 @@ fn spec_issue111_3_set_asymmetric() -> DiagramSpec {
         .expect("issue111_3_set_asymmetric")
 }
 
+// 5-set kinase example from <https://github.com/jolars/eulerr/issues/93>. The
+// original report (a typo'd `camk$tk` interpreted as `camk&tk`) has eight
+// small named intersections (all ≤ 3) and five disjoint pairs across five
+// large singletons (9-23). The default fitter drops the largest missing
+// region (camk&cmgc&tk&tkl=3) for every shape.
+fn spec_issue93_5_set_kinases() -> DiagramSpec {
+    DiagramSpecBuilder::new()
+        .set("agc", 9.0)
+        .set("camk", 17.0)
+        .set("cmgc", 16.0)
+        .set("tk", 16.0)
+        .set("tkl", 23.0)
+        .intersection(&["agc", "camk"], 1.0)
+        .intersection(&["camk", "tk"], 1.0)
+        .intersection(&["tk", "tkl"], 1.0)
+        .intersection(&["camk", "cmgc", "tkl"], 1.0)
+        .intersection(&["camk", "tk", "tkl"], 2.0)
+        .intersection(&["agc", "camk", "tk", "tkl"], 1.0)
+        .intersection(&["camk", "cmgc", "tk", "tkl"], 3.0)
+        .intersection(&["agc", "camk", "cmgc", "tk", "tkl"], 1.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .expect("issue93_5_set_kinases")
+}
+
 // Uniform 3-set with small overlap fractions. Used as the easy 3-circle
 // case in `benches/initial_layout.rs`.
 fn spec_three_set_small_overlaps() -> DiagramSpec {
@@ -1210,9 +1256,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn corpus_has_29_unique_named_entries() {
+    fn corpus_has_30_unique_named_entries() {
         let entries = all();
-        assert_eq!(entries.len(), 29);
+        assert_eq!(entries.len(), 30);
         let mut names: Vec<&str> = entries.iter().map(|e| e.name).collect();
         names.sort();
         let mut deduped = names.clone();
