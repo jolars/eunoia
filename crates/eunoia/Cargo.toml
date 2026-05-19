@@ -17,6 +17,11 @@ workspace = true
 [dependencies]
 argmin = "0.10"
 argmin-math = { version = "0.4", features = ["nalgebra_v0_32"] }
+# Migration target for the argmin + levenberg-marquardt path. Solvers
+# migrate piecemeal; the `nalgebra` feature is held off until LM moves
+# (basin pins nalgebra 0.33 vs eunoia's 0.32 — Vec<f64> is the bridge at
+# the per-solver boundary until the whole chain is ready to bump).
+basin = { version = "0.1", default-features = false }
 finitediff = "0.2"
 i_overlay = { version = "~2.0", optional = true }
 levenberg-marquardt = "0.13"

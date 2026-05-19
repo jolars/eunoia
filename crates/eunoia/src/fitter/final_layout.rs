@@ -6,7 +6,6 @@
 
 use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
 use argmin::solver::linesearch::MoreThuenteLineSearch;
-use argmin::solver::neldermead::NelderMead;
 use argmin::solver::quasinewton::LBFGS;
 use finitediff::vec;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
@@ -502,10 +501,10 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
     config: &FinalLayoutConfig,
 ) -> Result<(DVector<f64>, f64), Error> {
     let n_params = initial_param.len();
-    let mut simplex = Vec::with_capacity(n_params + 1);
-    simplex.push(initial_param.clone());
+    let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n_params + 1);
+    simplex.push(initial_param.as_slice().to_vec());
     for i in 0..n_params {
-        let mut perturbed = initial_param.clone();
+        let mut perturbed = initial_param.as_slice().to_vec();
         let x0_i = initial_param[i];
         let param_idx = i % params_per_shape;
         let is_rotation = params_per_shape == 5 && param_idx == 4;
@@ -521,23 +520,49 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
         simplex.push(perturbed);
     }
 
-    let cost_function = DiagramCost::<S> {
-        spec,
-        loss_type: config.loss_type,
-        params_per_shape,
-        // NM doesn't need smoothing for its own sake, but if the caller
-        // opted into the surrogate we honour it for cost-landscape
-        // consistency with other dispatch arms.
-        _shape: std::marker::PhantomData,
+    let cost_function = BasinDiagramCost::<S> {
+        inner: DiagramCost {
+            spec,
+            loss_type: config.loss_type,
+            params_per_shape,
+            // NM doesn't need smoothing for its own sake, but if the caller
+            // opted into the surrogate we honour it for cost-landscape
+            // consistency with other dispatch arms.
+            _shape: std::marker::PhantomData,
+        },
     };
-    let solver = NelderMead::new(simplex);
-    let result = Executor::new(cost_function, solver)
-        .configure(|state| state.max_iters(config.max_iterations as u64))
-        .run()?;
-    Ok((
-        result.state().get_best_param().unwrap().clone(),
-        result.state().get_cost(),
-    ))
+    let state = basin::BasicSimplexState::from_simplex(simplex);
+    let solver = basin::NelderMead::standard();
+    let result = basin::Executor::new(cost_function, solver, state)
+        .max_iter(config.max_iterations as u64)
+        .run();
+    Ok((DVector::from_vec(result.param().clone()), result.cost()))
+}
+
+/// Adapter wrapping [`DiagramCost`] for basin's `CostFunction` trait.
+///
+/// basin's solvers take `Param = Vec<f64>` here so the per-solver swap doesn't
+/// have to pull basin's nalgebra 0.33 backend through eunoia's nalgebra 0.32
+/// hot path. The conversion to `DVector` happens inside `cost()`, alongside
+/// `compute_exclusive_regions` which dominates by orders of magnitude — the
+/// allocation is invisible in the profile.
+struct BasinDiagramCost<'a, S: DiagramShape + Copy + 'static> {
+    inner: DiagramCost<'a, S>,
+}
+
+impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BasinDiagramCost<'_, S> {
+    type Param = Vec<f64>;
+    type Output = f64;
+
+    fn cost(&self, param: &Vec<f64>) -> f64 {
+        let p = DVector::from_vec(param.clone());
+        // argmin's CostFunction returns Result; map both Err and NaN to +∞
+        // so a single bad evaluation can't poison the simplex sort.
+        match <DiagramCost<'_, S> as CostFunction>::cost(&self.inner, &p) {
+            Ok(c) if c.is_finite() => c,
+            _ => f64::INFINITY,
+        }
+    }
 }
 
 /// Build per-parameter (lower, upper, initial_std) triples for CMA-ES from
