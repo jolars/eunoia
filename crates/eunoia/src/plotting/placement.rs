@@ -22,7 +22,7 @@ use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::plotting::clip::polygon_union_many;
 use crate::plotting::inscribed::{fit_label_in_region, principal_axis};
 use crate::plotting::regions::{
-    classify_into_pieces, signed_clearance, RegionPiece, RegionPolygons,
+    RegionPiece, RegionPolygons, classify_into_pieces, signed_clearance,
 };
 use crate::spec::Combination;
 
@@ -1250,11 +1250,7 @@ fn last_vertex_clearance_t(
             } else {
                 let a = (px - ox - half_w_m) / dx;
                 let b = (px - ox + half_w_m) / dx;
-                if a < b {
-                    (a, b)
-                } else {
-                    (b, a)
-                }
+                if a < b { (a, b) } else { (b, a) }
             };
             let (ty_lo, ty_hi) = if dy.abs() < eps {
                 if (py - oy).abs() <= half_h_m {
@@ -1265,11 +1261,7 @@ fn last_vertex_clearance_t(
             } else {
                 let a = (py - oy - half_h_m) / dy;
                 let b = (py - oy + half_h_m) / dy;
-                if a < b {
-                    (a, b)
-                } else {
-                    (b, a)
-                }
+                if a < b { (a, b) } else { (b, a) }
             };
 
             let t_in_lo = tx_lo.max(ty_lo);
@@ -1283,11 +1275,7 @@ fn last_vertex_clearance_t(
         }
     }
 
-    if found {
-        Some(t_max)
-    } else {
-        None
-    }
+    if found { Some(t_max) } else { None }
 }
 
 /// Polygon-aware analog of [`raycast_anchor`]: place the `w × h` label
@@ -1598,7 +1586,7 @@ mod tests {
     use crate::geometry::primitives::Point;
     use crate::geometry::shapes::{Circle, Polygon};
     use crate::plotting::regions::RegionPiece;
-    use crate::plotting::{decompose_regions, RegionPolygons};
+    use crate::plotting::{RegionPolygons, decompose_regions};
     use crate::spec::{Combination, DiagramSpecBuilder, InputType};
 
     fn axis_aligned_square_piece(side: f64) -> RegionPiece {

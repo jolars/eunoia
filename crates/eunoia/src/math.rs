@@ -34,9 +34,5 @@ pub fn zap_small(val: f64) -> f64 {
 /// * `val` - The value to check
 /// * `epsilon` - The threshold below which values are zeroed
 pub fn zap_small_with(val: f64, epsilon: f64) -> f64 {
-    if val.abs() < epsilon {
-        0.0
-    } else {
-        val
-    }
+    if val.abs() < epsilon { 0.0 } else { val }
 }

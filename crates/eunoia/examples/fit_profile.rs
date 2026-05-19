@@ -34,9 +34,9 @@
 use std::env;
 use std::time::Instant;
 
+use eunoia::Fitter;
 use eunoia::geometry::shapes::Ellipse;
 use eunoia::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
-use eunoia::Fitter;
 
 fn three_circle() -> DiagramSpec {
     DiagramSpecBuilder::new()

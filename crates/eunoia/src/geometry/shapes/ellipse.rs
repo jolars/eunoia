@@ -1604,11 +1604,7 @@ fn ellipse_horizontal_edge_inside_interval(
             return None;
         }
     }
-    if hi > lo {
-        Some((lo, hi))
-    } else {
-        None
-    }
+    if hi > lo { Some((lo, hi)) } else { None }
 }
 
 /// Inside-`R_m` sub-interval of a vertical edge `x = const` over
@@ -1651,11 +1647,7 @@ fn ellipse_vertical_edge_inside_interval(
             return None;
         }
     }
-    if hi > lo {
-        Some((lo, hi))
-    } else {
-        None
-    }
+    if hi > lo { Some((lo, hi)) } else { None }
 }
 
 impl DiagramShape for Ellipse {

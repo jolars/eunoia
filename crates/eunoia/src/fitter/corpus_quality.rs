@@ -10,10 +10,10 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::Fitter;
     use crate::geometry::shapes::{Circle, Ellipse, Square};
     use crate::geometry::traits::DiagramShape;
-    use crate::test_utils::corpus::{all, CorpusEntry, Fittable, TEST_SEEDS};
-    use crate::Fitter;
+    use crate::test_utils::corpus::{CorpusEntry, Fittable, TEST_SEEDS, all};
 
     /// One row of the per-shape report.
     struct Row {

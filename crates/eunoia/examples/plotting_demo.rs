@@ -4,9 +4,9 @@
 
 #[cfg(feature = "plotting")]
 fn main() {
+    use eunoia::Fitter;
     use eunoia::geometry::shapes::Circle;
     use eunoia::spec::{DiagramSpecBuilder, InputType};
-    use eunoia::Fitter;
 
     println!("Eunoia Plotting Demo\n");
     println!("===================\n");

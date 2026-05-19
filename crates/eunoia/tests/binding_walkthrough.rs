@@ -22,7 +22,7 @@
 use eunoia::geometry::primitives::Point;
 use eunoia::geometry::shapes::{Circle, Ellipse, Square};
 use eunoia::geometry::traits::Polygonize;
-use eunoia::plotting::{classify_into_pieces, polygon_clip, ClipOperation, PlotData, PlotOptions};
+use eunoia::plotting::{ClipOperation, PlotData, PlotOptions, classify_into_pieces, polygon_clip};
 use eunoia::spec::{Combination, DiagramSpecBuilder, InputType};
 use eunoia::{DiagramError, Fitter};
 

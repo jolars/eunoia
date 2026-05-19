@@ -27,18 +27,18 @@ mod plot_data;
 mod regions;
 
 #[cfg(feature = "plotting")]
-pub use clip::{polygon_clip, polygon_difference, polygon_union_many, ClipOperation};
+pub use clip::{ClipOperation, polygon_clip, polygon_difference, polygon_union_many};
 #[cfg(feature = "plotting")]
 pub use inscribed::{fit_label_in_region, largest_inscribed_rect, principal_axis};
 #[cfg(feature = "plotting")]
 pub use placement::{
-    place_labels, place_labels_to_fixed_point, placements_bbox, ExteriorPolicy, LabelPlacement,
-    PlacementKind, PlacementStrategy, TetherSource,
+    ExteriorPolicy, LabelPlacement, PlacementKind, PlacementStrategy, TetherSource, place_labels,
+    place_labels_to_fixed_point, placements_bbox,
 };
 #[cfg(feature = "plotting")]
 pub use plot_data::{PlotData, PlotOptions};
 #[cfg(feature = "plotting")]
 pub use regions::{
-    classify_into_pieces, decompose_regions, decompose_regions_with, RegionPiece, RegionPolygons,
-    DEFAULT_SLIVER_THRESHOLD,
+    DEFAULT_SLIVER_THRESHOLD, RegionPiece, RegionPolygons, classify_into_pieces, decompose_regions,
+    decompose_regions_with,
 };

@@ -11,9 +11,9 @@
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Polygon;
 use crate::geometry::traits::{DiagramShape, Polygonize};
-use crate::plotting::clip::{polygon_clip_many, ClipOperation};
+use crate::plotting::clip::{ClipOperation, polygon_clip_many};
 use crate::plotting::regions::{
-    classify_into_pieces, decompose_regions_with, poi_with_holes, RegionPolygons,
+    RegionPolygons, classify_into_pieces, decompose_regions_with, poi_with_holes,
 };
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
@@ -419,7 +419,7 @@ mod tests {
         use crate::geometry::primitives::Point;
         use crate::geometry::shapes::Circle;
         use crate::geometry::traits::Polygonize;
-        use crate::plotting::clip::{polygon_clip, ClipOperation};
+        use crate::plotting::clip::{ClipOperation, polygon_clip};
 
         let a = Circle::new(Point::new(0.0, 0.0), 5.0).polygonize(64);
         let b = Circle::new(Point::new(0.0, 0.0), 1.0).polygonize(32);

@@ -657,7 +657,7 @@ fn cmaes_bounds_for(
                 let u_lower = (1e-6 * max_radius).ln();
                 let u_upper = (5.0 * max_radius).ln();
                 let log_std = (u_upper - u_lower) * 0.1; // ~1.54
-                                                         // u = ln(semi-major)
+                // u = ln(semi-major)
                 lower.push(u_lower);
                 upper.push(u_upper);
                 std_dev.push(log_std);
@@ -776,22 +776,21 @@ impl<S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'_, S> {
         } else {
             S::compute_exclusive_regions_with_gradient(&shapes)
         };
-        if let Some((fitted, fitted_grads)) = analytic {
-            if let Some((_loss, loss_grad)) = self
+        if let Some((fitted, fitted_grads)) = analytic
+            && let Some((_loss, loss_grad)) = self
                 .loss_type
                 .compute_with_gradient(&fitted, &self.spec.exclusive_areas)
-            {
-                let n_params = param.len();
-                let mut grad = vec![0.0; n_params];
-                for (mask, &dl_df) in loss_grad.iter() {
-                    if let Some(df_dtheta) = fitted_grads.get(mask) {
-                        for (k, item) in grad.iter_mut().enumerate().take(n_params) {
-                            *item += dl_df * df_dtheta[k];
-                        }
+        {
+            let n_params = param.len();
+            let mut grad = vec![0.0; n_params];
+            for (mask, &dl_df) in loss_grad.iter() {
+                if let Some(df_dtheta) = fitted_grads.get(mask) {
+                    for (k, item) in grad.iter_mut().enumerate().take(n_params) {
+                        *item += dl_df * df_dtheta[k];
                     }
                 }
-                return Ok(DVector::from_vec(grad));
             }
+            return Ok(DVector::from_vec(grad));
         }
 
         // Fallback: central finite differences.
@@ -1072,7 +1071,7 @@ mod tests {
                 .filter(|(combo, _)| combo.sets().len() == 1)
                 .collect();
             singles.sort_by_key(|(combo, _)| combo.sets()[0].clone());
-            for (combo, &area) in &singles {
+            for &(combo, &area) in &singles {
                 builder = builder.set(combo.sets()[0].as_str(), area);
             }
 
@@ -2060,8 +2059,8 @@ mod tests {
     /// Build an ellipse-only spec from a known layout, parallel to
     /// `spec_from_circles`.
     fn spec_from_ellipses(ellipses: &[crate::geometry::shapes::Ellipse]) -> PreprocessedSpec {
-        use crate::geometry::traits::Area;
         use crate::Combination;
+        use crate::geometry::traits::Area;
         use std::collections::HashMap;
         // Use the new boundary-based area for both target generation and
         // the cost-function side, so the FD baseline and analytical gradient

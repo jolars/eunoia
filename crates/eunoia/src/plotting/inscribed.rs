@@ -13,7 +13,7 @@
 
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::{Polygon, Rectangle};
-use crate::plotting::regions::{poi_with_holes, signed_clearance, RegionPiece};
+use crate::plotting::regions::{RegionPiece, poi_with_holes, signed_clearance};
 
 /// Best-effort largest axis-aligned rectangle of the given `aspect_ratio`
 /// (width / height) inscribed in the union of `pieces` (each piece's outer

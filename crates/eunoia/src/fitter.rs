@@ -741,28 +741,28 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     cmaes_fallback_threshold,
                 };
 
-                if attempt_idx == 0 {
-                    if let Some(venn_params) = venn_initial.as_ref() {
-                        // Slot 0 with Venn warm-start: skip MDS entirely and
-                        // hand the canonical-Venn shape parameters straight
-                        // to the final-stage optimizer (flavour (b) in
-                        // TODO.md). MDS adds no information when we already
-                        // have a layout where every set overlaps every
-                        // other.
-                        let initial_param = DVector::from_vec(venn_params.clone());
-                        return final_layout::optimize_from_initial::<S>(
-                            &spec,
-                            &initial_param,
-                            &final_config,
-                        )
-                        .map(|(p, l)| (p.as_slice().to_vec(), l))
-                        .map_err(|e| {
-                            DiagramError::InvalidCombination(format!(
-                                "Venn-seed final optimisation failed: {}",
-                                e
-                            ))
-                        });
-                    }
+                if attempt_idx == 0
+                    && let Some(venn_params) = venn_initial.as_ref()
+                {
+                    // Slot 0 with Venn warm-start: skip MDS entirely and
+                    // hand the canonical-Venn shape parameters straight
+                    // to the final-stage optimizer (flavour (b) in
+                    // TODO.md). MDS adds no information when we already
+                    // have a layout where every set overlaps every
+                    // other.
+                    let initial_param = DVector::from_vec(venn_params.clone());
+                    return final_layout::optimize_from_initial::<S>(
+                        &spec,
+                        &initial_param,
+                        &final_config,
+                    )
+                    .map(|(p, l)| (p.as_slice().to_vec(), l))
+                    .map_err(|e| {
+                        DiagramError::InvalidCombination(format!(
+                            "Venn-seed final optimisation failed: {}",
+                            e
+                        ))
+                    });
                 }
 
                 let mut attempt_rng = StdRng::seed_from_u64(attempt_seed);

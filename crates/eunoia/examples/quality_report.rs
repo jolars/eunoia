@@ -49,13 +49,12 @@ mod quality_report {
     use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
     use eunoia::geometry::traits::DiagramShape;
     use eunoia::loss::LossType;
-    use eunoia::test_utils::corpus::{all, CorpusEntry, Fittable, QUALITY_SEEDS};
+    use eunoia::test_utils::corpus::{CorpusEntry, Fittable, QUALITY_SEEDS, all};
     use eunoia::{Fitter, InitialSampler, MdsSolver, Optimizer};
 
     /// Common-across-configs description. Things that vary across configs
     /// (final-stage optimizer, MDS solver pool) are listed per config.
-    const COMMON_CONFIG: &str =
-        "n_restarts=10, max_iterations=200, tolerance=1e-6, loss=SumSquared \
+    const COMMON_CONFIG: &str = "n_restarts=10, max_iterations=200, tolerance=1e-6, loss=SumSquared \
          (Fitter default after dropping NM from the optimizer pool)";
 
     /// Type of a config-builder closure: takes a fresh `Fitter` and applies

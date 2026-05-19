@@ -14,11 +14,11 @@
 //! to **CW** (negative signed area) so renderers can draw each piece with
 //! `fill-rule: nonzero` (the SVG default) without further bookkeeping.
 
-use crate::geometry::diagram::{discover_regions, IntersectionPoint};
+use crate::geometry::diagram::{IntersectionPoint, discover_regions};
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{Closed, DiagramShape, Polygonize};
-use crate::plotting::clip::{polygon_clip_many, polygon_difference, ClipOperation};
+use crate::plotting::clip::{ClipOperation, polygon_clip_many, polygon_difference};
 use crate::spec::{Combination, DiagramSpec};
 use std::collections::HashMap;
 
@@ -531,7 +531,7 @@ pub fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
     let mut outer_idx_to_piece_idx: Vec<Option<usize>> = vec![None; n];
     let mut pieces: Vec<RegionPiece> = Vec::new();
     for (i, (ring, _)) in kept.iter().enumerate() {
-        if containment_depth[i] % 2 == 0 {
+        if containment_depth[i].is_multiple_of(2) {
             outer_idx_to_piece_idx[i] = Some(pieces.len());
             // Normalise outer to CCW (positive signed area).
             let outer = if signed_polygon_area(ring) >= 0.0 {
@@ -546,17 +546,16 @@ pub fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
         }
     }
     for (i, (ring, _)) in kept.iter().enumerate() {
-        if containment_depth[i] % 2 == 1 {
-            if let Some(parent_idx) = smallest_container[i].and_then(|k| outer_idx_to_piece_idx[k])
-            {
-                // Normalise holes to CW (negative signed area).
-                let hole = if signed_polygon_area(ring) <= 0.0 {
-                    ring.clone()
-                } else {
-                    reverse_polygon(ring)
-                };
-                pieces[parent_idx].holes.push(hole);
-            }
+        if containment_depth[i] % 2 == 1
+            && let Some(parent_idx) = smallest_container[i].and_then(|k| outer_idx_to_piece_idx[k])
+        {
+            // Normalise holes to CW (negative signed area).
+            let hole = if signed_polygon_area(ring) <= 0.0 {
+                ring.clone()
+            } else {
+                reverse_polygon(ring)
+            };
+            pieces[parent_idx].holes.push(hole);
         }
     }
     pieces
@@ -888,14 +887,14 @@ pub fn decompose_regions_with<S: DiagramShape + Polygonize>(
     // complement's size depending on the diagram extent. The piece is
     // computed in one pass via `polygon_difference` so outer/hole pairing
     // survives when the union of shapes is multi-ring inside the container.
-    if spec.complement().is_some() {
-        if let Some(container_rect) = container {
-            let container_poly = container_rect.polygonize(n_vertices);
-            let rings = polygon_difference(&container_poly, &shape_polygons);
-            let pieces = classify_into_pieces(rings);
-            if !pieces.is_empty() {
-                raw.push((Combination::new(&[]), pieces));
-            }
+    if spec.complement().is_some()
+        && let Some(container_rect) = container
+    {
+        let container_poly = container_rect.polygonize(n_vertices);
+        let rings = polygon_difference(&container_poly, &shape_polygons);
+        let pieces = classify_into_pieces(rings);
+        if !pieces.is_empty() {
+            raw.push((Combination::new(&[]), pieces));
         }
     }
 

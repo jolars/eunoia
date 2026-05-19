@@ -91,7 +91,7 @@ pub fn polygon_clip(subject: &Polygon, clip: &Polygon, operation: ClipOperation)
     if clip.vertices().is_empty() {
         match operation {
             ClipOperation::Union | ClipOperation::Difference | ClipOperation::Xor => {
-                return vec![subject.clone()]
+                return vec![subject.clone()];
             }
             ClipOperation::Intersection => return vec![],
         }
@@ -515,7 +515,7 @@ mod tests {
             Point::new(0.5, 1.5),
         ]);
         // `[empty]` alone should be a no-op (treated as no clips).
-        let r = polygon_difference(&outer, &[empty.clone()]);
+        let r = polygon_difference(&outer, std::slice::from_ref(&empty));
         assert_eq!(r.len(), 1);
         assert!((r[0].area() - 4.0).abs() < 1e-9);
 

@@ -4,8 +4,8 @@ use std::f64::consts::PI;
 
 use crate::error::DiagramError;
 use crate::geometry::diagram::IntersectionPoint;
-use crate::geometry::primitives::point;
 use crate::geometry::primitives::Point;
+use crate::geometry::primitives::point;
 use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{
     Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter, Polygonize,
@@ -859,11 +859,7 @@ pub(crate) fn area_from_boundary_arcs(arcs: &[BoundaryArc], circles: &[Circle]) 
 pub(crate) fn wrap_angle(x: f64) -> f64 {
     let two_pi = 2.0 * PI;
     let y = x.rem_euclid(two_pi);
-    if y > PI {
-        y - two_pi
-    } else {
-        y
-    }
+    if y > PI { y - two_pi } else { y }
 }
 
 /// Accumulate the gradient of an overlapping region's area into `grad`, where
@@ -1362,11 +1358,7 @@ fn horizontal_edge_inside_interval(
             return None;
         }
     }
-    if hi > lo {
-        Some((lo, hi))
-    } else {
-        None
-    }
+    if hi > lo { Some((lo, hi)) } else { None }
 }
 
 /// Inside-`R_m` sub-interval of a vertical edge `x = const` over
@@ -1401,11 +1393,7 @@ fn vertical_edge_inside_interval(
             return None;
         }
     }
-    if hi > lo {
-        Some((lo, hi))
-    } else {
-        None
-    }
+    if hi > lo { Some((lo, hi)) } else { None }
 }
 
 #[cfg(test)]
@@ -2238,7 +2226,7 @@ mod tests {
             }
         }
         let mc_area = 4.0 * (hits as f64) / (n as f64); // 4 = box area
-                                                        // 400k samples → stderr ≈ √(p(1-p)/n) · 4 ≈ 0.005 typically.
+        // 400k samples → stderr ≈ √(p(1-p)/n) · 4 ≈ 0.005 typically.
         assert!(
             (kept - mc_area).abs() < 0.02,
             "clipped disk {} vs MC {}",

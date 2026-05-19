@@ -159,8 +159,8 @@ mod tests {
     use super::*;
     use crate::geometry::diagram::IntersectionPoint;
     use crate::geometry::shapes::Circle;
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     #[test]
     fn test_monte_carlo_single_circle() {

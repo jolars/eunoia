@@ -41,7 +41,7 @@ conic/polysegments, including 3+ way.
 
 ## Workspace layout
 
-Cargo workspace, edition 2021, MSRV 1.84.1 (pinned for rextendr / R
+Cargo workspace, edition 2024, MSRV 1.91.1 (pinned for rextendr / R
 compatibility). Workspace version is shared.
 
 - `crates/eunoia/` — core library, no platform deps
@@ -206,7 +206,7 @@ encodings aren't interchangeable).
 
 ## Conventions
 
-- Edition 2021, MSRV 1.84.1 (workspace-level, inherited via
+- Edition 2024, MSRV 1.91.1 (workspace-level, inherited via
   `edition.workspace = true` / `rust-version.workspace = true`).
 - Module layout: `module.rs` + `module/`, never `module/mod.rs`.
 - All public items must have rustdoc. Include examples where useful.

@@ -356,11 +356,7 @@ fn target_norm(distances: &[Vec<f64>]) -> f64 {
             s += t.powi(4);
         }
     }
-    if s > 0.0 {
-        s
-    } else {
-        1.0
-    }
+    if s > 0.0 { s } else { 1.0 }
 }
 
 struct MdsCost<'a> {
@@ -853,8 +849,8 @@ mod gradient_check {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() < tol

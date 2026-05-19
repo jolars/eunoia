@@ -23,8 +23,8 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use crate::geometry::diagram::{
-    discover_regions, mask_to_indices, to_exclusive_areas, to_exclusive_areas_and_gradients,
-    IntersectionPoint, RegionMask,
+    IntersectionPoint, RegionMask, discover_regions, mask_to_indices, to_exclusive_areas,
+    to_exclusive_areas_and_gradients,
 };
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Polygon;

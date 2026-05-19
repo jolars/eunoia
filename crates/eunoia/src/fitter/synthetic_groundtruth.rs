@@ -18,12 +18,12 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::geometry::diagram::{mask_to_indices, RegionMask};
+    use crate::Fitter;
+    use crate::geometry::diagram::{RegionMask, mask_to_indices};
     use crate::geometry::primitives::Point;
     use crate::geometry::shapes::{Circle, Ellipse};
     use crate::geometry::traits::DiagramShape;
     use crate::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
-    use crate::Fitter;
 
     /// Worst acceptable `diag_error` for a recovered fit. The generating
     /// configuration is *representable* by construction, so a perfect

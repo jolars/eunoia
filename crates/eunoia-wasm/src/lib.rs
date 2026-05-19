@@ -21,11 +21,11 @@
 // wasm-bindgen ABI on every call. The argument count is deliberate.
 #![allow(clippy::too_many_arguments)]
 
+use eunoia::Optimizer;
+use eunoia::VennDiagram;
 use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
 use eunoia::geometry::traits::Polygonize;
 use eunoia::loss::LossType;
-use eunoia::Optimizer;
-use eunoia::VennDiagram;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -2634,8 +2634,8 @@ pub fn place_region_labels(
     use eunoia::geometry::primitives::Point;
     use eunoia::geometry::shapes::{Polygon, Rectangle};
     use eunoia::plotting::{
-        place_labels, ExteriorPolicy, PlacementKind, PlacementStrategy, RegionPiece,
-        RegionPolygons, TetherSource,
+        ExteriorPolicy, PlacementKind, PlacementStrategy, RegionPiece, RegionPolygons,
+        TetherSource, place_labels,
     };
     use eunoia::spec::Combination;
 
@@ -2800,7 +2800,7 @@ pub fn placements_bbox(
 ) -> Result<Option<String>, JsValue> {
     use eunoia::geometry::primitives::Point;
     use eunoia::plotting::{
-        placements_bbox as core_placements_bbox, LabelPlacement, PlacementKind,
+        LabelPlacement, PlacementKind, placements_bbox as core_placements_bbox,
     };
 
     #[derive(serde::Deserialize)]

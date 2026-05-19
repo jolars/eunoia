@@ -1,11 +1,11 @@
 //! Integration tests for the plotting module.
 
 #[cfg(feature = "plotting")]
+use eunoia::Fitter;
+#[cfg(feature = "plotting")]
 use eunoia::geometry::shapes::Circle;
 #[cfg(feature = "plotting")]
 use eunoia::spec::{DiagramSpecBuilder, InputType};
-#[cfg(feature = "plotting")]
-use eunoia::Fitter;
 
 #[test]
 #[cfg(feature = "plotting")]

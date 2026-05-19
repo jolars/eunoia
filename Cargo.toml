@@ -6,8 +6,8 @@ default-members = ["crates/eunoia"]
 [workspace.package]
 readme = "README.md"
 version = "0.15.0"
-edition = "2021"
-rust-version = "1.84.1"
+edition = "2024"
+rust-version = "1.91.1"
 authors = ["Johan Larsson"]
 license = "MIT"
 repository = "https://github.com/jolars/eunoia"

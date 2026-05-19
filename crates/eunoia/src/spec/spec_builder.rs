@@ -280,13 +280,13 @@ impl DiagramSpecBuilder {
         // Reject negative complement. Use the sentinel `<complement>` for
         // the offending-combination string since the all-zeros region has
         // no `Combination` representation.
-        if let Some(c) = self.complement {
-            if c < 0.0 {
-                return Err(DiagramError::InvalidValue {
-                    combination: "<complement>".to_string(),
-                    value: c,
-                });
-            }
+        if let Some(c) = self.complement
+            && c < 0.0
+        {
+            return Err(DiagramError::InvalidValue {
+                combination: "<complement>".to_string(),
+                value: c,
+            });
         }
 
         // Reduce input to the canonical exclusive representation. The
@@ -769,9 +769,10 @@ mod tests {
                 < 1e-10
         );
         // No spurious 3+ way regions get materialized.
-        assert!(spec
-            .get_inclusive(&Combination::new(&["S0", "S1", "S2"]))
-            .is_none());
+        assert!(
+            spec.get_inclusive(&Combination::new(&["S0", "S1", "S2"]))
+                .is_none()
+        );
         // Total inclusive entries = 25 singletons + 1 pair = 26 (sparse).
         assert_eq!(spec.inclusive_areas().len(), 26);
     }

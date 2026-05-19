@@ -17,7 +17,7 @@
 use eunoia::geometry::primitives::Point;
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::geometry::traits::DiagramShape;
-use eunoia::{spec::DiagramSpec, DiagramSpecBuilder, Fitter, InputType};
+use eunoia::{DiagramSpecBuilder, Fitter, InputType, spec::DiagramSpec};
 use std::time::Instant;
 
 /// The exact disjoint-input spec from

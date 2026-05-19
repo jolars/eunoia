@@ -203,13 +203,13 @@ impl Polygon {
             .map(|p| polylabel_mini::Point { x: p.x(), y: p.y() })
             .collect();
 
-        if let (Some(first), Some(last)) = (oriented.first(), oriented.last()) {
-            if (first.x() - last.x()).abs() > 1e-10 || (first.y() - last.y()).abs() > 1e-10 {
-                points.push(polylabel_mini::Point {
-                    x: first.x(),
-                    y: first.y(),
-                });
-            }
+        if let (Some(first), Some(last)) = (oriented.first(), oriented.last())
+            && ((first.x() - last.x()).abs() > 1e-10 || (first.y() - last.y()).abs() > 1e-10)
+        {
+            points.push(polylabel_mini::Point {
+                x: first.x(),
+                y: first.y(),
+            });
         }
 
         let exterior = polylabel_mini::LineString { points };
