@@ -91,10 +91,11 @@ compatibility). Workspace version is shared.
 2. **Optimizer parameter conversion** — `DiagramShape::optimizer_params_from_circle`
    maps `[x, y, r]` into the per-shape optimizer encoding (see table above).
 
-3. **Final optimization** — argmin-driven, selectable via `Optimizer`:
-   - `LevenbergMarquardt`
-   - `Lbfgs`
-   - `NelderMead`
+3. **Final optimization** — selectable via `Optimizer`:
+   - `LevenbergMarquardt` (`basin::LevenbergMarquardt`, nalgebra backend;
+     MINPACK-style `gtol`/`ftol`/`xtol` termination)
+   - `Lbfgs` (argmin)
+   - `NelderMead` (`basin::NelderMead`)
    - `CmaEsLm` *(default)* — plain LM first; if it stays above
      `Fitter::cmaes_fallback_threshold` (default `1e-3` on
      `NormalizedSumSquared`), runs a CMA-ES → LM polish and keeps the lower
@@ -221,10 +222,13 @@ encodings aren't interchangeable).
 
 ## Dependencies
 
-Core (`crates/eunoia/`): `nalgebra` 0.32, `argmin` 0.10, `argmin-math` 0.4
-(`nalgebra_v0_32`), `levenberg-marquardt` 0.13, `finitediff`,
-`polylabel-mini`, `num-complex`, `log`, `rand` 0.9, `i_overlay` ~2.0
-(optional, `plotting`), `rayon` (non-wasm only).
+Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.3 (`nalgebra` backend;
+final-layout LM), `argmin` 0.11, `argmin-math` 0.5 (`nalgebra_v0_34`;
+L-BFGS + MDS-init solvers), `levenberg-marquardt` 0.15 (MDS-init LM only),
+`finitediff`, `polylabel-mini`, `num-complex`, `log`, `rand` 0.9,
+`i_overlay` ~2.0 (optional, `plotting`), `rayon` (non-wasm only). The whole
+tree is aligned on a single nalgebra 0.34 so basin's `nalgebra`-backend
+types unify with eunoia's own (no faer, no second nalgebra major).
 
 Features: `wasm` (forwards to `argmin/wasm-bindgen`), `plotting`
 (`i_overlay`), `corpus` (exposes `test_utils::corpus` to example binaries —

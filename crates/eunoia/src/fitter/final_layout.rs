@@ -8,9 +8,7 @@ use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
 use argmin::solver::linesearch::MoreThuenteLineSearch;
 use argmin::solver::quasinewton::LBFGS;
 use finitediff::vec;
-use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use nalgebra::storage::Owned;
-use nalgebra::{DMatrix, DVector, Dyn};
+use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::cell::RefCell;
@@ -434,23 +432,39 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
     initial_param: &DVector<f64>,
     config: &FinalLayoutConfig,
 ) -> Result<(DVector<f64>, f64), Error> {
-    match LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type, initial_param) {
+    match LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type) {
         Ok(problem) => {
-            // `tolerance` targets the LM `ftol` knob exclusively. `xtol` and
-            // `gtol` keep their own fixed `1e-6` defaults so loosening
-            // `tolerance` only shortens the cost-converged tail (where
-            // ~170× wall-time wins live on slow ellipse specs) without
-            // trading off parameter-space or gradient precision. Override
-            // either independently via `Fitter::xtol` / `Fitter::gtol`.
-            let solver = LevenbergMarquardt::new()
-                .with_ftol(config.ftol.unwrap_or(config.tolerance))
-                .with_xtol(config.xtol.unwrap_or(1e-6))
-                .with_gtol(config.gtol.unwrap_or(1e-6))
-                .with_patience(config.max_iterations.max(1));
-            let (problem_after, report) = solver.minimize(problem);
-            // LM minimises ½·Σrᵢ²; existing loss is Σrᵢ², so ×2.
-            let final_loss = report.objective_function * 2.0;
-            Ok((problem_after.params.clone(), final_loss))
+            // Convergence uses LM's three MINPACK-style solver-internal tests,
+            // mirroring the `levenberg-marquardt` crate's `gtol`/`ftol`/`xtol`:
+            //   - `tol_grad_rel` (gtol): cosine of the angle between `r` and the
+            //     Jacobian columns, `max_j |gⱼ|/(‖J·,ⱼ‖·‖r‖) ≤ gtol`;
+            //   - `ftol`: relative cost reduction with the *predicted*-reduction
+            //     guard (`actred ≤ ftol·f AND prered ≤ ftol·f`), which bails
+            //     stuck wrong-basin restarts without truncating productive-but-
+            //     slow ones (the framework `RelativeCostTolerance` lacks `prered`
+            //     and stops short — e.g. `three_set_triple_only`'s 3.3e-2
+            //     settling point before it refines to 3.3e-3);
+            //   - `xtol`: relative step `‖Δx‖ ≤ xtol·‖x‖`.
+            // The absolute `tol_grad` is disabled — the residuals' `1/√Σtᵢ²`
+            // normalisation makes `‖Jᵀr‖_∞` scale-dependent (a fixed bound
+            // over-iterates small-area specs and stops large-area ones early).
+            let solver = basin::LevenbergMarquardt::new()
+                .tol_grad(0.0)
+                .tol_grad_rel(config.gtol.unwrap_or(1e-8))
+                .ftol(config.ftol.unwrap_or(config.tolerance))
+                .xtol(config.xtol.unwrap_or(1e-6));
+            let result = basin::Executor::new(
+                problem,
+                solver,
+                basin::BasicState::new(initial_param.clone()),
+            )
+            .max_iter(config.max_iterations.max(1) as u64)
+            .run();
+            let final_param = result.param().clone();
+            // basin LM's `state.cost()` is ½·Σrᵢ² over the normalised
+            // residuals; the existing loss is Σrᵢ², so ×2.
+            let final_loss = result.cost() * 2.0;
+            Ok((final_param, final_loss))
         }
         Err(_incompatible_loss) if !config.loss_type.is_smooth() => {
             // Non-smooth loss: gradient methods thrash here, so use
@@ -854,12 +868,14 @@ struct LmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
     /// `1/sqrt(Σ tᵢ²)`. Stored residuals get multiplied by this so
     /// `Σ rᵢ²` equals the configured loss `Σ(f-t)² / Σt²`.
     norm_factor: f64,
-    /// Current parameter vector. Owned so the trait's `params(&self)` can
-    /// return a clone.
-    params: DVector<f64>,
-    /// Lazy cache of `(fitted, fitted_grads)` keyed by the most recent
-    /// `set_params` call. Cleared on every `set_params`.
-    cache: RefCell<Option<DiagramCache>>,
+    /// Single-entry cache of `(fitted, fitted_grads)` keyed by the parameter
+    /// vector it was evaluated at. basin's LM queries `residual(x)` and
+    /// `jacobian(x)` through separate trait methods, but both come from one
+    /// `compute_exclusive_regions_with_gradient` call, so caching by point
+    /// collapses the residual+Jacobian-at-x pair into a single kernel
+    /// evaluation. (basin's LM also caches `r`/`J` internally across
+    /// iterations; this only guards the within-point double call.)
+    cache: RefCell<Option<(Vec<f64>, DiagramCache)>>,
     _shape: std::marker::PhantomData<S>,
 }
 
@@ -873,7 +889,6 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
         spec: &'a PreprocessedSpec,
         params_per_shape: usize,
         loss_type: LossType,
-        initial_param: &DVector<f64>,
     ) -> Result<Self, Error> {
         let norm_factor = match loss_type {
             LossType::SumSquared => {
@@ -892,10 +907,10 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
             }
         };
         // Enumerate every subset mask once; residual ordering is fixed for the
-        // whole solve so the Jacobian shape stays constant (LM rejects
-        // residual-count changes). Mask 0 (the complement) is included only
-        // when the spec carries a complement target — otherwise it carries no
-        // signal and has no analytical gradient.
+        // whole solve so the Jacobian shape stays constant. Mask 0 (the
+        // complement) is included only when the spec carries a complement
+        // target — otherwise it carries no signal and has no analytical
+        // gradient.
         let n_sets = spec.n_sets;
         let start = if spec.complement.is_some() { 0 } else { 1 };
         let masks: Vec<RegionMask> = (start..(1usize << n_sets)).collect();
@@ -904,15 +919,17 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
             params_per_shape,
             masks,
             norm_factor,
-            params: initial_param.clone(),
             cache: RefCell::new(None),
             _shape: std::marker::PhantomData,
         })
     }
 
-    fn ensure_cache(&self) {
-        let mut slot = self.cache.borrow_mut();
-        if slot.is_some() {
+    /// Ensure the cache holds `(fitted, fitted_grads)` for the parameter
+    /// vector `xs`, recomputing the region kernel only when the point moved.
+    fn ensure_cache(&self, xs: &[f64]) {
+        if let Some((cached_x, _)) = self.cache.borrow().as_ref()
+            && cached_x.as_slice() == xs
+        {
             return;
         }
         let n_sets = self.spec.n_sets;
@@ -920,14 +937,14 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
             .map(|i| {
                 let start = i * self.params_per_shape;
                 let end = start + self.params_per_shape;
-                S::from_optimizer_params(&self.params.as_slice()[start..end])
+                S::from_optimizer_params(&xs[start..end])
             })
             .collect();
         let analytic = if self.spec.complement.is_some() {
             // Trailing 4 params encode the container rectangle in `[x_c, y_c,
             // ln(area), ln(ratio)]` — same encoding as `Rectangle`'s
             // optimizer params.
-            let trailing = &self.params.as_slice()[n_sets * self.params_per_shape..];
+            let trailing = &xs[n_sets * self.params_per_shape..];
             let container = crate::geometry::shapes::Rectangle::from_optimizer_params(trailing);
             S::compute_exclusive_regions_clipped_with_gradient(&shapes, &container)
         } else {
@@ -939,10 +956,10 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 // Should not happen for shapes that wire LM in (Circle/Ellipse
                 // both implement the gradient path). Fall back to areas-only
                 // with empty gradient map; the Jacobian becomes all-zeros
-                // and LM will terminate immediately on its orthogonality
+                // and LM terminates immediately on its first-order optimality
                 // check, surfacing the issue.
                 let fitted = if self.spec.complement.is_some() {
-                    let trailing = &self.params.as_slice()[n_sets * self.params_per_shape..];
+                    let trailing = &xs[n_sets * self.params_per_shape..];
                     let container =
                         crate::geometry::shapes::Rectangle::from_optimizer_params(trailing);
                     S::compute_exclusive_regions_clipped(&shapes, &container)
@@ -953,56 +970,53 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 (fitted, HashMap::new())
             }
         };
-        *slot = Some(DiagramCache {
-            fitted,
-            fitted_grads,
-        });
+        *self.cache.borrow_mut() = Some((
+            xs.to_vec(),
+            DiagramCache {
+                fitted,
+                fitted_grads,
+            },
+        ));
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> LeastSquaresProblem<f64, Dyn, Dyn>
-    for LmDiagramProblem<'_, S>
-{
-    type ResidualStorage = Owned<f64, Dyn>;
-    type JacobianStorage = Owned<f64, Dyn, Dyn>;
-    type ParameterStorage = Owned<f64, Dyn>;
+impl<S: DiagramShape + Copy + 'static> basin::Residual for LmDiagramProblem<'_, S> {
+    type Param = DVector<f64>;
+    type Output = DVector<f64>;
 
-    fn set_params(&mut self, x: &DVector<f64>) {
-        self.params.copy_from(x);
-        self.cache.borrow_mut().take();
-    }
-
-    fn params(&self) -> DVector<f64> {
-        self.params.clone()
-    }
-
-    fn residuals(&self) -> Option<DVector<f64>> {
-        self.ensure_cache();
-        let cache = self.cache.borrow();
-        let cache = cache.as_ref().expect("cache populated by ensure_cache");
-        let mut residuals = DVector::zeros(self.masks.len());
-        for (i, &mask) in self.masks.iter().enumerate() {
+    fn residual(&self, x: &DVector<f64>) -> DVector<f64> {
+        self.ensure_cache(x.as_slice());
+        let slot = self.cache.borrow();
+        let (_, cache) = slot.as_ref().expect("cache populated by ensure_cache");
+        DVector::from_fn(self.masks.len(), |i, _| {
+            let mask = self.masks[i];
             let f = cache.fitted.get(&mask).copied().unwrap_or(0.0);
             let t = self.spec.exclusive_areas.get(&mask).copied().unwrap_or(0.0);
-            residuals[i] = self.norm_factor * (f - t);
-        }
-        Some(residuals)
+            self.norm_factor * (f - t)
+        })
     }
+}
 
-    fn jacobian(&self) -> Option<DMatrix<f64>> {
-        self.ensure_cache();
-        let cache = self.cache.borrow();
-        let cache = cache.as_ref().expect("cache populated by ensure_cache");
-        let n_params = self.params.len();
-        let mut jacobian = DMatrix::zeros(self.masks.len(), n_params);
+impl<S: DiagramShape + Copy + 'static> basin::Jacobian for LmDiagramProblem<'_, S> {
+    type Param = DVector<f64>;
+    type Output = DMatrix<f64>;
+
+    fn jacobian(&self, x: &DVector<f64>) -> DMatrix<f64> {
+        self.ensure_cache(x.as_slice());
+        let slot = self.cache.borrow();
+        let (_, cache) = slot.as_ref().expect("cache populated by ensure_cache");
+        let n_params = x.len();
+        // One HashMap lookup per residual row (not per element): fetch each
+        // row's gradient vector once and fill the row.
+        let mut jac = DMatrix::zeros(self.masks.len(), n_params);
         for (i, &mask) in self.masks.iter().enumerate() {
             if let Some(grad) = cache.fitted_grads.get(&mask) {
                 for (j, &g) in grad.iter().enumerate().take(n_params) {
-                    jacobian[(i, j)] = self.norm_factor * g;
+                    jac[(i, j)] = self.norm_factor * g;
                 }
             }
         }
-        Some(jacobian)
+        jac
     }
 }
 
@@ -2464,13 +2478,16 @@ mod tests {
             };
             let analytic_grad = cost.gradient(&param_dvec).unwrap();
 
-            let mut problem =
-                LmDiagramProblem::<Circle>::new(&spec, Circle::n_params(), loss_type, &param_dvec)
-                    .unwrap();
-            problem.set_params(&param_dvec);
-            let r = problem.residuals().unwrap();
-            let j = problem.jacobian().unwrap();
-            let lm_grad = j.transpose() * &r * 2.0;
+            let problem =
+                LmDiagramProblem::<Circle>::new(&spec, Circle::n_params(), loss_type).unwrap();
+            let r = basin::Residual::residual(&problem, &param_dvec);
+            let j = basin::Jacobian::jacobian(&problem, &param_dvec);
+            // lm_grad = 2 · Jᵀ·r, assembled elementwise over the nalgebra DVector/DMatrix.
+            let n_params = param_dvec.len();
+            let n_res = r.nrows();
+            let lm_grad: Vec<f64> = (0..n_params)
+                .map(|jx| 2.0 * (0..n_res).map(|ix| j[(ix, jx)] * r[ix]).sum::<f64>())
+                .collect();
 
             let max_abs_diff = analytic_grad
                 .iter()
@@ -2500,12 +2517,10 @@ mod tests {
             Circle::new(Point::new(1.5, 0.0), 1.0),
         ];
         let spec = spec_from_circles(&circles);
-        let params = DVector::from_vec(flat_params(&circles));
         let result = LmDiagramProblem::<Circle>::new(
             &spec,
             Circle::n_params(),
             crate::loss::LossType::Stress,
-            &params,
         );
         assert!(result.is_err(), "Stress loss should be rejected by LM");
     }
