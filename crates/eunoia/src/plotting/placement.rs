@@ -45,6 +45,22 @@ pub struct LabelPlacement {
     /// any half-gap padding the caller added is preserved as the visible
     /// gap between the leader tip and the text.
     pub leader_end: Option<Point>,
+    /// First cubic-bezier control point for a *curved* leader running
+    /// `tether → leader_end`. `None` for interior placements and when
+    /// curving is disabled ([`PlacementStrategy::leader_curvature`] `<= 0`).
+    ///
+    /// When `Some`, both control points are present and a renderer draws the
+    /// leader as `M tether C leader_control_1 leader_control_2 leader_end`.
+    /// Renderers that prefer straight leaders ignore these and draw
+    /// `tether → leader_end` directly — the curve never changes the
+    /// endpoints, only the path between them. The exit control point lies on
+    /// the `tether → anchor` ray; the arrival control point sits just outside
+    /// the label box along the outward normal of the edge `leader_end` lands
+    /// on, so the curve docks perpendicular to the text (aimed at the label
+    /// rather than swinging past it).
+    pub leader_control_1: Option<Point>,
+    /// Second cubic-bezier control point; see [`Self::leader_control_1`].
+    pub leader_control_2: Option<Point>,
 }
 
 /// Discriminator on [`LabelPlacement`].
@@ -147,19 +163,29 @@ pub struct PlacementStrategy {
     /// the label-vs-label gap convention), keep `leader_gap = 0.0` — the
     /// padding you already added shows up as the visible gap.
     pub leader_gap: f64,
+    /// Curvature of exterior leaders, as the cubic-bezier control-handle
+    /// length expressed as a fraction of the straight `tether → leader_end`
+    /// distance. `0.0` disables curving — [`LabelPlacement::leader_control_1`]
+    /// / `leader_control_2` come back `None` and leaders are straight. Larger
+    /// values bow the leader more; `0.3` (the default) is a gentle curve.
+    /// Negative values are clamped to `0.0`. Only affects the emitted control
+    /// points, never the `tether` / `leader_end` endpoints.
+    pub leader_curvature: f64,
 }
 
 impl Default for PlacementStrategy {
     /// [`ExteriorPolicy::Raycast`] with proportional margin,
     /// `precision = 0.01`, POI tether (the rendered leader runs from
     /// the region's POI to the exterior anchor — safe for any rendering
-    /// style), and `leader_gap = 0.0`.
+    /// style), `leader_gap = 0.0`, and `leader_curvature = 0.3` (gently
+    /// curved leaders; set to `0.0` for straight ones).
     fn default() -> Self {
         Self {
             exterior: ExteriorPolicy::Raycast { margin: None },
             precision: 0.01,
             tether: TetherSource::Poi,
             leader_gap: 0.0,
+            leader_curvature: 0.3,
         }
     }
 }
@@ -274,6 +300,8 @@ pub fn place_labels(
                     kind: PlacementKind::Interior,
                     tether: None,
                     leader_end: None,
+                    leader_control_1: None,
+                    leader_control_2: None,
                 },
             );
             continue;
@@ -385,6 +413,18 @@ pub fn place_labels(
             entry.h,
             strategy.leader_gap,
         );
+        let gap = strategy.leader_gap.max(0.0);
+        let (leader_control_1, leader_control_2) = match leader_control_points(
+            &tether_pt,
+            &entry.anchor,
+            &leader_end,
+            0.5 * entry.w + gap,
+            0.5 * entry.h + gap,
+            strategy.leader_curvature,
+        ) {
+            Some((c1, c2)) => (Some(c1), Some(c2)),
+            None => (None, None),
+        };
         out.insert(
             entry.key,
             LabelPlacement {
@@ -392,6 +432,8 @@ pub fn place_labels(
                 kind: exterior_kind_label,
                 tether: Some(tether_pt),
                 leader_end: Some(leader_end),
+                leader_control_1,
+                leader_control_2,
             },
         );
     }
@@ -433,12 +475,16 @@ pub fn place_labels(
 ///     kind: PlacementKind::Interior,
 ///     tether: None,
 ///     leader_end: None,
+///     leader_control_1: None,
+///     leader_control_2: None,
 /// });
 /// placements.insert("B".to_string(), LabelPlacement {
 ///     anchor: Point::new(10.0, 5.0),
 ///     kind: PlacementKind::ExteriorRaycast,
 ///     tether: Some(Point::new(8.0, 4.0)),
 ///     leader_end: Some(Point::new(8.0, 5.0)),
+///     leader_control_1: None,
+///     leader_control_2: None,
 /// });
 ///
 /// let mut sizes = HashMap::new();
@@ -1536,6 +1582,67 @@ fn leader_end_on_label_box(tether: &Point, anchor: &Point, w: f64, h: f64, gap: 
     Point::new(tether.x() + t_enter * dx, tether.y() + t_enter * dy)
 }
 
+/// Cubic-bezier control points for a curved leader from `tether` to
+/// `leader_end`, for a label box centred at `anchor` with half-extents
+/// `(half_w, half_h)` (the inflated box `leader_end` sits on).
+///
+/// `curvature` is the control-handle length as a fraction of the straight
+/// `tether → leader_end` distance. Returns [`None`] when `curvature <= 0.0`
+/// (caller draws a straight leader) or the leader is degenerate (tether and
+/// `leader_end` coincide).
+///
+/// The exit handle points from the tether toward `anchor` — the raycast ray,
+/// so the curve leaves the region the way the straight leader did. The
+/// arrival handle sits just *outside* the box along the outward normal of the
+/// edge `leader_end` lands on, so the curve's end tangent points inward, at
+/// the label. The edge is chosen in box-relative units
+/// (`|ox| / half_w` vs `|oy| / half_h`): comparing raw offsets would make a
+/// wide text label always dock horizontally even when the ray exits its short
+/// top/bottom edge, sending the leader sideways past the text.
+fn leader_control_points(
+    tether: &Point,
+    anchor: &Point,
+    leader_end: &Point,
+    half_w: f64,
+    half_h: f64,
+    curvature: f64,
+) -> Option<(Point, Point)> {
+    if curvature <= 0.0 {
+        return None;
+    }
+    let chord_x = leader_end.x() - tether.x();
+    let chord_y = leader_end.y() - tether.y();
+    let chord = (chord_x * chord_x + chord_y * chord_y).sqrt();
+    if chord < 1e-9 {
+        return None;
+    }
+    let h = curvature * chord;
+
+    // Exit tangent: from the tether toward the label anchor (raycast ray).
+    let ex = anchor.x() - tether.x();
+    let ey = anchor.y() - tether.y();
+    let ex_len = (ex * ex + ey * ey).sqrt().max(1e-12);
+    let c1 = Point::new(tether.x() + h * ex / ex_len, tether.y() + h * ey / ex_len);
+
+    // Arrival: outward direction at `leader_end`. Placing C2 outside the box
+    // along it makes the end tangent (leader_end − C2) point inward.
+    let ox = leader_end.x() - anchor.x();
+    let oy = leader_end.y() - anchor.y();
+    let (nx, ny) = if (ox * ox + oy * oy).sqrt() > 1e-9 {
+        if ox.abs() / half_w.max(1e-12) >= oy.abs() / half_h.max(1e-12) {
+            (ox.signum(), 0.0)
+        } else {
+            (0.0, oy.signum())
+        }
+    } else {
+        // `leader_end` collapsed onto the anchor: reuse the ray direction.
+        (ex / ex_len, ey / ex_len)
+    };
+    let c2 = Point::new(leader_end.x() + h * nx, leader_end.y() + h * ny);
+
+    Some((c1, c2))
+}
+
 /// Segment vs axis-aligned box intersection (Liang-Barsky slab method).
 ///
 /// Returns `Some((t_enter, t_exit))` with both clamped to `[0, 1]` when the
@@ -2321,6 +2428,7 @@ mod tests {
             precision: 0.05,
             tether: TetherSource::Poi,
             leader_gap: 0.0,
+            leader_curvature: 0.0,
         };
         let placements = place_labels(&regions, &sizes, None, &strategy);
         let p = placements.get("A").unwrap();
@@ -2390,6 +2498,7 @@ mod tests {
             precision: 0.01,
             tether: TetherSource::Poi,
             leader_gap: 0.0,
+            leader_curvature: 0.0,
         };
         let placements = place_labels(&regions, &sizes, None, &strategy);
         let p = placements.get("A").unwrap();
@@ -2408,6 +2517,8 @@ mod tests {
             kind,
             tether: None,
             leader_end: None,
+            leader_control_1: None,
+            leader_control_2: None,
         }
     }
 
@@ -2793,6 +2904,7 @@ mod tests {
             precision: 0.01,
             tether: TetherSource::Poi,
             leader_gap: 0.0,
+            leader_curvature: 0.0,
         };
         let placements = place_labels(&regions, &sizes, None, &strategy);
         let a = placements.get("A").expect("A should be placed");
@@ -2817,5 +2929,46 @@ mod tests {
             c_xmax,
             c_ymax,
         );
+    }
+
+    #[test]
+    fn test_leader_control_points_disabled_and_degenerate() {
+        let tether = Point::new(0.0, 0.0);
+        let anchor = Point::new(10.0, 10.0);
+        let end = Point::new(9.0, 9.0);
+        // Curvature 0 → straight leader, no control points.
+        assert!(leader_control_points(&tether, &anchor, &end, 8.0, 1.0, 0.0).is_none());
+        // Degenerate: tether coincides with leader_end.
+        assert!(leader_control_points(&tether, &anchor, &tether, 8.0, 1.0, 0.3).is_none());
+    }
+
+    #[test]
+    fn test_leader_control_points_docks_to_box_edge_and_bends() {
+        // Wide label up-and-right: the centroid→anchor ray exits the box's
+        // short *bottom* edge, so the arrival must dock vertically — even
+        // though |ox| == |oy| would pick a horizontal dock without the
+        // box-relative comparison.
+        let tether = Point::new(0.0, 0.0);
+        let anchor = Point::new(10.0, 10.0);
+        let leader_end = Point::new(9.0, 9.0); // bottom edge (y = anchor.y - hh)
+        let (c1, c2) =
+            leader_control_points(&tether, &anchor, &leader_end, 8.0, 1.0, 0.3).expect("curve");
+
+        // Arrival docks on the bottom edge: control point shares leader_end.x.
+        assert!((c2.x() - leader_end.x()).abs() < 1e-9);
+
+        // The curve actually bends: c2 is off the straight tether→leader_end
+        // chord (the line y = x here).
+        assert!((c2.y() - c2.x()).abs() > 1e-6);
+
+        // The end tangent (leader_end − c2) points toward the label.
+        let tx = leader_end.x() - c2.x();
+        let ty = leader_end.y() - c2.y();
+        let ax = anchor.x() - leader_end.x();
+        let ay = anchor.y() - leader_end.y();
+        assert!(tx * ax + ty * ay > 0.0);
+
+        // Exit handle leaves along the tether→anchor ray (first quadrant).
+        assert!(c1.x() > 0.0 && c1.y() > 0.0);
     }
 }

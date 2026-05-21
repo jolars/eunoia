@@ -8,6 +8,7 @@
     RegionPiece,
   } from "../types/diagram";
   import { defaultColorFor } from "../colors";
+  import { leaderPath } from "../leader";
   import { appState } from "../state.svelte";
 
   interface Props {
@@ -570,11 +571,14 @@
           region.labelY,
         )}
         {#if renderLabel && isExterior && placement?.tether}
-          <line
-            x1={placement.tether.x}
-            y1={placement.tether.y}
-            x2={placement.leaderEnd?.x ?? anchor.x}
-            y2={placement.leaderEnd?.y ?? anchor.y}
+          <path
+            d={leaderPath(
+              placement.tether,
+              placement.leaderEnd ?? anchor,
+              placement.leaderControl1,
+              placement.leaderControl2,
+            )}
+            fill="none"
             stroke="#6b7280"
             stroke-width={Math.max(strokeW * 0.5, 0.3)}
             stroke-opacity="0.6"

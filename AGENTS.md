@@ -150,6 +150,19 @@ raycast positions and iterates a soft spring plus three repulsive
 constraints: label–label AABB, union-polygon containment along the raycast
 direction, and label–foreign-region repulsion.
 
+Exterior leaders are emitted as endpoints plus optional cubic-bezier control
+points: `LabelPlacement` carries `tether`, `leader_end`, and
+`leader_control_1` / `leader_control_2`. The control points are computed in
+the core (`leader_control_points`) — exit handle along the tether→anchor ray,
+arrival handle docked perpendicular to the box edge `leader_end` lands on
+(edge chosen in box-relative units so wide labels dock correctly). Curvature
+is `PlacementStrategy::leader_curvature` (fraction of the tether→leader_end
+chord; default `0.3`, `0.0` ⇒ no control points / straight leaders).
+Renderers draw `M tether C c1 c2 leader_end` when the control points are
+present, else `tether → leader_end` straight; the curve never moves the
+endpoints. Surfaced through wasm (`leaderControl1` / `leaderControl2`,
+`leaderCurvature`) and `ts/index.ts`.
+
 Lower-level primitives: `fit_label_in_region` / `fit_labels_in_regions`
 (predicate — interior anchor or omit), `largest_inscribed_rect`,
 `PlotData::region_anchors` / `set_anchors` (hole-aware POI).

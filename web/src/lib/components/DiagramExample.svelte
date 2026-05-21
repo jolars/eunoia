@@ -3,6 +3,7 @@ import { onMount } from "svelte";
 import { browser } from "$app/environment";
 import type { LabelPlacement } from "@jolars/eunoia";
 import { defaultColorFor } from "$lib/colors";
+import { leaderPath } from "$lib/leader";
 
 interface Props {
   /** Set sizes keyed by combination, e.g. `{ A: 5, B: 3, "A&B": 1.5 }`. */
@@ -317,11 +318,14 @@ const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
               p?.kind === "exteriorForceDirected"}
             {@const anchor = p?.anchor ?? region.labelAnchor}
             {#if isExterior && p?.tether}
-              <line
-                x1={p.tether.x}
-                y1={p.tether.y}
-                x2={anchor.x}
-                y2={anchor.y}
+              <path
+                d={leaderPath(
+                  p.tether,
+                  p.leaderEnd ?? anchor,
+                  p.leaderControl1,
+                  p.leaderControl2,
+                )}
+                fill="none"
                 stroke="#6b7280"
                 stroke-width="0.4"
                 stroke-opacity="0.7"

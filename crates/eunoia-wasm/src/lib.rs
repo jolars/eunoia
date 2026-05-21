@@ -2607,7 +2607,8 @@ pub fn generate_venn_regions(
 ///   "iterations": 200,
 ///   "precision": 0.01,
 ///   "tether": "Poi" | "Boundary",
-///   "leaderGap": 0.0
+///   "leaderGap": 0.0,
+///   "leaderCurvature": 0.3
 /// }
 /// ```
 ///
@@ -2617,13 +2618,19 @@ pub fn generate_venn_regions(
 /// the same coordinate units as the label sizes) between the leader-line
 /// tip and the label's bounding box; defaults to `0.0` (leader stops
 /// exactly at the box edge). Negative values are clamped to `0.0`.
+/// `leaderCurvature` is the cubic-bezier handle length as a fraction of the
+/// tether→leaderEnd distance; defaults to `0.3`, and `0.0` yields straight
+/// leaders (no control points emitted).
 ///
-/// Returns a JSON object mapping each placed region to
-/// `{ "anchor": [x, y], "kind": "...", "tether"?: [x, y], "leaderEnd"?: [x, y] }`.
-/// Regions with degenerate input (no POI, invalid label dimensions, etc.)
-/// are absent. `leaderEnd` is the point on the label's bounding box where
-/// the leader line should terminate, so renderers can stop the leader at
-/// the box edge rather than at the anchor (which sits at the centre).
+/// Returns a JSON object mapping each placed region to `{ "anchor": [x, y],
+/// "kind": "...", "tether"?: [x, y], "leaderEnd"?: [x, y],
+/// "leaderControl1"?: [x, y], "leaderControl2"?: [x, y] }`. Regions with
+/// degenerate input (no POI, invalid label dimensions, etc.) are absent.
+/// `leaderEnd` is the point on the label's bounding box where the leader
+/// line should terminate. `leaderControl1` / `leaderControl2` are the cubic
+/// control points for a curved leader (`M tether C c1 c2 leaderEnd`); both
+/// are present for exterior placements when `leaderCurvature > 0`, absent
+/// otherwise (draw `tether → leaderEnd` straight).
 #[wasm_bindgen]
 pub fn place_region_labels(
     polygons_json: String,
@@ -2668,6 +2675,11 @@ pub fn place_region_labels(
         /// [`eunoia::plotting::PlacementStrategy::leader_gap`].
         #[serde(rename = "leaderGap")]
         leader_gap: Option<f64>,
+        /// Leader curvature as a fraction of the tether→leaderEnd distance;
+        /// `0` for straight leaders. See
+        /// [`eunoia::plotting::PlacementStrategy::leader_curvature`].
+        #[serde(rename = "leaderCurvature")]
+        leader_curvature: Option<f64>,
     }
 
     #[derive(serde::Serialize)]
@@ -2678,6 +2690,10 @@ pub fn place_region_labels(
         tether: Option<[f64; 2]>,
         #[serde(skip_serializing_if = "Option::is_none", rename = "leaderEnd")]
         leader_end: Option<[f64; 2]>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "leaderControl1")]
+        leader_control_1: Option<[f64; 2]>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "leaderControl2")]
+        leader_control_2: Option<[f64; 2]>,
     }
 
     let regions_in: std::collections::HashMap<String, Vec<PieceJson>> =
@@ -2729,6 +2745,7 @@ pub fn place_region_labels(
         precision: strategy_in.precision.unwrap_or(0.01),
         tether,
         leader_gap: strategy_in.leader_gap.unwrap_or(0.0),
+        leader_curvature: strategy_in.leader_curvature.unwrap_or(0.3),
     };
 
     let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
@@ -2770,6 +2787,8 @@ pub fn place_region_labels(
                 kind: kind_str,
                 tether: p.tether.map(|t| [t.x(), t.y()]),
                 leader_end: p.leader_end.map(|t| [t.x(), t.y()]),
+                leader_control_1: p.leader_control_1.map(|t| [t.x(), t.y()]),
+                leader_control_2: p.leader_control_2.map(|t| [t.x(), t.y()]),
             },
         );
     }
@@ -2839,6 +2858,8 @@ pub fn placements_bbox(
                 kind: PlacementKind::Interior,
                 tether: None,
                 leader_end: None,
+                leader_control_1: None,
+                leader_control_2: None,
             };
             (k, placement)
         })

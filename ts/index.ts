@@ -303,6 +303,14 @@ export interface PlacementStrategy {
    * `leaderGap = 0` — the padding shows up as the visible gap.
    */
   leaderGap?: number;
+  /**
+   * Curvature of exterior leaders, as the cubic-bezier control-handle length
+   * expressed as a fraction of the straight `tether → leaderEnd` distance.
+   * `0` disables curving: `leaderControl1` / `leaderControl2` come back
+   * `undefined` and renderers draw straight leaders. Larger values bow the
+   * leader more. Default `0.3` (a gentle curve).
+   */
+  leaderCurvature?: number;
 }
 
 /**
@@ -332,6 +340,17 @@ export interface LabelPlacement {
    * the box edge rather than continuing through the rendered text.
    */
   leaderEnd?: Point;
+  /**
+   * First cubic-bezier control point for a *curved* leader. `undefined` for
+   * interior placements and when `strategy.leaderCurvature` is `0`. When set,
+   * `leaderControl2` is set too, and a renderer draws the leader as
+   * `M tether C leaderControl1 leaderControl2 leaderEnd`. Renderers that want
+   * straight leaders ignore these and draw `tether → leaderEnd` — the control
+   * points never change the endpoints, only the path between them.
+   */
+  leaderControl1?: Point;
+  /** Second cubic-bezier control point; see {@link leaderControl1}. */
+  leaderControl2?: Point;
 }
 
 export interface PlaceLabelsForRegionsOptions {
@@ -974,6 +993,7 @@ export function placeLabelsForRegions(
       precision?: number;
       tether?: "Poi" | "Boundary";
       leaderGap?: number;
+      leaderCurvature?: number;
     } = {};
     if (strategy.exterior !== undefined) {
       const mapped = EXTERIOR_POLICY_MAP[strategy.exterior];
@@ -1000,6 +1020,8 @@ export function placeLabelsForRegions(
     }
     if (strategy.leaderGap !== undefined)
       payload.leaderGap = strategy.leaderGap;
+    if (strategy.leaderCurvature !== undefined)
+      payload.leaderCurvature = strategy.leaderCurvature;
     strategyJson = JSON.stringify(payload);
   }
 
@@ -1014,6 +1036,8 @@ export function placeLabelsForRegions(
     kind: keyof typeof PLACEMENT_KIND_MAP;
     tether?: [number, number];
     leaderEnd?: [number, number];
+    leaderControl1?: [number, number];
+    leaderControl2?: [number, number];
   };
   const raw = JSON.parse(json) as Record<string, RawPlacement>;
   const out: Record<string, LabelPlacement> = {};
@@ -1025,6 +1049,16 @@ export function placeLabelsForRegions(
     if (v.tether) placement.tether = { x: v.tether[0], y: v.tether[1] };
     if (v.leaderEnd)
       placement.leaderEnd = { x: v.leaderEnd[0], y: v.leaderEnd[1] };
+    if (v.leaderControl1)
+      placement.leaderControl1 = {
+        x: v.leaderControl1[0],
+        y: v.leaderControl1[1],
+      };
+    if (v.leaderControl2)
+      placement.leaderControl2 = {
+        x: v.leaderControl2[0],
+        y: v.leaderControl2[1],
+      };
     out[k] = placement;
   }
   return out;
