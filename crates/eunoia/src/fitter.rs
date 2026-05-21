@@ -27,7 +27,7 @@ use crate::venn::VennDiagram;
 use nalgebra::DVector;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -114,6 +114,14 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     /// `LatinHypercube` stratifies the batch of `n_restarts` draws across
     /// `[0, scale]^(2·n_sets)`.
     initial_sampler: InitialSampler,
+    /// Restart-loop thread count, honoured only when the `parallel` feature is
+    /// on and the target is not wasm. `None` (the default) uses rayon's
+    /// current/global pool — i.e. all logical cores, or whatever
+    /// `RAYON_NUM_THREADS` / a caller-installed pool dictates. `Some(n)` with
+    /// `n >= 1` runs the restarts in a private, scoped pool of `n` threads,
+    /// leaving the caller's global pool untouched. `Some(0)` is treated as
+    /// `None`. See [`Fitter::jobs`].
+    jobs: Option<usize>,
     _shape: std::marker::PhantomData<S>,
 }
 
@@ -208,6 +216,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // `initial_sampler` to switch to a stratified Latin-hypercube
             // design across the `n_restarts` batch.
             initial_sampler: InitialSampler::default(),
+            // Use rayon's current/global pool when parallelism is compiled in;
+            // a no-op otherwise. Callers pin a count via `Fitter::jobs`.
+            jobs: None,
             _shape: std::marker::PhantomData,
         }
     }
@@ -494,6 +505,48 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
+    /// Set the number of threads used to fan out the `n_restarts` loop.
+    ///
+    /// This is a pure wall-time knob: the restarts are independently seeded and
+    /// reduced by lowest loss, so the chosen layout is byte-for-byte identical
+    /// no matter the thread count. It exists so that integrators — language
+    /// bindings, async services — can map their own "cores"/"jobs" setting
+    /// straight through, and so a single fit can be pinned single-threaded
+    /// (`jobs(1)`) without recompiling.
+    ///
+    /// - `Some(n)` with `n >= 1` runs the restarts in a *private, scoped*
+    ///   thread pool of `n` threads. eunoia never calls
+    ///   `rayon::ThreadPoolBuilder::build_global`, so the caller's own global
+    ///   rayon pool is left untouched.
+    /// - `Some(0)` and `None` (the default) defer to rayon's current/global
+    ///   pool, which honours `RAYON_NUM_THREADS` and any pool the caller has
+    ///   installed — typically all logical cores.
+    ///
+    /// Has an effect only when the crate is built with the `parallel` feature
+    /// and the target is not wasm; otherwise the fit runs single-threaded and
+    /// this setting is accepted but inert (so binding FFI surfaces need no
+    /// feature gating).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use eunoia::{DiagramSpecBuilder, Fitter};
+    /// use eunoia::geometry::shapes::Circle;
+    ///
+    /// let spec = DiagramSpecBuilder::new()
+    ///     .set("A", 10.0)
+    ///     .set("B", 8.0)
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // Pin this fit to a single thread (e.g. inside an async task).
+    /// let fitter = Fitter::<Circle>::new(&spec).jobs(1);
+    /// ```
+    pub fn jobs(mut self, n: usize) -> Self {
+        self.jobs = Some(n);
+        self
+    }
+
     /// Set the loss threshold above which `Optimizer::CmaEsLm` invokes its
     /// CMA-ES global escape stage.
     ///
@@ -643,6 +696,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let loss_type = self.loss_type;
         let optimizer_pool = self.optimizer_pool.clone();
         let cmaes_fallback_threshold = self.cmaes_fallback_threshold;
+        let jobs = self.jobs;
 
         // Master RNG: derives a per-attempt seed for each full-pipeline restart.
         let master_seed = self.seed.unwrap_or_else(|| rand::rng().random());
@@ -825,16 +879,44 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             .collect();
 
         let attempt_results: Vec<Result<(Vec<f64>, f64), DiagramError>> = if optimize {
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
             {
-                indexed_seeds
-                    .par_iter()
-                    .map(|&pair| run_attempt(pair))
-                    .collect()
+                // Fan the independent restarts across threads. Results are
+                // reduced by lowest loss below, and each attempt is seeded
+                // independently, so the chosen layout is identical regardless
+                // of thread count or completion order — `jobs` only moves wall
+                // time.
+                let run = || {
+                    indexed_seeds
+                        .par_iter()
+                        .map(|&pair| run_attempt(pair))
+                        .collect()
+                };
+                match jobs {
+                    // Explicit count: a private, scoped pool. We deliberately
+                    // never `build_global` — that pool is process-wide and
+                    // one-shot, so a library claiming it would hijack the
+                    // caller's own rayon usage. A pool that fails to build is
+                    // not worth aborting the fit over, so fall back to the
+                    // current pool.
+                    Some(n) if n >= 1 => {
+                        match rayon::ThreadPoolBuilder::new().num_threads(n).build() {
+                            Ok(pool) => pool.install(run),
+                            Err(_) => run(),
+                        }
+                    }
+                    // `None`/`Some(0)`: rayon's current/global pool, which
+                    // respects `RAYON_NUM_THREADS` and any caller-installed
+                    // pool.
+                    _ => run(),
+                }
             }
 
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(not(all(feature = "parallel", not(target_arch = "wasm32"))))]
             {
+                // Serial path: `parallel` feature off, or wasm (no threads).
+                // `jobs` is accepted but inert here.
+                let _ = jobs;
                 indexed_seeds
                     .iter()
                     .map(|&pair| run_attempt(pair))

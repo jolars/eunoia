@@ -16,7 +16,9 @@ workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eunoia = { path = "../eunoia", features = ["wasm", "plotting"] }
+# `parallel` is intentionally omitted: wasm has no threads, and it isn't a
+# default feature, so the core fits single-threaded here.
+eunoia = { path = "../eunoia", features = ["plotting"] }
 wasm-bindgen = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

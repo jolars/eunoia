@@ -46,7 +46,7 @@ compatibility). Workspace version is shared.
 
 - `crates/eunoia/` — core library, no platform deps
 - `crates/eunoia-wasm/` — wasm-bindgen wrapper (`cdylib`+`rlib`), depends on
-  the core with `features = ["wasm", "plotting"]`
+  the core with `features = ["plotting"]` (no `parallel` — wasm has no threads)
 - `ts/` — hand-written TypeScript surface (`euler`, `venn`, `Layout`,
   `placeLabelsForRegions`, …) compiled to `npm/` by `prepare-package.mjs`
 - `npm/` — generated, gitignored; published as `@jolars/eunoia`
@@ -226,16 +226,18 @@ encodings aren't interchangeable).
 Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.3 (`nalgebra` backend;
 every optimizer — final-layout & MDS-init LM and L-BFGS, Nelder-Mead, and the
 circle-overlap Brent root-find), `finitediff`, `polylabel-mini`, `num-complex`,
-`log`, `rand` 0.10, `i_overlay` 6 (optional, `plotting`), `rayon` (non-wasm
-only). `argmin`, `argmin-math` and `levenberg-marquardt` have all been removed
-— basin is the sole optimizer dependency. The whole tree is aligned on a single
-nalgebra 0.34 so basin's `nalgebra`-backend types unify with eunoia's own (no
-faer, no second nalgebra major).
+`log`, `rand` 0.10, `i_overlay` 6 (optional, `plotting`), `rayon` (optional,
+`parallel`). `argmin`, `argmin-math` and `levenberg-marquardt` have all been
+removed — basin is the sole optimizer dependency. The whole tree is aligned on
+a single nalgebra 0.34 so basin's `nalgebra`-backend types unify with eunoia's
+own (no faer, no second nalgebra major).
 
-Features: `wasm` (no-op; kept so downstream crates can request it — it used to
-forward to `argmin/wasm-bindgen`, unneeded now that basin is deterministic and
-time-free), `plotting` (`i_overlay`), `corpus` (exposes `test_utils::corpus` to
-example binaries — internal, not part of the public contract).
+Features: `parallel` (pulls `rayon`; fans the `n_restarts` loop across threads —
+**off by default** so the core never imposes a thread pool on consumers, leaving
+parallelism policy to bindings/apps; thread count via `Fitter::jobs`; inert on
+wasm), `plotting` (`i_overlay`), `corpus` (exposes `test_utils::corpus` to
+example binaries — internal, not part of the public contract). The old no-op
+`wasm` feature is gone — the crate already builds for wasm by default.
 
 WASM (`crates/eunoia-wasm/`): `wasm-bindgen` 0.2, `serde` 1.0,
 `serde-wasm-bindgen` 0.6, `serde_json` 1.0, `console_error_panic_hook`,
