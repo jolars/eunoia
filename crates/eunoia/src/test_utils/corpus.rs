@@ -114,9 +114,9 @@ pub const DEFAULT_MAX_DIAG_ERROR_HARD: f64 = 5e-2;
 /// optimisation sensitive to FP rounding in `sin`/`cos`/conic-intersection
 /// math, and seed-to-seed basin selection in LM/CMA-ES is fragile:
 /// non-glibc math runtimes (Windows MSVC, macOS libm) return slightly
-/// different ULP values than glibc, and the older argmin 0.10 /
-/// levenberg-marquardt 0.13 stack used to satisfy the CRAN MSRV (1.84.1)
-/// also lands seed=42 on Linux in a different basin than newer releases.
+/// different ULP values than glibc, and the optimizer stack matters too — the
+/// historical argmin 0.10 / levenberg-marquardt 0.13 stack (CRAN MSRV 1.84.1)
+/// landed seed=42 on Linux in a different basin than the current basin solvers.
 /// Across `TEST_SEEDS`, two of three seeds hit `~1e-4`; the third lands
 /// at `~1.5e-1`. The ceiling admits that variance — the spec is not a
 /// regression, just a different basin choice on a known-fragile spec.

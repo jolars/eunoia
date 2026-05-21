@@ -93,7 +93,7 @@ pub trait Closed: Sized + Area + BoundingBox + Perimeter + Centroid {
 ///   a clamp on the positive-axis manifold.
 ///
 ///   Most callers should not need this — it exists for the fitter and for
-///   experiments that plug straight into argmin.
+///   experiments that plug straight into a numerical optimizer.
 ///
 /// # Type Parameters
 ///

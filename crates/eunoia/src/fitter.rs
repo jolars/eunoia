@@ -194,15 +194,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // eulerr's `n_restarts = 10`. Each fit does that much work.
             n_restarts: 10,
             // Levenberg-Marquardt for the MDS init. The previous default was
-            // L-BFGS with More-Thuente line search, which under certain
+            // L-BFGS with a More-Thuente line search, which under certain
             // starting points (e.g. the LHS-induced
             // `issue71_4_set_extreme_scale` config where one circle fully
-            // contains the others) deadlocked inside argmin's line-search
-            // logic at a subset-clamp kink — argmin's `max_iters` only caps
-            // outer L-BFGS iterations, not the inner line-search loop.
-            // LM's trust-region update sidesteps the line-search deadlock,
-            // and `MdsSolver::LevenbergMarquardt` is already wired with the
-            // analytic per-pair Jacobian. The mix
+            // contains the others) stalled inside the inner line search at a
+            // subset-clamp kink. LM's trust-region update sidesteps the
+            // line-search stall, and `MdsSolver::LevenbergMarquardt` is already
+            // wired with the analytic per-pair Jacobian. The mix
             // `initial_solver_pool([LevenbergMarquardt, Lbfgs])` is still
             // available for experimentation.
             initial_solvers: vec![MdsSolver::LevenbergMarquardt],

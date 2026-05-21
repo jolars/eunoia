@@ -15,14 +15,11 @@ categories = ["graphics", "visualization", "mathematics"]
 workspace = true
 
 [dependencies]
-argmin = "0.11"
-argmin-math = { version = "0.5", features = ["nalgebra_v0_34"] }
-# Replaces the argmin + levenberg-marquardt optimizers. The lm crate is now
-# fully gone (final-layout and MDS-init LM both on basin); argmin remains only
-# for the cost-adapter trait impls and the circle Brent solve, dropped in the
-# final cleanup. Whole tree is aligned on nalgebra 0.34, so basin's `nalgebra`
-# backend types unify with eunoia's own — no bridging, no second nalgebra
-# major, no faer.
+# Every optimizer runs on basin now: final-layout + MDS-init LM and L-BFGS,
+# Nelder-Mead, and the circle-overlap Brent root-find. argmin, argmin-math and
+# the levenberg-marquardt crate have all been removed. The whole tree is
+# aligned on nalgebra 0.34, so basin's `nalgebra` backend types unify with
+# eunoia's own — no bridging, no second nalgebra major, no faer.
 basin = { version = "0.3", default-features = false, features = ["nalgebra"] }
 finitediff = "0.2"
 i_overlay = { version = "~2.0", optional = true }
@@ -37,7 +34,10 @@ rayon = "1.10"
 
 [features]
 default = []
-wasm = ["argmin/wasm-bindgen"]
+# Kept as a no-op so downstream crates (e.g. `eunoia-wasm`) can keep requesting
+# it. It previously forwarded to `argmin/wasm-bindgen`; basin is deterministic
+# and time-free, so no wasm-specific dependency wiring is needed.
+wasm = []
 plotting = ["dep:i_overlay"]
 # Exposes the shared `test_utils::corpus` fixtures outside `cfg(test)` so
 # example binaries (e.g. `examples/quality_report.rs`) can build the same

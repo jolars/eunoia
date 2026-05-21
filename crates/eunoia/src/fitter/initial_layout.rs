@@ -1,9 +1,9 @@
-use argmin::core::{CostFunction, Error, Gradient, Hessian};
 use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
+use crate::error::DiagramError;
 use crate::spec::PairwiseRelations;
 
 /// Sampling-scale convention used by every initial-layout sampler.
@@ -124,7 +124,7 @@ pub(crate) fn compute_initial_layout(
     relationships: &PairwiseRelations,
     set_areas: &[f64],
     rng: &mut dyn rand::RngCore,
-) -> Result<Vec<f64>, Error> {
+) -> Result<Vec<f64>, DiagramError> {
     compute_initial_layout_with_solver(
         distances,
         relationships,
@@ -150,7 +150,7 @@ pub(crate) fn compute_initial_layout_with_solver(
     rng: &mut dyn rand::RngCore,
     solver: MdsSolver,
     initial_positions: Option<&[f64]>,
-) -> Result<Vec<f64>, Error> {
+) -> Result<Vec<f64>, DiagramError> {
     let n_sets = distances.len();
 
     let initial_param = match initial_positions {
@@ -222,7 +222,7 @@ fn run_attempt(
     n_sets: usize,
     initial_param: &DVector<f64>,
     solver: MdsSolver,
-) -> Result<(f64, Vec<f64>), Error> {
+) -> Result<(f64, Vec<f64>), DiagramError> {
     match solver {
         MdsSolver::Lbfgs => {
             // Unbounded L-BFGS over the smooth MDS cost. `Vec<f64>` params:
@@ -296,7 +296,7 @@ impl basin::CostFunction for BasinMdsCost<'_> {
     fn cost(&self, p: &Vec<f64>) -> f64 {
         // `MdsCost::cost` is infallible in practice; map a non-finite or
         // error result to +∞ so a stray evaluation can't derail the search.
-        match <MdsCost as CostFunction>::cost(&self.inner, &DVector::from_vec(p.clone())) {
+        match self.inner.cost(&DVector::from_vec(p.clone())) {
             Ok(c) if c.is_finite() => c,
             _ => f64::INFINITY,
         }
@@ -308,7 +308,7 @@ impl basin::Gradient for BasinMdsCost<'_> {
     type Gradient = Vec<f64>;
 
     fn gradient(&self, p: &Vec<f64>) -> Vec<f64> {
-        match <MdsCost as Gradient>::gradient(&self.inner, &DVector::from_vec(p.clone())) {
+        match self.inner.gradient(&DVector::from_vec(p.clone())) {
             Ok(g) => g.as_slice().to_vec(),
             Err(_) => vec![0.0; p.len()],
         }
@@ -343,11 +343,11 @@ struct MdsCost<'a> {
     target_norm: f64,
 }
 
-impl CostFunction for MdsCost<'_> {
-    type Param = DVector<f64>;
-    type Output = f64;
-
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
+impl MdsCost<'_> {
+    /// MDS objective `Σ_{i≠j} (d²_ij − target²_ij)² / Σ target⁴`, with the
+    /// disjoint / subset clamps applied. Infallible, but kept `Result` for a
+    /// uniform interface with the finite-difference gradient checks.
+    fn cost(&self, param: &DVector<f64>) -> Result<f64, DiagramError> {
         let n_sets = param.len() / 2;
         let x = param.rows(0, n_sets);
         let y = param.rows(n_sets, n_sets);
@@ -382,11 +382,10 @@ impl CostFunction for MdsCost<'_> {
     }
 }
 
-impl Gradient for MdsCost<'_> {
-    type Param = DVector<f64>;
-    type Gradient = DVector<f64>;
-
-    fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, Error> {
+impl MdsCost<'_> {
+    /// Analytic gradient of [`MdsCost::cost`]. Infallible; `Result` for
+    /// interface uniformity with the FD checks.
+    fn gradient(&self, param: &DVector<f64>) -> Result<DVector<f64>, DiagramError> {
         let n_sets = param.len() / 2;
         let x = param.rows(0, n_sets);
         let y = param.rows(n_sets, n_sets);
@@ -428,10 +427,7 @@ impl Gradient for MdsCost<'_> {
     }
 }
 
-impl Hessian for MdsCost<'_> {
-    type Param = DVector<f64>;
-    type Hessian = Vec<Vec<f64>>;
-
+impl MdsCost<'_> {
     /// Analytic Hessian. For each ordered active pair (i, j) with
     /// xd = x_i - x_j, yd = y_i - y_j, D = xd² + yd² - d_ij², the contribution
     /// from D² to the Hessian is:
@@ -445,7 +441,12 @@ impl Hessian for MdsCost<'_> {
     ///
     /// The whole Hessian is then divided by `target_norm` to match the
     /// scale-invariant bulk loss.
-    fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
+    ///
+    /// `#[cfg(test)]`: no production solver consumes the analytic Hessian since
+    /// `TrustRegion` / `NewtonCg` were dropped, but the derivation is kept and
+    /// verified against finite differences in the `gradient_check` tests.
+    #[cfg(test)]
+    fn hessian(&self, param: &DVector<f64>) -> Result<Vec<Vec<f64>>, DiagramError> {
         let n_sets = param.len() / 2;
         let n = 2 * n_sets;
         let x = param.rows(0, n_sets);

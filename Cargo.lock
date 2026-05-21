@@ -83,39 +83,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "argmin"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7ab7ca97779074715a402e5e8045fae27e7191acaec9b4c5653276316e9e404"
-dependencies = [
- "anyhow",
- "argmin-math",
- "getrandom",
- "num-traits",
- "paste",
- "rand 0.9.4",
- "rand_xoshiro",
- "thiserror",
- "web-time",
-]
-
-[[package]]
-name = "argmin-math"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba6958a87117ff5e1d0d7716856a4303752518012ec4a67a68446b6631a1a54d"
-dependencies = [
- "anyhow",
- "cfg-if",
- "nalgebra",
- "num-complex",
- "num-integer",
- "num-traits",
- "rand 0.9.4",
- "thiserror",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -358,8 +325,6 @@ dependencies = [
 name = "eunoia"
 version = "0.15.0"
 dependencies = [
- "argmin",
- "argmin-math",
  "basin",
  "criterion",
  "env_logger",
@@ -1065,15 +1030,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_xoshiro"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f703f4665700daf5512dcca5f43afa6af89f09db47fb56be587f80636bda2d41"
-dependencies = [
- "rand_core 0.9.5",
-]
-
-[[package]]
 name = "rawpointer"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1272,26 +1228,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "thiserror"
-version = "2.0.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
-dependencies = [
- "thiserror-impl",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "2.0.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

@@ -94,7 +94,7 @@ compatibility). Workspace version is shared.
 3. **Final optimization** — selectable via `Optimizer`:
    - `LevenbergMarquardt` (`basin::LevenbergMarquardt`, nalgebra backend;
      MINPACK-style `gtol`/`ftol`/`xtol` termination)
-   - `Lbfgs` (argmin)
+   - `Lbfgs` (`basin::LBFGS`, unbounded; `GradientTolerance` + `CostTolerance`)
    - `NelderMead` (`basin::NelderMead`)
    - `CmaEsLm` *(default)* — plain LM first; if it stays above
      `Fitter::cmaes_fallback_threshold` (default `1e-3` on
@@ -224,17 +224,18 @@ encodings aren't interchangeable).
 ## Dependencies
 
 Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.3 (`nalgebra` backend;
-final-layout LM + L-BFGS, MDS-init LM + L-BFGS), `argmin` 0.11, `argmin-math`
-0.5 (`nalgebra_v0_34`; retained only for the cost-adapter trait impls and the
-circle Brent solve, removed in the final cleanup), `finitediff`,
-`polylabel-mini`, `num-complex`, `log`, `rand` 0.9,
-`i_overlay` ~2.0 (optional, `plotting`), `rayon` (non-wasm only). The whole
-tree is aligned on a single nalgebra 0.34 so basin's `nalgebra`-backend
-types unify with eunoia's own (no faer, no second nalgebra major).
+every optimizer — final-layout & MDS-init LM and L-BFGS, Nelder-Mead, and the
+circle-overlap Brent root-find), `finitediff`, `polylabel-mini`, `num-complex`,
+`log`, `rand` 0.9, `i_overlay` ~2.0 (optional, `plotting`), `rayon` (non-wasm
+only). `argmin`, `argmin-math` and `levenberg-marquardt` have all been removed
+— basin is the sole optimizer dependency. The whole tree is aligned on a single
+nalgebra 0.34 so basin's `nalgebra`-backend types unify with eunoia's own (no
+faer, no second nalgebra major).
 
-Features: `wasm` (forwards to `argmin/wasm-bindgen`), `plotting`
-(`i_overlay`), `corpus` (exposes `test_utils::corpus` to example binaries —
-internal, not part of the public contract).
+Features: `wasm` (no-op; kept so downstream crates can request it — it used to
+forward to `argmin/wasm-bindgen`, unneeded now that basin is deterministic and
+time-free), `plotting` (`i_overlay`), `corpus` (exposes `test_utils::corpus` to
+example binaries — internal, not part of the public contract).
 
 WASM (`crates/eunoia-wasm/`): `wasm-bindgen` 0.2, `serde` 1.0,
 `serde-wasm-bindgen` 0.6, `serde_json` 1.0, `console_error_panic_hook`,

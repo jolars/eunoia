@@ -4,7 +4,6 @@
 //! layout by minimizing the difference between target exclusive areas and actual
 //! fitted areas in the diagram.
 
-use argmin::core::{CostFunction, Error, Gradient, Hessian};
 use finitediff::vec;
 use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
@@ -12,6 +11,7 @@ use rand::{Rng, SeedableRng};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use crate::error::DiagramError;
 use crate::geometry::diagram::RegionMask;
 use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
@@ -97,8 +97,8 @@ pub(crate) struct FinalLayoutConfig {
     ///   per-knob fields below.
     /// - **CmaEsLm**: passed as the CMA-ES `fn_tol` (clamped to `≥ 1e-12`),
     ///   plus the LM polish step uses it as above.
-    /// - **Nelder-Mead**: ignored — argmin 0.11 doesn't expose a tolerance
-    ///   setter, so it runs to `max_iterations`.
+    /// - **Nelder-Mead**: ignored — no cost-tolerance setter is wired on the
+    ///   `basin::NelderMead` run, so it runs to `max_iterations`.
     ///
     /// Default `1e-3`, validated against the full 27-spec corpus × 16 seeds
     /// × {Circle, Ellipse} via the `final_tolerance` bench (zero regressions
@@ -171,7 +171,7 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     initial_positions: &[f64], // [x0, y0, x1, y1, ..., xn, yn]
     initial_radii: &[f64],     // [r0, r1, ..., rn]
     config: FinalLayoutConfig,
-) -> Result<(Vec<f64>, f64), Error> {
+) -> Result<(Vec<f64>, f64), DiagramError> {
     let n_sets = spec.n_sets;
     let params_per_shape = S::n_params();
 
@@ -185,7 +185,7 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     };
 
     let mut best: Option<(Vec<f64>, f64)> = None;
-    let mut last_err: Option<Error> = None;
+    let mut last_err: Option<DiagramError> = None;
     let n_restarts = config.n_restarts.max(1);
     let mut rng = StdRng::seed_from_u64(config.seed ^ 0x52455354_41525453); // "RESTARTS"
 
@@ -270,7 +270,9 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     match best {
         Some(b) => Ok(b),
         None => Err(last_err.unwrap_or_else(|| {
-            Error::msg("all optimization restarts failed (panicked or errored)")
+            DiagramError::InvalidCombination(
+                "all optimization restarts failed (panicked or errored)".to_string(),
+            )
         })),
     }
 }
@@ -289,7 +291,7 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
     initial_param: &DVector<f64>,
     config: &FinalLayoutConfig,
-) -> Result<(DVector<f64>, f64), Error> {
+) -> Result<(DVector<f64>, f64), DiagramError> {
     let params_per_shape = S::n_params();
 
     // Complement specs run through L-BFGS with analytical gradients (S2). LM
@@ -402,7 +404,7 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
     params_per_shape: usize,
     initial_param: &DVector<f64>,
     config: &FinalLayoutConfig,
-) -> Result<(DVector<f64>, f64), Error> {
+) -> Result<(DVector<f64>, f64), DiagramError> {
     match LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type) {
         Ok(problem) => {
             // Convergence uses LM's three MINPACK-style solver-internal tests,
@@ -469,7 +471,7 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
     params_per_shape: usize,
     initial_param: &DVector<f64>,
     config: &FinalLayoutConfig,
-) -> Result<(DVector<f64>, f64), Error> {
+) -> Result<(DVector<f64>, f64), DiagramError> {
     let n_params = initial_param.len();
     let mut simplex: Vec<Vec<f64>> = Vec::with_capacity(n_params + 1);
     simplex.push(initial_param.as_slice().to_vec());
@@ -563,9 +565,9 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BasinDiagramCost<
 
     fn cost(&self, param: &Vec<f64>) -> f64 {
         let p = DVector::from_vec(param.clone());
-        // argmin's CostFunction returns Result; map both Err and NaN to +∞
+        // `DiagramCost::cost` returns a Result; map both Err and NaN to +∞
         // so a single bad evaluation can't poison the simplex sort.
-        match <DiagramCost<'_, S> as CostFunction>::cost(&self.inner, &p) {
+        match self.inner.cost(&p) {
             Ok(c) if c.is_finite() => c,
             _ => f64::INFINITY,
         }
@@ -582,7 +584,7 @@ impl<S: DiagramShape + Copy + 'static> basin::Gradient for BasinDiagramCost<'_, 
         // when the shape + loss support it and falls back to central FD
         // otherwise. A failed evaluation becomes a zero vector so L-BFGS
         // treats the point as stationary rather than stepping on garbage.
-        match <DiagramCost<'_, S> as Gradient>::gradient(&self.inner, &p) {
+        match self.inner.gradient(&p) {
             Ok(g) => g.as_slice().to_vec(),
             Err(_) => vec![0.0; param.len()],
         }
@@ -746,11 +748,9 @@ impl<S: DiagramShape + Copy + 'static> DiagramCost<'_, S> {
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'_, S> {
-    type Param = DVector<f64>;
-    type Output = f64;
-
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, Error> {
+impl<S: DiagramShape + Copy + 'static> DiagramCost<'_, S> {
+    /// Loss between the fitted and target exclusive areas at `param`.
+    fn cost(&self, param: &DVector<f64>) -> Result<f64, DiagramError> {
         let shapes = self.params_to_shapes(param);
 
         // When the spec carries a complement, the trailing 4 params encode a
@@ -760,9 +760,10 @@ impl<S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'_, S> {
         let exclusive_areas = if self.spec.complement.is_some() {
             let container = self.params_to_container(param);
             S::compute_exclusive_regions_clipped(&shapes, &container).ok_or_else(|| {
-                Error::msg(
+                DiagramError::InvalidCombination(
                     "complement specs require a shape with `compute_exclusive_regions_clipped`; \
-                     fitter construction should have rejected this combination",
+                     fitter construction should have rejected this combination"
+                        .to_string(),
                 )
             })?
         } else {
@@ -772,19 +773,14 @@ impl<S: DiagramShape + Copy + 'static> CostFunction for DiagramCost<'_, S> {
         // `LossType::compute` evaluates the right thing for both true and
         // smooth-surrogate variants — smoothing is now expressed by picking
         // a `Smooth*` variant rather than via a runtime flag.
-        let error = self
+        Ok(self
             .loss_type
-            .compute(&exclusive_areas, &self.spec.exclusive_areas);
-
-        Ok(error)
+            .compute(&exclusive_areas, &self.spec.exclusive_areas))
     }
-}
 
-impl<S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'_, S> {
-    type Param = DVector<f64>;
-    type Gradient = DVector<f64>;
-
-    fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, Error> {
+    /// Analytic gradient where the shape + loss support it; central finite
+    /// differences otherwise.
+    fn gradient(&self, param: &DVector<f64>) -> Result<DVector<f64>, DiagramError> {
         // Try the analytical path: requires both the shape (region geometry)
         // and the loss to provide analytical gradients. Falls back to central
         // finite differences when either piece isn't available.
@@ -817,36 +813,19 @@ impl<S: DiagramShape + Copy + 'static> Gradient for DiagramCost<'_, S> {
             return Ok(DVector::from_vec(grad));
         }
 
-        // Fallback: central finite differences.
+        // Fallback: central finite differences. `finitediff` closures carry an
+        // `anyhow::Error`; map it to `DiagramError` (this branch never errors
+        // in practice — the cost closure always returns `Ok`).
         let param_vec = param.as_slice().to_vec();
         let f = |x: &Vec<f64>| {
             let p = DVector::from_vec(x.to_vec());
             Ok(self.cost(&p).unwrap_or(f64::INFINITY))
         };
         let g_central = vec::central_diff(&f);
-        let grad_vec = g_central(&param_vec)?;
+        let grad_vec = g_central(&param_vec).map_err(|e| {
+            DiagramError::InvalidCombination(format!("finite-difference gradient failed: {e}"))
+        })?;
         Ok(DVector::from_vec(grad_vec))
-    }
-}
-
-impl<S: DiagramShape + Copy + 'static> Hessian for DiagramCost<'_, S> {
-    type Param = DVector<f64>;
-    type Hessian = Vec<Vec<f64>>;
-
-    fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
-        // Use central finite differences for numerical Hessian
-        // central_hessian expects a gradient function and returns a closure
-        let param_vec = param.as_slice().to_vec();
-
-        let grad_fn = |x: &Vec<f64>| -> Result<Vec<f64>, argmin::core::Error> {
-            let p = DVector::from_vec(x.to_vec());
-            let grad = self.gradient(&p)?;
-            Ok(grad.as_slice().to_vec())
-        };
-
-        let h_central = finitediff::vec::central_hessian(&grad_fn);
-        let hessian = h_central(&param_vec)?;
-        Ok(hessian)
     }
 }
 
@@ -899,19 +878,20 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
         spec: &'a PreprocessedSpec,
         params_per_shape: usize,
         loss_type: LossType,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, DiagramError> {
         let norm_factor = match loss_type {
             LossType::SumSquared => {
                 let sum_t2: f64 = spec.exclusive_areas.values().map(|&v| v * v).sum();
                 if sum_t2 < 1e-20 {
-                    return Err(Error::msg(
-                        "Levenberg-Marquardt: target area norm is zero, cannot normalise",
+                    return Err(DiagramError::InvalidCombination(
+                        "Levenberg-Marquardt: target area norm is zero, cannot normalise"
+                            .to_string(),
                     ));
                 }
                 1.0 / sum_t2.sqrt()
             }
             other => {
-                return Err(Error::msg(format!(
+                return Err(DiagramError::InvalidCombination(format!(
                     "Levenberg-Marquardt only supports SumSquared loss, got {other:?}"
                 )));
             }

@@ -10,7 +10,6 @@ use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{
     Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter, Polygonize,
 };
-use argmin::core::Error;
 
 /// A circle defined by a center point and radius.
 ///
@@ -403,7 +402,7 @@ pub(crate) fn distance_for_overlap(
     overlap: f64,
     tol: Option<f64>,
     max_iter: Option<u64>,
-) -> Result<f64, Error> {
+) -> Result<f64, DiagramError> {
     let min_distance = (r1 - r2).abs();
     let max_distance = r1 + r2;
 
