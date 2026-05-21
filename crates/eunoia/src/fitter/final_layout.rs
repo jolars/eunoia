@@ -95,8 +95,9 @@ pub(crate) struct FinalLayoutConfig {
     /// - **Levenberg-Marquardt**: passed as `ftol` (cost-change exit) only.
     ///   `xtol` and `gtol` use the fixed `1e-6` defaults from the
     ///   per-knob fields below.
-    /// - **CmaEsLm**: passed as the CMA-ES `fn_tol` (clamped to `≥ 1e-12`),
-    ///   plus the LM polish step uses it as above.
+    /// - **CmaEsLm**: used by the LM step(s) (the up-front guard and the
+    ///   polish) as above; the bounded CMA-ES escape stage itself runs to its
+    ///   fixed generation budget under basin's TolX, so it doesn't read this.
     /// - **Nelder-Mead**: ignored — no cost-tolerance setter is wired on the
     ///   `basin::NelderMead` run, so it runs to `max_iterations`.
     ///
@@ -338,44 +339,13 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
             if lm_only.1 <= config.cmaes_fallback_threshold {
                 lm_only
             } else {
-                let (lower, upper, initial_std) =
-                    cmaes_bounds_for(initial_param.as_slice(), params_per_shape);
-                let cma_cost = DiagramCost::<S> {
-                    spec,
-                    loss_type: config.loss_type,
-                    params_per_shape,
-                    // CMA-ES is derivative-free, but evaluating the smooth
-                    // surrogate keeps the cost landscape consistent with
-                    // the LM polish step that follows.
-                    _shape: std::marker::PhantomData,
-                };
-                let cma_config = crate::fitter::cmaes::CmaEsConfig {
-                    lower,
-                    upper,
-                    initial_mean: initial_param.as_slice().to_vec(),
-                    initial_std,
-                    // 100 generations × default λ ≈ 1k–2k evals on hard
-                    // 6-set ellipse fits. Empirically enough to escape the
-                    // wrong-basin issue92_3_set_dropped_pair / eulerape_3_set
-                    // cases without dominating wall time when the user has
-                    // dialled n_restarts down.
-                    max_iters: 100,
-                    fn_tol: config.tolerance.max(1e-12),
-                    seed: config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
-                    lambda: None,
-                    max_evals: None,
-                };
-                let cma_result = crate::fitter::cmaes::minimize(&cma_config, |x| {
-                    let p = DVector::from_vec(x.to_vec());
-                    match cma_cost.cost(&p) {
-                        Ok(c) if c.is_finite() => c,
-                        _ => f64::INFINITY,
-                    }
-                });
-                let polish_init = DVector::from_vec(cma_result.best_x);
-                // LM polish reuses the existing dispatch so we get the
-                // analytical Jacobian for free.
-                let cma_lm = run_lm_or_lbfgs::<S>(spec, params_per_shape, &polish_init, config)?;
+                // LM is stuck in a wrong basin. Globally escape with bounded
+                // CMA-ES, then polish its best candidate with LM (reusing the
+                // dispatch above so the polish picks up the analytical Jacobian
+                // for free).
+                let cma_seed =
+                    run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config);
+                let cma_lm = run_lm_or_lbfgs::<S>(spec, params_per_shape, &cma_seed, config)?;
                 if cma_lm.1 < lm_only.1 {
                     cma_lm
                 } else {
@@ -548,6 +518,61 @@ fn run_lbfgs<S: DiagramShape + Copy + 'static>(
     (DVector::from_vec(result.param().clone()), result.cost())
 }
 
+/// Run the bounded CMA-ES global-escape stage and return its best candidate as
+/// a seed for the LM polish that follows.
+///
+/// Box-constrained CMA-ES (`basin::BoundedCmaEs`, Hansen/pycma adaptive
+/// quadratic boundary penalty) explores from the MDS/LM start when plain LM is
+/// stuck in a wrong basin. The per-coordinate bounds and initial standard
+/// deviations come from [`cmaes_bounds_for`]; the std vector preconditions the
+/// heterogeneous parameter scales (positions, radii, log-semi-axes, angles) via
+/// `with_stds`, so a single `initial_sigma = 1.0` works across all of them —
+/// the same `y = (x − x0)/std` preconditioning the previous inline CMA-ES did
+/// by hand, now `diag(stds²)` as the initial covariance.
+///
+/// Budgeted at 100 generations (≈1k–2k evals on hard 6-set ellipse fits) —
+/// empirically enough to escape the wrong-basin
+/// `issue92_3_set_dropped_pair` / `eulerape_3_set` cases without dominating
+/// wall time when the caller has dialled `n_restarts` down. The caller owns the
+/// LM polish and the non-regression guard against the LM-only result.
+fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> DVector<f64> {
+    let (lower, upper, initial_std) = cmaes_bounds_for(initial_param.as_slice(), params_per_shape);
+    let problem = BoundedDiagramCost::<S> {
+        inner: DiagramCost {
+            spec,
+            loss_type: config.loss_type,
+            params_per_shape,
+            _shape: std::marker::PhantomData,
+        },
+        lower: DVector::from_vec(lower),
+        upper: DVector::from_vec(upper),
+    };
+    let n = initial_param.len();
+    let lambda = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::default_lambda(n);
+    let solver = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::new(
+        initial_param.clone(),
+        // initial_sigma = 1: the per-coordinate scale lives entirely in
+        // `with_stds`, so the search runs on the unitless `diag(stds)`-scaled
+        // space (matches the old inline solver's internal `sigma = 1`).
+        1.0,
+        config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+    )
+    .with_stds(DVector::from_vec(initial_std));
+    let result = basin::Executor::new(
+        problem,
+        solver,
+        basin::BasicPopulationState::<DVector<f64>>::with_size(lambda),
+    )
+    .max_iter(100)
+    .run();
+    result.param().clone()
+}
+
 /// Adapter wrapping [`DiagramCost`] for basin's `CostFunction` trait.
 ///
 /// basin's solvers take `Param = Vec<f64>` here so the per-solver swap doesn't
@@ -588,6 +613,45 @@ impl<S: DiagramShape + Copy + 'static> basin::Gradient for BasinDiagramCost<'_, 
             Ok(g) => g.as_slice().to_vec(),
             Err(_) => vec![0.0; param.len()],
         }
+    }
+}
+
+/// `DiagramCost` adapter for basin's box-constrained CMA-ES
+/// (`Optimizer::CmaEsLm`'s global-escape stage).
+///
+/// Unlike [`BasinDiagramCost`] (which uses `Param = Vec<f64>` for the gradient
+/// and simplex solvers), this wrapper keeps `Param = DVector<f64>` because
+/// `basin::BoundedCmaEs` runs on the nalgebra backend directly — the whole tree
+/// is aligned on a single nalgebra, so basin's vector type *is*
+/// [`DVector<f64>`]. Box bounds live on the problem (basin's tenet 4); the
+/// solver's adaptive quadratic penalty reads them through [`BoxConstrained`].
+struct BoundedDiagramCost<'a, S: DiagramShape + Copy + 'static> {
+    inner: DiagramCost<'a, S>,
+    lower: DVector<f64>,
+    upper: DVector<f64>,
+}
+
+impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedDiagramCost<'_, S> {
+    type Param = DVector<f64>;
+    type Output = f64;
+
+    fn cost(&self, param: &DVector<f64>) -> f64 {
+        // Map both `Err` and non-finite costs to +∞ so a single bad sample
+        // can't poison the population sort (mirrors `BasinDiagramCost::cost`).
+        match self.inner.cost(param) {
+            Ok(c) if c.is_finite() => c,
+            _ => f64::INFINITY,
+        }
+    }
+}
+
+impl<S: DiagramShape + Copy + 'static> basin::BoxConstrained for BoundedDiagramCost<'_, S> {
+    fn lower(&self) -> &DVector<f64> {
+        &self.lower
+    }
+
+    fn upper(&self) -> &DVector<f64> {
+        &self.upper
     }
 }
 

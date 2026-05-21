@@ -1,7 +1,6 @@
 //! Fitter for creating diagram layouts from specifications.
 
 mod clustering;
-mod cmaes;
 pub mod final_layout;
 mod initial_layout;
 mod layout;

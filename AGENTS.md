@@ -67,8 +67,9 @@ compatibility). Workspace version is shared.
   - `diagram.rs` — region discovery and inclusion–exclusion combiner
 - `fitter/`
   - `initial_layout.rs` — MDS warm-start, `InitialSampler`, `MdsSolver`
-  - `final_layout.rs` — `Optimizer`, dispatch
-  - `cmaes.rs` — inline purecma-style CMA-ES (no extra dep)
+  - `final_layout.rs` — `Optimizer`, dispatch; the `CmaEsLm` global-escape
+    stage runs `basin::BoundedCmaEs` (per-coordinate `with_stds`
+    preconditioning) via `run_bounded_cmaes`
   - `clustering.rs`, `normalize.rs`, `packing.rs`
   - `layout.rs` — `Layout<S>`, `Layout::container()`, quality metrics
   - `corpus_quality.rs`, `synthetic_groundtruth.rs` — corpus-driven evaluation
@@ -98,8 +99,12 @@ compatibility). Workspace version is shared.
    - `NelderMead` (`basin::NelderMead`)
    - `CmaEsLm` *(default)* — plain LM first; if it stays above
      `Fitter::cmaes_fallback_threshold` (default `1e-3` on
-     `NormalizedSumSquared`), runs a CMA-ES → LM polish and keeps the lower
-     loss. Strictly non-regressing vs LM.
+     `NormalizedSumSquared`), runs a bounded CMA-ES → LM polish and keeps the
+     lower loss. Strictly non-regressing vs LM. The escape stage is
+     `basin::BoundedCmaEs` (adaptive quadratic boundary penalty) with
+     per-coordinate initial std via `with_stds`, preconditioning the
+     heterogeneous parameter scales so a single `initial_sigma` works across
+     positions, radii, log-semi-axes, and angles.
 
    `MdsSolver` for the initial stage: `LevenbergMarquardt` *(default;
    `basin::LevenbergMarquardt`, `tau = 1.0` for the far-from-optimum random
@@ -236,9 +241,10 @@ encodings aren't interchangeable).
 
 ## Dependencies
 
-Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.3 (`nalgebra` backend;
-every optimizer — final-layout & MDS-init LM and L-BFGS, Nelder-Mead, and the
-circle-overlap Brent root-find), `finitediff`, `polylabel-mini`, `num-complex`,
+Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.4 (`nalgebra` backend;
+every optimizer — final-layout & MDS-init LM and L-BFGS, Nelder-Mead, the
+`CmaEsLm` bounded CMA-ES escape stage, and the circle-overlap Brent
+root-find), `finitediff`, `polylabel-mini`, `num-complex`,
 `log`, `rand` 0.10, `i_overlay` 6 (optional, `plotting`), `rayon` (optional,
 `parallel`). `argmin`, `argmin-math` and `levenberg-marquardt` have all been
 removed — basin is the sole optimizer dependency. The whole tree is aligned on
