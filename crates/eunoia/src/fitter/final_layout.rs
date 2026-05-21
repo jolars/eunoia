@@ -4,9 +4,7 @@
 //! layout by minimizing the difference between target exclusive areas and actual
 //! fitted areas in the diagram.
 
-use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
-use argmin::solver::linesearch::MoreThuenteLineSearch;
-use argmin::solver::quasinewton::LBFGS;
+use argmin::core::{CostFunction, Error, Gradient, Hessian};
 use finitediff::vec;
 use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
@@ -316,34 +314,7 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
             // L-BFGS with numerical gradients. On non-smooth losses
             // (`MaxAbsolute`, `SumAbsoute`, …) gradients are unreliable —
             // pick a `LossType::Smooth*` surrogate variant instead.
-            let cost_function_lbfgs = DiagramCost::<S> {
-                spec,
-                loss_type: config.loss_type,
-                params_per_shape,
-                _shape: std::marker::PhantomData,
-            };
-            let line_search = MoreThuenteLineSearch::new();
-            // Both tolerances at `config.tolerance`. Squaring the cost
-            // tolerance (the obvious "be stricter on cost than gradient"
-            // trick) backfires: with central-difference gradients the FD
-            // noise floor on cost evals is ~`sqrt(EPSILON) × |cost|`, well
-            // above any tolerance < ~1e-9. A too-tight cost tolerance means
-            // the optimizer never declares "no progress" and grinds to
-            // `max_iters` even when sitting at the optimum (issue #34).
-            let solver = LBFGS::new(line_search, 10)
-                .with_tolerance_grad(config.tolerance)?
-                .with_tolerance_cost(config.tolerance)?;
-            let result = Executor::new(cost_function_lbfgs, solver)
-                .configure(|state| {
-                    state
-                        .param(initial_param.clone())
-                        .max_iters(config.max_iterations as u64)
-                })
-                .run()?;
-            (
-                result.state().get_best_param().unwrap().clone(),
-                result.state().get_cost(),
-            )
+            run_lbfgs::<S>(spec, params_per_shape, initial_param, config)
         }
         Optimizer::LevenbergMarquardt => {
             run_lm_or_lbfgs::<S>(spec, params_per_shape, initial_param, config)?
@@ -477,26 +448,11 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
             // Smooth loss (including `Smooth*` surrogate variants). The
             // cost landscape is C¹, so L-BFGS with numerical gradients
             // applies.
-            let cost_function_lbfgs = DiagramCost::<S> {
+            Ok(run_lbfgs::<S>(
                 spec,
-                loss_type: config.loss_type,
                 params_per_shape,
-                _shape: std::marker::PhantomData,
-            };
-            let line_search = MoreThuenteLineSearch::new();
-            let solver = LBFGS::new(line_search, 10)
-                .with_tolerance_grad(config.tolerance)?
-                .with_tolerance_cost(config.tolerance)?;
-            let result = Executor::new(cost_function_lbfgs, solver)
-                .configure(|state| {
-                    state
-                        .param(initial_param.clone())
-                        .max_iters(config.max_iterations as u64)
-                })
-                .run()?;
-            Ok((
-                result.state().get_best_param().unwrap().clone(),
-                result.state().get_cost(),
+                initial_param,
+                config,
             ))
         }
     }
@@ -553,6 +509,43 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
     Ok((DVector::from_vec(result.param().clone()), result.cost()))
 }
 
+/// Run unbounded L-BFGS (`basin::LBFGS`) from `initial_param` over the smooth
+/// cost landscape, returning `(params, loss)`.
+///
+/// Shared by `Optimizer::Lbfgs` and the smooth-loss fallback in
+/// [`run_lm_or_lbfgs`]. Both convergence tests sit at `config.tolerance`:
+/// `GradientTolerance` (`‖∇f‖₂ ≤ tol`) and `CostTolerance` (`|Δf| ≤ tol`),
+/// the framework equivalents of the previous solver's `with_tolerance_grad`
+/// / `with_tolerance_cost`. Squaring the cost tolerance (the obvious "be
+/// stricter on cost than gradient" trick) backfires: with central-difference
+/// gradients the FD noise floor on cost evals is ~`sqrt(EPSILON) × |cost|`,
+/// well above any tolerance < ~1e-9, so a too-tight cost tolerance means the
+/// optimizer never declares "no progress" and grinds to `max_iters` even when
+/// sitting at the optimum (issue #34).
+fn run_lbfgs<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> (DVector<f64>, f64) {
+    let cost_function = BasinDiagramCost::<S> {
+        inner: DiagramCost {
+            spec,
+            loss_type: config.loss_type,
+            params_per_shape,
+            _shape: std::marker::PhantomData,
+        },
+    };
+    let x0 = initial_param.as_slice().to_vec();
+    let solver = basin::LBFGS::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
+    let result = basin::Executor::new(cost_function, solver, basin::LbfgsState::new(x0, 10))
+        .max_iter(config.max_iterations.max(1) as u64)
+        .terminate_on(basin::GradientTolerance(config.tolerance))
+        .terminate_on(basin::CostTolerance::new(config.tolerance))
+        .run();
+    (DVector::from_vec(result.param().clone()), result.cost())
+}
+
 /// Adapter wrapping [`DiagramCost`] for basin's `CostFunction` trait.
 ///
 /// basin's solvers take `Param = Vec<f64>` here so the per-solver swap doesn't
@@ -575,6 +568,23 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BasinDiagramCost<
         match <DiagramCost<'_, S> as CostFunction>::cost(&self.inner, &p) {
             Ok(c) if c.is_finite() => c,
             _ => f64::INFINITY,
+        }
+    }
+}
+
+impl<S: DiagramShape + Copy + 'static> basin::Gradient for BasinDiagramCost<'_, S> {
+    type Param = Vec<f64>;
+    type Gradient = Vec<f64>;
+
+    fn gradient(&self, param: &Vec<f64>) -> Vec<f64> {
+        let p = DVector::from_vec(param.clone());
+        // `DiagramCost::gradient` takes the analytic boundary-velocity path
+        // when the shape + loss support it and falls back to central FD
+        // otherwise. A failed evaluation becomes a zero vector so L-BFGS
+        // treats the point as stationary rather than stepping on garbage.
+        match <DiagramCost<'_, S> as Gradient>::gradient(&self.inner, &p) {
+            Ok(g) => g.as_slice().to_vec(),
+            Err(_) => vec![0.0; param.len()],
         }
     }
 }
