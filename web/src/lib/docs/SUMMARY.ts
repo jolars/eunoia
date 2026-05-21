@@ -31,6 +31,7 @@ export const SUMMARY: DocSection[] = [
     title: "Concepts",
     chapters: [
       { title: "Fitter pipeline", slug: "/docs/concepts/fitter-pipeline/" },
+      { title: "Goodness of fit", slug: "/docs/concepts/goodness-of-fit/" },
       { title: "Shapes", slug: "/docs/concepts/shapes/" },
       { title: "Label placement", slug: "/docs/concepts/label-placement/" },
       { title: "Complement", slug: "/docs/concepts/complement/" },

@@ -1,11 +1,45 @@
 # Fitter pipeline
 
-> TODO: cover the four stages — initial MDS layout (positions only,
-> sizes derived from set areas), conversion to shape-specific
-> optimizer parameters, final shape-specific optimisation
-> (selectable optimizer + loss), and post-fit normalisation
-> (clustering, rotation, centring, skyline-packing of disjoint
-> clusters).
+Fitting a diagram turns a set of region sizes into concrete shapes —
+circles, ellipses, squares, or rectangles — whose overlaps reproduce
+those sizes as closely as possible. Eunoia runs this in four stages.
 
-See the [Architecture section in `AGENTS.md`](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
-for now.
+## 1. Initial layout (MDS)
+
+An initial arrangement is computed with **positional multidimensional
+scaling**. Each shape's size is fixed up front from the requested set
+areas, and only the centre `(x, y)` of every shape is solved for.
+Target pairwise distances come from inverting each shape's own overlap
+formula, so the warm start already places overlapping sets near each
+other and disjoint sets apart.
+
+## 2. Optimizer encoding
+
+The MDS positions are converted into the per-shape parameter encoding
+the optimiser works in — an ellipse, for example, is optimised over
+`[x, y, ln a, ln b, φ]` rather than its raw semi-axes. The log encoding
+keeps widths and heights positive and balances the scales of the
+parameters so a single solver setting works across positions, radii,
+and angles.
+
+## 3. Final optimisation
+
+The shape parameters are refined by **minimising a loss** that measures
+the discrepancy between the fitted region areas and the requested ones.
+The optimiser and the loss are both selectable; circles and ellipses
+use analytical gradients where the loss allows, and a global-escape
+stage can kick in when a plain local solve stalls on a hard layout.
+
+## 4. Normalisation
+
+The fitted layout is post-processed for a stable, consistent
+appearance: disconnected clusters are separated, the diagram is rotated
+to a canonical orientation, centred, and the clusters are packed
+together. The result is a layout you can polygonise, label, and render.
+
+How faithfully the result reproduces the requested sizes is summarised
+by a few scalar metrics — see [Goodness of fit](/docs/concepts/goodness-of-fit/).
+
+For the authoritative details — optimisers, losses, gradients, and the
+shape-specific encodings — see the
+[Architecture section in `AGENTS.md`](https://github.com/jolars/eunoia/blob/main/AGENTS.md).

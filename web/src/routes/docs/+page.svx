@@ -2,9 +2,9 @@
 
 Eunoia is a Rust library for area-proportional Euler and Venn diagrams.
 It is the engine behind the [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)
-npm package and (planned) R, Python, and Julia wrappers, and a modern
-rewrite of the C++ backend behind the [eulerr](https://github.com/jolars/eulerr)
-R package.
+npm package and the [`eunoia`](https://pypi.org/project/eunoia/) Python
+package, with a Julia wrapper planned, and a modern rewrite of the C++
+backend behind the [eulerr](https://github.com/jolars/eulerr) R package.
 
 ## Who this is for
 

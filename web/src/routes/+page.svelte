@@ -40,12 +40,11 @@ const johanUrl = "https://jolars.co";
           </h2>
           <p class="text-lg text-gray-600 mb-4">
             A Rust library for fitting set-visualization diagrams with circles,
-            ellipses, squares, and rectangles — accurate, fast, and shipped with
+            ellipses, squares, and rectangles—accurate, fast, and shipped with
             WASM bindings for the web. Powers the R package
             <a href={eulerrRepoUrl} class="text-blue-600 hover:underline">eulerr</a>,
             npm package <a href={npmUrl} class="text-blue-600 hover:underline">@jolars/eunoia</a>,
-            and the <a href={pypiUrl} class="text-blue-600 hover:underline">Python package</a>,
-            with a Julia wrapper planned.
+            and Python package <a href={pypiUrl} class="text-blue-600 hover:underline">eunoia</a>.
           </p>
           <div class="flex flex-wrap gap-3 pt-2">
             <a

@@ -1,0 +1,42 @@
+# Goodness of fit
+
+Not every set of region sizes can be drawn exactly, so eunoia reports a
+few scalars that summarise how faithfully the fitted geometry
+reproduces the requested set relationships. These appear under
+*Goodness of fit* in the [App](/app/), and are returned on the layout
+for programmatic callers.
+
+## Metrics
+
+- **stress** — a scale-invariant measure due to *Wilkinson (2012)*,
+  popularised by `venneuler`. Lower is better.
+- **diagError** — the largest absolute discrepancy between a fitted
+  region's share of the total area and its requested share. Defined by
+  *Micallef & Rodgers (2014)*; values below `0.01` generally indicate a
+  faithful diagram.
+- **regionError** — the same quantity as `diagError`, but reported per
+  region rather than as the maximum across all of them.
+
+## When a diagram can't be drawn exactly
+
+Not every set of region areas can be represented faithfully with
+circles, or even with ellipses. A classic example:
+
+```
+A=5, B=3, C=1, A&B=2, A&B&C=2
+```
+
+No two-dimensional Euler diagram with circles can satisfy these
+constraints exactly. In such cases `diagError` will be large, and the
+geometry eunoia returns is the best compromise the optimiser found. The
+metrics above are how you tell a faithful diagram apart from a forced
+one — always check them before trusting a layout.
+
+## References
+
+- Wilkinson, L. (2012). Exact and approximate area-proportional
+  circular Venn and Euler diagrams. *IEEE Transactions on Visualization
+  and Computer Graphics*, 18(2), 321–331.
+- Micallef, L., & Rodgers, P. (2014). eulerAPE: drawing
+  area-proportional 3-Venn diagrams using ellipses. *PLOS ONE*, 9(7),
+  e101717.

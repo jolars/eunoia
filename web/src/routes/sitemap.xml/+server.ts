@@ -1,5 +1,5 @@
 // Static sitemap. Add new routes here when they land.
-const routes = ["/", "/app/", "/about/", "/cite/"];
+const routes = ["/", "/app/", "/cite/"];
 const hostname = "https://eunoia.bz";
 
 export const prerender = true;
