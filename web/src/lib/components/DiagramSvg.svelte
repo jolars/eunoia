@@ -216,29 +216,53 @@
   }
 
   /**
-   * Per-set labels for sets that have no exclusive single-set region (e.g.
-   * a fully-nested B inside A). Read from `result.setAnchors` — the WASM
-   * layer populates this from `PlotData::set_anchors`, which uses
-   * hole-aware POI on `shape_i \ ⋃ others` and falls back to the shape's
-   * own POI when the set is fully covered. This matches eulerr's behaviour.
+   * Sets that have no exclusive single-set region (e.g. a fully-nested B
+   * inside A) get their set label folded into the largest region that
+   * contains them — mirroring the core's `largest_containing_region_anchor`
+   * fallback. Mapping is region combination → ordered list of nested set
+   * names hosted there.
+   *
+   * Folding (rather than dropping the name at `setAnchors`) routes the
+   * nested set name through the same measurement + `placeLabelsForRegions`
+   * pipeline as every other label, so it (a) stacks above the host region's
+   * quantity instead of overlapping it, and (b) is raycast outside with a
+   * leader when the host region is too small to hold it.
+   *
+   * Every nested set is guaranteed a host: `setLabels` only contains sets
+   * that appear in some region, and a set with no *exclusive* region must
+   * therefore appear in at least one intersection region.
    */
-  let nestedSetLabels: { name: string; x: number; y: number }[] = $derived.by(
-    () => {
-      if (!result || result.shapeMode !== "region") return [];
-      const labeled = new Set<string>();
+  let regionNestedSets: Record<string, string[]> = $derived.by(() => {
+    const map: Record<string, string[]> = {};
+    if (!result || result.shapeMode !== "region") return map;
+    const hasExclusive = new Set<string>();
+    for (const r of result.regions) {
+      if (!r.combination.includes("&")) hasExclusive.add(r.combination.trim());
+    }
+    for (const name of setLabels) {
+      if (hasExclusive.has(name)) continue;
+      let best: { combo: string; area: number } | null = null;
       for (const r of result.regions) {
-        if (!r.combination.includes("&")) labeled.add(r.combination.trim());
+        const sets = r.combination.split("&").map((s) => s.trim());
+        if (!sets.includes(name)) continue;
+        if (!best || r.totalArea > best.area) {
+          best = { combo: r.combination, area: r.totalArea };
+        }
       }
-      const out: { name: string; x: number; y: number }[] = [];
-      for (const name of setLabels) {
-        if (labeled.has(name)) continue;
-        const anchor = result.setAnchors?.[name];
-        if (!anchor) continue;
-        out.push({ name, x: anchor.x, y: anchor.y });
-      }
-      return out;
-    },
-  );
+      if (best) (map[best.combo] ??= []).push(name);
+    }
+    return map;
+  });
+
+  /**
+   * Title lines (set names) shown inside a region's label box, stacked above
+   * its quantity: the set's own name for an exclusive single-set region, or
+   * the names of any sets nested into this region otherwise.
+   */
+  function regionTitleLines(combination: string): string[] {
+    if (!combination.includes("&")) return [combination];
+    return regionNestedSets[combination] ?? [];
+  }
 
   let fontWeight = $derived(style.fontBold ? 700 : 400);
   let fontItalic = $derived(style.fontItalic ? "italic" : "normal");
@@ -267,6 +291,7 @@
     void style.fontBold;
     void style.fontItalic;
     void style.showCounts;
+    void regionNestedSets;
     console.debug("[fit-measure] effect run", {
       hasContainer: !!measureContainer,
       mode: result?.shapeMode,
@@ -486,17 +511,16 @@
       data-fit-measure
     >
       {#each result.regions as region}
-        {@const isSetRegion = !region.combination.includes("&")}
-        {#if isSetRegion}
+        {#each regionTitleLines(region.combination) as title}
           <text
             data-fit-region={region.combination}
             font-size={style.labelSize}
             font-weight={fontWeight}
             font-style={fontItalic}
           >
-            {region.combination}
+            {title}
           </text>
-        {/if}
+        {/each}
         {#if style.showCounts}
           <text
             data-fit-region={region.combination}
@@ -559,18 +583,17 @@
         {/each}
       {/if}
       {#each result.regions as region}
-        {@const isSetRegion = !region.combination.includes("&")}
         {@const placement = regionPlacements[region.combination]}
         {@const isExterior =
           placement?.kind === "exteriorRaycast" ||
           placement?.kind === "exteriorForceDirected"}
-        {@const renderLabel = true}
         {@const anchor = regionAnchor(
           region.combination,
           region.labelX,
           region.labelY,
         )}
-        {#if renderLabel && isExterior && placement?.tether}
+        {@const titleLines = regionTitleLines(region.combination)}
+        {#if isExterior && placement?.tether}
           <path
             d={leaderPath(
               placement.tether,
@@ -584,10 +607,10 @@
             stroke-opacity="0.6"
           />
         {/if}
-        {#if renderLabel && isSetRegion}
+        {#each titleLines as title, i}
           <text
             x={anchor.x}
-            y={anchor.y}
+            y={anchor.y + i * style.labelSize}
             text-anchor="middle"
             dominant-baseline="central"
             font-size={style.labelSize}
@@ -595,13 +618,13 @@
             font-style={fontItalic}
             fill="black"
           >
-            {region.combination}
+            {title}
           </text>
-        {/if}
-        {#if renderLabel && style.showCounts}
+        {/each}
+        {#if style.showCounts}
           <text
             x={anchor.x}
-            y={isSetRegion ? anchor.y + style.labelSize : anchor.y}
+            y={anchor.y + titleLines.length * style.labelSize}
             text-anchor="middle"
             dominant-baseline="central"
             font-size={style.labelSize * 0.75}
@@ -610,20 +633,6 @@
             {fmt(region.totalArea)}
           </text>
         {/if}
-      {/each}
-      {#each nestedSetLabels as fb}
-        <text
-          x={fb.x}
-          y={fb.y}
-          text-anchor="middle"
-          dominant-baseline="central"
-          font-size={style.labelSize}
-          font-weight={fontWeight}
-          font-style={fontItalic}
-          fill="black"
-        >
-          {fb.name}
-        </text>
       {/each}
     {:else}
       {#each result.circles as circle, i}
