@@ -18,7 +18,7 @@
 
 use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 /// Configuration for a single CMA-ES run.
 #[derive(Clone, Debug)]

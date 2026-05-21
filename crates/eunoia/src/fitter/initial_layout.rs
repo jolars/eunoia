@@ -1,7 +1,7 @@
 use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use crate::error::DiagramError;
 use crate::spec::PairwiseRelations;
@@ -76,7 +76,7 @@ pub(crate) fn latin_hypercube_rows(
     n_dims: usize,
     lo: f64,
     hi: f64,
-    rng: &mut dyn rand::RngCore,
+    rng: &mut dyn rand::Rng,
 ) -> Vec<Vec<f64>> {
     debug_assert!(n_samples >= 1);
     debug_assert!(hi >= lo);
@@ -95,7 +95,7 @@ pub(crate) fn latin_hypercube_rows(
 }
 
 /// Sample a single uniform initial position vector in `[0, scale]^(2·n_sets)`.
-fn sample_uniform_init(rng: &mut dyn rand::RngCore, n_sets: usize, scale: f64) -> DVector<f64> {
+fn sample_uniform_init(rng: &mut dyn rand::Rng, n_sets: usize, scale: f64) -> DVector<f64> {
     // Derive a fresh per-attempt seed from the supplied rng so the sampling
     // path is identical to the historical behaviour (compute_initial_layout
     // → run_attempt seeded a local StdRng before drawing 2·n_sets uniforms),
@@ -123,7 +123,7 @@ pub(crate) fn compute_initial_layout(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     set_areas: &[f64],
-    rng: &mut dyn rand::RngCore,
+    rng: &mut dyn rand::Rng,
 ) -> Result<Vec<f64>, DiagramError> {
     compute_initial_layout_with_solver(
         distances,
@@ -147,7 +147,7 @@ pub(crate) fn compute_initial_layout_with_solver(
     distances: &Vec<Vec<f64>>,
     relationships: &PairwiseRelations,
     set_areas: &[f64],
-    rng: &mut dyn rand::RngCore,
+    rng: &mut dyn rand::Rng,
     solver: MdsSolver,
     initial_positions: Option<&[f64]>,
 ) -> Result<Vec<f64>, DiagramError> {

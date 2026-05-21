@@ -2623,7 +2623,7 @@ mod tests {
         seed: u64,
     ) -> f64 {
         use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
 
         let mut rng = StdRng::seed_from_u64(seed);
         let mut in_both = 0;
@@ -2955,7 +2955,7 @@ mod tests {
         seed: u64,
     ) -> f64 {
         use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
 
         let mut rng = StdRng::seed_from_u64(seed);
         let mut in_both = 0;
@@ -2994,7 +2994,7 @@ mod tests {
     #[ignore = "slow stochastic validation"]
     fn test_random_ellipse_intersections_monte_carlo() {
         use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
 
         const N_TESTS: usize = 100;
         const MC_SAMPLES: usize = 50_000;
@@ -3078,7 +3078,7 @@ mod tests {
     #[test]
     fn test_three_ellipse_partial_overlap_monte_carlo() {
         use rand::rngs::StdRng;
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
 
         // Test a specific 3-ellipse configuration with Monte Carlo
         let seed = 42u64;

@@ -7,8 +7,10 @@
 # resolver = "2".
 incompatible-rust-versions = "fallback"
 
-[target.wasm32-unknown-unknown]
-rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+# getrandom 0.4 selects its WASM backend from the `wasm_js` crate feature
+# (enabled on the dependency in `crates/eunoia-wasm/Cargo.toml`), so the old
+# `--cfg getrandom_backend="wasm_js"` rustflag that getrandom 0.3 required is
+# no longer needed.
 
 # Force frame pointers on native x86_64 so `perf record` (default
 # call-graph mode) can unwind through inlined argmin / nalgebra frames

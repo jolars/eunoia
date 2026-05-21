@@ -226,7 +226,7 @@ encodings aren't interchangeable).
 Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.3 (`nalgebra` backend;
 every optimizer — final-layout & MDS-init LM and L-BFGS, Nelder-Mead, and the
 circle-overlap Brent root-find), `finitediff`, `polylabel-mini`, `num-complex`,
-`log`, `rand` 0.9, `i_overlay` 6 (optional, `plotting`), `rayon` (non-wasm
+`log`, `rand` 0.10, `i_overlay` 6 (optional, `plotting`), `rayon` (non-wasm
 only). `argmin`, `argmin-math` and `levenberg-marquardt` have all been removed
 — basin is the sole optimizer dependency. The whole tree is aligned on a single
 nalgebra 0.34 so basin's `nalgebra`-backend types unify with eunoia's own (no
@@ -239,7 +239,10 @@ example binaries — internal, not part of the public contract).
 
 WASM (`crates/eunoia-wasm/`): `wasm-bindgen` 0.2, `serde` 1.0,
 `serde-wasm-bindgen` 0.6, `serde_json` 1.0, `console_error_panic_hook`,
-`web-sys`, `getrandom` 0.3 with `wasm_js`.
+`web-sys`, `getrandom` 0.4 with `wasm_js` (the feature alone selects the WASM
+backend in 0.4 — no `getrandom_backend` rustflag needed). Core `rand` is held
+at 0.10 to match `basin`/`rand_distr`, so the production tree carries a single
+`rand`/`getrandom`; the older copies in `Cargo.lock` are dev-only (proptest).
 
 Keep the dep footprint minimal — compile time, WASM binary size, license,
 and maintenance burden are all considerations.

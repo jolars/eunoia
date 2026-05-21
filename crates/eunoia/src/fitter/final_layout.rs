@@ -7,7 +7,7 @@
 use finitediff::vec;
 use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -1040,7 +1040,7 @@ mod tests {
 
         /// Generate a random circle layout for testing
         pub fn random_circle_layout(n_sets: usize, seed: u64) -> (Vec<Circle>, Vec<String>) {
-            use rand::Rng;
+            use rand::RngExt;
             use rand::SeedableRng;
 
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -1928,7 +1928,7 @@ mod tests {
     fn benchmark_gradient_call_only_ellipse() {
         use crate::geometry::shapes::Ellipse;
         use crate::loss::LossType;
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
         use std::time::Instant;
         let cases: &[(usize, u64, usize)] = &[(3, 13, 500), (5, 100, 200), (8, 200, 100)];
         for &(n, seed, iters) in cases {
@@ -1993,7 +1993,7 @@ mod tests {
     #[ignore]
     fn benchmark_gradient_call_only() {
         use crate::loss::LossType;
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
         use std::time::Instant;
 
         let cases: &[(usize, u64, usize)] = &[(3, 11, 1000), (5, 33, 500), (8, 55, 200)];
@@ -2281,7 +2281,7 @@ mod tests {
     #[test]
     fn analytic_gradient_ellipse_random_layouts() {
         use crate::geometry::shapes::Ellipse;
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         let configs: &[(usize, u64)] = &[(2, 7), (3, 13), (3, 21), (5, 100)];
         for &(n, seed) in configs {
@@ -2332,7 +2332,7 @@ mod tests {
         // test, see comments below.
         let configs: &[(usize, u64)] = &[(5, 33), (5, 44), (8, 55)];
         for &(n, seed) in configs {
-            use rand::Rng;
+            use rand::RngExt;
             use rand::SeedableRng;
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let circles: Vec<Circle> = (0..n)
@@ -2401,7 +2401,7 @@ mod tests {
 
     #[test]
     fn analytic_gradient_random_layouts() {
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         // Several seeds × sizes, spanning generic 3-, 5-, 8-set fits.
         let configs: &[(usize, u64)] = &[(3, 11), (3, 22), (5, 33), (5, 44), (8, 55)];
@@ -2437,7 +2437,7 @@ mod tests {
         // For sum-of-squares losses, ∇L(θ) = 2·Jᵀ·r where J is the
         // residual Jacobian and r the residual vector. Verifies the LM
         // adapter constructs J consistently with `DiagramCost::gradient`.
-        use rand::Rng;
+        use rand::RngExt;
         use rand::SeedableRng;
         let configs: &[(usize, u64, crate::loss::LossType)] = &[
             (3, 11, crate::loss::LossType::SumSquared),

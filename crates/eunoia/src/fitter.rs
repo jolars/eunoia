@@ -26,7 +26,7 @@ use crate::spec::{DiagramSpec, PreprocessedSpec};
 use crate::venn::VennDiagram;
 use nalgebra::DVector;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use std::collections::HashMap;
