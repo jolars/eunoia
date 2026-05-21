@@ -10,8 +10,7 @@ use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{
     Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, Perimeter, Polygonize,
 };
-use argmin::core::{CostFunction, Error, Executor, State};
-use argmin::solver::brent::BrentOpt;
+use argmin::core::Error;
 
 /// A circle defined by a center point and radius.
 ///
@@ -265,20 +264,32 @@ struct SeparationCost {
     r1: f64,
     r2: f64,
     target_overlap: f64,
+    /// Lower / upper of the feasible centre-distance bracket, stored so
+    /// `basin::Brent` can read them via [`basin::BoxConstrained`].
+    lower: f64,
+    upper: f64,
 }
 
-impl CostFunction for SeparationCost {
+impl basin::CostFunction for SeparationCost {
     type Param = f64;
     type Output = f64;
 
-    fn cost(&self, distance: &Self::Param) -> Result<Self::Output, Error> {
+    fn cost(&self, distance: &f64) -> f64 {
         let c1 = Circle::new(Point::new(0.0, 0.0), self.r1);
         let c2 = Circle::new(Point::new(*distance, 0.0), self.r2);
 
         let current_overlap = c1.intersection_area(&c2);
-        let cost = (current_overlap - self.target_overlap).powi(2);
+        (current_overlap - self.target_overlap).powi(2)
+    }
+}
 
-        Ok(cost)
+impl basin::BoxConstrained for SeparationCost {
+    fn lower(&self) -> &f64 {
+        &self.lower
+    }
+
+    fn upper(&self) -> &f64 {
+        &self.upper
     }
 }
 
@@ -406,19 +417,26 @@ pub(crate) fn distance_for_overlap(
         r1,
         r2,
         target_overlap: overlap,
+        lower: min_distance,
+        upper: max_distance,
     };
 
-    let solver = BrentOpt::new(min_distance, max_distance);
+    // `tol` is the relative x-tolerance on the centre distance. The default
+    // `sqrt(machine epsilon)` matches eulerr; `Brent::new` uses the same
+    // relative tolerance with a `1e-12` absolute floor. basin's `Brent` reads
+    // the `[min_distance, max_distance]` bracket from `BoxConstrained`, seeded
+    // at the bracket midpoint. `state.param` tracks the incumbent minimiser,
+    // so the final value is the best distance found.
+    let solver = match tol {
+        Some(t) => basin::Brent::with_tol(t, 1e-12),
+        None => basin::Brent::new(),
+    };
+    let x0 = 0.5 * (min_distance + max_distance);
+    let result = basin::Executor::new(cost_fun, solver, basin::BasicState::new(x0))
+        .max_iter(max_iter.unwrap_or(1000))
+        .run();
 
-    let result = Executor::new(cost_fun, solver)
-        .configure(|state| {
-            state
-                .max_iters(max_iter.unwrap_or(1000))
-                .target_cost(tol.unwrap_or(f64::EPSILON.sqrt())) // Match eulerr: sqrt(machine epsilon)
-        })
-        .run()?;
-
-    Ok(*result.state.get_best_param().unwrap())
+    Ok(*result.param())
 }
 
 #[deprecated(
