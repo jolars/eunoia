@@ -1,3 +1,4 @@
+import { DEFAULT_FONT_FAMILY, isKnownFontFamily } from "./fonts";
 import type {
   AdvancedOptions,
   DiagramStyle,
@@ -27,6 +28,7 @@ const DEFAULT_STYLE: DiagramStyle = {
   legendPosition: "right",
   fontBold: true,
   fontItalic: false,
+  fontFamily: DEFAULT_FONT_FAMILY,
   strokeWidth: 0.5,
   labelSize: 6,
   showCounts: false,
@@ -138,7 +140,14 @@ class AppState {
     if (p.shapeType) this.shapeType = p.shapeType;
     if (p.diagramType) this.diagramType = p.diagramType;
     if (p.vennN && p.vennN >= 1 && p.vennN <= 5) this.vennN = p.vennN;
-    if (p.style) this.style = { ...DEFAULT_STYLE, ...p.style };
+    if (p.style) {
+      this.style = { ...DEFAULT_STYLE, ...p.style };
+      // Drop any persisted font that's no longer one of the bundled stacks,
+      // so the picker never lands on a blank/unknown value.
+      if (!isKnownFontFamily(this.style.fontFamily)) {
+        this.style.fontFamily = DEFAULT_FONT_FAMILY;
+      }
+    }
     if (p.advanced) this.advanced = { ...DEFAULT_ADVANCED, ...p.advanced };
     if (p.exportSettings) {
       this.exportSettings = { ...DEFAULT_EXPORT, ...p.exportSettings };

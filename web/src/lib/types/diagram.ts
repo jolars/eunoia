@@ -137,6 +137,13 @@ export interface DiagramStyle {
   legendPosition: LegendPosition;
   fontBold: boolean;
   fontItalic: boolean;
+  /**
+   * CSS font-family stack for all diagram labels. Set explicitly on the SVG
+   * root so the chosen font travels with SVG/PNG/PDF exports — a serialized
+   * SVG carries no page CSS to inherit, so without this exports fall back to
+   * the SVG default serif. See `lib/fonts.ts` for the available stacks.
+   */
+  fontFamily: string;
   /** SVG stroke width in user units. 0 hides the border. */
   strokeWidth: number;
   /** Label font size in user units. */

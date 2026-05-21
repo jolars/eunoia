@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from "../state.svelte";
   import { exportSvg, exportPng, exportPdf, exportJson } from "../export";
+  import { embeddableFontFaceCss, pdfFontFor } from "../fonts";
 
   let { svgEl }: { svgEl: SVGSVGElement | null } = $props();
 
@@ -16,20 +17,31 @@
     busy = true;
     errMsg = "";
     try {
+      const { fontFamily, fontBold, fontItalic } = appState.style;
       switch (appState.exportSettings.format) {
         case "svg":
-          if (svgEl) exportSvg(svgEl);
+          if (svgEl) {
+            const css = await embeddableFontFaceCss(fontFamily, {
+              bold: fontBold,
+              italic: fontItalic,
+            });
+            exportSvg(svgEl, css);
+          }
           break;
         case "png":
           if (svgEl) {
             const { width, height } = appState.exportSettings.raster;
-            await exportPng(svgEl, width, height);
+            const css = await embeddableFontFaceCss(fontFamily, {
+              bold: fontBold,
+              italic: fontItalic,
+            });
+            await exportPng(svgEl, width, height, css);
           }
           break;
         case "pdf":
           if (svgEl) {
             const { width, height } = appState.exportSettings.vector;
-            await exportPdf(svgEl, width, height);
+            await exportPdf(svgEl, width, height, pdfFontFor(fontFamily));
           }
           break;
         case "json":

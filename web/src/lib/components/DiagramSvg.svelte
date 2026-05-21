@@ -25,6 +25,21 @@
     if (bindFn) bindFn(svgEl);
   });
 
+  // Label sizing uses getBBox(), which depends on the bundled webfonts being
+  // loaded. They register at app start but may still be loading on first
+  // paint, so re-measure once they're ready (Arimo/Tinos are Arial/Times-
+  // metric, so the pre-load fallback is close, but this makes it exact).
+  let fontsReady = $state(false);
+  $effect(() => {
+    if (typeof document !== "undefined" && "fonts" in document) {
+      document.fonts.ready.then(() => {
+        fontsReady = true;
+      });
+    } else {
+      fontsReady = true;
+    }
+  });
+
   // Padding around the diagram in user units. Coordinates from runFit are
   // normalized so the largest axis spans ~100 units, so this is ~10 units.
   const PADDING = 10;
@@ -290,8 +305,10 @@
     void style.labelSize;
     void style.fontBold;
     void style.fontItalic;
+    void style.fontFamily;
     void style.showCounts;
     void regionNestedSets;
+    void fontsReady;
     console.debug("[fit-measure] effect run", {
       hasContainer: !!measureContainer,
       mode: result?.shapeMode,
@@ -501,6 +518,7 @@
   class="w-full"
   style="aspect-ratio: {aspectRatio}; max-height: 80vh;"
   preserveAspectRatio="xMidYMid meet"
+  font-family={style.fontFamily}
   xmlns="http://www.w3.org/2000/svg"
 >
   {#if result && result.shapeMode === "region"}

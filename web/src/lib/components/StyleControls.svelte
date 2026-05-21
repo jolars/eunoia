@@ -1,6 +1,7 @@
 <script lang="ts">
 import { appState } from "../state.svelte";
 import { defaultColorFor, PALETTES } from "../colors";
+import { FONT_FAMILIES } from "../fonts";
 
 let setNames = $derived(appState.setNames);
 
@@ -152,6 +153,24 @@ function resetAllColors() {
         Italic
       </label>
     </div>
+  </div>
+
+  <div>
+    <label for="fontFamily" class="block text-xs font-medium text-muted mb-1">
+      Font
+    </label>
+    <select
+      id="fontFamily"
+      bind:value={appState.style.fontFamily}
+      class="w-full px-2 py-1.5 text-sm border border-line rounded"
+      style="font-family: {appState.style.fontFamily};"
+    >
+      {#each FONT_FAMILIES as font}
+        <option value={font.value} style="font-family: {font.value};">
+          {font.label}
+        </option>
+      {/each}
+    </select>
   </div>
 
   <div class="flex flex-wrap gap-x-4 gap-y-2">

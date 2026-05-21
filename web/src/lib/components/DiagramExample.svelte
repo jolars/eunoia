@@ -3,6 +3,7 @@ import { onMount } from "svelte";
 import { browser } from "$app/environment";
 import type { LabelPlacement } from "@jolars/eunoia";
 import { defaultColorFor } from "$lib/colors";
+import { DEFAULT_FONT_FAMILY } from "$lib/fonts";
 import { leaderPath } from "$lib/leader";
 
 interface Props {
@@ -282,6 +283,7 @@ const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
         class="w-full"
         style="aspect-ratio: {aspectRatio}; max-height: 400px;"
         preserveAspectRatio="xMidYMid meet"
+        font-family={DEFAULT_FONT_FAMILY}
         xmlns="http://www.w3.org/2000/svg"
       >
         <g
