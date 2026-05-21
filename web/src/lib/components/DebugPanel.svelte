@@ -77,14 +77,14 @@
 </script>
 
 <div class="space-y-2">
-  <p class="text-xs text-gray-500">
+  <p class="text-xs text-muted">
     Reproducer for the current diagram (spec + advanced options). Copy to share,
     or paste a snapshot and click Apply.
   </p>
   <textarea
     bind:value={editor}
     spellcheck="false"
-    class="w-full h-48 px-2 py-1.5 text-xs font-mono border border-gray-300 rounded resize-y"
+    class="w-full h-48 px-2 py-1.5 text-xs font-mono border border-line rounded resize-y"
   ></textarea>
   <div class="flex flex-wrap gap-2">
     <button
@@ -100,7 +100,7 @@
     <button
       type="button"
       onclick={refresh}
-      class="px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-300 rounded hover:bg-gray-200"
+      class="px-2.5 py-1 text-xs font-medium bg-inset text-ink border border-line rounded hover:bg-line"
     >Sync from state</button>
     {#if status}
       <span

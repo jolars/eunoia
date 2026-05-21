@@ -10,7 +10,7 @@ const currentPath = $derived(page.url.pathname);
     <div>
       {#if section.title}
         <p
-          class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2"
+          class="text-xs font-semibold text-muted uppercase tracking-wider mb-2"
         >{section.title}</p>
       {/if}
       <ul class="space-y-1">
@@ -20,11 +20,11 @@ const currentPath = $derived(page.url.pathname);
             <a
               href={chapter.slug}
               class="block px-3 py-1.5 rounded transition-colors"
-              class:bg-blue-50={active}
-              class:text-blue-700={active}
+              class:bg-accent-soft={active}
+              class:text-accent={active}
               class:font-medium={active}
-              class:text-gray-700={!active}
-              class:hover:bg-gray-100={!active}
+              class:text-ink={!active}
+              class:hover:bg-inset={!active}
             >{chapter.title}</a>
           </li>
         {/each}

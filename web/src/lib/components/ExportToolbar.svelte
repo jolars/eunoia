@@ -49,7 +49,7 @@
   <div class="flex items-center gap-1">
     <select
       bind:value={appState.exportSettings.format}
-      class="px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+      class="px-2 py-1.5 text-sm border border-line rounded bg-surface"
       aria-label="Export format"
     >
       <option value="svg">SVG</option>
@@ -61,7 +61,7 @@
       <button
         type="button"
         onclick={() => (popoverOpen = !popoverOpen)}
-        class="px-2 py-1.5 text-xs text-gray-600 border border-gray-300 rounded bg-white hover:bg-gray-50"
+        class="px-2 py-1.5 text-xs text-muted border border-line rounded bg-surface hover:bg-inset"
         aria-label="Export size"
         title="Size"
       >Size</button>
@@ -76,51 +76,51 @@
 
   {#if popoverOpen}
     <div
-      class="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10"
+      class="absolute right-0 top-full mt-1 w-56 bg-surface border border-line rounded-lg shadow-lg p-3 z-10"
     >
       {#if appState.exportSettings.format === "png"}
         <div class="grid grid-cols-2 gap-2">
           <label class="text-xs">
-            <span class="text-gray-600">Width (px)</span>
+            <span class="text-muted">Width (px)</span>
             <input
               type="number"
               min="64"
               step="64"
               bind:value={appState.exportSettings.raster.width}
-              class="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-sm"
+              class="mt-1 w-full px-2 py-1 border border-line rounded text-sm"
             />
           </label>
           <label class="text-xs">
-            <span class="text-gray-600">Height (px)</span>
+            <span class="text-muted">Height (px)</span>
             <input
               type="number"
               min="64"
               step="64"
               bind:value={appState.exportSettings.raster.height}
-              class="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-sm"
+              class="mt-1 w-full px-2 py-1 border border-line rounded text-sm"
             />
           </label>
         </div>
       {:else if appState.exportSettings.format === "pdf"}
         <div class="grid grid-cols-2 gap-2">
           <label class="text-xs">
-            <span class="text-gray-600">Width (in)</span>
+            <span class="text-muted">Width (in)</span>
             <input
               type="number"
               min="1"
               step="0.5"
               bind:value={appState.exportSettings.vector.width}
-              class="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-sm"
+              class="mt-1 w-full px-2 py-1 border border-line rounded text-sm"
             />
           </label>
           <label class="text-xs">
-            <span class="text-gray-600">Height (in)</span>
+            <span class="text-muted">Height (in)</span>
             <input
               type="number"
               min="1"
               step="0.5"
               bind:value={appState.exportSettings.vector.height}
-              class="mt-1 w-full px-2 py-1 border border-gray-300 rounded text-sm"
+              class="mt-1 w-full px-2 py-1 border border-line rounded text-sm"
             />
           </label>
         </div>

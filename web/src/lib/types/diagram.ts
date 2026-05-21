@@ -128,7 +128,9 @@ export type ExportFormat = "svg" | "png" | "pdf" | "json";
 export type LabelPlacementMode = "raycast" | "forceDirected";
 
 export interface DiagramStyle {
-  /** Per-set fill colors keyed by set name. Missing sets fall back to the default palette. */
+  /** Base fill palette id (see `lib/colors.ts`). Per-set `colors` override it. */
+  palette: string;
+  /** Per-set fill colors keyed by set name. Missing sets fall back to the palette. */
   colors: Record<string, string>;
   alpha: number;
   showLegend: boolean;

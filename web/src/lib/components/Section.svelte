@@ -10,15 +10,15 @@
   let isOpen = $state(initialOpen);
 </script>
 
-<div class="bg-white rounded-lg shadow">
+<div class="bg-surface rounded-lg shadow">
   <button
     type="button"
     onclick={() => (isOpen = !isOpen)}
-    class="w-full flex items-center justify-between px-5 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-lg"
+    class="w-full flex items-center justify-between px-5 py-3 text-left text-sm font-semibold text-ink hover:bg-inset rounded-lg"
     aria-expanded={isOpen}
   >
     <span>{title}</span>
-    <span class="text-xs text-gray-400">{isOpen ? "▾" : "▸"}</span>
+    <span class="text-xs text-faint">{isOpen ? "▾" : "▸"}</span>
   </button>
   {#if isOpen}
     <div class="px-5 pb-5">

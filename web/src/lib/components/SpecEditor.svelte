@@ -5,7 +5,7 @@
 
 <div class="space-y-4">
   <div>
-    <div class="block text-xs font-medium text-gray-600 mb-1.5">Diagram type</div>
+    <div class="block text-xs font-medium text-muted mb-1.5">Diagram type</div>
     <div class="flex gap-3">
       <label class="flex items-center cursor-pointer">
         <input
@@ -30,7 +30,7 @@
 
   {#if appState.diagramType === "venn"}
     <div>
-      <div class="block text-xs font-medium text-gray-600 mb-1.5">Number of sets</div>
+      <div class="block text-xs font-medium text-muted mb-1.5">Number of sets</div>
       <div class="flex gap-2">
         {#each [1, 2, 3, 4, 5] as n}
           <label class="flex items-center cursor-pointer">
@@ -44,14 +44,14 @@
           </label>
         {/each}
       </div>
-      <p class="mt-1.5 text-xs text-gray-500">
+      <p class="mt-1.5 text-xs text-muted">
         Canonical ellipse arrangement. Limited to n ≤ 5 (no Venn diagram of 6+
         ellipses exists).
       </p>
     </div>
   {:else}
     <div>
-      <div class="block text-xs font-medium text-gray-600 mb-1.5">Input type</div>
+      <div class="block text-xs font-medium text-muted mb-1.5">Input type</div>
       <div class="flex gap-3">
         <label class="flex items-center cursor-pointer">
           <input
@@ -75,7 +75,7 @@
     </div>
 
     <div>
-      <div class="block text-xs font-medium text-gray-600 mb-1.5">Shape</div>
+      <div class="block text-xs font-medium text-muted mb-1.5">Shape</div>
       <div class="flex flex-wrap gap-x-3 gap-y-1.5">
         <label class="flex items-center cursor-pointer">
           <input
@@ -117,7 +117,7 @@
     </div>
 
     <div>
-      <div class="block text-xs font-medium text-gray-600 mb-1.5">Combinations</div>
+      <div class="block text-xs font-medium text-muted mb-1.5">Combinations</div>
       <div class="space-y-1.5">
         {#each appState.rows as row, i (i)}
           <div class="flex gap-1.5">
@@ -125,19 +125,19 @@
               type="text"
               bind:value={appState.rows[i].input}
               placeholder="A or A&B"
-              class="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              class="flex-1 min-w-0 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <input
               type="number"
               bind:value={appState.rows[i].size}
               min="0"
               step="0.1"
-              class="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              class="w-20 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <button
               type="button"
               onclick={() => appState.removeRow(i)}
-              class="px-2 py-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 text-sm"
+              class="px-2 py-1.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-sm"
               aria-label="Remove row"
               title="Remove"
             >×</button>
@@ -147,7 +147,7 @@
         <button
           type="button"
           onclick={() => appState.addRow()}
-          class="w-full px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm"
+          class="w-full px-3 py-1.5 bg-inset text-ink rounded hover:bg-line text-sm"
         >+ Add row</button>
       </div>
     </div>
@@ -160,7 +160,7 @@
         bind:checked={appState.advanced.useComplement}
         class="mr-2"
       />
-      <span class="text-sm font-medium text-gray-700">Complement (universe)</span>
+      <span class="text-sm font-medium text-ink">Complement (universe)</span>
     </label>
     {#if appState.advanced.useComplement}
       <div class="mt-1.5 flex items-center gap-2">
@@ -170,23 +170,23 @@
           min="0"
           step="1"
           placeholder="enter a count"
-          class="w-32 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          class="w-32 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           aria-label="Complement count"
         />
-        <span class="text-xs text-gray-500">items outside every set</span>
+        <span class="text-xs text-muted">items outside every set</span>
       </div>
       {#if appState.advanced.complement === null}
-        <p class="mt-1 text-xs text-amber-600">
+        <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
           Container will appear once you enter a count.
         </p>
       {/if}
       {#if appState.diagramType === "venn"}
-        <p class="mt-1.5 text-xs text-gray-500">
+        <p class="mt-1.5 text-xs text-muted">
           Venn is topological, so the container is a non-proportional visual
           frame around the canonical layout.
         </p>
       {:else}
-        <p class="mt-1.5 text-xs text-gray-500">
+        <p class="mt-1.5 text-xs text-muted">
           Fits a bounding rectangle whose area equals the universe (sum of all
           set sizes plus complement). Multi-cluster specs are not supported.
         </p>

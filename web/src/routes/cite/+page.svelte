@@ -107,11 +107,11 @@ $effect(() => {
 });
 </script>
 
-<div class="text-gray-800">
+<div class="text-ink">
   <main class="max-w-5xl mx-auto px-6 py-16 space-y-4">
     <header>
       <h1 class="text-3xl font-bold mb-2">Citation</h1>
-      <p class="text-gray-600">
+      <p class="text-muted">
         If you use Eunoia or any of its derived packages (eulerr in R, eunoia in Python, or
         `@jolars/eunoia` in npm) in academic work, please cite the paper below.
       </p>
@@ -127,7 +127,7 @@ $effect(() => {
           class={`px-3 py-1.5 text-xs rounded border transition-colors ${
             f.key === activeKey
               ? "bg-blue-600 text-white border-blue-600"
-              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+              : "bg-surface text-ink border-line hover:bg-inset"
           }`}
         >{f.label}</button>
       {/each}
@@ -137,14 +137,14 @@ $effect(() => {
       <button
         type="button"
         onclick={copy}
-        class="absolute top-2 right-2 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+        class="absolute top-2 right-2 px-2 py-1 text-xs bg-inset text-ink rounded hover:bg-line"
       >
         {copied ? "Copied" : "Copy"}
       </button>
       {#if active.code}
-        <pre class="bg-gray-50 border border-gray-200 rounded p-4 pr-16 font-mono text-xs overflow-x-auto whitespace-pre">{active.value}</pre>
+        <pre class="bg-inset border border-line rounded p-4 pr-16 font-mono text-xs overflow-x-auto whitespace-pre">{active.value}</pre>
       {:else}
-        <p class="bg-gray-50 border border-gray-200 rounded p-4 pr-16 text-sm leading-relaxed whitespace-pre-wrap">{active.value}</p>
+        <p class="bg-inset border border-line rounded p-4 pr-16 text-sm leading-relaxed whitespace-pre-wrap">{active.value}</p>
       {/if}
     </div>
   </main>

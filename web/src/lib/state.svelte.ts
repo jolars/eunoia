@@ -20,17 +20,18 @@ const DEFAULT_ROWS: Row[] = [
 ];
 
 const DEFAULT_STYLE: DiagramStyle = {
+  palette: "default",
   colors: {},
-  alpha: 0.5,
+  alpha: 1,
   showLegend: false,
   legendPosition: "right",
   fontBold: true,
   fontItalic: false,
-  strokeWidth: 1,
+  strokeWidth: 0.5,
   labelSize: 6,
   showCounts: false,
   labelPlacement: "raycast",
-  labelTether: "poi",
+  labelTether: "boundary",
 };
 
 const DEFAULT_ADVANCED: AdvancedOptions = {

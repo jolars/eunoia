@@ -1,7 +1,74 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Drive the `dark:` variant from a `.dark` class on <html> instead of the
+   default `prefers-color-scheme` media query — we toggle that class ourselves
+   (see lib/theme.svelte.ts). Used for `dark:prose-invert` and the few
+   state-color (red/green/amber) exceptions that aren't worth a token. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic theme tokens. `@theme inline` exposes them as Tailwind color
+   utilities (bg-surface, text-ink, border-line, …) that resolve to the CSS
+   variables below, so a single `.dark` toggle reskins the whole site. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+}
+
+:root {
+  color-scheme: light;
+  --canvas: #f9fafb;
+  --surface: #ffffff;
+  --inset: #f3f4f6;
+  --ink: #1f2937;
+  --muted: #4b5563;
+  --faint: #9ca3af;
+  --line: #e5e7eb;
+  --accent: #2563eb;
+  --accent-soft: #eff6ff;
+}
+
+.dark {
+  color-scheme: dark;
+  --canvas: #0a0a0a;
+  --surface: #18181b;
+  --inset: #27272a;
+  --ink: #e5e7eb;
+  --muted: #a1a1aa;
+  --faint: #71717a;
+  --line: #3f3f46;
+  --accent: #60a5fa;
+  --accent-soft: #172554;
+}
+
+/* "Paper" island: diagram artboards keep light values regardless of theme so
+   the renderers' hardcoded black strokes/labels stay readable and match the
+   (always-white) PNG/SVG exports. Re-declaring `color` here re-resolves the
+   inherited text colour to the light --ink for the whole subtree. */
+.paper {
+  color-scheme: light;
+  color: var(--ink);
+  --canvas: #f9fafb;
+  --surface: #ffffff;
+  --inset: #f3f4f6;
+  --ink: #1f2937;
+  --muted: #4b5563;
+  --faint: #9ca3af;
+  --line: #e5e7eb;
+  --accent: #2563eb;
+  --accent-soft: #eff6ff;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--canvas);
+  color: var(--ink);
 }

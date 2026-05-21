@@ -2,6 +2,21 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
+        <!-- Apply the stored (or system) theme before first paint so there's
+             no flash of the wrong theme. Mirrors lib/theme.svelte.ts. -->
+        <script>
+            (function () {
+                try {
+                    var c = localStorage.getItem("eunoia.theme");
+                    var dark =
+                        c === "dark" ||
+                        ((c === "system" || c === null) &&
+                            window.matchMedia("(prefers-color-scheme: dark)")
+                                .matches);
+                    if (dark) document.documentElement.classList.add("dark");
+                } catch (e) {}
+            })();
+        </script>
         <link rel="icon"
               type="image/png"
               href="%sveltekit.assets%/favicon-96x96.png"

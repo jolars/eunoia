@@ -3,6 +3,7 @@ import { page } from "$app/state";
 import IconGithub from "~icons/simple-icons/github";
 import IconMenu from "~icons/lucide/menu";
 import IconX from "~icons/lucide/x";
+import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
 // Source repository — shown as a persistent icon link that never collapses
 // into the mobile menu.
@@ -35,11 +36,11 @@ $effect(() => {
 });
 </script>
 
-<nav class="border-b border-gray-200 bg-white">
+<nav class="border-b border-line bg-surface">
   <div class="max-w-7xl mx-auto px-6 flex items-center justify-between">
     <a
       href="/"
-      class="text-2xl font-bold py-4 text-gray-900"
+      class="text-2xl font-bold py-4 text-ink"
     >Eunoia</a>
 
     <!-- Right cluster: nav links (sm+), then the always-visible GitHub link
@@ -53,20 +54,23 @@ $effect(() => {
             <a
               href={item.href}
               class="px-4 py-4 text-sm font-medium border-b-2 transition-colors inline-block"
-              class:border-blue-500={active}
-              class:text-blue-600={active}
+              class:border-accent={active}
+              class:text-accent={active}
               class:border-transparent={!active}
-              class:text-gray-500={!active}
-              class:hover:text-gray-900={!active}
+              class:text-muted={!active}
+              class:hover:text-ink={!active}
             >{item.label}</a>
           </li>
         {/each}
       </ul>
 
+      <!-- Theme cycle: system → light → dark. -->
+      <ThemeToggle />
+
       <!-- GitHub: persistent at every breakpoint, outside the hamburger. -->
       <a
         href={repoUrl}
-        class="inline-flex items-center justify-center p-2 text-gray-500 hover:text-gray-900 transition-colors"
+        class="inline-flex items-center justify-center p-2 text-faint hover:text-ink transition-colors"
         aria-label="Source on GitHub"
       >
         <IconGithub class="w-5 h-5" />
@@ -75,7 +79,7 @@ $effect(() => {
       <!-- Mobile toggle: shown only below `sm`. -->
       <button
         type="button"
-        class="sm:hidden inline-flex items-center justify-center p-2 -mr-2 text-gray-500 hover:text-gray-900 transition-colors"
+        class="sm:hidden inline-flex items-center justify-center p-2 -mr-2 text-faint hover:text-ink transition-colors"
         aria-label="Toggle navigation menu"
         aria-controls="mobile-nav"
         aria-expanded={menuOpen}
@@ -94,7 +98,7 @@ $effect(() => {
        the DOM (toggled via `hidden`) so `aria-controls` stays valid. -->
   <ul
     id="mobile-nav"
-    class="sm:hidden border-t border-gray-200 px-6 py-2"
+    class="sm:hidden border-t border-line px-6 py-2"
     class:hidden={!menuOpen}
   >
     {#each items as item}
@@ -103,11 +107,11 @@ $effect(() => {
         <a
           href={item.href}
           class="block px-2 py-3 text-sm font-medium border-l-2 transition-colors"
-          class:border-blue-500={active}
-          class:text-blue-600={active}
+          class:border-accent={active}
+          class:text-accent={active}
           class:border-transparent={!active}
-          class:text-gray-500={!active}
-          class:hover:text-gray-900={!active}
+          class:text-muted={!active}
+          class:hover:text-ink={!active}
           onclick={() => (menuOpen = false)}
         >{item.label}</a>
       </li>

@@ -102,14 +102,14 @@ $effect(() => {
 
 <div class="max-w-7xl mx-auto p-6">
   {#if appState.loading}
-    <div class="bg-white rounded-lg shadow p-8 text-center">
+    <div class="bg-surface rounded-lg shadow p-8 text-center">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-      <p class="mt-4 text-gray-600">Loading WASM module…</p>
+      <p class="mt-4 text-muted">Loading WASM module…</p>
     </div>
   {:else}
     {#if appState.error}
-      <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-        <p class="text-sm text-red-800">{appState.error}</p>
+      <div class="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-4 mb-6">
+        <p class="text-sm text-red-800 dark:text-red-300">{appState.error}</p>
       </div>
     {/if}
 
@@ -130,12 +130,15 @@ $effect(() => {
       </aside>
 
       <main class="space-y-4">
-        <div class="bg-white rounded-lg shadow p-6">
+        <!-- `paper`: the diagram artboard stays light in dark mode so the
+             renderer's hardcoded-black strokes/labels stay readable and match
+             the (always-white) PNG/SVG exports. -->
+        <div class="paper bg-surface rounded-lg shadow p-6">
           <div class="flex items-center justify-between gap-4 mb-4">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold">Diagram</h2>
               {#if appState.fitting}
-                <span class="flex items-center text-xs text-gray-500">
+                <span class="flex items-center text-xs text-muted">
                   <span class="inline-block h-3 w-3 mr-1.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"></span>
                   Fitting…
                 </span>

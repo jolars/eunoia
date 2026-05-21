@@ -268,7 +268,9 @@ const viewBoxAttr = $derived(
 const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
 </script>
 
-<figure class="not-prose my-6 rounded-lg border border-gray-200 bg-white p-4">
+<!-- `paper`: keep example diagrams on white in dark mode so their
+     hardcoded-black labels/strokes stay readable (see app.css). -->
+<figure class="paper not-prose my-6 rounded-lg border border-line bg-surface p-4">
   <div class="relative">
     {#if error}
       <div
@@ -310,6 +312,18 @@ const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
             />
           {/each}
         {/each}
+        <!-- Borders drawn as a separate pass after all fills so they sit on
+             top of neighbouring regions (mirrors DiagramSvg region mode). -->
+        {#each regions as region}
+          {#each region.pieces as piece}
+            <path
+              d={piecePath(piece)}
+              fill="none"
+              stroke="#374151"
+              stroke-width="0.5"
+            />
+          {/each}
+        {/each}
         {#each regions as region}
           {#if region.combination !== ""}
             {@const p = placements[region.combination]}
@@ -345,7 +359,7 @@ const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
     {/if}
   </div>
   {#if caption}
-    <figcaption class="mt-3 text-sm text-gray-600 text-center">
+    <figcaption class="mt-3 text-sm text-muted text-center">
       {caption}
     </figcaption>
   {/if}

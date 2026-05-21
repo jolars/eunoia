@@ -1,17 +1,29 @@
 <script lang="ts">
-  import { appState } from "../state.svelte";
+import { appState } from "../state.svelte";
+
+// Tolerance spans orders of magnitude, so the slider works in log10 space:
+// each step is one power of ten, from 1e-1 (loose, fast) to 1e-6 (tight,
+// slow). The stored value stays a plain number (1e-1 … 1e-6).
+const TOL_MIN_EXP = -6;
+const TOL_MAX_EXP = -1;
+
+const tolExp = $derived(Math.log10(appState.advanced.tolerance));
+
+function setTolExp(exp: number) {
+  appState.advanced.tolerance = Math.pow(10, Math.round(exp));
+}
 </script>
 
 <div class="space-y-4">
   <div>
     <label
       for="optimizer"
-      class="block text-xs font-medium text-gray-600 mb-1"
+      class="block text-xs font-medium text-muted mb-1"
     >Optimizer</label>
     <select
       id="optimizer"
       bind:value={appState.advanced.optimizer}
-      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+      class="w-full px-2 py-1.5 text-sm border border-line rounded"
     >
       <option value="CmaEsLm">CMA-ES → LM (default)</option>
       <option value="LevenbergMarquardt">Levenberg-Marquardt</option>
@@ -21,33 +33,33 @@
   </div>
 
   <div>
-    <label
-      for="tolerance"
-      class="block text-xs font-medium text-gray-600 mb-1"
-    >Tolerance</label>
+    <label for="tolerance" class="block text-xs font-medium text-muted mb-1">
+      Tolerance <span class="font-mono text-faint">{appState.advanced.tolerance.toExponential(0)}</span>
+    </label>
     <input
       id="tolerance"
-      type="number"
-      bind:value={appState.advanced.tolerance}
-      min="0"
-      step="any"
-      placeholder="1e-3"
-      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+      type="range"
+      min={TOL_MIN_EXP}
+      max={TOL_MAX_EXP}
+      step="1"
+      value={tolExp}
+      oninput={(e) => setTolExp(parseFloat((e.target as HTMLInputElement).value))}
+      class="w-full"
     />
-    <p class="mt-1 text-xs text-gray-500">
-      Final-stage cost-change exit. Smaller = tighter fit, slower.
+    <p class="mt-1 text-xs text-muted">
+      Final-stage cost-change exit. Left = tighter fit, slower.
     </p>
   </div>
 
   <div>
     <label
       for="loss"
-      class="block text-xs font-medium text-gray-600 mb-1"
+      class="block text-xs font-medium text-muted mb-1"
     >Loss function</label>
     <select
       id="loss"
       bind:value={appState.advanced.lossType}
-      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
+      class="w-full px-2 py-1.5 text-sm border border-line rounded"
     >
       <option value="SumSquared">Sum of squared errors</option>
       <option value="RootMeanSquared">Root mean squared</option>
@@ -86,7 +98,7 @@
         min="0"
         step="1"
         placeholder="42"
-        class="mt-1.5 w-full px-2 py-1 text-sm border border-gray-300 rounded"
+        class="mt-1.5 w-full px-2 py-1 text-sm border border-line rounded"
       />
     {/if}
   </div>

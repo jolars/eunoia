@@ -9,28 +9,28 @@
   }
 </script>
 
-<div class="bg-white rounded-lg shadow p-6">
+<div class="bg-surface rounded-lg shadow p-6">
   <h2 class="text-lg font-semibold mb-4">Goodness of fit</h2>
   {#if metrics}
     <dl class="grid grid-cols-3 gap-4 text-sm">
       <div>
-        <dt class="text-gray-500 uppercase text-xs tracking-wide">stress</dt>
+        <dt class="text-muted uppercase text-xs tracking-wide">stress</dt>
         <dd class="font-mono text-base">{fmt(metrics.stress)}</dd>
       </div>
       <div>
-        <dt class="text-gray-500 uppercase text-xs tracking-wide">diagError</dt>
+        <dt class="text-muted uppercase text-xs tracking-wide">diagError</dt>
         <dd class="font-mono text-base">{fmt(metrics.diagError)}</dd>
       </div>
       <div>
-        <dt class="text-gray-500 uppercase text-xs tracking-wide">loss</dt>
+        <dt class="text-muted uppercase text-xs tracking-wide">loss</dt>
         <dd class="font-mono text-base">{fmt(metrics.loss)}</dd>
       </div>
     </dl>
-    <p class="mt-3 text-xs text-gray-500">
+    <p class="mt-3 text-xs text-muted">
       stress: venneuler-style. diagError: max region error. iterations: {metrics.iterations}.
-      <a href="/docs/concepts/goodness-of-fit/" class="text-blue-600 hover:underline">Learn more</a>.
+      <a href="/docs/concepts/goodness-of-fit/" class="text-accent hover:underline">Learn more</a>.
     </p>
   {:else}
-    <p class="text-sm text-gray-500">No diagram fitted yet.</p>
+    <p class="text-sm text-muted">No diagram fitted yet.</p>
   {/if}
 </div>

@@ -162,7 +162,7 @@
     order.forEach((name, i) => indexOf.set(name, i));
     setLabels.forEach((l, i) => {
       const idx = indexOf.get(l) ?? i;
-      m.set(l, style.colors[l] ?? defaultColorFor(idx));
+      m.set(l, style.colors[l] ?? defaultColorFor(idx, style.palette));
     });
     return m;
   });
@@ -172,7 +172,7 @@
       .split("&")
       .map((s) => s.trim())
       .filter(Boolean);
-    const fallback = defaultColorFor(0);
+    const fallback = defaultColorFor(0, style.palette);
     if (sets.length === 1) {
       return setColorMap.get(sets[0]) || fallback;
     }
@@ -627,7 +627,7 @@
       {/each}
     {:else}
       {#each result.circles as circle, i}
-        {@const color = setColorMap.get(circle.label) || defaultColorFor(i)}
+        {@const color = setColorMap.get(circle.label) || defaultColorFor(i, style.palette)}
         <circle
           cx={circle.x}
           cy={circle.y}
@@ -638,7 +638,7 @@
         />
       {/each}
       {#each result.ellipses as ellipse, i}
-        {@const color = setColorMap.get(ellipse.label) || defaultColorFor(i)}
+        {@const color = setColorMap.get(ellipse.label) || defaultColorFor(i, style.palette)}
         <ellipse
           cx={ellipse.x}
           cy={ellipse.y}
@@ -651,7 +651,7 @@
         />
       {/each}
       {#each result.squares as square, i}
-        {@const color = setColorMap.get(square.label) || defaultColorFor(i)}
+        {@const color = setColorMap.get(square.label) || defaultColorFor(i, style.palette)}
         <rect
           x={square.x - square.side / 2}
           y={square.y - square.side / 2}
@@ -663,7 +663,7 @@
         />
       {/each}
       {#each result.rectangles as rect, i}
-        {@const color = setColorMap.get(rect.label) || defaultColorFor(i)}
+        {@const color = setColorMap.get(rect.label) || defaultColorFor(i, style.palette)}
         <rect
           x={rect.x - rect.width / 2}
           y={rect.y - rect.height / 2}
@@ -833,7 +833,7 @@
       <g>
         {#each legendLabels as label, i}
           {@const yi = legendBox.y + i * legendBox.lineH}
-          {@const color = setColorMap.get(label) || defaultColorFor(i)}
+          {@const color = setColorMap.get(label) || defaultColorFor(i, style.palette)}
           <rect
             x={legendBox.x}
             y={yi}
