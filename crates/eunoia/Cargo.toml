@@ -15,11 +15,6 @@ categories = ["graphics", "visualization", "mathematics"]
 workspace = true
 
 [dependencies]
-# Every optimizer runs on basin now: final-layout + MDS-init LM and L-BFGS,
-# Nelder-Mead, and the circle-overlap Brent root-find. argmin, argmin-math and
-# the levenberg-marquardt crate have all been removed. The whole tree is
-# aligned on nalgebra 0.34, so basin's `nalgebra` backend types unify with
-# eunoia's own — no bridging, no second nalgebra major, no faer.
 basin = { version = "0.3", default-features = false, features = ["nalgebra"] }
 finitediff = "0.2"
 i_overlay = { version = "6", optional = true }
@@ -28,14 +23,10 @@ nalgebra = "0.34"
 num-complex = "0.4"
 polylabel-mini = "0.1"
 rand = "0.10"
-# Opt-in restart parallelism, behind the `parallel` feature and kept out of
-# `default`. The core stays single-threaded by default so it never imposes a
-# thread pool on its consumers — bindings (R/Python) and apps own the
-# parallelism policy, and wasm has no threads anyway. When enabled it only
-# fans the `n_restarts` loop across threads (see `Fitter::jobs`); on wasm it
-# compiles in but stays inert. Output is identical regardless of thread count,
-# so this is purely a wall-time knob.
 rayon = { version = "1.10", optional = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [features]
 default = []

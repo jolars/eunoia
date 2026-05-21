@@ -241,10 +241,15 @@ example binaries — internal, not part of the public contract). The old no-op
 
 WASM (`crates/eunoia-wasm/`): `wasm-bindgen` 0.2, `serde` 1.0,
 `serde-wasm-bindgen` 0.6, `serde_json` 1.0, `console_error_panic_hook`,
-`web-sys`, `getrandom` 0.4 with `wasm_js` (the feature alone selects the WASM
-backend in 0.4 — no `getrandom_backend` rustflag needed). Core `rand` is held
-at 0.10 to match `basin`/`rand_distr`, so the production tree carries a single
-`rand`/`getrandom`; the older copies in `Cargo.lock` are dev-only (proptest).
+`web-sys`. The `getrandom` 0.4 `wasm_js` backend (which `rand` 0.10 needs to
+compile on wasm32-unknown-unknown) is selected by the **core** crate via a
+`cfg(all(target_arch = "wasm32", target_os = "unknown"))` target dependency, so
+`cargo build -p eunoia --target wasm32-unknown-unknown` works standalone and
+`eunoia-wasm` no longer declares `getrandom` itself (the feature alone selects
+the backend in 0.4 — no `getrandom_backend` rustflag needed). Core `rand` is
+held at 0.10 to match `basin`/`rand_distr`, so the production tree carries a
+single `rand`/`getrandom`; the older copies in `Cargo.lock` are dev-only
+(proptest).
 
 Keep the dep footprint minimal — compile time, WASM binary size, license,
 and maintenance burden are all considerations.

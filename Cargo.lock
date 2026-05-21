@@ -373,6 +373,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "finitediff",
+ "getrandom 0.4.2",
  "i_overlay",
  "log",
  "nalgebra",
@@ -389,7 +390,6 @@ version = "0.15.0"
 dependencies = [
  "console_error_panic_hook",
  "eunoia",
- "getrandom 0.4.2",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
