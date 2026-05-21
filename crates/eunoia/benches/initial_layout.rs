@@ -16,11 +16,12 @@
 
 use std::time::Duration;
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::spec::DiagramSpec;
 use eunoia::test_utils::corpus::{self, QUALITY_SEEDS};
 use eunoia::{Fitter, MdsSolver};
+use std::hint::black_box;
 
 const SOLVERS: [(MdsSolver, &str); 2] = [
     (MdsSolver::Lbfgs, "lbfgs"),

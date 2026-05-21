@@ -226,7 +226,7 @@ encodings aren't interchangeable).
 Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.3 (`nalgebra` backend;
 every optimizer — final-layout & MDS-init LM and L-BFGS, Nelder-Mead, and the
 circle-overlap Brent root-find), `finitediff`, `polylabel-mini`, `num-complex`,
-`log`, `rand` 0.9, `i_overlay` ~2.0 (optional, `plotting`), `rayon` (non-wasm
+`log`, `rand` 0.9, `i_overlay` 6 (optional, `plotting`), `rayon` (non-wasm
 only). `argmin`, `argmin-math` and `levenberg-marquardt` have all been removed
 — basin is the sole optimizer dependency. The whole tree is aligned on a single
 nalgebra 0.34 so basin's `nalgebra`-backend types unify with eunoia's own (no

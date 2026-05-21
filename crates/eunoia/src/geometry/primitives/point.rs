@@ -178,7 +178,9 @@ impl Distance for Point {
 }
 
 #[cfg(feature = "plotting")]
-impl FloatPointCompatible<f64> for Point {
+impl FloatPointCompatible for Point {
+    type Scalar = f64;
+
     fn from_xy(x: f64, y: f64) -> Self {
         Point::new(x, y)
     }

@@ -41,7 +41,7 @@
 
 use std::time::Duration;
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use eunoia::geometry::shapes::{Circle, Ellipse};
 use eunoia::geometry::traits::DiagramShape;
 use eunoia::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
@@ -49,6 +49,7 @@ use eunoia::test_utils::corpus::{
     CorpusEntry, Fittable, QUALITY_SEEDS as CORPUS_QUALITY_SEEDS, all as corpus_all,
 };
 use eunoia::{Fitter, Optimizer};
+use std::hint::black_box;
 
 const TIMING_SEED: u64 = 42;
 

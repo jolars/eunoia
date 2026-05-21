@@ -22,7 +22,7 @@ workspace = true
 # eunoia's own — no bridging, no second nalgebra major, no faer.
 basin = { version = "0.3", default-features = false, features = ["nalgebra"] }
 finitediff = "0.2"
-i_overlay = { version = "~2.0", optional = true }
+i_overlay = { version = "6", optional = true }
 log = { version = "0.4", features = ["release_max_level_info"] }
 nalgebra = "0.34"
 num-complex = "0.4"
@@ -46,7 +46,7 @@ plotting = ["dep:i_overlay"]
 corpus = []
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 env_logger = "0.11"
 proptest = "1"
 
