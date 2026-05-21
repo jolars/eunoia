@@ -3,8 +3,9 @@ import IconGithub from "~icons/simple-icons/github";
 import IconRust from "~icons/simple-icons/rust";
 import IconNpm from "~icons/simple-icons/npm";
 import IconR from "~icons/simple-icons/r";
+import IconPython from "~icons/simple-icons/python";
+import IconJulia from "~icons/simple-icons/julia";
 import IconBook from "~icons/lucide/book-open";
-import IconPackage from "~icons/lucide/package";
 
 // Repo links — kept here so the landing has a single declarative source of
 // truth that's easy to scan and edit.
@@ -12,39 +13,51 @@ const repoUrl = "https://github.com/jolars/eunoia";
 const cratesUrl = "https://crates.io/crates/eunoia";
 const docsRsUrl = "https://docs.rs/eunoia";
 const npmUrl = "https://www.npmjs.com/package/@jolars/eunoia";
+const pypiUrl = "https://pypi.org/project/eunoia/";
+const pyDocsUrl = "https://jolars.github.io/eunoia-py";
 const eulerrUrl = "https://cran.r-project.org/package=eulerr";
 const eulerrRepoUrl = "https://github.com/jolars/eulerr";
+const eulerrDocsUrl = "https://jolars.github.io/eulerr/";
 const johanUrl = "https://jolars.co";
 </script>
 
 <div class="text-gray-800">
   <main class="max-w-5xl mx-auto px-6 py-16 space-y-16">
     <section>
-      <img
-        src="/logo.png"
-        alt="Eunoia logo"
-        class="float-right ml-6 mb-4 w-32 sm:w-40 md:w-48 h-auto"
-      />
-      <h2 class="text-3xl font-bold leading-tight mb-4">
-        Area-Proportional Euler and Venn Diagrams
-      </h2>
-      <p class="text-lg text-gray-600 mb-4">
-        A Rust library for fitting set-visualization diagrams with circles,
-        ellipses, squares, and rectangles — accurate, fast, and shipped with
-        WASM bindings for the web. Powers the R package
-        <a href={eulerrRepoUrl} class="text-blue-600 hover:underline">eulerr</a>,
-        npm package <a href={npmUrl} class="text-blue-600 hover:underline">@jolars/eunoia</a>,
-        with Python and Julia wrappers planned.
-      </p>
-      <div class="flex flex-wrap gap-3 pt-2 clear-both">
-        <a
-          href="/app/"
-          class="px-5 py-2.5 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-        >Try it in the browser →</a>
-        <a
-          href={repoUrl}
-          class="px-5 py-2.5 rounded border border-gray-300 bg-white text-sm font-medium hover:bg-gray-50 inline-flex items-center gap-2"
-        ><IconGithub class="w-4 h-4" /> Source code</a>
+      <!-- Stacked + logo-centred below `sm`; logo to the right alongside the
+           text at `sm` and up. Avoids the heading wrapping around a float. -->
+      <div
+        class="flex flex-col items-center gap-6 sm:flex-row-reverse sm:items-start sm:gap-8"
+      >
+        <img
+          src="/logo.png"
+          alt="Eunoia logo"
+          class="w-32 shrink-0 sm:w-40 md:w-48 h-auto"
+        />
+        <div>
+          <h2 class="text-3xl font-bold leading-tight mb-4">
+            Area-Proportional Euler and Venn Diagrams
+          </h2>
+          <p class="text-lg text-gray-600 mb-4">
+            A Rust library for fitting set-visualization diagrams with circles,
+            ellipses, squares, and rectangles — accurate, fast, and shipped with
+            WASM bindings for the web. Powers the R package
+            <a href={eulerrRepoUrl} class="text-blue-600 hover:underline">eulerr</a>,
+            npm package <a href={npmUrl} class="text-blue-600 hover:underline">@jolars/eunoia</a>,
+            and the <a href={pypiUrl} class="text-blue-600 hover:underline">Python package</a>,
+            with a Julia wrapper planned.
+          </p>
+          <div class="flex flex-wrap gap-3 pt-2">
+            <a
+              href="/app/"
+              class="px-5 py-2.5 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+            >Try it in the browser →</a>
+            <a
+              href={repoUrl}
+              class="px-5 py-2.5 rounded border border-gray-300 bg-white text-sm font-medium hover:bg-gray-50 inline-flex items-center gap-2"
+            ><IconGithub class="w-4 h-4" /> Source code</a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -82,13 +95,25 @@ const johanUrl = "https://jolars.co";
           <p class="text-xs text-gray-500">
             R users can use
             <a href={eulerrRepoUrl} class="text-blue-600 hover:underline">eulerr</a>,
-            which is now backed by the same Rust core as Eunoia.
+            which is now backed by the same Rust core as Eunoia; docs at
+            <a href={eulerrDocsUrl} class="text-blue-600 hover:underline">jolars.github.io/eulerr</a>.
           </p>
         </div>
         <div class="bg-white border border-gray-200 rounded p-4 space-y-2">
-          <span class="font-medium inline-flex items-center gap-2"><IconPackage class="w-4 h-4" /> Python, Julia</span>
+          <div class="flex items-center justify-between">
+            <span class="font-medium inline-flex items-center gap-2"><IconPython class="w-4 h-4" /> Python</span>
+            <a href={pypiUrl} class="text-xs text-blue-600 hover:underline">PyPI</a>
+          </div>
+          <pre class="bg-gray-50 border border-gray-200 rounded p-2 font-mono text-xs overflow-x-auto">pip install eunoia</pre>
           <p class="text-xs text-gray-500">
-            Planned thin wrappers around the Rust core, each in its own
+            Bindings to the Rust core with matplotlib plotting; docs at
+            <a href={pyDocsUrl} class="text-blue-600 hover:underline">jolars.github.io/eunoia-py</a>.
+          </p>
+        </div>
+        <div class="bg-white border border-gray-200 rounded p-4 space-y-2">
+          <span class="font-medium inline-flex items-center gap-2"><IconJulia class="w-4 h-4" /> Julia</span>
+          <p class="text-xs text-gray-500">
+            Planned thin wrapper around the Rust core, in its own
             repository. Track progress on the
             <a href={repoUrl} class="text-blue-600 hover:underline">main repo</a>.
           </p>
