@@ -78,11 +78,11 @@ mod quality_report {
             // Pure Nelder-Mead final-stage. Tracks how badly NM-only does
             // (huge ellipse loss) — useful as the lower bound on quality.
             ("neldermead_only", |f| f.optimizer(Optimizer::NelderMead)),
-            // Mixed MDS pool. Default keeps initial-layout on L-BFGS-only
-            // because the mix has been observed to hang on real eulerr-style
-            // specs; this config flips that on so we can quantify the cost.
+            // Mixed MDS pool: alternate L-BFGS with the default
+            // Levenberg-Marquardt across restarts, to quantify mixing solvers
+            // vs the LM-only default.
             ("mds_mixed", |f| {
-                f.initial_solver_pool(vec![MdsSolver::Lbfgs, MdsSolver::TrustRegion])
+                f.initial_solver_pool(vec![MdsSolver::Lbfgs, MdsSolver::LevenbergMarquardt])
             }),
             // Levenberg-Marquardt at the final stage only. LM approximates
             // the Hessian as JᵀJ from the analytical region-area Jacobian

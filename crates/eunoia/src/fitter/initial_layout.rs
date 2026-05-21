@@ -1,11 +1,5 @@
-use argmin::core::{CostFunction, Error, Executor, Gradient, Hessian, State};
-use argmin::solver::linesearch::MoreThuenteLineSearch;
-use argmin::solver::newton::NewtonCG;
-use argmin::solver::quasinewton::LBFGS;
-use argmin::solver::trustregion::{Steihaug, TrustRegion};
-use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt};
-use nalgebra::storage::Owned;
-use nalgebra::{DMatrix, DVector, Dyn};
+use argmin::core::{CostFunction, Error, Gradient, Hessian};
+use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -179,9 +173,12 @@ pub(crate) fn compute_initial_layout_with_solver(
 ///
 /// Different solvers reach different local minima on the same MDS objective,
 /// which translates to different downstream basins after the final stage.
-/// The default fitter cycles `[Lbfgs, TrustRegion]` across the outer
-/// `n_restarts` loop because empirically that pairing widens basin coverage
-/// on hard ellipse fits without raising wall time (restarts run in parallel).
+/// The default fitter uses `[LevenbergMarquardt]` for every restart; its
+/// trust-region update is robust to the indefinite / clamped MDS objective.
+/// `Lbfgs` is available via [`Fitter::initial_solver_pool`] for experimentation
+/// or to widen basin coverage on hard fits (restarts run in parallel).
+///
+/// [`Fitter::initial_solver_pool`]: crate::Fitter::initial_solver_pool
 ///
 /// See [`Fitter::initial_solver`] to pin a single solver, or
 /// [`Fitter::initial_solver_pool`] to specify a custom cycling pool.
@@ -196,23 +193,13 @@ pub enum MdsSolver {
     /// subset-clamp kinks on certain initial conditions (see
     /// `MdsSolver::LevenbergMarquardt` doc).
     Lbfgs,
-    /// Trust region with Steihaug-CG subproblem. Uses the analytic Hessian
-    /// and tolerates the indefinite Hessian our MDS objective routinely
-    /// produces. Reaches different local minima than L-BFGS on hard ellipse
-    /// fits, which is why the default pool mixes both.
-    TrustRegion,
-    /// Truncated Newton (Newton-CG) with More-Thuente line search. Uses the
-    /// analytic Hessian via inner CG iterations. Comparable quality to
-    /// L-BFGS but ~3× the wall time on small problems.
-    NewtonCg,
     /// Levenberg-Marquardt with the analytic per-pair Jacobian. The MDS
     /// objective `Σ_{i≠j} d_{ij}² / Σ target⁴` is a textbook nonlinear
     /// least-squares problem (one residual per ordered pair, post-clamp,
     /// with each residual rescaled by `1/sqrt(Σ target⁴)` so the bulk loss
     /// stays scale-invariant — see `target_norm`), so LM gets to approximate
     /// the Hessian as `JᵀJ` from the residual Jacobian rather than relying
-    /// on the analytic Hessian (TrustRegion / NewtonCg) or gradient history
-    /// (L-BFGS).
+    /// on gradient history (L-BFGS).
     ///
     /// Default solver. The disjoint / subset clamps (`max(0, ·)`,
     /// `min(0, ·)`) make the residuals C¹ rather than C². L-BFGS' inner
@@ -236,107 +223,95 @@ fn run_attempt(
     initial_param: &DVector<f64>,
     solver: MdsSolver,
 ) -> Result<(f64, Vec<f64>), Error> {
-    let cost_function = MdsCost {
-        distances,
-        relationships,
-        target_norm: target_norm(distances),
-    };
-
     match solver {
         MdsSolver::Lbfgs => {
-            let line_search = MoreThuenteLineSearch::new();
-            let solver = LBFGS::new(line_search, 10);
-            let result = Executor::new(cost_function, solver)
-                .configure(|state| state.param(initial_param.clone()).max_iters(200))
-                .run()?;
-            Ok((
-                result.state().get_cost(),
-                result.state().get_best_param().unwrap().as_slice().to_vec(),
-            ))
-        }
-        MdsSolver::TrustRegion => {
-            // TrustRegion needs Vec<f64> params; wrap MdsCost.
-            // Steihaug subproblem (truncated CG) — handles the indefinite
-            // Hessian that our MDS objective produces (8*xd² + 4*D goes
-            // negative whenever shapes are closer than their target distance).
-            // Cauchy point hangs in that regime.
-            let vec_cost = VecMdsCost {
-                inner: cost_function,
+            // Unbounded L-BFGS over the smooth MDS cost. `Vec<f64>` params:
+            // basin's gradient backend traits (`Dot`, `ScaledAdd`,
+            // `NormSquared`) are implemented for `Vec<f64>`, not `DVector`.
+            // Tolerances mirror the previous solver's defaults — gradient
+            // `sqrt(EPSILON)`, cost `EPSILON` — capped at 200 iters.
+            let cost_function = BasinMdsCost {
+                inner: MdsCost {
+                    distances,
+                    relationships,
+                    target_norm: target_norm(distances),
+                },
             };
-            let subproblem: Steihaug<Vec<f64>, f64> = Steihaug::new().with_max_iters(200);
-            let solver = TrustRegion::new(subproblem);
-            let initial_param_vec = initial_param.as_slice().to_vec();
-            let result = Executor::new(vec_cost, solver)
-                .configure(|state| state.param(initial_param_vec).max_iters(200))
-                .run()?;
-            Ok((
-                result.state().get_cost(),
-                result.state().get_best_param().unwrap().clone(),
-            ))
-        }
-        MdsSolver::NewtonCg => {
-            // Truncated Newton: solves the Newton equations approximately via
-            // an inner CG, then takes a More-Thuente line search step.
-            // Uses the analytic Hessian. Vec<f64> params via VecMdsCost.
-            let vec_cost = VecMdsCost {
-                inner: cost_function,
-            };
-            let line_search = MoreThuenteLineSearch::new();
-            let solver: NewtonCG<_, f64> = NewtonCG::new(line_search);
-            let initial_param_vec = initial_param.as_slice().to_vec();
-            let result = Executor::new(vec_cost, solver)
-                .configure(|state| state.param(initial_param_vec).max_iters(200))
-                .run()?;
-            Ok((
-                result.state().get_cost(),
-                result.state().get_best_param().unwrap().clone(),
-            ))
+            let solver = basin::LBFGS::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
+            let result = basin::Executor::new(
+                cost_function,
+                solver,
+                basin::LbfgsState::new(initial_param.as_slice().to_vec(), 10),
+            )
+            .max_iter(200)
+            .terminate_on(basin::GradientTolerance(f64::EPSILON.sqrt()))
+            .terminate_on(basin::CostTolerance::new(f64::EPSILON))
+            .run();
+            Ok((result.cost(), result.param().clone()))
         }
         MdsSolver::LevenbergMarquardt => {
-            let problem = LmMdsProblem::new(distances, relationships, n_sets, initial_param);
-            // Tolerances match the other MDS solvers (default argmin behaviour
-            // is `sqrt(EPSILON)`-ish; LM's default `30·EPS` is far stricter
-            // than we need). 200 iters mirrors the hardcoded cap on the
-            // other arms.
-            let lm = LevenbergMarquardt::new().with_patience(200);
-            let (problem_after, report) = lm.minimize(problem);
-            // LM minimises ½·Σrᵢ² with rᵢ = raw_dᵢ / sqrt(target_norm); MdsCost
-            // returns Σ raw_d² / target_norm = Σ rᵢ², so multiply by 2.
-            Ok((
-                report.objective_function * 2.0,
-                problem_after.params.iter().copied().collect(),
-            ))
+            let problem = LmMdsProblem::new(distances, relationships, n_sets);
+            // Larger initial damping (`tau = 1.0`) matches the random,
+            // far-from-optimum MDS start (Nielsen's rule); basin's `1e-3`
+            // default assumes a warm `x₀`. `1e-10` relative tolerances are
+            // plenty for a warm-start that the final-stage LM refines — the
+            // previous lm crate's `30·EPS ≈ 7e-15` was near machine precision,
+            // far stricter than this stage needs. `tol_grad` (absolute) is
+            // disabled; the residuals' `1/sqrt(target_norm)` scale makes a
+            // fixed `‖Jᵀr‖∞` bound spec-dependent.
+            let lm_tol = 1e-10;
+            let solver = basin::LevenbergMarquardt::new()
+                .tau(1.0)
+                .tol_grad(0.0)
+                .tol_grad_rel(lm_tol)
+                .ftol(lm_tol)
+                .xtol(lm_tol);
+            let result = basin::Executor::new(
+                problem,
+                solver,
+                basin::BasicState::new(initial_param.clone()),
+            )
+            .max_iter(200)
+            .run();
+            // basin LM minimises ½·Σrᵢ² with rᵢ = raw_dᵢ / sqrt(target_norm);
+            // MdsCost returns Σ raw_d² / target_norm = Σ rᵢ², so ×2.
+            Ok((result.cost() * 2.0, result.param().as_slice().to_vec()))
         }
     }
 }
 
-/// Vec<f64>-param wrapper around `MdsCost` for argmin's TrustRegion solver.
-struct VecMdsCost<'a> {
+/// `Vec<f64>`-param adapter wrapping [`MdsCost`] for basin's gradient-based
+/// solvers (`LBFGS`). basin implements its vector backend traits (`Dot`,
+/// `ScaledAdd`, `NormSquared`) for `Vec<f64>` but not `DVector`, so this
+/// converts at the boundary; the conversion is negligible next to the
+/// per-pair cost / gradient sums.
+struct BasinMdsCost<'a> {
     inner: MdsCost<'a>,
 }
 
-impl CostFunction for VecMdsCost<'_> {
+impl basin::CostFunction for BasinMdsCost<'_> {
     type Param = Vec<f64>;
     type Output = f64;
-    fn cost(&self, p: &Vec<f64>) -> Result<f64, Error> {
-        self.inner.cost(&DVector::from_vec(p.clone()))
+
+    fn cost(&self, p: &Vec<f64>) -> f64 {
+        // `MdsCost::cost` is infallible in practice; map a non-finite or
+        // error result to +∞ so a stray evaluation can't derail the search.
+        match <MdsCost as CostFunction>::cost(&self.inner, &DVector::from_vec(p.clone())) {
+            Ok(c) if c.is_finite() => c,
+            _ => f64::INFINITY,
+        }
     }
 }
 
-impl Gradient for VecMdsCost<'_> {
+impl basin::Gradient for BasinMdsCost<'_> {
     type Param = Vec<f64>;
     type Gradient = Vec<f64>;
-    fn gradient(&self, p: &Vec<f64>) -> Result<Vec<f64>, Error> {
-        let g = self.inner.gradient(&DVector::from_vec(p.clone()))?;
-        Ok(g.as_slice().to_vec())
-    }
-}
 
-impl Hessian for VecMdsCost<'_> {
-    type Param = Vec<f64>;
-    type Hessian = Vec<Vec<f64>>;
-    fn hessian(&self, p: &Vec<f64>) -> Result<Vec<Vec<f64>>, Error> {
-        self.inner.hessian(&DVector::from_vec(p.clone()))
+    fn gradient(&self, p: &Vec<f64>) -> Vec<f64> {
+        match <MdsCost as Gradient>::gradient(&self.inner, &DVector::from_vec(p.clone())) {
+            Ok(g) => g.as_slice().to_vec(),
+            Err(_) => vec![0.0; p.len()],
+        }
     }
 }
 
@@ -556,8 +531,6 @@ struct LmMdsProblem<'a> {
     distances: &'a Vec<Vec<f64>>,
     relationships: &'a PairwiseRelations,
     n_sets: usize,
-    /// Param layout matches `MdsCost`: `[x_0, …, x_{n−1}, y_0, …, y_{n−1}]`.
-    params: DVector<f64>,
     /// Canonical residual ordering: ordered pairs in row-major (i, j) order
     /// with `i ≠ j`, length `n*(n−1)`.
     pairs: Vec<(usize, usize)>,
@@ -571,7 +544,6 @@ impl<'a> LmMdsProblem<'a> {
         distances: &'a Vec<Vec<f64>>,
         relationships: &'a PairwiseRelations,
         n_sets: usize,
-        initial_param: &DVector<f64>,
     ) -> Self {
         let mut pairs = Vec::with_capacity(n_sets.saturating_sub(1) * n_sets);
         for i in 0..n_sets {
@@ -585,19 +557,19 @@ impl<'a> LmMdsProblem<'a> {
             distances,
             relationships,
             n_sets,
-            params: initial_param.clone(),
             pairs,
             inv_sqrt_target_norm: 1.0 / target_norm(distances).sqrt(),
         }
     }
 
-    /// Returns `(d, xd, yd, active)` for ordered pair `(i, j)` at the current
-    /// parameters. `active = false` means the disjoint/subset clamp is in
-    /// effect and the residual / Jacobian row should be zero.
-    fn pair_state(&self, i: usize, j: usize) -> (f64, f64, f64, bool) {
+    /// Returns `(d, xd, yd, active)` for ordered pair `(i, j)` at parameters
+    /// `params` (layout `[x_0, …, x_{n−1}, y_0, …, y_{n−1}]`). `active = false`
+    /// means the disjoint/subset clamp is in effect and the residual /
+    /// Jacobian row should be zero.
+    fn pair_state(&self, params: &DVector<f64>, i: usize, j: usize) -> (f64, f64, f64, bool) {
         let n = self.n_sets;
-        let xd = self.params[i] - self.params[j];
-        let yd = self.params[n + i] - self.params[n + j];
+        let xd = params[i] - params[j];
+        let yd = params[n + i] - params[n + j];
         let d = xd.powi(2) + yd.powi(2) - self.distances[i][j].powi(2);
         if self.relationships.is_disjoint(i, j) && d >= 0.0 {
             return (0.0, xd, yd, false);
@@ -609,35 +581,30 @@ impl<'a> LmMdsProblem<'a> {
     }
 }
 
-impl LeastSquaresProblem<f64, Dyn, Dyn> for LmMdsProblem<'_> {
-    type ResidualStorage = Owned<f64, Dyn>;
-    type JacobianStorage = Owned<f64, Dyn, Dyn>;
-    type ParameterStorage = Owned<f64, Dyn>;
+impl basin::Residual for LmMdsProblem<'_> {
+    type Param = DVector<f64>;
+    type Output = DVector<f64>;
 
-    fn set_params(&mut self, x: &DVector<f64>) {
-        self.params.copy_from(x);
-    }
-
-    fn params(&self) -> DVector<f64> {
-        self.params.clone()
-    }
-
-    fn residuals(&self) -> Option<DVector<f64>> {
-        let mut residuals = DVector::zeros(self.pairs.len());
+    fn residual(&self, params: &DVector<f64>) -> DVector<f64> {
         let s = self.inv_sqrt_target_norm;
-        for (k, &(i, j)) in self.pairs.iter().enumerate() {
-            let (d, _xd, _yd, active) = self.pair_state(i, j);
-            residuals[k] = if active { d * s } else { 0.0 };
-        }
-        Some(residuals)
+        DVector::from_fn(self.pairs.len(), |k, _| {
+            let (i, j) = self.pairs[k];
+            let (d, _xd, _yd, active) = self.pair_state(params, i, j);
+            if active { d * s } else { 0.0 }
+        })
     }
+}
 
-    fn jacobian(&self) -> Option<DMatrix<f64>> {
+impl basin::Jacobian for LmMdsProblem<'_> {
+    type Param = DVector<f64>;
+    type Output = DMatrix<f64>;
+
+    fn jacobian(&self, params: &DVector<f64>) -> DMatrix<f64> {
         let n = self.n_sets;
         let s = self.inv_sqrt_target_norm;
-        let mut jacobian = DMatrix::zeros(self.pairs.len(), self.params.len());
+        let mut jacobian = DMatrix::zeros(self.pairs.len(), params.len());
         for (k, &(i, j)) in self.pairs.iter().enumerate() {
-            let (_d, xd, yd, active) = self.pair_state(i, j);
+            let (_d, xd, yd, active) = self.pair_state(params, i, j);
             if !active {
                 continue;
             }
@@ -650,7 +617,7 @@ impl LeastSquaresProblem<f64, Dyn, Dyn> for LmMdsProblem<'_> {
             jacobian[(k, n + i)] = 2.0 * yd * s;
             jacobian[(k, n + j)] = -2.0 * yd * s;
         }
-        Some(jacobian)
+        jacobian
     }
 }
 
@@ -823,9 +790,9 @@ mod gradient_check {
         let p = DVector::from_vec(vec![0.5, 3.0, 3.5, 4.5, 0.3, 1.0, 2.5, 0.8]);
         let analytic = cost.gradient(&p).unwrap();
 
-        let problem = LmMdsProblem::new(&distances, &relations, 4, &p);
-        let r = problem.residuals().unwrap();
-        let j = problem.jacobian().unwrap();
+        let problem = LmMdsProblem::new(&distances, &relations, 4);
+        let r = basin::Residual::residual(&problem, &p);
+        let j = basin::Jacobian::jacobian(&problem, &p);
         let lm_grad = j.transpose() * &r * 2.0;
 
         let max_abs_diff = analytic

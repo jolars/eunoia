@@ -101,8 +101,9 @@ compatibility). Workspace version is shared.
      `NormalizedSumSquared`), runs a CMA-ES → LM polish and keeps the lower
      loss. Strictly non-regressing vs LM.
 
-   `MdsSolver` for the initial stage: `Lbfgs` (default), `TrustRegion`,
-   `NewtonCg`, `LevenbergMarquardt`.
+   `MdsSolver` for the initial stage: `LevenbergMarquardt` *(default;
+   `basin::LevenbergMarquardt`, `tau = 1.0` for the far-from-optimum random
+   start)* and `Lbfgs` (`basin::LBFGS`, unbounded). Both run on basin.
 
    Cycling pools available via `Fitter::initial_solver_pool` /
    `Fitter::optimizer_pool`.
@@ -223,9 +224,10 @@ encodings aren't interchangeable).
 ## Dependencies
 
 Core (`crates/eunoia/`): `nalgebra` 0.34, `basin` 0.3 (`nalgebra` backend;
-final-layout LM), `argmin` 0.11, `argmin-math` 0.5 (`nalgebra_v0_34`;
-L-BFGS + MDS-init solvers), `levenberg-marquardt` 0.15 (MDS-init LM only),
-`finitediff`, `polylabel-mini`, `num-complex`, `log`, `rand` 0.9,
+final-layout LM + L-BFGS, MDS-init LM + L-BFGS), `argmin` 0.11, `argmin-math`
+0.5 (`nalgebra_v0_34`; retained only for the cost-adapter trait impls and the
+circle Brent solve, removed in the final cleanup), `finitediff`,
+`polylabel-mini`, `num-complex`, `log`, `rand` 0.9,
 `i_overlay` ~2.0 (optional, `plotting`), `rayon` (non-wasm only). The whole
 tree is aligned on a single nalgebra 0.34 so basin's `nalgebra`-backend
 types unify with eunoia's own (no faer, no second nalgebra major).

@@ -22,10 +22,9 @@ use eunoia::spec::DiagramSpec;
 use eunoia::test_utils::corpus::{self, QUALITY_SEEDS};
 use eunoia::{Fitter, MdsSolver};
 
-const SOLVERS: [(MdsSolver, &str); 3] = [
+const SOLVERS: [(MdsSolver, &str); 2] = [
     (MdsSolver::Lbfgs, "lbfgs"),
-    (MdsSolver::TrustRegion, "tr_steihaug"),
-    (MdsSolver::NewtonCg, "newton_cg"),
+    (MdsSolver::LevenbergMarquardt, "lm"),
 ];
 
 /// Seed used for the timing benches. A single fixed seed gives Criterion a
@@ -213,8 +212,11 @@ fn pool_cases() -> Vec<PoolCase> {
 
 const POOLS: [(&[MdsSolver], &str); 3] = [
     (&[MdsSolver::Lbfgs], "lbfgs_only"),
-    (&[MdsSolver::TrustRegion], "tr_only"),
-    (&[MdsSolver::Lbfgs, MdsSolver::TrustRegion], "lbfgs+tr"),
+    (&[MdsSolver::LevenbergMarquardt], "lm_only"),
+    (
+        &[MdsSolver::Lbfgs, MdsSolver::LevenbergMarquardt],
+        "lbfgs+lm",
+    ),
 ];
 
 fn bench_pools(c: &mut Criterion) {

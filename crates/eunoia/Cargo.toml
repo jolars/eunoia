@@ -17,16 +17,15 @@ workspace = true
 [dependencies]
 argmin = "0.11"
 argmin-math = { version = "0.5", features = ["nalgebra_v0_34"] }
-# Migration target for the argmin + levenberg-marquardt path. Whole tree is
-# aligned on nalgebra 0.34, so basin's `nalgebra` backend types unify with
-# eunoia's own — no bridging, no second nalgebra major, no faer.
+# Replaces the argmin + levenberg-marquardt optimizers. The lm crate is now
+# fully gone (final-layout and MDS-init LM both on basin); argmin remains only
+# for the cost-adapter trait impls and the circle Brent solve, dropped in the
+# final cleanup. Whole tree is aligned on nalgebra 0.34, so basin's `nalgebra`
+# backend types unify with eunoia's own — no bridging, no second nalgebra
+# major, no faer.
 basin = { version = "0.3", default-features = false, features = ["nalgebra"] }
 finitediff = "0.2"
 i_overlay = { version = "~2.0", optional = true }
-# Now only the MDS initial-layout `MdsSolver::LevenbergMarquardt` path
-# (`initial_layout.rs`); the final-layout LM moved to basin. Removed when the
-# MDS init stage migrates.
-levenberg-marquardt = "0.15"
 log = { version = "0.4", features = ["release_max_level_info"] }
 nalgebra = "0.34"
 num-complex = "0.4"

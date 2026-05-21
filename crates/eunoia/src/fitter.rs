@@ -203,8 +203,8 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // LM's trust-region update sidesteps the line-search deadlock,
             // and `MdsSolver::LevenbergMarquardt` is already wired with the
             // analytic per-pair Jacobian. The mix
-            // `initial_solver_pool([Lbfgs, TrustRegion])` is still available
-            // for experimentation.
+            // `initial_solver_pool([LevenbergMarquardt, Lbfgs])` is still
+            // available for experimentation.
             initial_solvers: vec![MdsSolver::LevenbergMarquardt],
             // Independent uniform draws per restart, matching eulerr. See
             // `initial_sampler` to switch to a stratified Latin-hypercube
@@ -216,11 +216,10 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 
     /// Pin the initial-layout MDS solver to a single choice.
     ///
-    /// The default is [`MdsSolver::Lbfgs`] for every restart. Other solvers
-    /// (`TrustRegion+Steihaug`, `Newton-CG`) are exposed
-    /// for experimentation; on hard ellipse fits TrustRegion sometimes finds
-    /// basins L-BFGS misses, but it can also hang on certain real-world
-    /// specs, so it is opt-in.
+    /// The default is [`MdsSolver::LevenbergMarquardt`] for every restart.
+    /// [`MdsSolver::Lbfgs`] is also available for experimentation; it reaches
+    /// different basins on hard ellipse fits but its line search can stall at
+    /// the MDS objective's subset-clamp kinks, so LM is the default.
     ///
     /// To cycle multiple solvers across the outer `n_restarts` loop, see
     /// [`initial_solver_pool`].
@@ -252,9 +251,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Restart `i` uses `pool[i % pool.len()]`. Mixing solvers in the pool
     /// widens local-minimum coverage on hard fits without raising wall time,
     /// since restarts already run in parallel. The default pool is
-    /// `[MdsSolver::Lbfgs]` (single-solver) — the mixed `[Lbfgs, TrustRegion]`
-    /// pool improves best-of-N quality on issue #28-class specs but has been
-    /// observed to hang on some eulerr-style real-world inputs.
+    /// `[MdsSolver::LevenbergMarquardt]` (single-solver); mixing in
+    /// `MdsSolver::Lbfgs` can widen best-of-N basin coverage on
+    /// issue #28-class specs.
     ///
     /// # Panics
     ///
@@ -272,18 +271,18 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///     .build()
     ///     .unwrap();
     ///
-    /// // Bias the cycle 7:3 toward L-BFGS over TrustRegion.
+    /// // Bias the cycle 7:3 toward Levenberg-Marquardt over L-BFGS.
     /// let fitter = Fitter::<Ellipse>::new(&spec).initial_solver_pool(vec![
+    ///     MdsSolver::LevenbergMarquardt,
+    ///     MdsSolver::LevenbergMarquardt,
+    ///     MdsSolver::LevenbergMarquardt,
+    ///     MdsSolver::LevenbergMarquardt,
+    ///     MdsSolver::LevenbergMarquardt,
+    ///     MdsSolver::LevenbergMarquardt,
+    ///     MdsSolver::LevenbergMarquardt,
     ///     MdsSolver::Lbfgs,
     ///     MdsSolver::Lbfgs,
     ///     MdsSolver::Lbfgs,
-    ///     MdsSolver::Lbfgs,
-    ///     MdsSolver::Lbfgs,
-    ///     MdsSolver::Lbfgs,
-    ///     MdsSolver::Lbfgs,
-    ///     MdsSolver::TrustRegion,
-    ///     MdsSolver::TrustRegion,
-    ///     MdsSolver::TrustRegion,
     /// ]);
     /// ```
     pub fn initial_solver_pool(mut self, pool: Vec<MdsSolver>) -> Self {
@@ -321,8 +320,8 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///   keep their own fixed `1e-6` defaults; override them independently
     ///   via [`xtol`] / [`gtol`].
     /// - **L-BFGS**: wired as both `tol_grad` and `tol_cost`.
-    /// - **Nelder-Mead / TrustRegion**: no tolerance setter is exposed in
-    ///   argmin 0.11, so these run until `max_iterations`.
+    /// - **Nelder-Mead**: no tolerance setter is exposed, so it runs until
+    ///   `max_iterations`.
     ///
     /// The default is `1e-3`, chosen to maximise the timing win on
     /// cost-converged fits without regressing the corpus (validated across
