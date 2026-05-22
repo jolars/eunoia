@@ -63,8 +63,17 @@ pub enum Optimizer {
     /// {plain LM, CMA-ES → LM polish} is returned, so the path is
     /// strictly non-regressing vs `LevenbergMarquardt`.
     ///
-    /// Restricted to the `SumSquared` loss (the LM polish requires it);
-    /// non-LSQ losses fall back to L-BFGS for the polish step.
+    /// Only the LM legs (the up-front guard and the polish) require the
+    /// `SumSquared` loss — they build the least-squares residual problem and
+    /// reject anything else. With a non-`SumSquared` loss those legs
+    /// transparently degrade through the same dispatch as the
+    /// `LevenbergMarquardt` arm: `Lbfgs` for the other smooth losses (RMSE,
+    /// Stress, `Smooth*`, …) and `NelderMead` for the non-smooth ones
+    /// (`Max*`, `SumAbsolute`, `DiagError`, `SumAbsoluteRegionError`). The
+    /// CMA-ES escape stage is derivative-free and loss-agnostic, so it still
+    /// fires on any loss above the threshold — meaning under a non-LSQ loss
+    /// this strategy is really "{smooth: L-BFGS, non-smooth: Nelder-Mead},
+    /// with a CMA-ES global escape", not literal LM.
     ///
     /// Cost: when CMA-ES fires, ~λ·max_iters extra function evaluations
     /// on top of LM, with λ = `4 + floor(3 ln n)` for an n-parameter
