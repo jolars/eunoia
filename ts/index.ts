@@ -377,8 +377,20 @@ export interface PlaceLabelsForRegionsOptions {
 }
 
 export interface VennOptions {
-  /** Number of sets in the Venn diagram (1 ≤ n ≤ 5). */
+  /**
+   * Number of sets in the Venn diagram. The valid range depends on `shape`:
+   * `"ellipse"` supports `1 ≤ n ≤ 5`, while `"circle"`, `"square"`, and
+   * `"rectangle"` support `1 ≤ n ≤ 3` (equal-sized axis-aligned/round shapes
+   * cannot open all `2ⁿ − 1` regions beyond three sets).
+   */
   n: number;
+  /**
+   * Shape primitive for the canonical layout. Default `"ellipse"` — the only
+   * shape that covers all of `n ∈ 1..=5`. `"circle"` gives the classic one-,
+   * two-, and three-circle diagrams; `"square"` / `"rectangle"` are
+   * axis-aligned. All non-ellipse shapes cap at `n = 3`.
+   */
+  shape?: ShapeType;
   /** Output mode: polygon outlines per set, or exclusive regions. Default `"polygons"`. */
   output?: "polygons" | "regions";
   /** Number of vertices per polygon outline. Default 256. */
@@ -817,23 +829,45 @@ export function euler(options: EulerOptions): Layout {
 }
 
 /**
- * Build a canonical n-set Venn diagram (1 ≤ n ≤ 5) and return its outlines
+ * Build a canonical n-set Venn diagram and return its outlines
  * (`output: "polygons"`, default) or its exclusive-region decomposition
  * (`output: "regions"`).
+ *
+ * The shape defaults to `"ellipse"` (the only shape covering all of
+ * `n ∈ 1..=5`). `"circle"` gives the classic one-, two-, and three-circle
+ * diagrams; `"square"` and `"rectangle"` are axis-aligned. Every non-ellipse
+ * shape caps at `n = 3` and throws a `RangeError` above that.
  *
  * No fitting is performed — the layout is hardcoded. Loss-style metrics in
  * the returned `Layout` are computed against a synthetic spec where every
  * region is requested at area 1.0; treat them as informational only.
  */
 export function venn(options: VennOptions): Layout {
-  const { n, output = "polygons", polygonVertices = 256, complement } = options;
-  if (!Number.isInteger(n) || n < 1 || n > 5) {
-    throw new RangeError("venn: `n` must be an integer in 1..=5");
+  const {
+    n,
+    shape = "ellipse",
+    output = "polygons",
+    polygonVertices = 256,
+    complement,
+  } = options;
+  const maxN = shape === "ellipse" ? 5 : 3;
+  if (!Number.isInteger(n) || n < 1 || n > maxN) {
+    throw new RangeError(
+      `venn: \`n\` must be an integer in 1..=${maxN} for shape "${shape}"`,
+    );
   }
   const nVerts = Math.max(3, Math.floor(polygonVertices));
 
   if (output === "regions") {
-    const result = wasm.generate_venn_regions(n, nVerts, complement);
+    const fn =
+      shape === "circle"
+        ? wasm.generate_venn_regions_circles
+        : shape === "square"
+          ? wasm.generate_venn_regions_squares
+          : shape === "rectangle"
+            ? wasm.generate_venn_regions_rectangles
+            : wasm.generate_venn_regions_ellipses;
+    const result = fn(n, nVerts, complement);
     try {
       const regionsArr = result.regions;
       const regions = regionsArr.map(regionFrom);
@@ -841,7 +875,7 @@ export function venn(options: VennOptions): Layout {
       const container = containerFrom(result.container);
       return {
         mode: "regions",
-        shape: "ellipse",
+        shape,
         regions,
         setAnchors: parseAnchors(result.set_anchors_json),
         metrics: metricsFromPolygonResult(result),
@@ -852,25 +886,84 @@ export function venn(options: VennOptions): Layout {
     }
   }
 
-  const result = wasm.generate_venn_polygons(n, nVerts, complement);
+  const fn =
+    shape === "circle"
+      ? wasm.generate_venn_polygons_circles
+      : shape === "square"
+        ? wasm.generate_venn_polygons_squares
+        : shape === "rectangle"
+          ? wasm.generate_venn_polygons_rectangles
+          : wasm.generate_venn_polygons_ellipses;
+  const result = fn(n, nVerts, complement);
   try {
     const polysArr = result.polygons;
     const polygons = polysArr.map(polygonFrom);
     freeAll(polysArr);
-    const ellipsesArr = result.ellipses;
-    const ellipses = ellipsesArr.map(ellipseFrom);
-    freeAll(ellipsesArr);
+    const metrics = metricsFromPolygonResult(result);
+    const container = containerFrom(result.container);
+    const containerField = container ? { container } : {};
+
+    if (shape === "circle") {
+      const arr = result.circles;
+      const circles = arr.map(circleFrom);
+      freeAll(arr);
+      freeAll(result.ellipses);
+      freeAll(result.squares);
+      freeAll(result.rectangles);
+      return {
+        mode: "polygons",
+        shape: "circle",
+        polygons,
+        circles,
+        metrics,
+        ...containerField,
+      };
+    }
+    if (shape === "square") {
+      const arr = result.squares;
+      const squares = arr.map(squareFrom);
+      freeAll(arr);
+      freeAll(result.circles);
+      freeAll(result.ellipses);
+      freeAll(result.rectangles);
+      return {
+        mode: "polygons",
+        shape: "square",
+        polygons,
+        squares,
+        metrics,
+        ...containerField,
+      };
+    }
+    if (shape === "rectangle") {
+      const arr = result.rectangles;
+      const rectangles = arr.map(rectangleFrom);
+      freeAll(arr);
+      freeAll(result.circles);
+      freeAll(result.ellipses);
+      freeAll(result.squares);
+      return {
+        mode: "polygons",
+        shape: "rectangle",
+        polygons,
+        rectangles,
+        metrics,
+        ...containerField,
+      };
+    }
+    const arr = result.ellipses;
+    const ellipses = arr.map(ellipseFrom);
+    freeAll(arr);
     freeAll(result.circles);
     freeAll(result.squares);
     freeAll(result.rectangles);
-    const container = containerFrom(result.container);
     return {
       mode: "polygons",
       shape: "ellipse",
       polygons,
       ellipses,
-      metrics: metricsFromPolygonResult(result),
-      ...(container ? { container } : {}),
+      metrics,
+      ...containerField,
     };
   } finally {
     result.free();

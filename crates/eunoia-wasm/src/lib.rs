@@ -2421,20 +2421,40 @@ pub fn generate_region_polygons_rectangles(
     })
 }
 
-/// Build a canonical n-set Venn diagram (1 ≤ n ≤ 5) and return per-set
-/// ellipse outlines as polygons.
+/// Per-set shape parameter arrays for a Venn [`PolygonResult`]. Exactly one
+/// vector is populated, matching the diagram's shape; the others stay empty.
+#[derive(Default)]
+struct VennShapeParams {
+    circles: Vec<WasmCircle>,
+    ellipses: Vec<WasmEllipse>,
+    squares: Vec<WasmSquare>,
+    rectangles: Vec<WasmRectangle>,
+}
+
+/// Assemble a polygon-mode [`PolygonResult`] for the canonical Venn layout of
+/// shape `S` and `n` sets.
 ///
-/// No fitting is performed — this just emits the hardcoded canonical layout.
-/// Loss/stress/diag-error are reported against the synthetic spec (every
-/// region requested at area `1.0`); they have no optimization meaning.
-#[wasm_bindgen]
-pub fn generate_venn_polygons(
+/// The shape-agnostic work (polygonisation, areas, diagnostics, container)
+/// lives here; `build_params` materialises the shape-specific parameter array
+/// for the concrete `S`. No fitting is performed — the layout is the hardcoded
+/// canonical arrangement, and loss/stress/diag-error are reported against the
+/// synthetic spec (every region requested at area `1.0`) with no optimization
+/// meaning.
+fn venn_polygon_result<S, F>(
     n: usize,
     n_vertices: usize,
     complement: Option<f64>,
-) -> Result<PolygonResult, JsValue> {
-    let mut venn =
-        VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    build_params: F,
+) -> Result<PolygonResult, JsValue>
+where
+    S: eunoia::geometry::traits::DiagramShape + Polygonize + Copy + 'static,
+    F: FnOnce(
+        &eunoia::Layout<S>,
+        &eunoia::spec::DiagramSpec,
+        &std::collections::HashMap<String, (f64, f64)>,
+    ) -> VennShapeParams,
+{
+    let mut venn = VennDiagram::<S>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     if let Some(c) = complement {
         venn = venn
             .complement(c)
@@ -2444,34 +2464,12 @@ pub fn generate_venn_polygons(
     let diagnostics = extract_diagnostics(&layout)?;
     let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
-    let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
-        .set_names()
-        .iter()
-        .filter_map(|name| {
-            layout.shape_for_set(name).map(|ellipse: &Ellipse| {
-                let cx = ellipse.center().x();
-                let cy = ellipse.center().y();
-                let (label_x, label_y) = set_anchors.get(name).copied().unwrap_or((cx, cy));
-                WasmEllipse {
-                    x: cx,
-                    y: cy,
-                    semi_major: ellipse.semi_major(),
-                    semi_minor: ellipse.semi_minor(),
-                    rotation: ellipse.rotation(),
-                    label_x,
-                    label_y,
-                    label: name.to_string(),
-                }
-            })
-        })
-        .collect();
-
     let wasm_polygons: Vec<WasmPolygon> = diagram_spec
         .set_names()
         .iter()
         .filter_map(|name| {
-            layout.shape_for_set(name).map(|ellipse: &Ellipse| {
-                let polygon = ellipse.polygonize(n_vertices);
+            layout.shape_for_set(name).map(|shape: &S| {
+                let polygon = shape.polygonize(n_vertices);
                 let vertices: Vec<WasmPoint> = polygon
                     .vertices()
                     .iter()
@@ -2484,6 +2482,8 @@ pub fn generate_venn_polygons(
             })
         })
         .collect();
+
+    let params = build_params(&layout, &diagram_spec, &set_anchors);
 
     let target_areas: std::collections::HashMap<String, f64> = diagram_spec
         .exclusive_areas()
@@ -2498,10 +2498,10 @@ pub fn generate_venn_polygons(
 
     Ok(PolygonResult {
         polygons: wasm_polygons,
-        circles: vec![],
-        ellipses: wasm_ellipses,
-        squares: vec![],
-        rectangles: vec![],
+        circles: params.circles,
+        ellipses: params.ellipses,
+        squares: params.squares,
+        rectangles: params.rectangles,
         container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
@@ -2516,16 +2516,165 @@ pub fn generate_venn_polygons(
     })
 }
 
-/// Build a canonical n-set Venn diagram (1 ≤ n ≤ 5) and return its decomposition
-/// into per-region exclusive polygons.
+/// Canonical n-set circle Venn diagram (`n ∈ {1, 2, 3}`), per-set outlines as
+/// polygons plus the circle parameters. See [`venn_polygon_result`] for the
+/// metric caveats.
 #[wasm_bindgen]
-pub fn generate_venn_regions(
+pub fn generate_venn_polygons_circles(
     n: usize,
     n_vertices: usize,
     complement: Option<f64>,
-) -> Result<WasmRegionPolygons, JsValue> {
-    let mut venn =
-        VennDiagram::<Ellipse>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+) -> Result<PolygonResult, JsValue> {
+    venn_polygon_result::<Circle, _>(n, n_vertices, complement, |layout, spec, anchors| {
+        let circles = spec
+            .set_names()
+            .iter()
+            .filter_map(|name| {
+                layout.shape_for_set(name).map(|circle: &Circle| {
+                    let cx = circle.center().x();
+                    let cy = circle.center().y();
+                    let (label_x, label_y) = anchors.get(name).copied().unwrap_or((cx, cy));
+                    WasmCircle {
+                        x: cx,
+                        y: cy,
+                        radius: circle.radius(),
+                        label_x,
+                        label_y,
+                        label: name.to_string(),
+                    }
+                })
+            })
+            .collect();
+        VennShapeParams {
+            circles,
+            ..Default::default()
+        }
+    })
+}
+
+/// Canonical n-set ellipse Venn diagram (`n ∈ {1..=5}`), per-set outlines as
+/// polygons plus the ellipse parameters. See [`venn_polygon_result`] for the
+/// metric caveats.
+#[wasm_bindgen]
+pub fn generate_venn_polygons_ellipses(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<PolygonResult, JsValue> {
+    venn_polygon_result::<Ellipse, _>(n, n_vertices, complement, |layout, spec, anchors| {
+        let ellipses = spec
+            .set_names()
+            .iter()
+            .filter_map(|name| {
+                layout.shape_for_set(name).map(|ellipse: &Ellipse| {
+                    let cx = ellipse.center().x();
+                    let cy = ellipse.center().y();
+                    let (label_x, label_y) = anchors.get(name).copied().unwrap_or((cx, cy));
+                    WasmEllipse {
+                        x: cx,
+                        y: cy,
+                        semi_major: ellipse.semi_major(),
+                        semi_minor: ellipse.semi_minor(),
+                        rotation: ellipse.rotation(),
+                        label_x,
+                        label_y,
+                        label: name.to_string(),
+                    }
+                })
+            })
+            .collect();
+        VennShapeParams {
+            ellipses,
+            ..Default::default()
+        }
+    })
+}
+
+/// Canonical n-set square Venn diagram (`n ∈ {1, 2, 3}`), per-set outlines as
+/// polygons plus the square parameters. See [`venn_polygon_result`] for the
+/// metric caveats.
+#[wasm_bindgen]
+pub fn generate_venn_polygons_squares(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<PolygonResult, JsValue> {
+    venn_polygon_result::<Square, _>(n, n_vertices, complement, |layout, spec, anchors| {
+        let squares = spec
+            .set_names()
+            .iter()
+            .filter_map(|name| {
+                layout.shape_for_set(name).map(|square: &Square| {
+                    let cx = square.center().x();
+                    let cy = square.center().y();
+                    let (label_x, label_y) = anchors.get(name).copied().unwrap_or((cx, cy));
+                    WasmSquare {
+                        x: cx,
+                        y: cy,
+                        side: square.side(),
+                        label_x,
+                        label_y,
+                        label: name.to_string(),
+                    }
+                })
+            })
+            .collect();
+        VennShapeParams {
+            squares,
+            ..Default::default()
+        }
+    })
+}
+
+/// Canonical n-set rectangle Venn diagram (`n ∈ {1, 2, 3}`), per-set outlines
+/// as polygons plus the rectangle parameters. See [`venn_polygon_result`] for
+/// the metric caveats.
+#[wasm_bindgen]
+pub fn generate_venn_polygons_rectangles(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<PolygonResult, JsValue> {
+    venn_polygon_result::<Rectangle, _>(n, n_vertices, complement, |layout, spec, anchors| {
+        let rectangles = spec
+            .set_names()
+            .iter()
+            .filter_map(|name| {
+                layout.shape_for_set(name).map(|rect: &Rectangle| {
+                    let cx = rect.center().x();
+                    let cy = rect.center().y();
+                    let (label_x, label_y) = anchors.get(name).copied().unwrap_or((cx, cy));
+                    WasmRectangle {
+                        x: cx,
+                        y: cy,
+                        width: rect.width(),
+                        height: rect.height(),
+                        label_x,
+                        label_y,
+                        label: name.to_string(),
+                    }
+                })
+            })
+            .collect();
+        VennShapeParams {
+            rectangles,
+            ..Default::default()
+        }
+    })
+}
+
+/// Assemble a region-mode [`WasmRegionPolygons`] for the canonical Venn layout
+/// of shape `S` and `n` sets. Region output carries no shape parameters, so
+/// the body is fully shape-agnostic apart from constructing `VennDiagram::<S>`.
+fn venn_region_result<S>(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue>
+where
+    S: eunoia::geometry::traits::DiagramShape + Polygonize + Copy + 'static,
+{
+    let mut venn = VennDiagram::<S>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     if let Some(c) = complement {
         venn = venn
             .complement(c)
@@ -2581,6 +2730,50 @@ pub fn generate_venn_regions(
         set_anchors_json: serde_json::to_string(&set_anchors_map)
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
     })
+}
+
+/// Canonical n-set circle Venn diagram (`n ∈ {1, 2, 3}`), decomposed into
+/// per-region exclusive polygons.
+#[wasm_bindgen]
+pub fn generate_venn_regions_circles(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    venn_region_result::<Circle>(n, n_vertices, complement)
+}
+
+/// Canonical n-set ellipse Venn diagram (`n ∈ {1..=5}`), decomposed into
+/// per-region exclusive polygons.
+#[wasm_bindgen]
+pub fn generate_venn_regions_ellipses(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    venn_region_result::<Ellipse>(n, n_vertices, complement)
+}
+
+/// Canonical n-set square Venn diagram (`n ∈ {1, 2, 3}`), decomposed into
+/// per-region exclusive polygons.
+#[wasm_bindgen]
+pub fn generate_venn_regions_squares(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    venn_region_result::<Square>(n, n_vertices, complement)
+}
+
+/// Canonical n-set rectangle Venn diagram (`n ∈ {1, 2, 3}`), decomposed into
+/// per-region exclusive polygons.
+#[wasm_bindgen]
+pub fn generate_venn_regions_rectangles(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    venn_region_result::<Rectangle>(n, n_vertices, complement)
 }
 
 /// Strategy-driven label placement on already-decomposed region polygons

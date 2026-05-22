@@ -243,7 +243,7 @@ fn default_name(i: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::shapes::{Ellipse, Rectangle, Square};
+    use crate::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
 
     fn approx_eq(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-10
@@ -569,6 +569,49 @@ mod tests {
                     area
                 );
             }
+        }
+    }
+
+    /// Circle Venn arrangements only exist for n ∈ {1, 2, 3} — equal circles
+    /// cannot open all `2ⁿ − 1` regions beyond three sets. The classic one-,
+    /// two-, and three-circle diagrams must satisfy the region invariant.
+    #[test]
+    fn test_topology_is_true_venn_circle() {
+        for n in 1..=3usize {
+            let layout = VennDiagram::<Circle>::new(n).unwrap().into_layout();
+            let expected = (1usize << n) - 1;
+            let fitted = layout.fitted();
+            assert_eq!(
+                fitted.len(),
+                expected,
+                "circle n={}: expected {} non-empty regions, got {}",
+                n,
+                expected,
+                fitted.len()
+            );
+            for (combo, &area) in fitted {
+                assert!(
+                    area > 1e-9,
+                    "circle n={}: region {} has area {} (too small)",
+                    n,
+                    combo,
+                    area
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_circle_default_names() {
+        let venn = VennDiagram::<Circle>::new(3).unwrap();
+        assert_eq!(venn.names(), &["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_circle_zero_and_high_sets_unsupported() {
+        for n in [0usize, 4, 5] {
+            let err = VennDiagram::<Circle>::new(n).unwrap_err();
+            assert_eq!(err, DiagramError::UnsupportedSetCount(n));
         }
     }
 

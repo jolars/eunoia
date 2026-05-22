@@ -239,6 +239,41 @@ impl DiagramShape for Circle {
             shapes, container,
         ))
     }
+
+    /// Canonical circle Venn arrangements for `n ∈ {1, 2, 3}` — the classic
+    /// one-, two-, and three-circle diagrams.
+    ///
+    /// `n ≥ 4` returns `None`: equal circles cannot open all `2ⁿ − 1`
+    /// regions beyond three sets (the standard obstruction that motivates
+    /// the Venn ellipse layouts for `n ∈ {4, 5}`). For `n = 3` the circles
+    /// sit on an equilateral triangle whose circumradius (`0.45`) is smaller
+    /// than the radius (`0.6`), so every circle covers the centroid (opening
+    /// the 3-way region) while each pairwise lens still pokes outside the
+    /// third circle (opening the three 2-way regions). The footprint is
+    /// kept near radius ~1 to match the other shapes' canonical layouts.
+    fn canonical_venn_layout(n: usize) -> Option<Vec<Self>> {
+        // Layouts chosen so every one of the `2ⁿ − 1` non-empty regions has
+        // strictly positive area; verified by `test_topology_is_true_venn_circle`
+        // in `crate::venn` and by `test_canonical_venn_layout_*` below.
+        let centers_and_radius: &[((f64, f64), f64)] = match n {
+            1 => &[((0.0, 0.0), 1.0)],
+            2 => &[((-0.35, 0.0), 0.6), ((0.35, 0.0), 0.6)],
+            // Equilateral triangle, circumradius 0.45, radius 0.6 (vertices at
+            // 90°, 210°, 330°). x = ±0.45·cos(30°) ≈ ±0.389711, y = {0.45, −0.225}.
+            3 => &[
+                ((0.0, 0.45), 0.6),
+                ((-0.389711, -0.225), 0.6),
+                ((0.389711, -0.225), 0.6),
+            ],
+            _ => return None,
+        };
+        Some(
+            centers_and_radius
+                .iter()
+                .map(|&((x, y), r)| Circle::new(Point::new(x, y), r))
+                .collect(),
+        )
+    }
 }
 
 impl Polygonize for Circle {
@@ -2435,5 +2470,46 @@ mod tests {
             1e-4,
             "three_disks_clipped_top",
         );
+    }
+
+    fn assert_circle(circle: &Circle, x: f64, y: f64, radius: f64) {
+        assert!(approx_eq(circle.center().x(), x), "center.x");
+        assert!(approx_eq(circle.center().y(), y), "center.y");
+        assert!(approx_eq(circle.radius(), radius), "radius");
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_n1() {
+        use crate::geometry::traits::DiagramShape;
+        let shapes = Circle::canonical_venn_layout(1).unwrap();
+        assert_eq!(shapes.len(), 1);
+        assert_circle(&shapes[0], 0.0, 0.0, 1.0);
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_n2() {
+        use crate::geometry::traits::DiagramShape;
+        let shapes = Circle::canonical_venn_layout(2).unwrap();
+        assert_eq!(shapes.len(), 2);
+        assert_circle(&shapes[0], -0.35, 0.0, 0.6);
+        assert_circle(&shapes[1], 0.35, 0.0, 0.6);
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_n3() {
+        use crate::geometry::traits::DiagramShape;
+        let shapes = Circle::canonical_venn_layout(3).unwrap();
+        assert_eq!(shapes.len(), 3);
+        assert_circle(&shapes[0], 0.0, 0.45, 0.6);
+        assert_circle(&shapes[1], -0.389711, -0.225, 0.6);
+        assert_circle(&shapes[2], 0.389711, -0.225, 0.6);
+    }
+
+    #[test]
+    fn test_canonical_venn_layout_unsupported() {
+        use crate::geometry::traits::DiagramShape;
+        assert!(Circle::canonical_venn_layout(0).is_none());
+        assert!(Circle::canonical_venn_layout(4).is_none());
+        assert!(Circle::canonical_venn_layout(5).is_none());
     }
 }

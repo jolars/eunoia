@@ -77,9 +77,13 @@ compatibility). Workspace version is shared.
   smoothed variants, etc.)
 - `plotting/` (feature `plotting`) — `clip`, `regions`, `placement`,
   `inscribed`, `plot_data`
-- `venn.rs` — canonical Venn templates (circles n≤3, Wilkinson/Edwards
-  ellipses n∈{4,5}, axis-aligned squares n∈{2,3}, rectangles n∈{1,2,3});
-  used as warm-start slot 0 in `Fitter`
+- `venn.rs` — canonical Venn templates per shape: circles n∈{1,2,3} (the
+  classic 1–3-circle diagrams), ellipses n∈{1..=5} (Wilkinson/Edwards for
+  n∈{4,5}), axis-aligned squares and rectangles n∈{1,2,3}. Each shape's
+  arrangement lives in its `DiagramShape::canonical_venn_layout`. Used as
+  warm-start slot 0 in `Fitter` (circles route through the ellipse template
+  there — see `venn_warm_start_params`), and surfaced shape-selectably through
+  the wasm/TS `venn({ shape })` entry point.
 - `math/`, `error.rs`, `constants.rs`
 
 ## Optimization strategy

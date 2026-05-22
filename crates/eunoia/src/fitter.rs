@@ -1179,9 +1179,9 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
     // Circle / Ellipse path. Both encode their warm-start positions in
     // ellipse parameters `(h, k, a, b, phi)` (a circle is the special case
     // `a == b`), so reach for the ellipse canonical Venn directly rather
-    // than `VennDiagram::<S>::new` — circles have no canonical layout for
-    // n ∈ {4, 5} and the circular subset of n ∈ {1, 2, 3} is encoded in
-    // the ellipse layout already.
+    // than `VennDiagram::<S>::new`: the ellipse layout spans n ∈ {1..=5},
+    // whereas `Circle::canonical_venn_layout` only covers n ∈ {1, 2, 3}, and
+    // the circular case falls out of the ellipse layout as `a == b` anyway.
     if type_id != TypeId::of::<Circle>() && type_id != TypeId::of::<Ellipse>() {
         return None;
     }
