@@ -261,6 +261,33 @@ roadmap didn't require but would tighten the surface.
       still show crossings after (1). Surfaced 2026-05-11 during
       the union-polygon raycast refinement.
 
+- [ ] **Leader-line entry-point refinement**. Start the leader at the
+      first ray–region-boundary intersection (where the ray exits the
+      region) rather than at the POI. This is exactly approach (1) of the
+      "Leader lines crossing interior labels" item above — see there for
+      the detail. Moved from `AGENTS.md` "Open work" 2026-05-22.
+
+- [ ] **`InteriorPolicy::Loose` and `ExteriorPolicy::None` for
+      `place_labels`**. Only `InteriorPolicy::Strict` and the `Raycast` /
+      `ForceDirected` exterior policies are implemented; `Loose` interior
+      placement and the `None` exterior policy currently return
+      `PlacementError::Unimplemented` (see `plotting/placement.rs`). Moved
+      from `AGENTS.md` "Open work" 2026-05-22.
+
+- [ ] **Tighter inscribed-rectangle solver**. `largest_inscribed_rect`
+      currently bounds the label rectangle by a radial clearance from the
+      region's POI; replace it with directional (per-edge) clearance to the
+      region boundary so labels fill anisotropic regions (thin crescents,
+      elongated lenses) more fully. Moved from `AGENTS.md` "Open work"
+      2026-05-22.
+
+## Language bindings
+
+- [ ] **Julia bindings**. The core is platform-independent and designed
+      for multiple language bindings; Julia is a planned target alongside
+      the existing WASM/TS surface. Moved from `AGENTS.md` "Open work"
+      2026-05-22.
+
 ## Documentation
 
 - [x] **Add `/docs/` routes to the existing Svelte site** (alongside
@@ -346,3 +373,34 @@ roadmap didn't require but would tighten the surface.
       Hosting: same deploy pipeline as the rest of the Svelte site
       (no new workflow). README should keep its quickstart and add a
       one-line link to `eunoia.bz/docs/`.
+
+## npm rendering surface
+
+- [ ] **Renderer-agnostic SVG *string* serializer for the npm/TS surface**.
+      `@jolars/eunoia` stops one step short of pixels: `euler`/`venn` return
+      shapes/polygons/regions and `placeLabelsForRegions` returns anchors +
+      bezier leader control points, but every consumer (incl. our own `web/`
+      app) hand-rolls the same glue — bbox→`viewBox`, polygon-with-holes →
+      path `d` + fill-rule, colour mapping, the label measure loop, leader
+      bezier drawing. Add a pure `toSvg(layout, opts): string` plus
+      path-builder helpers (`regionPath`, `boundingBox`, a default palette).
+
+      Constraints that make this the *right* layer (vs. bundling a renderer):
+      - No DOM, no framework, no runtime deps; tree-shakeable so users who
+        only want geometry pay nothing. A **string** (not a DOM/Canvas
+        component) also runs server-side — SSR, static export, resvg/satori
+        → PDF/PNG — which a component can't.
+      - Keep the core fit/geometry package renderer-neutral. This is the
+        eulerr-`plot()` analogue done the JS way; the R `plot()` model
+        (one universal graphics substrate, no bundle cost) doesn't transfer
+        to JS's fragmented SVG/Canvas/WebGL + React/Svelte/Vue landscape.
+      - Defer framework components (`@jolars/eunoia-react` / `-svelte`, …) to
+        separate optional packages, seeded by extracting the agnostic bits
+        already in `web/` (`$lib/colors`, `$lib/leader::leaderPath`, the
+        `polygonPath`/`piecePath` builders in `DiagramSvg.svelte`).
+
+      Prior art in the same domain backs the split: venn.js/d3-venn bundled
+      rendering and aged poorly (locked to D3 versions); UpSet.js separates
+      `@upsetjs/model` from `@upsetjs/react`. Highest-leverage DX win for
+      adoption, and cheap. Surfaced 2026-05-22 while fleshing out the JS
+      quickstart.
