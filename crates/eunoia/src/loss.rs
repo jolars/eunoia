@@ -274,15 +274,31 @@ impl LossType {
     /// Whether this loss is smooth (continuously differentiable) in the
     /// region areas `f`.
     ///
-    /// Returns `false` for losses built from `|·|` or `max(·)`: the
-    /// gradient is zero almost everywhere except at a single active
-    /// region (`Max*`) or has a discontinuity at every zero crossing
-    /// (`SumAbsolute`, `DiagError`, `SumAbsoluteRegionError`). On those
-    /// losses, central-difference gradients return mostly zeros and
-    /// L-BFGS thrashes against the line search; the fitter routes
-    /// non-smooth losses to derivative-free Nelder-Mead instead.
-    /// `Smooth*` variants have C¹ surrogates and report `true`. See
-    /// issue #45.
+    /// Returns `false` for losses built from `|·|` or `max(·)`. Their
+    /// defect is not a missing gradient — a subgradient exists almost
+    /// everywhere — but that the optima lie *on* the non-smooth set:
+    /// minimax losses (`MaxAbsolute`, `MaxSquared`, `DiagError`) balance
+    /// several equally-active residuals, and L1 losses (`SumAbsolute`,
+    /// `SumAbsoluteRegionError`) sit where many regions match their target
+    /// exactly. There:
+    ///
+    /// - the subgradient is discontinuous at every kink (`|·|` flips sign
+    ///   across `fᵢ = tᵢ`; `max(·)` jumps as the active region switches),
+    ///   so the line search's smoothness assumption breaks and L-BFGS
+    ///   thrashes (issue #45);
+    /// - its magnitude doesn't vanish approaching the optimum (it stays
+    ///   `±const` for `|·|`), so the first-order convergence test never
+    ///   trips; and
+    /// - a central difference across a kink returns an attenuated,
+    ///   step-size-dependent slope — an implicit, uncontrolled smoothing —
+    ///   so finite-difference gradients don't rescue the gradient path
+    ///   either.
+    ///
+    /// The fitter therefore routes these to derivative-free Nelder-Mead.
+    /// The principled alternative is a `Smooth*` variant: a C¹
+    /// Huber/logsumexp surrogate with an analytic gradient and a tunable
+    /// smoothing scale — the controlled version of what a finite difference
+    /// does by accident. Those report `true`.
     pub fn is_smooth(&self) -> bool {
         match self {
             LossType::SumSquared
