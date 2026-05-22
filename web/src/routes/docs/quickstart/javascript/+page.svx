@@ -1,23 +1,173 @@
+<script>
+import DiagramExample from "$lib/components/DiagramExample.svelte";
+
+const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
+</script>
+
 # Quickstart: JavaScript
 
-> TODO: cover installing `@jolars/eunoia` from npm, calling `euler({ sets, ... })`
-> and `venn({ n, ... })`, choosing between `output: "shapes" | "polygons" | "regions"`,
-> and rendering the result with SVG / Canvas / D3.
+`@jolars/eunoia` is the WebAssembly build of the eunoia engine. You hand it set
+sizes, it fits an area-proportional Euler (or canonical Venn) diagram, and hands
+back plain JavaScript objects — circles, ellipses, polygons, or per-region
+pieces — that you draw however you like (SVG, Canvas, D3).
 
-For now:
+<DiagramExample
+  sets={TWO_SET_SPEC}
+  shape="circle"
+  caption="The diagram fitted by the first example below."
+/>
+
+## Install
 
 ```bash
 npm install @jolars/eunoia
 ```
+
+The package is an ES module backed by WebAssembly, so it needs a bundler that
+understands `import`-ed `.wasm` (Vite, webpack 5, Rollup, …). It ships its own
+TypeScript types.
+
+> Server-side rendering: call eunoia from the **client** (e.g. a dynamic
+> `import("@jolars/eunoia")` inside `onMount` / `useEffect`) so the wasm module
+> isn't instantiated during the server render.
+
+## Fit a diagram
 
 ```js
 import { euler } from "@jolars/eunoia";
 
 const layout = euler({
   sets: { A: 5, B: 3, "A&B": 1.5 },
-  output: "regions",
 });
 ```
 
-See the [npm package page](https://www.npmjs.com/package/@jolars/eunoia)
-for the full API surface.
+`sets` is keyed by **combination expression** — a single set (`"A"`) or sets
+joined with `&` (`"A&B"`). By default the values are *exclusive* sizes (the part
+of `A` outside `B` is `5`, the overlap is `1.5`). Pass `inputType: "inclusive"`
+if your numbers are full set unions instead and eunoia will decompose them.
+
+With no other options you get circles back:
+
+```js
+layout.mode; // "shapes"
+layout.shape; // "circle"
+layout.circles;
+// [
+//   { label: "A", x, y, radius, labelAnchor: { x, y } },
+//   { label: "B", x, y, radius, labelAnchor: { x, y } },
+// ]
+layout.metrics.stress; // goodness-of-fit, plus loss / fittedAreas / …
+```
+
+## Choose what comes back
+
+The `output` option decides the shape of the result. The `Layout` object is a
+union discriminated on `mode`:
+
+| `output`               | You get                                                              | Reach for it when                                  |
+| ---------------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
+| `"shapes"` *(default)* | `circles` / `ellipses` / `squares` / `rectangles` — primitive params | drawing native `<circle>` / `<ellipse>` / `<rect>` |
+| `"polygons"`           | the shapes **plus** `polygons` — one closed outline per set          | filling/stroking exact set outlines as `<path>`    |
+| `"regions"`            | `regions` — the exclusive pieces (`A` only, `A&B`, …) + `setAnchors` | per-region fills, colouring, label placement       |
+
+Every mode also carries `metrics` (loss, stress, fitted vs. target areas, …).
+See [Goodness of fit](/docs/concepts/goodness-of-fit/) for what those mean.
+
+## Render to SVG
+
+In `"shapes"` mode the fields map straight onto SVG attributes. Coordinates are
+in abstract, centred units, so compute a bounding box and use it as the
+`viewBox`:
+
+```js
+import { euler } from "@jolars/eunoia";
+
+const palette = ["#4e79a7", "#f28e2b", "#59a14f"];
+
+function renderCircles(circles, { size = 320, pad = 8 } = {}) {
+  const minX = Math.min(...circles.map((c) => c.x - c.radius));
+  const minY = Math.min(...circles.map((c) => c.y - c.radius));
+  const maxX = Math.max(...circles.map((c) => c.x + c.radius));
+  const maxY = Math.max(...circles.map((c) => c.y + c.radius));
+  const w = maxX - minX;
+  const h = maxY - minY;
+
+  const shapes = circles
+    .map(
+      (c, i) =>
+        `<circle cx="${c.x}" cy="${c.y}" r="${c.radius}" ` +
+        `fill="${palette[i % palette.length]}" fill-opacity="0.5" />`,
+    )
+    .join("");
+
+  const labels = circles
+    .map(
+      (c) =>
+        `<text x="${c.labelAnchor.x}" y="${c.labelAnchor.y}" ` +
+        `text-anchor="middle" dominant-baseline="central" ` +
+        `font-size="${0.07 * Math.max(w, h)}">${c.label}</text>`,
+    )
+    .join("");
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" ` +
+    `viewBox="${minX - pad} ${minY - pad} ${w + 2 * pad} ${h + 2 * pad}">` +
+    `${shapes}${labels}</svg>`
+  );
+}
+
+const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
+document.body.innerHTML = renderCircles(layout.circles);
+```
+
+`ellipses` carry `semiMajor`, `semiMinor`, and a `rotation` (radians);
+`squares` / `rectangles` carry `side` or `width` / `height` centred on `x`, `y`.
+
+For exact overlap shading rather than translucent stacking, switch to
+`output: "regions"`, give each region its own fill from its `combination`, and
+draw each piece's `outer` ring (plus any `holes`) as one `<path>`. See the
+[Fitter pipeline](/docs/concepts/fitter-pipeline/) chapter for how regions are
+derived.
+
+## Pick a different shape
+
+```js
+euler({ sets: { A: 5, B: 3, "A&B": 1.5 }, shape: "ellipse" });
+```
+
+`shape` is one of `"circle"`, `"ellipse"`, `"square"`, `"rectangle"`. Ellipses
+have more freedom than circles and often fit three or more sets noticeably
+better — see [Shapes](/docs/concepts/shapes/).
+
+## Venn diagrams
+
+For a fixed, *non*-proportional Venn template (the classic overlapping outlines),
+use `venn` instead — it ignores set sizes and just lays out `n` sets:
+
+```js
+import { venn } from "@jolars/eunoia";
+
+const layout = venn({ n: 3 }); // ellipses, 1 ≤ n ≤ 5
+layout.polygons; // one outline per set; output defaults to "polygons"
+```
+
+Pick the shape with `shape`. `"ellipse"` (default) is the only one that
+reaches `n = 5`; `"circle"` gives the classic 1–3-circle diagrams, and
+`"square"` / `"rectangle"` are axis-aligned. The non-ellipse shapes cap at
+`n = 3`:
+
+```js
+venn({ n: 3, shape: "circle" }); // classic three-circle Venn
+```
+
+## Labels
+
+Interior labels come for free: each shape (and each region) carries a
+`labelAnchor`, and `"regions"` mode adds `setAnchors`. When a region is too small
+to hold its label, eunoia can place it outside with a leader line via
+`placeLabelsForRegions`. That involves measuring rendered text and (often) a
+resize loop, covered in [Label placement](/docs/concepts/label-placement/) and
+[Resize loops](/docs/bindings/resize-loops/).
+
+For the complete option and return-type listing, see the TypeScript definitions
+shipped with the [npm package](https://www.npmjs.com/package/@jolars/eunoia).
