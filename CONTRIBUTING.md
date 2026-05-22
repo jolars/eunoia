@@ -10,6 +10,11 @@ We welcome contributions to eunoia! This guide will help you get started.
 - [Task](https://taskfile.dev) (optional, but recommended for convenience)
 - Git
 
+The repo ships a [devenv](https://devenv.sh) environment (`devenv.nix`) that
+pins the exact toolchain and provides Task, `wasm-pack`, Node/pnpm, and the
+other tools used here. Run `devenv shell` to get everything in one step.
+Otherwise install the pieces you need for the parts you're touching.
+
 ### Setting Up Your Development Environment
 
 1. Fork and clone the repository:
@@ -195,7 +200,10 @@ eunoia/
 │   │   │   │   ├── shapes.rs        # Shapes module
 │   │   │   │   ├── shapes/
 │   │   │   │   │   ├── circle.rs
-│   │   │   │   │   └── rectangle.rs
+│   │   │   │   │   ├── ellipse.rs
+│   │   │   │   │   ├── square.rs
+│   │   │   │   │   ├── rectangle.rs
+│   │   │   │   │   └── polygon.rs   # Region output, not a fittable shape
 │   │   │   │   ├── operations.rs
 │   │   │   │   ├── operations/
 │   │   │   │   │   └── overlaps.rs
@@ -203,8 +211,11 @@ eunoia/
 │   │   │   ├── fitter.rs   # Fitter module definition
 │   │   │   └── fitter/     # Optimization algorithms
 │   │   │       ├── layout.rs
-│   │   │       ├── initial_layout.rs
-│   │   │       └── final_layout.rs
+│   │   │       ├── initial_layout.rs   # MDS warm-start
+│   │   │       ├── final_layout.rs     # shape-specific optimizers
+│   │   │       ├── clustering.rs       # disjoint sub-diagrams
+│   │   │       ├── normalize.rs        # post-fit rotate/centre
+│   │   │       └── packing.rs          # skyline packing of clusters
 │   │   └── tests/          # Integration tests
 │   └── eunoia-wasm/        # WASM bindings
 │       ├── Cargo.toml
@@ -226,7 +237,10 @@ The geometry module is organized into clear sub-modules:
   - Composable traits: `Distance`, `Area`, `Centroid`, `Perimeter`, `BoundingBox`
   - `Closed`: Trait for closed shapes (spatial relations)
   - `DiagramShape`: Trait for diagram shapes (adds optimization methods)
-- **`shapes/`**: Closed shape implementations (Circle, Rectangle)
+- **`shapes/`**: Closed shape implementations (Circle, Ellipse, Square,
+  Rectangle; Polygon is for region output, not fitting)
+- **`projective/`**: Projective-geometry helpers (conics, used for ellipse
+  intersections)
 - **`operations/`**: Geometric algorithms
 - **`diagram.rs`**: Diagram-specific logic
 
@@ -243,7 +257,7 @@ The geometry module is organized into clear sub-modules:
 
 We welcome contributions in these areas:
 
-- **New shapes**: Ellipse, triangle implementations (see `.github/copilot-instructions.md` for trait system guide)
+- **New shapes**: rotated rectangles, triangle implementations
 - **Polygon utilities**: Shape conversion, intersection splitting
 - **Label placement**: Poles of inaccessibility, centroid calculations
 - **Documentation**: Examples, tutorials, API docs
@@ -258,7 +272,9 @@ When adding a new shape, you'll need to implement several traits:
 2. `Closed` trait: Spatial relations (contains, intersects, intersection_area, etc.)
 3. `DiagramShape` trait: Diagram-specific methods (compute_exclusive_regions, parameter conversion)
 
-See `.github/copilot-instructions.md` for detailed examples.
+Mirror the existing implementation closest in topology — `Square`/`Rectangle`
+for polygonal shapes, `Circle`/`Ellipse` for curved ones. The fitter is
+shape-generic, so no fitter changes are needed.
 
 ## Getting Help
 
