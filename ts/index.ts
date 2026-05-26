@@ -268,20 +268,43 @@ export type ExteriorPolicyName = "raycast" | "forceDirected";
  */
 export type TetherSource = "poi" | "boundary";
 
-export interface PlacementStrategy {
-  /** Default `"raycast"`. */
-  exterior?: ExteriorPolicyName;
+/**
+ * Leader strategy: the *edge type* drawn between a region and its exterior
+ * label, coupled with the *placement algorithm* that suits that edge type.
+ * Picking the edge type picks an appropriate placement algorithm —
+ * raycasting, for instance, is a straight-line construction, so it's only
+ * offered for straight leaders.
+ *
+ * Today the only edge type is `"straight"`; d3-style `"elbow"` (orthogonal)
+ * leaders with their own placement algorithm are planned.
+ */
+export type LeaderStrategy = {
+  /** Edge type. Currently only `"straight"`. */
+  type: "straight";
+  /**
+   * Placement algorithm for straight leaders. Default `"raycast"`.
+   */
+  placement?: ExteriorPolicyName;
   /**
    * Margin around the diagram bbox/container, applied to both
-   * `"raycast"` and `"forceDirected"` exteriors. Omit to use a per-region
+   * `"raycast"` and `"forceDirected"` placement. Omit to use a per-region
    * proportional default of `0.5 * max(label_w, label_h)`.
    */
   margin?: number;
   /**
-   * Iteration cap for the `"forceDirected"` solver. Ignored otherwise.
+   * Iteration cap for the `"forceDirected"` placement. Ignored otherwise.
    * Defaults to 200; raise for crowded diagrams that haven't converged.
    */
   iterations?: number;
+};
+
+export interface PlacementStrategy {
+  /**
+   * Leader strategy — the edge type and the placement algorithm for
+   * exterior labels. Omit for the default: straight leaders placed by
+   * raycasting.
+   */
+  leader?: LeaderStrategy;
   /** Polylabel-style search precision. Default `0.01`. */
   precision?: number;
   /**
@@ -303,14 +326,6 @@ export interface PlacementStrategy {
    * `leaderGap = 0` — the padding shows up as the visible gap.
    */
   leaderGap?: number;
-  /**
-   * Curvature of exterior leaders, as the cubic-bezier control-handle length
-   * expressed as a fraction of the straight `tether → leaderEnd` distance.
-   * `0` disables curving: `leaderControl1` / `leaderControl2` come back
-   * `undefined` and renderers draw straight leaders. Larger values bow the
-   * leader more. Default `0.3` (a gentle curve).
-   */
-  leaderCurvature?: number;
 }
 
 /**
@@ -341,16 +356,14 @@ export interface LabelPlacement {
    */
   leaderEnd?: Point;
   /**
-   * First cubic-bezier control point for a *curved* leader. `undefined` for
-   * interior placements and when `strategy.leaderCurvature` is `0`. When set,
-   * `leaderControl2` is set too, and a renderer draws the leader as
-   * `M tether C leaderControl1 leaderControl2 leaderEnd`. Renderers that want
-   * straight leaders ignore these and draw `tether → leaderEnd` — the control
-   * points never change the endpoints, only the path between them.
+   * Intermediate vertices of the leader polyline, in draw order, running
+   * between `tether` and `leaderEnd`. Empty for interior placements (no
+   * leader) and for straight leaders, where the leader is the single segment
+   * `tether → leaderEnd`. Future edge types (e.g. elbow/orthogonal leaders)
+   * populate this with their bend joints, so a renderer always draws the
+   * leader as the polyline `tether → leaderWaypoints… → leaderEnd`.
    */
-  leaderControl1?: Point;
-  /** Second cubic-bezier control point; see {@link leaderControl1}. */
-  leaderControl2?: Point;
+  leaderWaypoints: Point[];
 }
 
 export interface PlaceLabelsForRegionsOptions {
@@ -1079,27 +1092,35 @@ export function placeLabelsForRegions(
 
   let strategyJson: string | undefined;
   if (strategy) {
-    const payload: {
-      exterior?: "Raycast" | "ForceDirected";
+    type LeaderPayload = {
+      type: "straight";
+      placement?: "Raycast" | "ForceDirected";
       margin?: number;
       iterations?: number;
+    };
+    const payload: {
+      leader?: LeaderPayload;
       precision?: number;
       tether?: "Poi" | "Boundary";
       leaderGap?: number;
-      leaderCurvature?: number;
     } = {};
-    if (strategy.exterior !== undefined) {
-      const mapped = EXTERIOR_POLICY_MAP[strategy.exterior];
-      if (mapped === undefined) {
-        throw new RangeError(
-          `placeLabelsForRegions: unknown exterior policy "${strategy.exterior}"`,
-        );
+    if (strategy.leader !== undefined) {
+      const leader = strategy.leader;
+      const leaderPayload: LeaderPayload = { type: leader.type };
+      if (leader.placement !== undefined) {
+        const mapped = EXTERIOR_POLICY_MAP[leader.placement];
+        if (mapped === undefined) {
+          throw new RangeError(
+            `placeLabelsForRegions: unknown leader placement "${leader.placement}"`,
+          );
+        }
+        leaderPayload.placement = mapped;
       }
-      payload.exterior = mapped;
+      if (leader.margin !== undefined) leaderPayload.margin = leader.margin;
+      if (leader.iterations !== undefined)
+        leaderPayload.iterations = leader.iterations;
+      payload.leader = leaderPayload;
     }
-    if (strategy.margin !== undefined) payload.margin = strategy.margin;
-    if (strategy.iterations !== undefined)
-      payload.iterations = strategy.iterations;
     if (strategy.precision !== undefined)
       payload.precision = strategy.precision;
     if (strategy.tether !== undefined) {
@@ -1113,8 +1134,6 @@ export function placeLabelsForRegions(
     }
     if (strategy.leaderGap !== undefined)
       payload.leaderGap = strategy.leaderGap;
-    if (strategy.leaderCurvature !== undefined)
-      payload.leaderCurvature = strategy.leaderCurvature;
     strategyJson = JSON.stringify(payload);
   }
 
@@ -1129,8 +1148,7 @@ export function placeLabelsForRegions(
     kind: keyof typeof PLACEMENT_KIND_MAP;
     tether?: [number, number];
     leaderEnd?: [number, number];
-    leaderControl1?: [number, number];
-    leaderControl2?: [number, number];
+    leaderWaypoints?: [number, number][];
   };
   const raw = JSON.parse(json) as Record<string, RawPlacement>;
   const out: Record<string, LabelPlacement> = {};
@@ -1138,20 +1156,14 @@ export function placeLabelsForRegions(
     const placement: LabelPlacement = {
       anchor: { x: v.anchor[0], y: v.anchor[1] },
       kind: PLACEMENT_KIND_MAP[v.kind],
+      leaderWaypoints: (v.leaderWaypoints ?? []).map((p) => ({
+        x: p[0],
+        y: p[1],
+      })),
     };
     if (v.tether) placement.tether = { x: v.tether[0], y: v.tether[1] };
     if (v.leaderEnd)
       placement.leaderEnd = { x: v.leaderEnd[0], y: v.leaderEnd[1] };
-    if (v.leaderControl1)
-      placement.leaderControl1 = {
-        x: v.leaderControl1[0],
-        y: v.leaderControl1[1],
-      };
-    if (v.leaderControl2)
-      placement.leaderControl2 = {
-        x: v.leaderControl2[0],
-        y: v.leaderControl2[1],
-      };
     out[k] = placement;
   }
   return out;

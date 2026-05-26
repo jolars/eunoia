@@ -1,6 +1,64 @@
 # Label-placement strategy API
 
-## Context
+## Update — leader strategy rework (straight leaders, edge-coupled strategy)
+
+> Supersedes parts of the design recorded below. The `PlacementStrategy`
+> shipped, but leader *appearance* and *placement algorithm* were two
+> independent knobs (`exterior` + a `leader_curvature` cubic-bezier), which let
+> you ask for nonsensical combinations like "raycast a curved leader." Curved
+> leaders produced ugly S-shapes (an exit handle on the raycast ray, an arrival
+> handle on the label-box normal — fighting each other), so we dropped curving
+> entirely and recoupled the two knobs.
+
+**The model now ties the edge type to the placement algorithm that suits it:**
+
+```rust
+pub enum LeaderStrategy {
+    /// Straight leader lines, placed by an exterior solver.
+    Straight(ExteriorPolicy),   // Raycast { margin } | ForceDirected { margin, iterations }
+    // Planned: Elbow(ElbowOptions),
+}
+
+pub struct PlacementStrategy {
+    pub leader: LeaderStrategy,   // replaced `exterior` + `leader_curvature`
+    pub precision: f64,
+    pub tether: TetherSource,
+    pub leader_gap: f64,
+}
+// Default: LeaderStrategy::Straight(ExteriorPolicy::Raycast { margin: None }).
+```
+
+`ExteriorPolicy` (Raycast / ForceDirected) is retained verbatim as the
+straight-edge placement algorithm. Raycasting is a straight-line construction,
+so it's only reachable for straight leaders by construction.
+
+**Leader output is now a polyline.** `LabelPlacement` dropped the two
+`leader_control_*` bezier points (and its `Copy` derive) for a single
+`leader_waypoints: Vec<Point>`: empty for interior placements and straight
+leaders (the leader is just `tether → leader_end`), populated by future edge
+types with their bend joints. Renderers always draw the polyline
+`tether → leader_waypoints… → leader_end`. This is wired end-to-end: core
+(`placement.rs`), wasm (`place_region_labels` — nested `leader` JSON object,
+`leaderWaypoints` output), TS (`LeaderStrategy` discriminated union,
+`leaderWaypoints`), and the web renderer (`web/src/lib/leader.ts`).
+
+### Stage 2 (planned, not implemented) — elbow leaders
+
+Add `LeaderStrategy::Elbow(ElbowOptions)`, a `PlacementKind::ExteriorElbow`,
+and a dedicated `resolve_elbow(...)` placement function. d3-pie style:
+
+1. Assign each exterior label to a **left or right column** by the sign of
+   `(POI.x − diagram_center.x)`.
+2. Within each column, **sort by tether y** and **distribute vertically** with
+   a minimum gap (collision-free by construction).
+3. Connector is an **orthogonal polyline**: `tether → (bend_x, tether.y) →
+   (bend_x, row_y) → leader_end`, where `bend_x` sits just outside the diagram
+   on that side. The bends populate `leader_waypoints`; `tether` / `leader_end`
+   are the endpoints already produced — no new output fields needed.
+
+---
+
+## Context (original Phase 1/2 plan — historical)
 
 Phase 1 (already shipped) added a *predicate* layer for label fit-checks:
 

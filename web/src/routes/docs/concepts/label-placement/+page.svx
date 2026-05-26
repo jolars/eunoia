@@ -154,26 +154,31 @@ for (i in 1:8) {
 
 ## Strategy knobs
 
-The default strategy uses the `Raycast` exterior solver:
+The leader strategy ties the **edge type** to the **placement
+algorithm** that suits it. Today the only edge type is `straight`
+(`leader: { type: 'straight', placement: 'raycast' | 'forceDirected' }`);
+omit `leader` entirely for the default, straight leaders placed by
+raycasting. The placement chooses how exterior labels are positioned:
 
-- **`Raycast` exterior** *(default)* — deterministic ray from the
+- **`raycast` placement** *(default)* — deterministic ray from the
   diagram centroid through the region's POI; anchor lands outside
   the union polygon of the fitted shapes (or container, if you set
   one), padded by `margin`. Clearance is checked per-vertex with
   the label's full footprint, so width and height are honoured
   even on diagonal rays. Cheap, predictable, no surprises.
-- **`ForceDirected` exterior** — warm-starts from the raycast
+- **`forceDirected` placement** — warm-starts from the raycast
   positions, then iterates a soft spring (back to home) plus three
   repulsions: label-vs-label, label-vs-union-polygon containment
   along the raycast direction, and label-vs-foreign-region polygon
   repulsion. Default cap is 200 outer iterations.
 
-Pick `Raycast` for typical n=2..3 diagrams or any case where labels
-naturally spread around the perimeter. Reach for `ForceDirected`
+Pick `raycast` for typical n=2..3 diagrams or any case where labels
+naturally spread around the perimeter. Reach for `forceDirected`
 when raycast labels visually overlap each other or land on top of
 unrelated regions — for example, dense n=4 ellipse diagrams where
 several intersection regions push their labels outward at similar
-angles.
+angles. (d3-style `elbow` leaders, with their own placement
+algorithm, are planned.)
 
 The two examples below are the same n=4 spec under each strategy.
 Drag the page wider to see them side by side; the difference is
@@ -193,17 +198,19 @@ visible mostly when labels need exterior placement.
   caption="ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion."
 />
 
-Strategy knobs (defaults in parentheses):
+Strategy knobs (defaults in parentheses). `margin` and `iterations`
+live on the `leader` object alongside `type` / `placement`; the rest
+sit on the strategy itself:
 
-- `margin` *(per-label proportional: `0.5 * max(w, h)`)* — padding
-  between the diagram bbox / container and the label. The default
-  scales with each label's own size, so a long string like
+- `leader.margin` *(per-label proportional: `0.5 * max(w, h)`)* —
+  padding between the diagram bbox / container and the label. The
+  default scales with each label's own size, so a long string like
   `A&B&C&D` ends up further out than a short one. Override with a
   fixed value (e.g. `margin: 2`) when you want every exterior
   label flush to the diagram regardless of length.
-- `iterations` *(200, ForceDirected only)* — outer iteration cap;
-  inner label-vs-label sweep loops to disjointness so spring
-  re-overlap doesn't leak into the converged result.
+- `leader.iterations` *(200, `forceDirected` only)* — outer
+  iteration cap; inner label-vs-label sweep loops to disjointness so
+  spring re-overlap doesn't leak into the converged result.
 - `precision` *(0.01)* — polylabel-style search precision for the
   interior fit-check; smaller is more accurate, costlier.
 - `tether` *(`'poi'`)* — where the exterior leader tether attaches
@@ -232,14 +239,17 @@ anchor; exterior placements also need a leader line from
 `placement.tether` (the region's POI by default, or the polygon
 exit point when `strategy.tether = 'boundary'`) to
 `placement.leaderEnd` (the point on the label's bounding box where
-the leader should terminate, so it doesn't run through the text):
+the leader should terminate, so it doesn't run through the text).
+Draw the leader as the polyline `tether → leaderWaypoints… →
+leaderEnd`; straight leaders carry no waypoints, so it collapses to
+a single segment:
 
 ```ts
 for (const region of regions) {
   const p = placements[region.combination];
   if (!p) continue;
   if (p.kind === "exteriorRaycast" || p.kind === "exteriorForceDirected") {
-    drawLine(p.tether!, p.leaderEnd!);   // leader line, clipped at the box edge
+    drawPolyline([p.tether!, ...p.leaderWaypoints, p.leaderEnd!]); // clipped at the box edge
   }
   drawLabel(p.anchor, region.combination);
 }

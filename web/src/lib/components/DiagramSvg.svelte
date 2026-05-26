@@ -367,7 +367,7 @@
         container: result.container,
         sizes,
         strategy: {
-          exterior: style.labelPlacement,
+          leader: { type: "straight", placement: style.labelPlacement },
           precision: Math.max(0.05, style.labelSize * 0.05),
           tether: style.labelTether,
           // Stop the leader a fraction of a glyph-height short of the
@@ -616,8 +616,7 @@
             d={leaderPath(
               placement.tether,
               placement.leaderEnd ?? anchor,
-              placement.leaderControl1,
-              placement.leaderControl2,
+              placement.leaderWaypoints,
             )}
             fill="none"
             stroke="#6b7280"

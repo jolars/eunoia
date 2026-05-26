@@ -1,12 +1,11 @@
 /**
  * SVG path assembly for exterior label leaders.
  *
- * The leader-curve geometry lives in the core: `placeLabelsForRegions`
- * returns `LabelPlacement.leaderControl1` / `leaderControl2` (computed in the
- * Rust crate from `strategy.leaderCurvature`). This is just the thin
- * renderer-side formatter — a cubic bezier when the core supplied control
- * points (curved leaders), a straight segment otherwise (interior
- * placements, or `leaderCurvature === 0`).
+ * The leader geometry lives in the core: `placeLabelsForRegions` returns
+ * `LabelPlacement.tether`, `leaderEnd`, and `leaderWaypoints` (the
+ * intermediate polyline vertices, in draw order). This is just the thin
+ * renderer-side formatter — a polyline `tether → waypoints… → leaderEnd`.
+ * Straight leaders carry no waypoints, so this reduces to a single segment.
  */
 
 interface Pt {
@@ -15,19 +14,18 @@ interface Pt {
 }
 
 /**
- * SVG `d` string for a leader from `tether` to `end`. Draws the cubic
- * `M tether C control1 control2 end` when both control points are present,
- * otherwise a straight `M tether L end`.
+ * SVG `d` string for a leader from `tether` to `end`, passing through
+ * `waypoints` in draw order. Straight leaders pass no waypoints and yield
+ * `M tether L end`.
  */
 export function leaderPath(
   tether: Pt,
   end: Pt,
-  control1?: Pt,
-  control2?: Pt,
+  waypoints: ReadonlyArray<Pt> = [],
 ): string {
-  const move = `M ${tether.x},${tether.y}`;
-  if (control1 && control2) {
-    return `${move} C ${control1.x},${control1.y} ${control2.x},${control2.y} ${end.x},${end.y}`;
+  let d = `M ${tether.x},${tether.y}`;
+  for (const w of waypoints) {
+    d += ` L ${w.x},${w.y}`;
   }
-  return `${move} L ${end.x},${end.y}`;
+  return `${d} L ${end.x},${end.y}`;
 }

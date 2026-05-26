@@ -224,7 +224,10 @@ const placements: Record<string, LabelPlacement> = $derived.by(() => {
     return eunoia.placeLabelsForRegions({
       regions,
       sizes: paddedSizes,
-      strategy: { exterior: strategy, margin, precision: 0.05 },
+      strategy: {
+        leader: { type: "straight", placement: strategy, margin },
+        precision: 0.05,
+      },
     });
   } catch (err) {
     console.warn("[DiagramExample] placement failed", err);
@@ -338,8 +341,7 @@ const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
                 d={leaderPath(
                   p.tether,
                   p.leaderEnd ?? anchor,
-                  p.leaderControl1,
-                  p.leaderControl2,
+                  p.leaderWaypoints,
                 )}
                 fill="none"
                 stroke="#6b7280"

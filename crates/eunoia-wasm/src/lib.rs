@@ -2791,39 +2791,40 @@ pub fn generate_venn_regions_rectangles(
 /// `sizes_json` is `{ combination: [w, h] }`.
 ///
 /// `strategy_json` is an optional JSON object — when `None`, the default
-/// `Raycast` strategy is used. The accepted shape is:
+/// straight-leader / raycast strategy is used. The accepted shape is:
 ///
 /// ```json
 /// {
-///   "exterior": "Raycast" | "ForceDirected",
-///   "margin": 5.0,
-///   "iterations": 200,
+///   "leader": {
+///     "type": "straight",
+///     "placement": "Raycast" | "ForceDirected",
+///     "margin": 5.0,
+///     "iterations": 200
+///   },
 ///   "precision": 0.01,
 ///   "tether": "Poi" | "Boundary",
-///   "leaderGap": 0.0,
-///   "leaderCurvature": 0.3
+///   "leaderGap": 0.0
 /// }
 /// ```
 ///
-/// `margin` applies to both `Raycast` and `ForceDirected` (the per-region
-/// proportional default kicks in when omitted). `iterations` only affects
-/// `ForceDirected` (defaults to 200). `leaderGap` is the visible gap (in
-/// the same coordinate units as the label sizes) between the leader-line
-/// tip and the label's bounding box; defaults to `0.0` (leader stops
-/// exactly at the box edge). Negative values are clamped to `0.0`.
-/// `leaderCurvature` is the cubic-bezier handle length as a fraction of the
-/// tether→leaderEnd distance; defaults to `0.3`, and `0.0` yields straight
-/// leaders (no control points emitted).
+/// `leader` ties the edge type to its placement algorithm. Today the only
+/// `type` is `"straight"` (omit `leader` entirely for the default); the
+/// `placement` selects the straight-edge exterior solver. `margin` applies
+/// to both `Raycast` and `ForceDirected` (the per-region proportional
+/// default kicks in when omitted). `iterations` only affects `ForceDirected`
+/// (defaults to 200). `leaderGap` is the visible gap (in the same coordinate
+/// units as the label sizes) between the leader-line tip and the label's
+/// bounding box; defaults to `0.0` (leader stops exactly at the box edge).
+/// Negative values are clamped to `0.0`.
 ///
 /// Returns a JSON object mapping each placed region to `{ "anchor": [x, y],
 /// "kind": "...", "tether"?: [x, y], "leaderEnd"?: [x, y],
-/// "leaderControl1"?: [x, y], "leaderControl2"?: [x, y] }`. Regions with
-/// degenerate input (no POI, invalid label dimensions, etc.) are absent.
-/// `leaderEnd` is the point on the label's bounding box where the leader
-/// line should terminate. `leaderControl1` / `leaderControl2` are the cubic
-/// control points for a curved leader (`M tether C c1 c2 leaderEnd`); both
-/// are present for exterior placements when `leaderCurvature > 0`, absent
-/// otherwise (draw `tether → leaderEnd` straight).
+/// "leaderWaypoints"?: [[x, y], ...] }`. Regions with degenerate input (no
+/// POI, invalid label dimensions, etc.) are absent. `leaderEnd` is the point
+/// on the label's bounding box where the leader line should terminate.
+/// `leaderWaypoints` are the intermediate vertices of the leader polyline
+/// between `tether` and `leaderEnd`; absent for straight leaders (draw
+/// `tether → leaderEnd` directly) and populated by future elbow leaders.
 #[wasm_bindgen]
 pub fn place_region_labels(
     polygons_json: String,
@@ -2834,8 +2835,8 @@ pub fn place_region_labels(
     use eunoia::geometry::primitives::Point;
     use eunoia::geometry::shapes::{Polygon, Rectangle};
     use eunoia::plotting::{
-        ExteriorPolicy, PlacementKind, PlacementStrategy, RegionPiece, RegionPolygons,
-        TetherSource, place_labels,
+        ExteriorPolicy, LeaderStrategy, PlacementKind, PlacementStrategy, RegionPiece,
+        RegionPolygons, TetherSource, place_labels,
     };
     use eunoia::spec::Combination;
 
@@ -2853,13 +2854,27 @@ pub fn place_region_labels(
         height: f64,
     }
 
+    /// Leader strategy: the edge type plus the placement algorithm for it.
+    /// Mirrors [`eunoia::plotting::LeaderStrategy`]. Only `type: "straight"`
+    /// exists today; `placement` selects the straight-edge exterior solver.
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct LeaderJson {
+        /// Edge type: `"straight"` (default). Future: `"elbow"`.
+        r#type: Option<String>,
+        /// Placement algorithm for straight leaders: `"Raycast"` (default)
+        /// or `"ForceDirected"`.
+        placement: Option<String>,
+        margin: Option<f64>,
+        /// Iteration cap for `ForceDirected`; ignored otherwise.
+        iterations: Option<usize>,
+    }
+
     #[derive(serde::Deserialize, Default)]
     #[serde(default)]
     struct StrategyJson {
-        exterior: Option<String>,
-        margin: Option<f64>,
-        /// Iteration cap for `ForceDirected` exteriors; ignored otherwise.
-        iterations: Option<usize>,
+        /// Leader strategy. Absent → straight leaders with raycast placement.
+        leader: Option<LeaderJson>,
         precision: Option<f64>,
         /// `"Poi"` (default) or `"Boundary"`; controls where the exterior
         /// leader tether attaches to the source region.
@@ -2868,11 +2883,6 @@ pub fn place_region_labels(
         /// [`eunoia::plotting::PlacementStrategy::leader_gap`].
         #[serde(rename = "leaderGap")]
         leader_gap: Option<f64>,
-        /// Leader curvature as a fraction of the tether→leaderEnd distance;
-        /// `0` for straight leaders. See
-        /// [`eunoia::plotting::PlacementStrategy::leader_curvature`].
-        #[serde(rename = "leaderCurvature")]
-        leader_curvature: Option<f64>,
     }
 
     #[derive(serde::Serialize)]
@@ -2883,10 +2893,10 @@ pub fn place_region_labels(
         tether: Option<[f64; 2]>,
         #[serde(skip_serializing_if = "Option::is_none", rename = "leaderEnd")]
         leader_end: Option<[f64; 2]>,
-        #[serde(skip_serializing_if = "Option::is_none", rename = "leaderControl1")]
-        leader_control_1: Option<[f64; 2]>,
-        #[serde(skip_serializing_if = "Option::is_none", rename = "leaderControl2")]
-        leader_control_2: Option<[f64; 2]>,
+        /// Intermediate leader-polyline vertices between `tether` and
+        /// `leaderEnd`. Empty (and omitted) for straight leaders.
+        #[serde(skip_serializing_if = "Vec::is_empty", rename = "leaderWaypoints")]
+        leader_waypoints: Vec<[f64; 2]>,
     }
 
     let regions_in: std::collections::HashMap<String, Vec<PieceJson>> =
@@ -2910,17 +2920,26 @@ pub fn place_region_labels(
         None => StrategyJson::default(),
     };
 
-    let exterior = match strategy_in.exterior.as_deref() {
+    let leader_in = strategy_in.leader.unwrap_or_default();
+    match leader_in.r#type.as_deref() {
+        None | Some("straight") => {}
+        Some(other) => {
+            return Err(JsValue::from_str(&format!(
+                "invalid strategy.leader.type '{other}' (expected 'straight')"
+            )));
+        }
+    }
+    let exterior = match leader_in.placement.as_deref() {
         None | Some("Raycast") => ExteriorPolicy::Raycast {
-            margin: strategy_in.margin,
+            margin: leader_in.margin,
         },
         Some("ForceDirected") => ExteriorPolicy::ForceDirected {
-            margin: strategy_in.margin,
-            iterations: strategy_in.iterations,
+            margin: leader_in.margin,
+            iterations: leader_in.iterations,
         },
         Some(other) => {
             return Err(JsValue::from_str(&format!(
-                "invalid strategy.exterior '{other}' (expected 'Raycast' or 'ForceDirected')"
+                "invalid strategy.leader.placement '{other}' (expected 'Raycast' or 'ForceDirected')"
             )));
         }
     };
@@ -2934,11 +2953,10 @@ pub fn place_region_labels(
         }
     };
     let strategy = PlacementStrategy {
-        exterior,
+        leader: LeaderStrategy::Straight(exterior),
         precision: strategy_in.precision.unwrap_or(0.01),
         tether,
         leader_gap: strategy_in.leader_gap.unwrap_or(0.0),
-        leader_curvature: strategy_in.leader_curvature.unwrap_or(0.3),
     };
 
     let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
@@ -2980,8 +2998,7 @@ pub fn place_region_labels(
                 kind: kind_str,
                 tether: p.tether.map(|t| [t.x(), t.y()]),
                 leader_end: p.leader_end.map(|t| [t.x(), t.y()]),
-                leader_control_1: p.leader_control_1.map(|t| [t.x(), t.y()]),
-                leader_control_2: p.leader_control_2.map(|t| [t.x(), t.y()]),
+                leader_waypoints: p.leader_waypoints.iter().map(|t| [t.x(), t.y()]).collect(),
             },
         );
     }
@@ -3051,8 +3068,7 @@ pub fn placements_bbox(
                 kind: PlacementKind::Interior,
                 tether: None,
                 leader_end: None,
-                leader_control_1: None,
-                leader_control_2: None,
+                leader_waypoints: Vec::new(),
             };
             (k, placement)
         })
