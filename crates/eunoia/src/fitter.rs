@@ -182,18 +182,23 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // L-BFGS in turn (~20 orders of magnitude lower median loss on
             // ellipses, ~3× faster wall time) — see the `lm_final` row in
             // `examples/quality_report`.
-            // CMA-ES global escape with LM polish, threshold-fired (see
-            // `cmaes_fallback_threshold`) so easy specs pay no extra wall
-            // time. On the `examples/quality_report` ellipse sweep this
-            // closes specs LM-on-LM gets stuck on (`issue92_3_set_dropped_pair`
-            // 1.3e-4 → 1.5e-29, `random_4_set` 8.5e-3 → 4.1e-3) without
-            // regressing the easy ones — every spec where `lm_full` lands
-            // at machine precision sits below the threshold and skips
-            // CMA-ES entirely.
-            optimizer_pool: vec![Optimizer::CmaEsLm],
-            // Default loss threshold below which the CMA-ES global stage
-            // is skipped. Only consulted by `Optimizer::CmaEsLm`. See
-            // `FinalLayoutConfig::cmaes_fallback_threshold` for the
+            // CMA-ES global escape with a box-constrained TRF polish,
+            // threshold-fired (see `cmaes_fallback_threshold`) so easy specs
+            // pay no extra wall time. The escape closes specs LM-on-LM gets
+            // stuck on (`issue92_3_set_dropped_pair` 1.3e-4 → 1.5e-29,
+            // `random_4_set` 8.5e-3 → 4.1e-3); the bounded TRF polish then
+            // refines inside the feasible box rather than letting unbounded LM
+            // wander, picking up further wins on the `examples/quality_report`
+            // sweep (ellipse `three_inside_fourth` 1.4e-7 → ~5e-18, rectangle
+            // `unequal_overlaps` 1.7e-2 → 1.6e-2). It trades one small,
+            // bound-independent regression (circle `issue103` 4.6e-3 → 4.8e-3,
+            // an intrinsic TRF-vs-LM stopping difference) for net-positive
+            // quality elsewhere — see `Optimizer::CmaEsTrf`. Use
+            // `Optimizer::CmaEsLm` for the previous unbounded-LM-polish path.
+            optimizer_pool: vec![Optimizer::CmaEsTrf],
+            // Default loss threshold below which the CMA-ES global stage is
+            // skipped. Consulted by `Optimizer::CmaEsTrf` / `Optimizer::CmaEsLm`.
+            // See `FinalLayoutConfig::cmaes_fallback_threshold` for the
             // empirical justification of `1e-3`.
             cmaes_fallback_threshold: 1e-3,
             // Number of full-pipeline restarts (fresh MDS init + final
@@ -2245,6 +2250,128 @@ fn test_cmaes_lm_escapes_issue92_dropped_pair() {
     assert!(
         layout.loss() < 1e-6,
         "CmaEsLm loss = {:e} (expected < 1e-6 — global step regressed)",
+        layout.loss()
+    );
+}
+
+/// `Optimizer::Trf` (box-constrained LM / trust-region-reflective) smoke test.
+/// A two-circle spec is exactly representable, so TRF must drive the loss to
+/// ~0 — exercising the bounds construction, the solver wiring, the `½‖r‖²→‖r‖²`
+/// cost doubling, and that an interior MDS seed stays feasible.
+#[test]
+fn test_trf_fits_representable_two_set() {
+    use crate::fitter::{Fitter, Optimizer};
+    use crate::geometry::shapes::Circle;
+    use crate::spec::{DiagramSpecBuilder, InputType};
+
+    let spec = DiagramSpecBuilder::new()
+        .set("A", 100.0)
+        .set("B", 100.0)
+        .intersection(&["A", "B"], 30.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .unwrap();
+
+    let layout = Fitter::<Circle>::new(&spec)
+        .optimizer(Optimizer::Trf)
+        .seed(1)
+        .fit()
+        .unwrap();
+    assert!(
+        layout.loss() < 1e-6,
+        "Trf loss = {:e} on an exactly-representable 2-set (expected < 1e-6)",
+        layout.loss()
+    );
+}
+
+/// On an easy circle spec the per-shape box never binds, so `Optimizer::Trf`
+/// (Coleman-Li scaling → identity when no bound is active) reduces to plain
+/// `LevenbergMarquardt` and must reach the same local minimum. Comparing the
+/// two reported losses guards the loss convention: `Trf::state.cost` is
+/// `½‖r‖²` while the configured loss is `‖r‖²`, so the dispatch doubles it —
+/// a missing `×2` would surface here as ~half the LM loss.
+#[test]
+fn test_trf_matches_lm_when_bounds_inactive() {
+    use crate::fitter::{Fitter, Optimizer};
+    use crate::geometry::shapes::Circle;
+    use crate::spec::{DiagramSpecBuilder, InputType};
+
+    // Symmetric 3-set: not exactly representable by circles, so the shared
+    // local minimum has a small but nonzero loss to compare against.
+    let spec = DiagramSpecBuilder::new()
+        .set("A", 100.0)
+        .set("B", 100.0)
+        .set("C", 100.0)
+        .intersection(&["A", "B"], 30.0)
+        .intersection(&["A", "C"], 30.0)
+        .intersection(&["B", "C"], 30.0)
+        .intersection(&["A", "B", "C"], 10.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .unwrap();
+
+    let lm = Fitter::<Circle>::new(&spec)
+        .optimizer(Optimizer::LevenbergMarquardt)
+        .seed(1)
+        .fit()
+        .unwrap();
+    let trf = Fitter::<Circle>::new(&spec)
+        .optimizer(Optimizer::Trf)
+        .seed(1)
+        .fit()
+        .unwrap();
+    assert!(
+        lm.loss().is_finite() && trf.loss().is_finite(),
+        "non-finite loss: lm={:e} trf={:e}",
+        lm.loss(),
+        trf.loss()
+    );
+    let rel = (trf.loss() - lm.loss()).abs() / lm.loss().max(1e-12);
+    assert!(
+        rel < 0.25,
+        "Trf loss {:e} vs LM loss {:e} differ by {:.1}% — bounds shouldn't \
+         bind on this easy spec, so a large gap points at the loss convention \
+         or the bounded step",
+        trf.loss(),
+        lm.loss(),
+        rel * 100.0
+    );
+}
+
+/// `Optimizer::CmaEsTrf` (CMA-ES global escape + bounded TRF polish) must
+/// escape the same wrong-basin trap `CmaEsLm` does on
+/// `issue92_3_set_dropped_pair`. Plain LM (and standalone `Trf`) get stuck
+/// here at ~1.3e-4 because the small `A&B` pair can't be moved locally; the
+/// CMA-ES stage is what escapes, and the bounded TRF polish must not undo
+/// that. If this regresses, the shared global-escape path or the TRF polish
+/// has broken.
+#[test]
+#[ignore = "slow regression coverage"]
+fn test_cmaes_trf_escapes_issue92_dropped_pair() {
+    use crate::fitter::{Fitter, Optimizer};
+    use crate::geometry::shapes::Ellipse;
+    use crate::spec::{DiagramSpecBuilder, InputType};
+
+    let spec = DiagramSpecBuilder::new()
+        .set("A", 164.0)
+        .set("B", 561.0)
+        .set("C", 166.0)
+        .intersection(&["A", "B"], 12.0)
+        .intersection(&["A", "C"], 459.0)
+        .intersection(&["B", "C"], 703.0)
+        .intersection(&["A", "B", "C"], 162.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .unwrap();
+
+    let layout = Fitter::<Ellipse>::new(&spec)
+        .optimizer(Optimizer::CmaEsTrf)
+        .seed(1)
+        .fit()
+        .unwrap();
+    assert!(
+        layout.loss() < 1e-6,
+        "CmaEsTrf loss = {:e} (expected < 1e-6 — global escape or TRF polish regressed)",
         layout.loss()
     );
 }

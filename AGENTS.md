@@ -99,12 +99,17 @@ until fit time**:
    - **Final layout** (`fitter/final_layout.rs`): refines all shape parameters to
      minimize the loss (default `LossType::SumSquared`, the scale-invariant
      `Σ(f−t)²/Σt²`). `Optimizer` variants — `LevenbergMarquardt`, `Lbfgs`,
-     `NelderMead`, `CmaEsLm` — are cycled across restarts via a pool. The default
-     is **`CmaEsLm`**: plain LM first, then *only if* the loss stays above
-     `cmaes_fallback_threshold` (1e-3) a bounded CMA-ES global escape + LM polish,
-     keeping the lower loss (so easy specs pay no extra wall time). Every
-     optimizer here and in the MDS init runs on the `basin` crate (nalgebra
-     backend) — `basin` is the sole optimizer dependency.
+     `NelderMead`, `Trf` (box-constrained LM), `CmaEsLm`, `CmaEsTrf` — are cycled
+     across restarts via a pool. The default is **`CmaEsTrf`**: plain LM first,
+     then *only if* the loss stays above `cmaes_fallback_threshold` (1e-3) a
+     bounded CMA-ES global escape followed by a box-constrained `Trf`
+     (trust-region-reflective) polish, keeping the lower loss (so easy specs pay
+     no extra wall time). `CmaEsLm` is the same with an unbounded LM polish.
+     Box bounds for the bounded solvers come from `optimizer_bounds_for` under
+     two `BoundsEnvelope`s — a tight `CMAES` cage for the global escape and a
+     wider `LOCAL` cage for the TRF polish. Every optimizer here and in the MDS
+     init runs on the `basin` crate (nalgebra backend) — `basin` is the sole
+     optimizer dependency.
    - For small set counts a **canonical Venn warm-start** seeds restart 0 (see
      `venn.rs` and the `VENN_SEED_MAX_SETS_*` consts).
    - `fitter/clustering.rs` + `packing.rs` handle disjoint sub-diagrams;

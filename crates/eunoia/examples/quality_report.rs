@@ -98,12 +98,28 @@ mod quality_report {
                 f.optimizer(Optimizer::LevenbergMarquardt)
                     .initial_solver(MdsSolver::LevenbergMarquardt)
             }),
+            // Box-constrained LM (TRF) at the final stage. Same least-squares
+            // kernel as `lm_final` but every step is clamped to the per-shape
+            // box (positions to centroid ± 4·span, radii/semi-axes to
+            // [1e-6·max_radius, 5·max_radius]). The apples-to-apples baseline
+            // is `lm_final`; the promotion bar is `cmaes_lm` (the default).
+            // Expected to help where unbounded LM blows up shapes on
+            // extreme-scale specs (issue71_4_set_extreme_scale), not on
+            // wrong-basin specs (TRF has no global escape).
+            ("trf_final", |f| f.optimizer(Optimizer::Trf)),
             // Bounded CMA-ES global step + LM polish on the final stage.
             // Targets the three specs LM-on-LM can't escape (issue91_6_set,
             // issue44_4_set_inclusive, issue92_3_set_dropped_pair). Expensive
             // — ~1k–2k extra region-area evals per restart on hard 6-set
             // ellipse fits.
             ("cmaes_lm", |f| f.optimizer(Optimizer::CmaEsLm)),
+            // The default's global escape, but the post-escape polish is the
+            // box-constrained TRF instead of unbounded LM. The hypothesis from
+            // the `trf_final` run: keep the CMA-ES escape that fixes wrong-basin
+            // specs (issue91, issue93) while gaining the bounded refinement that
+            // wins extreme-scale / nested specs (issue71, issue44). This is the
+            // candidate to actually beat `cmaes_lm` (the default).
+            ("cmaes_trf", |f| f.optimizer(Optimizer::CmaEsTrf)),
             // Same plus LM at the MDS stage. Tests whether the global step
             // benefits from a tighter MDS init.
             ("cmaes_lm_full", |f| {

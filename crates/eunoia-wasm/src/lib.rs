@@ -35,8 +35,10 @@ use console_error_panic_hook;
 #[wasm_bindgen]
 #[derive(Clone, Copy)]
 pub enum WasmOptimizer {
+    CmaEsTrf,
     CmaEsLm,
     LevenbergMarquardt,
+    Trf,
     Lbfgs,
     NelderMead,
 }
@@ -44,8 +46,10 @@ pub enum WasmOptimizer {
 impl From<WasmOptimizer> for Optimizer {
     fn from(opt: WasmOptimizer) -> Self {
         match opt {
+            WasmOptimizer::CmaEsTrf => Optimizer::CmaEsTrf,
             WasmOptimizer::CmaEsLm => Optimizer::CmaEsLm,
             WasmOptimizer::LevenbergMarquardt => Optimizer::LevenbergMarquardt,
+            WasmOptimizer::Trf => Optimizer::Trf,
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
             WasmOptimizer::NelderMead => Optimizer::NelderMead,
         }
