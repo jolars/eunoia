@@ -37,8 +37,8 @@ Tasks are defined in `Taskfile.yml` (run via [`task`](https://taskfile.dev),
 available in the devenv shell). The cargo commands underneath work directly too.
 
 ```sh
-task dev            # fmt + check + test + clippy — the canonical pre-PR gate
-cargo test          # fast default tests (workspace)
+task dev            # fmt + check + test (+ corpus guardrail) + clippy — pre-PR gate
+cargo test          # fast default tests (workspace, ~1s; corpus guardrail excluded)
 task test-quiet     # cargo test with RUST_LOG=off
 task test-debug     # cargo test with RUST_LOG=debug
 task test-slow      # cargo test --workspace -- --ignored  (slow regression/stochastic)
@@ -50,7 +50,9 @@ task coverage-open  # llvm-cov HTML report, opened in browser
   whole workspace including the wasm crate: `cargo test --workspace`.
 - **Always run `task test-slow` when changing fitting behavior** — many
   regression and stochastic fit-quality tests are `#[ignore]`d out of the
-  default run.
+  default run, including the `corpus_quality` passes. `task dev` runs the
+  `corpus_quality` subset (~16s) so the pre-PR gate still catches regressions;
+  `task test-slow` adds the rest (issue89/issue28, stochastic, monte-carlo).
 - Tests are fast despite heavy optimization math because
   `[profile.test.package.eunoia] opt-level = 3` (in root `Cargo.toml`)
   optimizes the crate under test while keeping `debug_assert!`s live. This drops
@@ -176,3 +178,5 @@ the same `[x, y, ln(w·h), ln(w/h)]` rectangle encoding.
   Pre-commit hooks (rustfmt, clippy, biome for JS/TS) run via devenv git-hooks.
 - The `corpus_quality.rs` / `synthetic_groundtruth.rs` fit-quality tests are the
   guardrail against fitter regressions; `TODO.md` tracks surfaced fitter issues.
+  `corpus_quality` is `#[ignore]`d (too slow for the default suite) — run it via
+  `task dev` or `task test-slow`; `synthetic_groundtruth` stays in the default run.

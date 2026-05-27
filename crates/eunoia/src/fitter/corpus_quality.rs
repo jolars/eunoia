@@ -217,17 +217,26 @@ mod tests {
         Box::leak(s.into_boxed_str())
     }
 
+    // The three corpus passes are the fit-quality guardrail, but each runs the
+    // full corpus × seeds — too slow for the default suite even parallelized
+    // (~16 s combined). `#[ignore]`d like the other fit-quality regressions
+    // (issue89, issue28, the stochastic ones) so plain `cargo test` stays sub-
+    // second; run them via `task test-slow` or `cargo test -- --include-ignored`
+    // (the `task dev` pre-PR gate does the latter).
     #[test]
+    #[ignore = "slow fit-quality guardrail; run via `task test-slow`"]
     fn corpus_circles_diag_error() {
         run::<Circle>("circle", |e| e.ceiling_circle(), |e| e.fittable_circle);
     }
 
     #[test]
+    #[ignore = "slow fit-quality guardrail; run via `task test-slow`"]
     fn corpus_ellipses_diag_error() {
         run::<Ellipse>("ellipse", |e| e.ceiling_ellipse(), |e| e.fittable_ellipse);
     }
 
     #[test]
+    #[ignore = "slow fit-quality guardrail; run via `task test-slow`"]
     fn corpus_squares_diag_error() {
         run::<Square>("square", |e| e.ceiling_square(), |e| e.fittable_square);
     }

@@ -48,11 +48,18 @@ tasks:
       - cargo llvm-cov --all-features --workspace --open
 
   dev:
-    desc: Development workflow - format, check, test, lint
+    desc: Development workflow - format, check, test (+ corpus guardrail), lint
     cmds:
       - cargo fmt
       - cargo check --workspace
       - cargo test --workspace
+      # Fit-quality guardrail: the corpus_quality passes are #[ignore]'d out of
+      # the default suite for speed (~0.7s vs ~17s), but run here so the pre-PR
+      # gate still catches fitter regressions. Scoped to corpus_quality (~16s)
+      # rather than a blanket --include-ignored: the latter also pulls in the
+      # 17-set issue89 regression, whose debug-assert-heavy fits push the run
+      # past two minutes. Use `task test-slow` for the full ignored set.
+      - cargo test -p eunoia --lib fitter::corpus_quality -- --include-ignored
       - cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   build-wasm:
