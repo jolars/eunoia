@@ -1172,24 +1172,24 @@ impl<S: DiagramShape + Copy + 'static> DiagramCost<'_, S> {
 /// region-area gradients exposed by
 /// [`DiagramShape::compute_exclusive_regions_with_gradient`].
 ///
-/// Residual ordering is fixed at construction. For non-complement specs the
-/// list is `1..(1 << n_sets)` (every non-empty subset). For complement specs
-/// it additionally includes mask `0` so the universe-residual contributes to
-/// the Jacobian; in that case the trailing 4 entries of the parameter vector
-/// encode the jointly-optimised container rectangle and the Jacobian columns
-/// pick up box-edge contributions via
-/// [`DiagramShape::compute_exclusive_regions_clipped_with_gradient`]. Masks
-/// not produced by the geometry have implicit area 0 (zero residual
-/// contribution, zero Jacobian row), matching the existing loss exactly.
+/// Residual ordering is recomputed per evaluation point and scores only the
+/// **sparse** set of masks that can carry signal there — the union of masks
+/// with a non-zero target and masks the geometry actually produces (see
+/// [`DiagramCache::masks`]). Masks outside that set have `f = t = 0`, so they
+/// contribute nothing to the residual, `JᵀJ`, or `‖r‖²`; enumerating the full
+/// `2ⁿ` subset space (131 071 rows at `n = 17`) only to score structural zeros
+/// is what made large disjoint specs (eulerr #89) crawl. For complement specs
+/// the set includes mask `0` (the clipped kernel emits it and the complement
+/// target lives there), the trailing 4 entries of the parameter vector encode
+/// the jointly-optimised container rectangle, and the Jacobian columns pick up
+/// box-edge contributions via
+/// [`DiagramShape::compute_exclusive_regions_clipped_with_gradient`].
 ///
 /// Supported loss: [`LossType::SumSquared`]. Other losses are rejected at
 /// construction with an [`Error`].
 struct LmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
     spec: &'a PreprocessedSpec,
     params_per_shape: usize,
-    /// Fixed canonical residual ordering. Includes mask 0 iff the spec
-    /// carries a complement target.
-    masks: Vec<RegionMask>,
     /// `1/sqrt(Σ tᵢ²)`. Stored residuals get multiplied by this so
     /// `Σ rᵢ²` equals the configured loss `Σ(f-t)² / Σt²`.
     norm_factor: f64,
@@ -1205,6 +1205,13 @@ struct LmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
 }
 
 struct DiagramCache {
+    /// Sorted residual ordering for *this* point: the sparse union of masks
+    /// with a non-zero target (`spec.exclusive_areas`) and masks the geometry
+    /// produced here (`fitted`). Sorted so the ordering is a deterministic
+    /// function of the point — basin pairs a stashed `r` with a freshly
+    /// recomputed `J` at the same `x`, so `residual(x)` and `jacobian(x)` must
+    /// stay row-aligned even across an intervening cache eviction.
+    masks: Vec<RegionMask>,
     fitted: HashMap<RegionMask, f64>,
     fitted_grads: HashMap<RegionMask, Vec<f64>>,
 }
@@ -1232,18 +1239,12 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 )));
             }
         };
-        // Enumerate every subset mask once; residual ordering is fixed for the
-        // whole solve so the Jacobian shape stays constant. Mask 0 (the
-        // complement) is included only when the spec carries a complement
-        // target — otherwise it carries no signal and has no analytical
-        // gradient.
-        let n_sets = spec.n_sets;
-        let start = if spec.complement.is_some() { 0 } else { 1 };
-        let masks: Vec<RegionMask> = (start..(1usize << n_sets)).collect();
+        // The residual ordering is built per evaluation point in
+        // `ensure_cache` (sparse: targets ∪ produced regions), not enumerated
+        // here over the full `2ⁿ` subset space.
         Ok(Self {
             spec,
             params_per_shape,
-            masks,
             norm_factor,
             cache: RefCell::new(None),
             _shape: std::marker::PhantomData,
@@ -1296,9 +1297,27 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 (fitted, HashMap::new())
             }
         };
+        // Score only masks that can carry signal at this point: targets plus
+        // the regions the geometry actually produced. Collected through a
+        // `BTreeSet` for dedup + a deterministic (sorted) order. For
+        // non-complement specs mask 0 ("outside everything") carries no target
+        // and is dropped — matching the old `1..2ⁿ` enumeration; complement
+        // specs keep it (the clipped kernel emits it and the target lives there).
+        let mut mask_set: std::collections::BTreeSet<RegionMask> = self
+            .spec
+            .exclusive_areas
+            .keys()
+            .copied()
+            .chain(fitted.keys().copied())
+            .collect();
+        if self.spec.complement.is_none() {
+            mask_set.remove(&0);
+        }
+        let masks: Vec<RegionMask> = mask_set.into_iter().collect();
         *self.cache.borrow_mut() = Some((
             xs.to_vec(),
             DiagramCache {
+                masks,
                 fitted,
                 fitted_grads,
             },
@@ -1314,8 +1333,8 @@ impl<S: DiagramShape + Copy + 'static> basin::Residual for LmDiagramProblem<'_, 
         self.ensure_cache(x.as_slice());
         let slot = self.cache.borrow();
         let (_, cache) = slot.as_ref().expect("cache populated by ensure_cache");
-        DVector::from_fn(self.masks.len(), |i, _| {
-            let mask = self.masks[i];
+        DVector::from_fn(cache.masks.len(), |i, _| {
+            let mask = cache.masks[i];
             let f = cache.fitted.get(&mask).copied().unwrap_or(0.0);
             let t = self.spec.exclusive_areas.get(&mask).copied().unwrap_or(0.0);
             self.norm_factor * (f - t)
@@ -1334,8 +1353,8 @@ impl<S: DiagramShape + Copy + 'static> basin::Jacobian for LmDiagramProblem<'_, 
         let n_params = x.len();
         // One HashMap lookup per residual row (not per element): fetch each
         // row's gradient vector once and fill the row.
-        let mut jac = DMatrix::zeros(self.masks.len(), n_params);
-        for (i, &mask) in self.masks.iter().enumerate() {
+        let mut jac = DMatrix::zeros(cache.masks.len(), n_params);
+        for (i, &mask) in cache.masks.iter().enumerate() {
             if let Some(grad) = cache.fitted_grads.get(&mask) {
                 for (j, &g) in grad.iter().enumerate().take(n_params) {
                     jac[(i, j)] = self.norm_factor * g;
