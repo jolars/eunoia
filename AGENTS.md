@@ -37,12 +37,13 @@ Tasks are defined in `Taskfile.yml` (run via [`task`](https://taskfile.dev),
 available in the devenv shell). The cargo commands underneath work directly too.
 
 ```sh
-task dev            # fmt + check + test (+ corpus guardrail) + clippy — pre-PR gate
+task dev            # fmt + check + test (+ corpus guardrail) + clippy + doc — pre-PR gate
 cargo test          # fast default tests (workspace, ~1s; corpus guardrail excluded)
 task test-quiet     # cargo test with RUST_LOG=off
 task test-debug     # cargo test with RUST_LOG=debug
 task test-slow      # cargo test --workspace -- --ignored  (slow regression/stochastic)
 task lint           # clippy --workspace --all-targets --all-features -- -D warnings
+task doc            # RUSTDOCFLAGS=-D warnings cargo doc + cargo test --doc (mirrors CI)
 task coverage-open  # llvm-cov HTML report, opened in browser
 ```
 
@@ -57,6 +58,10 @@ task coverage-open  # llvm-cov HTML report, opened in browser
   `[profile.test.package.eunoia] opt-level = 3` (in root `Cargo.toml`)
   optimizes the crate under test while keeping `debug_assert!`s live. This drops
   a `cargo test -p eunoia --lib` run from ~32s to ~2-3s. Don't remove it.
+- **CI fails the build on rustdoc warnings** (`RUSTDOCFLAGS=-D warnings`) —
+  broken or private intra-doc links, etc. `task dev` and `task doc` mirror this,
+  so run one of them before pushing doc changes; a public item must not
+  intra-doc-link (`[`...`]`) to a private item.
 
 ### WASM / web / profiling
 

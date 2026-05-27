@@ -16,6 +16,17 @@ tasks:
     cmds:
       - cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+  doc:
+    desc: Build docs warnings-as-errors and run doc tests (mirrors CI)
+    # Mirrors the CI "build-and-test" doc job. RUSTDOCFLAGS=-D warnings turns
+    # rustdoc lints (broken/private intra-doc links, etc.) into hard errors —
+    # these only run in CI otherwise, so a clean `task dev` could still fail the
+    # doc job. `task dev` inlines the build half of this; the doc tests there
+    # come along with `cargo test --workspace`.
+    cmds:
+      - RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+      - cargo test --doc
+
   build-release:
     desc: Build release version
     cmds:
@@ -48,7 +59,7 @@ tasks:
       - cargo llvm-cov --all-features --workspace --open
 
   dev:
-    desc: Development workflow - format, check, test (+ corpus guardrail), lint
+    desc: Development workflow - format, check, test (+ corpus guardrail), lint, doc
     cmds:
       - cargo fmt
       - cargo check --workspace
@@ -61,6 +72,10 @@ tasks:
       # past two minutes. Use `task test-slow` for the full ignored set.
       - cargo test -p eunoia --lib fitter::corpus_quality -- --include-ignored
       - cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # Rustdoc warnings-as-errors (broken/private intra-doc links, etc.). CI
+      # enforces this in its doc job; mirror just the build here since the doc
+      # tests already ran under `cargo test --workspace` above. See `task doc`.
+      - RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 
   build-wasm:
     desc: Build WASM bindings and prepare npm/ as @jolars/eunoia
