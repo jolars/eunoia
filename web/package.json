@@ -24,7 +24,7 @@
     "d3": "^7.9.0",
     "mdsvex": "^0.12.6",
     "prettier-plugin-svelte": "^3.4.0",
-    "rollup": "^4.60.2",
+    "rollup": "^4.60.4",
     "svelte": "^5.55.7",
     "svelte-check": "^4.3.4",
     "tailwindcss": "^4.1.17",
