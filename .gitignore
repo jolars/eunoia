@@ -196,3 +196,4 @@ dist
 /ts/node_modules/
 /ts/eunoia_wasm.d.ts
 /ts/package-lock.json
+/.claude/scheduled_tasks.lock

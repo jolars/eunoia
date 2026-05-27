@@ -32,8 +32,8 @@ pub use clip::{ClipOperation, polygon_clip, polygon_difference, polygon_union_ma
 pub use inscribed::{fit_label_in_region, largest_inscribed_rect, principal_axis};
 #[cfg(feature = "plotting")]
 pub use placement::{
-    ExteriorPolicy, LabelPlacement, LeaderStrategy, PlacementKind, PlacementStrategy, TetherSource,
-    place_labels, place_labels_to_fixed_point, placements_bbox,
+    ElbowOptions, ExteriorPolicy, LabelPlacement, LeaderStrategy, PlacementKind, PlacementStrategy,
+    TetherSource, place_labels, place_labels_to_fixed_point, placements_bbox,
 };
 #[cfg(feature = "plotting")]
 pub use plot_data::{PlotData, PlotOptions};

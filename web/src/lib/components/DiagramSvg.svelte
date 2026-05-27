@@ -367,7 +367,10 @@
         container: result.container,
         sizes,
         strategy: {
-          leader: { type: "straight", placement: style.labelPlacement },
+          leader:
+            style.labelPlacement === "elbow"
+              ? { type: "elbow" }
+              : { type: "straight", placement: style.labelPlacement },
           precision: Math.max(0.05, style.labelSize * 0.05),
           tether: style.labelTether,
           // Stop the leader a fraction of a glyph-height short of the
@@ -604,7 +607,8 @@
         {@const placement = regionPlacements[region.combination]}
         {@const isExterior =
           placement?.kind === "exteriorRaycast" ||
-          placement?.kind === "exteriorForceDirected"}
+          placement?.kind === "exteriorForceDirected" ||
+          placement?.kind === "exteriorElbow"}
         {@const anchor = regionAnchor(
           region.combination,
           region.labelX,

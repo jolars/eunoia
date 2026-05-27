@@ -70,6 +70,9 @@ pub enum PlacementKind {
     /// Anchor is outside the diagram, decided by the force-directed solver
     /// — emitted by [`ExteriorPolicy::ForceDirected`].
     ExteriorForceDirected,
+    /// Anchor is outside the diagram in a left/right column, reached by an
+    /// orthogonal (elbow) leader — emitted by [`LeaderStrategy::Elbow`].
+    ExteriorElbow,
 }
 
 /// Exterior fallback solver to use when a label doesn't fit inside its
@@ -113,11 +116,43 @@ pub enum ExteriorPolicy {
     },
 }
 
+/// Tuning for d3-pie style orthogonal (elbow) leaders — [`LeaderStrategy::Elbow`].
+///
+/// Both fields take a proportional default consistent with the
+/// `0.5 * max(w, h)` margin convention used by [`ExteriorPolicy::Raycast`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ElbowOptions {
+    /// Horizontal gap between the diagram bounding box edge and the column's
+    /// vertical bend rail (the shared `bend_x`). `None` selects a column-wide
+    /// default of `0.5 * max(w, h)` taken over the largest label in the
+    /// column — the same proportional convention as
+    /// [`ExteriorPolicy::Raycast`], applied per side so every leader in a
+    /// column bends on the same vertical line.
+    pub margin: Option<f64>,
+    /// Minimum vertical centre-to-centre spacing between stacked label boxes
+    /// in a column. `None` selects `1.5 * max(h)` for each adjacent pair
+    /// (one full box height plus a half-height of padding), computed from the
+    /// taller of the two neighbours so the stacked boxes are collision-free
+    /// by construction.
+    pub min_gap: Option<f64>,
+}
+
+impl Default for ElbowOptions {
+    /// Both knobs unset (`None`), selecting the proportional defaults.
+    fn default() -> Self {
+        Self {
+            margin: None,
+            min_gap: None,
+        }
+    }
+}
+
 /// Where the exterior-leader tether attaches to the source region.
 ///
 /// Only consulted for exterior placements
-/// ([`PlacementKind::ExteriorRaycast`] / [`PlacementKind::ExteriorForceDirected`]);
-/// interior placements always carry `tether: None`.
+/// ([`PlacementKind::ExteriorRaycast`] / [`PlacementKind::ExteriorForceDirected`]
+/// / [`PlacementKind::ExteriorElbow`]); interior placements always carry
+/// `tether: None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TetherSource {
     /// Tether is the region's pole of inaccessibility (deep inside the
@@ -149,8 +184,12 @@ pub enum LeaderStrategy {
     /// — [`ExteriorPolicy::Raycast`] (default) or
     /// [`ExteriorPolicy::ForceDirected`].
     Straight(ExteriorPolicy),
-    // Planned: `Elbow(..)` — d3-style orthogonal leaders with a dedicated
-    // side-column placement algorithm. See `LABEL_PLACEMENT_PLAN.md`.
+    /// d3-pie style orthogonal (elbow) leaders. Exterior labels are assigned
+    /// to a left or right column, stacked vertically without overlap, and
+    /// reached by an orthogonal three-segment polyline. A standalone
+    /// column-based placement algorithm — it does *not* take an
+    /// [`ExteriorPolicy`]. Tuned by [`ElbowOptions`].
+    Elbow(ElbowOptions),
 }
 
 impl Default for LeaderStrategy {
@@ -259,9 +298,15 @@ pub fn place_labels(
     container: Option<&Rectangle>,
     strategy: &PlacementStrategy,
 ) -> HashMap<String, LabelPlacement> {
-    // Single-variant for now; becomes a `match` once another edge type
-    // (e.g. elbow) lands — the compiler will flag this line then.
-    let LeaderStrategy::Straight(exterior) = strategy.leader;
+    // Elbow leaders use a standalone, column-based placement that ignores
+    // `ExteriorPolicy`; dispatch to it early. The straight path (raycast /
+    // force-directed) continues below.
+    let exterior = match strategy.leader {
+        LeaderStrategy::Straight(exterior) => exterior,
+        LeaderStrategy::Elbow(opts) => {
+            return place_elbow_labels(regions, sizes, container, strategy, opts);
+        }
+    };
     let exterior_kind = match exterior {
         ExteriorPolicy::Raycast { margin } => ExteriorPlan::Raycast { margin },
         ExteriorPolicy::ForceDirected { margin, iterations } => ExteriorPlan::ForceDirected {
@@ -404,24 +449,19 @@ pub fn place_labels(
         // so recompute the ray direction here instead of reusing
         // `entry.direction`. This keeps the boundary tether geometrically
         // consistent with the rendered leader.
-        let tether_pt = match strategy.tether {
-            TetherSource::Poi => entry.poi,
-            TetherSource::Boundary => {
-                let dx = entry.anchor.x() - entry.poi.x();
-                let dy = entry.anchor.y() - entry.poi.y();
-                let len = (dx * dx + dy * dy).sqrt();
-                if len < 1e-12 {
-                    entry.poi
-                } else {
-                    let dir = (dx / len, dy / len);
-                    let pieces = regions
-                        .get(&entry.combo)
-                        .map(|v| v.as_slice())
-                        .unwrap_or(&[]);
-                    ray_first_edge_exit(&entry.poi, dir, pieces).unwrap_or(entry.poi)
-                }
-            }
-        };
+        let pieces = regions
+            .get(&entry.combo)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let tether_pt = tether_point(
+            strategy.tether,
+            &entry.poi,
+            (
+                entry.anchor.x() - entry.poi.x(),
+                entry.anchor.y() - entry.poi.y(),
+            ),
+            pieces,
+        );
         let leader_end = leader_end_on_label_box(
             &tether_pt,
             &entry.anchor,
@@ -442,6 +482,300 @@ pub fn place_labels(
                 leader_waypoints: Vec::new(),
             },
         );
+    }
+
+    out
+}
+
+/// Resolve the tether attachment for an exterior label given an explicit
+/// exit-ray direction.
+///
+/// [`TetherSource::Poi`] returns the POI unchanged. [`TetherSource::Boundary`]
+/// casts the (normalised) `dir` from the POI and returns the first outer-ring
+/// exit — the point where the ray leaves the region — falling back to the POI
+/// on a degenerate ray or when the ray hits nothing.
+///
+/// The ray direction is the one knob that differs between leader strategies:
+/// the straight path passes the live `(anchor − poi)` direction; the elbow
+/// path passes the horizontal `(±1, 0)` toward its column side, so each
+/// leader's boundary tether lines up with the segment the renderer draws.
+fn tether_point(
+    source: TetherSource,
+    poi: &Point,
+    dir: (f64, f64),
+    pieces: &[RegionPiece],
+) -> Point {
+    match source {
+        TetherSource::Poi => *poi,
+        TetherSource::Boundary => {
+            let len = (dir.0 * dir.0 + dir.1 * dir.1).sqrt();
+            if len < 1e-12 {
+                return *poi;
+            }
+            let unit = (dir.0 / len, dir.1 / len);
+            ray_first_edge_exit(poi, unit, pieces).unwrap_or(*poi)
+        }
+    }
+}
+
+/// Place labels with d3-pie style orthogonal (elbow) leaders.
+///
+/// Interior-fitting labels anchor at their region POI, exactly as the straight
+/// path does. Labels that don't fit are assigned to a left or right column by
+/// the sign of `(poi.x − diagram_centroid.x)`, stacked vertically without
+/// overlap, and reached by an orthogonal two-leg polyline
+/// `tether → (tether.x, row_y) → leader_end`.
+///
+/// The leader is routed **vertical-first**: it drops/rises from the source to
+/// the label's row height before running horizontally out to the label, which
+/// sits in a column with near-edges aligned at `bend_x`. Doing the vertical leg
+/// first keeps the horizontal run at `row_y` clear of the diagram interior, so
+/// it doesn't sweep across content the way a horizontal-first leg at the tether
+/// height would for centrally-placed regions.
+///
+/// Row heights are chosen so the horizontal legs clear the interior labels: the
+/// interior labels' combined y-extent forms a **keep-out band**, and exterior
+/// rows stack outward from its edges (sources below the band's centre below it,
+/// sources above it above), each side spaced by the minimum gap. With no
+/// interior labels the rows instead spread by a two-pass min-gap sweep centred
+/// on the source cluster.
+fn place_elbow_labels(
+    regions: &RegionPolygons,
+    sizes: &HashMap<String, (f64, f64)>,
+    container: Option<&Rectangle>,
+    strategy: &PlacementStrategy,
+    opts: ElbowOptions,
+) -> HashMap<String, LabelPlacement> {
+    let diagram_bbox = match container {
+        Some(rect) => Some(*rect),
+        None => union_bbox(regions),
+    };
+    let centroid = diagram_bbox.map(|r| *r.center());
+    let pois = regions.label_points(strategy.precision);
+
+    let mut out: HashMap<String, LabelPlacement> = HashMap::with_capacity(sizes.len());
+
+    // Exterior candidate, before the vertical-distribution sweep. Its
+    // unconstrained slot is `poi.y`.
+    struct ElbowCand {
+        key: String,
+        combo: Combination,
+        poi: Point,
+        w: f64,
+        h: f64,
+    }
+    let mut left: Vec<ElbowCand> = Vec::new();
+    let mut right: Vec<ElbowCand> = Vec::new();
+
+    for (key, &(w, h)) in sizes {
+        if !(w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
+            continue;
+        }
+        let combo: Combination = match key.parse() {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let Some(pieces) = regions.get(&combo) else {
+            continue;
+        };
+
+        // Interior first — identical to the straight path.
+        if let Some(anchor) = fit_label_in_region(pieces, w, h, strategy.precision) {
+            out.insert(
+                key.clone(),
+                LabelPlacement {
+                    anchor,
+                    kind: PlacementKind::Interior,
+                    tether: None,
+                    leader_end: None,
+                    leader_waypoints: Vec::new(),
+                },
+            );
+            continue;
+        }
+
+        // Exterior. Needs a centroid (for column assignment) and a POI;
+        // skip the region if either is missing (degenerate input), mirroring
+        // the straight path's skip behaviour.
+        let Some(centroid) = centroid else { continue };
+        let Some(poi) = pois.get(&combo).copied() else {
+            continue;
+        };
+
+        let cand = ElbowCand {
+            key: key.clone(),
+            combo,
+            poi,
+            w,
+            h,
+        };
+        // Centre tiebreak (poi.x == centroid.x, typical for centred Venn
+        // regions) goes RIGHT — deterministic, matching the positive-axis
+        // convention used by `direction_from`.
+        if poi.x() >= centroid.x() {
+            right.push(cand);
+        } else {
+            left.push(cand);
+        }
+    }
+
+    // No diagram extent → no exterior placement possible; return whatever
+    // interior placements we found.
+    let Some(bbox) = diagram_bbox else {
+        return out;
+    };
+    let (xmin, xmax, _, _) = bbox.bounds();
+
+    // Interior labels are obstacles: an exterior leader's horizontal leg,
+    // routed at its row height, must not cross them. Treat their combined
+    // y-extent as a keep-out band and stack exterior rows outside it.
+    let interior_band: Option<(f64, f64)> = {
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::NEG_INFINITY;
+        for (k, p) in out.iter() {
+            if p.kind != PlacementKind::Interior {
+                continue;
+            }
+            let Some(&(_, ih)) = sizes.get(k) else {
+                continue;
+            };
+            if !(ih.is_finite() && ih > 0.0) {
+                continue;
+            }
+            lo = lo.min(p.anchor.y() - 0.5 * ih);
+            hi = hi.max(p.anchor.y() + 0.5 * ih);
+        }
+        (lo.is_finite() && hi.is_finite() && hi >= lo).then_some((lo, hi))
+    };
+
+    for (side_right, mut col) in [(true, right), (false, left)] {
+        if col.is_empty() {
+            continue;
+        }
+        // Stable sort by (ideal_y, key) so the result is independent of the
+        // `sizes` HashMap iteration order.
+        col.sort_by(|a, b| {
+            a.poi
+                .y()
+                .partial_cmp(&b.poi.y())
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.key.cmp(&b.key))
+        });
+
+        // Column-wide bend rail just outside the diagram on this side.
+        let col_margin = opts
+            .margin
+            .unwrap_or_else(|| 0.5 * col.iter().map(|c| c.w.max(c.h)).fold(0.0_f64, f64::max));
+        let bend_x = if side_right {
+            xmax + col_margin
+        } else {
+            xmin - col_margin
+        };
+        let sign = if side_right { 1.0 } else { -1.0 };
+
+        // Vertical distribution → a row height per candidate (in `col` order).
+        let n = col.len();
+        let rows: Vec<f64> = if let Some((band_lo, band_hi)) = interior_band {
+            // Keep-out band: stack each candidate's row outside the interior
+            // labels' combined y-extent so its leader's horizontal leg never
+            // crosses an interior label. The column splits into a lower group
+            // (stacked below the band) and an upper group (above it); within
+            // each side the candidate nearest the band sits closest to it and
+            // the rest stack outward with the minimum gap.
+            let band_centre = 0.5 * (band_lo + band_hi);
+            // Balance the column across the band: the lower-source half stacks
+            // below it, the upper half above. Because `col` is sorted by poi.y
+            // the split is also position-respecting; a lone label takes the
+            // side its own source favours.
+            let split = if n == 1 {
+                usize::from(col[0].poi.y() < band_centre)
+            } else {
+                n / 2
+            };
+            let mut rows = vec![0.0_f64; n];
+            // Below the band: indices [0, split), the one nearest the band
+            // (highest poi.y) first, stacking downward.
+            let mut cursor = 0.0;
+            for k in 0..split {
+                let i = split - 1 - k;
+                cursor = if k == 0 {
+                    band_lo - 0.5 * col[i].h
+                } else {
+                    cursor - opts.min_gap.unwrap_or(1.5 * col[i].h.max(col[i + 1].h))
+                };
+                rows[i] = cursor;
+            }
+            // Above the band: indices [split, n), the one nearest the band
+            // (lowest poi.y) first, stacking upward.
+            for k in 0..(n - split) {
+                let i = split + k;
+                cursor = if k == 0 {
+                    band_hi + 0.5 * col[i].h
+                } else {
+                    cursor + opts.min_gap.unwrap_or(1.5 * col[i].h.max(col[i - 1].h))
+                };
+                rows[i] = cursor;
+            }
+            rows
+        } else {
+            // No interior labels to avoid: spread by a two-pass sweep enforcing
+            // the minimum gap, then centre the stack on the cluster's ideal-y
+            // midpoint (removes downward bias). `col` is sorted, so the ends
+            // carry the min/max ideal and laid-out y.
+            let mut y: Vec<f64> = col.iter().map(|c| c.poi.y()).collect();
+            for i in 1..n {
+                let g = opts.min_gap.unwrap_or(1.5 * col[i - 1].h.max(col[i].h));
+                if y[i] < y[i - 1] + g {
+                    y[i] = y[i - 1] + g;
+                }
+            }
+            for i in (0..n - 1).rev() {
+                let g = opts.min_gap.unwrap_or(1.5 * col[i].h.max(col[i + 1].h));
+                if y[i] > y[i + 1] - g {
+                    y[i] = y[i + 1] - g;
+                }
+            }
+            let shift = 0.5 * (col[0].poi.y() + col[n - 1].poi.y()) - 0.5 * (y[0] + y[n - 1]);
+            for v in &mut y {
+                *v += shift;
+            }
+            y
+        };
+        let gap = strategy.leader_gap.max(0.0);
+
+        for (i, c) in col.into_iter().enumerate() {
+            let row_y = rows[i];
+            // Label box: near (inflated) edge sits at `bend_x`, so the leader
+            // terminates `gap` short of the text on the column's rail line.
+            let anchor = Point::new(bend_x + sign * (gap + 0.5 * c.w), row_y);
+            let pieces = regions.get(&c.combo).map(|v| v.as_slice()).unwrap_or(&[]);
+            // Vertical-first routing: the leader drops/rises from the source
+            // to its (already-spread) row height *before* travelling sideways,
+            // then runs horizontally out to the label. Routing the horizontal
+            // leg at `row_y` — pushed clear of the central cluster by the
+            // vertical distribution — keeps it from sweeping across interior
+            // labels and regions, which a horizontal-first leg at the tether
+            // height would do for centrally-placed regions. The tether
+            // therefore exits *vertically* toward the row, matching the first
+            // (vertical) leg.
+            let dy = row_y - c.poi.y();
+            let tether = tether_point(strategy.tether, &c.poi, (0.0, dy), pieces);
+            let knee = Point::new(tether.x(), row_y);
+            let leader_end = leader_end_on_label_box(&knee, &anchor, c.w, c.h, gap);
+            out.insert(
+                c.key,
+                LabelPlacement {
+                    anchor,
+                    kind: PlacementKind::ExteriorElbow,
+                    tether: Some(tether),
+                    leader_end: Some(leader_end),
+                    // One bend joint: the corner where the vertical leg from
+                    // the tether meets the horizontal run to the label. The
+                    // renderer draws `tether → knee → leader_end`.
+                    leader_waypoints: vec![knee],
+                },
+            );
+        }
     }
 
     out
@@ -2887,5 +3221,336 @@ mod tests {
             p.leader_waypoints.is_empty(),
             "straight leaders carry no intermediate waypoints"
         );
+    }
+
+    // ---- Elbow leaders ----
+
+    fn elbow_strategy() -> PlacementStrategy {
+        PlacementStrategy {
+            leader: LeaderStrategy::Elbow(ElbowOptions::default()),
+            ..PlacementStrategy::default()
+        }
+    }
+
+    fn square_piece_at(x0: f64, y0: f64, side: f64) -> RegionPiece {
+        RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(x0, y0),
+                Point::new(x0 + side, y0),
+                Point::new(x0 + side, y0 + side),
+                Point::new(x0, y0 + side),
+            ]),
+            holes: vec![],
+        }
+    }
+
+    fn regions_from(entries: Vec<(&[&str], Vec<RegionPiece>)>) -> RegionPolygons {
+        let mut map = HashMap::new();
+        for (combo, pieces) in entries {
+            map.insert(Combination::new(combo), pieces);
+        }
+        RegionPolygons::from_map(map)
+    }
+
+    #[test]
+    fn test_elbow_default_options() {
+        let opts = ElbowOptions::default();
+        assert!(opts.margin.is_none());
+        assert!(opts.min_gap.is_none());
+        assert!(matches!(elbow_strategy().leader, LeaderStrategy::Elbow(_)));
+    }
+
+    #[test]
+    fn test_elbow_column_assignment_left_right() {
+        // A at x∈[0,10], B at x∈[20,30]; union bbox x∈[0,30], centroid x = 15.
+        // A's POI (≈5) < 15 → left column; B's POI (≈25) > 15 → right column.
+        let regions = regions_from(vec![
+            (&["A"][..], vec![square_piece_at(0.0, 0.0, 10.0)]),
+            (&["B"][..], vec![square_piece_at(20.0, 0.0, 10.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        sizes.insert("B".to_string(), (20.0, 20.0));
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let a = placements.get("A").expect("A placed");
+        let b = placements.get("B").expect("B placed");
+        assert_eq!(a.kind, PlacementKind::ExteriorElbow);
+        assert_eq!(b.kind, PlacementKind::ExteriorElbow);
+        assert!(
+            a.anchor.x() < 0.0,
+            "A should sit left of bbox: {}",
+            a.anchor.x()
+        );
+        assert!(
+            b.anchor.x() > 30.0,
+            "B should sit right of bbox: {}",
+            b.anchor.x()
+        );
+    }
+
+    #[test]
+    fn test_elbow_centre_tiebreak_goes_right() {
+        // Single centred square: POI.x == centroid.x → right column.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let a = placements.get("A").expect("A placed");
+        assert_eq!(a.kind, PlacementKind::ExteriorElbow);
+        assert!(
+            a.anchor.x() > 10.0,
+            "centre tiebreak should go right: {}",
+            a.anchor.x()
+        );
+    }
+
+    #[test]
+    fn test_elbow_vertical_distribution_no_overlap() {
+        // Three identical regions → identical POIs (5, 5) → maximum vertical
+        // spreading. Required gap = 1.5 * 20 = 30, so adjacent anchor centres
+        // must be ≥ 30 apart (the h=20 boxes are then strictly disjoint).
+        let regions = regions_from(vec![
+            (&["A"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["B"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["C"][..], vec![axis_aligned_square_piece(10.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        for k in ["A", "B", "C"] {
+            sizes.insert(k.to_string(), (20.0, 20.0));
+        }
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let mut ys: Vec<f64> = ["A", "B", "C"]
+            .iter()
+            .map(|k| {
+                let p = placements.get(*k).expect("placed");
+                assert_eq!(p.kind, PlacementKind::ExteriorElbow);
+                p.anchor.y()
+            })
+            .collect();
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!(ys[1] - ys[0] >= 30.0 - 1e-6, "gap 0-1 = {}", ys[1] - ys[0]);
+        assert!(ys[2] - ys[1] >= 30.0 - 1e-6, "gap 1-2 = {}", ys[2] - ys[1]);
+    }
+
+    #[test]
+    fn test_elbow_distribution_centred_on_cluster() {
+        // Same three-identical-region setup: ideal y = 5 for all, so the
+        // centred stack must straddle y = 5 (mean anchor y ≈ 5), not drift
+        // downward.
+        let regions = regions_from(vec![
+            (&["A"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["B"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["C"][..], vec![axis_aligned_square_piece(10.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        for k in ["A", "B", "C"] {
+            sizes.insert(k.to_string(), (20.0, 20.0));
+        }
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let mean = ["A", "B", "C"]
+            .iter()
+            .map(|k| placements.get(*k).unwrap().anchor.y())
+            .sum::<f64>()
+            / 3.0;
+        assert!(
+            (mean - 5.0).abs() < 1e-6,
+            "stack not centred: mean y = {mean}"
+        );
+    }
+
+    #[test]
+    fn test_elbow_keep_out_band_clears_interior_labels() {
+        // A big region carries a small interior label near the centre; a
+        // central region with an oversized label routes exterior. The keep-out
+        // band must push the exterior row clear of the interior label's y-span,
+        // so the leader's horizontal leg doesn't cross it.
+        let regions = regions_from(vec![
+            (&["A"][..], vec![square_piece_at(0.0, 0.0, 30.0)]),
+            (&["B"][..], vec![square_piece_at(13.0, 13.0, 4.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (2.0, 1.0)); // fits inside A → interior
+        sizes.insert("B".to_string(), (20.0, 20.0)); // too big → exterior elbow
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let a = placements.get("A").expect("A placed");
+        let b = placements.get("B").expect("B placed");
+        assert_eq!(a.kind, PlacementKind::Interior);
+        assert_eq!(b.kind, PlacementKind::ExteriorElbow);
+        // A's interior label spans [anchor.y − 0.5, anchor.y + 0.5] (h = 1).
+        let (band_lo, band_hi) = (a.anchor.y() - 0.5, a.anchor.y() + 0.5);
+        // B's row (its horizontal leg height) must sit outside that band.
+        assert!(
+            b.anchor.y() <= band_lo + 1e-9 || b.anchor.y() >= band_hi - 1e-9,
+            "B row {} not clear of interior band [{}, {}]",
+            b.anchor.y(),
+            band_lo,
+            band_hi
+        );
+    }
+
+    #[test]
+    fn test_elbow_waypoints_form_orthogonal_polyline() {
+        // Three identical regions so at least one label's row_y differs from
+        // its POI y (a genuine vertical first leg). Region A is sorted first
+        // and pushed to the top of the stack, so A.row_y ≠ A.poi.y.
+        let regions = regions_from(vec![
+            (&["A"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["B"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["C"][..], vec![axis_aligned_square_piece(10.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        for k in ["A", "B", "C"] {
+            sizes.insert(k.to_string(), (20.0, 20.0));
+        }
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let p = placements.get("A").expect("A placed");
+        // Vertical-first leader has a single bend joint (the knee).
+        assert_eq!(p.leader_waypoints.len(), 1);
+        let tether = p.tether.expect("exterior has tether");
+        let knee = p.leader_waypoints[0];
+        let end = p.leader_end.expect("exterior has leader_end");
+        // First leg vertical: tether → knee shares x.
+        assert!(
+            (knee.x() - tether.x()).abs() < 1e-9,
+            "first leg not vertical"
+        );
+        // Knee sits at the row height (= anchor.y).
+        assert!(
+            (knee.y() - p.anchor.y()).abs() < 1e-9,
+            "knee not at row height"
+        );
+        // Second leg horizontal: knee → leader_end shares y.
+        assert!(
+            (knee.y() - end.y()).abs() < 1e-9,
+            "second leg not horizontal"
+        );
+        // Genuinely non-degenerate for the spread label.
+        assert!(
+            (knee.y() - tether.y()).abs() > 1e-6,
+            "expected a real vertical leg"
+        );
+    }
+
+    #[test]
+    fn test_elbow_leader_end_on_box_edge() {
+        // Single centred region → right column. leader_end lands on the near
+        // (left) vertical edge of the box at the row height; with gap = 0 that
+        // edge is anchor.x − w/2.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let (w, h) = (20.0, 20.0);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (w, h));
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let p = placements.get("A").expect("A placed");
+        let le = p.leader_end.expect("exterior has leader_end");
+        assert!(
+            (le.x() - (p.anchor.x() - 0.5 * w)).abs() < 1e-6,
+            "leader_end x = {} not on near edge",
+            le.x()
+        );
+        assert!(
+            (le.y() - p.anchor.y()).abs() < 1e-6,
+            "leader_end y = {}",
+            le.y()
+        );
+    }
+
+    #[test]
+    fn test_elbow_boundary_tether_vertical_exit() {
+        // Vertical-first routing exits the region on a *vertical* ray toward
+        // the label's row. Three identical squares stack into one column; the
+        // top label (A, pushed to the lowest row by the centred sweep) exits
+        // the bottom edge (y = 0) at the POI x (≈ 5); the bottom label (C,
+        // pushed up) exits the top edge (y = 10).
+        let regions = regions_from(vec![
+            (&["A"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["B"][..], vec![axis_aligned_square_piece(10.0)]),
+            (&["C"][..], vec![axis_aligned_square_piece(10.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        for k in ["A", "B", "C"] {
+            sizes.insert(k.to_string(), (20.0, 20.0));
+        }
+        let strategy = PlacementStrategy {
+            leader: LeaderStrategy::Elbow(ElbowOptions::default()),
+            tether: TetherSource::Boundary,
+            ..PlacementStrategy::default()
+        };
+        let placements = place_labels(&regions, &sizes, None, &strategy);
+        let a = placements.get("A").expect("A placed");
+        let c = placements.get("C").expect("C placed");
+        let ta = a.tether.expect("A has tether");
+        let tc = c.tether.expect("C has tether");
+        // Vertical exit ray keeps x at the POI (≈ 5).
+        assert!((ta.x() - 5.0).abs() < 0.5, "A tether x = {}", ta.x());
+        assert!((tc.x() - 5.0).abs() < 0.5, "C tether x = {}", tc.x());
+        // A's row sits below its POI → exits the bottom edge (y = 0); C's row
+        // sits above → exits the top edge (y = 10).
+        assert!(a.anchor.y() < c.anchor.y(), "A row should be below C row");
+        assert!(
+            (ta.y() - 0.0).abs() < 1e-6,
+            "A tether y = {} not bottom edge",
+            ta.y()
+        );
+        assert!(
+            (tc.y() - 10.0).abs() < 1e-6,
+            "C tether y = {} not top edge",
+            tc.y()
+        );
+    }
+
+    #[test]
+    fn test_elbow_interior_fit_unchanged() {
+        // Small label still fits inside → Interior, no leader of any kind.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (1.0, 0.5));
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        let p = placements.get("A").expect("A placed");
+        assert_eq!(p.kind, PlacementKind::Interior);
+        assert!(p.tether.is_none());
+        assert!(p.leader_end.is_none());
+        assert!(p.leader_waypoints.is_empty());
+    }
+
+    #[test]
+    fn test_elbow_two_circle_decomposition_all_regions_placed() {
+        // End-to-end through the real decomposer with the elbow strategy.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|n| *layout.shape_for_set(n).unwrap())
+            .collect();
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
+
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (0.2, 0.1));
+        sizes.insert("A&B".to_string(), (100.0, 100.0)); // forces exterior
+
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        assert!(placements.contains_key("A"));
+        let ab = placements.get("A&B").expect("A&B placed");
+        assert_eq!(ab.kind, PlacementKind::ExteriorElbow);
+        assert!(ab.tether.is_some());
+        assert_eq!(ab.leader_waypoints.len(), 1);
+    }
+
+    #[test]
+    fn test_elbow_degenerate_region_skipped() {
+        // Region with no pieces → no POI / no bbox → omitted from the result,
+        // mirroring the straight path's skip behaviour.
+        let regions = regions_from(vec![(&["A"][..], vec![])]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
+        assert!(!placements.contains_key("A"));
     }
 }

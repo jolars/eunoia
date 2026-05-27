@@ -16,7 +16,8 @@
 pub enum LeaderStrategy {
     /// Straight leader lines, placed by an exterior solver.
     Straight(ExteriorPolicy),   // Raycast { margin } | ForceDirected { margin, iterations }
-    // Planned: Elbow(ElbowOptions),
+    /// d3-pie style orthogonal leaders, placed by a column-based algorithm.
+    Elbow(ElbowOptions),        // { margin, min_gap }
 }
 
 pub struct PlacementStrategy {
@@ -42,19 +43,44 @@ types with their bend joints. Renderers always draw the polyline
 `leaderWaypoints` output), TS (`LeaderStrategy` discriminated union,
 `leaderWaypoints`), and the web renderer (`web/src/lib/leader.ts`).
 
-### Stage 2 (planned, not implemented) — elbow leaders
+### Stage 2 (shipped) — elbow leaders
 
-Add `LeaderStrategy::Elbow(ElbowOptions)`, a `PlacementKind::ExteriorElbow`,
-and a dedicated `resolve_elbow(...)` placement function. d3-pie style:
+`LeaderStrategy::Elbow(ElbowOptions { margin, min_gap })`,
+`PlacementKind::ExteriorElbow`, and a dedicated `place_elbow_labels(...)`
+function in `placement.rs`. A standalone, column-based placement (it does *not*
+take an `ExteriorPolicy`). d3-pie style:
 
-1. Assign each exterior label to a **left or right column** by the sign of
-   `(POI.x − diagram_center.x)`.
-2. Within each column, **sort by tether y** and **distribute vertically** with
-   a minimum gap (collision-free by construction).
-3. Connector is an **orthogonal polyline**: `tether → (bend_x, tether.y) →
-   (bend_x, row_y) → leader_end`, where `bend_x` sits just outside the diagram
-   on that side. The bends populate `leader_waypoints`; `tether` / `leader_end`
-   are the endpoints already produced — no new output fields needed.
+1. Interior-fitting labels anchor at the POI (same as the straight path).
+   Each remaining label is assigned to a **left or right column** by the sign
+   of `(POI.x − diagram_center.x)`; the centre tiebreak goes **right**.
+2. Within each column, labels are **sorted by POI y** and **distributed
+   vertically** by a two-pass sweep enforcing `min_gap` (default `1.5 ×` the
+   taller neighbour's height), then **centred on the cluster** so the stack
+   isn't biased downward — collision-free by construction.
+3. The connector is an **orthogonal, vertical-first polyline** `tether →
+   (tether.x, row_y) → leader_end`: it drops/rises from the source to its row
+   height **before** running horizontally out to the label. Routing the
+   horizontal leg at `row_y` keeps it clear of the diagram interior, so it
+   doesn't sweep across content the way a horizontal-first leg at the tether
+   height did (that earlier shape crossed interior labels for centrally-placed
+   regions). Labels stack in a column with near-edges aligned at `bend_x`
+   (`diagram edge ± margin`, default `0.5·max(w,h)` over the column). The single
+   bend (the knee) populates `leader_waypoints`; `tether` (vertical boundary
+   exit toward the row) / `leader_end` reuse the existing fields — no new output.
+
+4. **Interior keep-out band.** Row heights are chosen so the horizontal legs
+   clear interior labels: the interior labels' combined y-extent is a keep-out
+   band, and each column splits into a lower half (stacked below the band) and
+   an upper half (above it), each spaced by the minimum gap. With no interior
+   labels the rows instead spread by a two-pass min-gap sweep centred on the
+   source cluster. (Residual: a leader's short *vertical* leg can still graze an
+   interior box that happens to sit at the source's x — uncommon.)
+
+Wired end-to-end: core (`place_elbow_labels`, shared `tether_point` helper),
+wasm (`leader.type: "elbow"`, `minGap`, `kind: "ExteriorElbow"`), TS
+(`LeaderStrategy` elbow variant, `"exteriorElbow"`), and the web UI (the
+"Elbow (columns)" option in the exterior-label-solver dropdown). The web
+renderer (`leader.ts`) needed no change — it already draws arbitrary polylines.
 
 ---
 

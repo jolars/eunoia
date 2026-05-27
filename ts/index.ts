@@ -275,28 +275,50 @@ export type TetherSource = "poi" | "boundary";
  * raycasting, for instance, is a straight-line construction, so it's only
  * offered for straight leaders.
  *
- * Today the only edge type is `"straight"`; d3-style `"elbow"` (orthogonal)
- * leaders with their own placement algorithm are planned.
+ * Two edge types: `"straight"` (raycast / force-directed placement) and
+ * d3-pie style `"elbow"` (orthogonal leaders with a column-based placement
+ * algorithm of their own).
  */
-export type LeaderStrategy = {
-  /** Edge type. Currently only `"straight"`. */
-  type: "straight";
-  /**
-   * Placement algorithm for straight leaders. Default `"raycast"`.
-   */
-  placement?: ExteriorPolicyName;
-  /**
-   * Margin around the diagram bbox/container, applied to both
-   * `"raycast"` and `"forceDirected"` placement. Omit to use a per-region
-   * proportional default of `0.5 * max(label_w, label_h)`.
-   */
-  margin?: number;
-  /**
-   * Iteration cap for the `"forceDirected"` placement. Ignored otherwise.
-   * Defaults to 200; raise for crowded diagrams that haven't converged.
-   */
-  iterations?: number;
-};
+export type LeaderStrategy =
+  | {
+      /** Straight leader lines (a single `tether → leaderEnd` segment). */
+      type: "straight";
+      /**
+       * Placement algorithm for straight leaders. Default `"raycast"`.
+       */
+      placement?: ExteriorPolicyName;
+      /**
+       * Margin around the diagram bbox/container, applied to both
+       * `"raycast"` and `"forceDirected"` placement. Omit to use a per-region
+       * proportional default of `0.5 * max(label_w, label_h)`.
+       */
+      margin?: number;
+      /**
+       * Iteration cap for the `"forceDirected"` placement. Ignored otherwise.
+       * Defaults to 200; raise for crowded diagrams that haven't converged.
+       */
+      iterations?: number;
+    }
+  | {
+      /**
+       * d3-pie style orthogonal (elbow) leaders. Exterior labels are sorted
+       * into a left/right column, stacked vertically without overlap, and
+       * reached by an orthogonal three-segment polyline. The bend joints are
+       * returned in `leaderWaypoints`.
+       */
+      type: "elbow";
+      /**
+       * Horizontal gap between the diagram edge and the column's vertical
+       * bend rail. Omit for a per-column proportional default of
+       * `0.5 * max(label_w, label_h)`.
+       */
+      margin?: number;
+      /**
+       * Minimum vertical centre-to-centre spacing between stacked labels in a
+       * column. Omit for a default of `1.5 *` the taller neighbour's height.
+       */
+      minGap?: number;
+    };
 
 export interface PlacementStrategy {
   /**
@@ -335,7 +357,8 @@ export interface PlacementStrategy {
 export type PlacementKind =
   | "interior"
   | "exteriorRaycast"
-  | "exteriorForceDirected";
+  | "exteriorForceDirected"
+  | "exteriorElbow";
 
 export interface LabelPlacement {
   /** Centre of the label box, in the same coordinates as the regions. */
@@ -997,12 +1020,13 @@ const TETHER_SOURCE_MAP: Record<TetherSource, "Poi" | "Boundary"> = {
 };
 
 const PLACEMENT_KIND_MAP: Record<
-  "Interior" | "ExteriorRaycast" | "ExteriorForceDirected",
+  "Interior" | "ExteriorRaycast" | "ExteriorForceDirected" | "ExteriorElbow",
   PlacementKind
 > = {
   Interior: "interior",
   ExteriorRaycast: "exteriorRaycast",
   ExteriorForceDirected: "exteriorForceDirected",
+  ExteriorElbow: "exteriorElbow",
 };
 
 /**
@@ -1092,12 +1116,14 @@ export function placeLabelsForRegions(
 
   let strategyJson: string | undefined;
   if (strategy) {
-    type LeaderPayload = {
-      type: "straight";
-      placement?: "Raycast" | "ForceDirected";
-      margin?: number;
-      iterations?: number;
-    };
+    type LeaderPayload =
+      | {
+          type: "straight";
+          placement?: "Raycast" | "ForceDirected";
+          margin?: number;
+          iterations?: number;
+        }
+      | { type: "elbow"; margin?: number; minGap?: number };
     const payload: {
       leader?: LeaderPayload;
       precision?: number;
@@ -1106,20 +1132,27 @@ export function placeLabelsForRegions(
     } = {};
     if (strategy.leader !== undefined) {
       const leader = strategy.leader;
-      const leaderPayload: LeaderPayload = { type: leader.type };
-      if (leader.placement !== undefined) {
-        const mapped = EXTERIOR_POLICY_MAP[leader.placement];
-        if (mapped === undefined) {
-          throw new RangeError(
-            `placeLabelsForRegions: unknown leader placement "${leader.placement}"`,
-          );
+      if (leader.type === "elbow") {
+        const leaderPayload: LeaderPayload = { type: "elbow" };
+        if (leader.margin !== undefined) leaderPayload.margin = leader.margin;
+        if (leader.minGap !== undefined) leaderPayload.minGap = leader.minGap;
+        payload.leader = leaderPayload;
+      } else {
+        const leaderPayload: LeaderPayload = { type: "straight" };
+        if (leader.placement !== undefined) {
+          const mapped = EXTERIOR_POLICY_MAP[leader.placement];
+          if (mapped === undefined) {
+            throw new RangeError(
+              `placeLabelsForRegions: unknown leader placement "${leader.placement}"`,
+            );
+          }
+          leaderPayload.placement = mapped;
         }
-        leaderPayload.placement = mapped;
+        if (leader.margin !== undefined) leaderPayload.margin = leader.margin;
+        if (leader.iterations !== undefined)
+          leaderPayload.iterations = leader.iterations;
+        payload.leader = leaderPayload;
       }
-      if (leader.margin !== undefined) leaderPayload.margin = leader.margin;
-      if (leader.iterations !== undefined)
-        leaderPayload.iterations = leader.iterations;
-      payload.leader = leaderPayload;
     }
     if (strategy.precision !== undefined)
       payload.precision = strategy.precision;

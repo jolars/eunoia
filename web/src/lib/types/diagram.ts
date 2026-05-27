@@ -125,7 +125,7 @@ export type LossName =
   | "DiagError";
 export type ExportFormat = "svg" | "png" | "pdf" | "json";
 
-export type LabelPlacementMode = "raycast" | "forceDirected";
+export type LabelPlacementMode = "raycast" | "forceDirected" | "elbow";
 
 export interface DiagramStyle {
   /** Base fill palette id (see `lib/colors.ts`). Per-set `colors` override it. */

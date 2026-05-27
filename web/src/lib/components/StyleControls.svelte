@@ -195,12 +195,14 @@ function resetAllColors() {
     >
       <option value="raycast">Raycast</option>
       <option value="forceDirected">Force-directed</option>
+      <option value="elbow">Elbow (columns)</option>
     </select>
     <p class="text-xs text-muted mt-1">
       Labels that fit inside their region anchor at the POI. For labels that
       don't fit, raycast emits a deterministic ray from the diagram centroid
       through the POI; force-directed adds polygon-aware repulsion so labels
-      avoid both other labels and unrelated regions.
+      avoid both other labels and unrelated regions; elbow stacks labels in
+      left/right columns connected by orthogonal (d3-pie style) leaders.
     </p>
   </div>
 

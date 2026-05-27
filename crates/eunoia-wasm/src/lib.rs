@@ -2835,8 +2835,8 @@ pub fn place_region_labels(
     use eunoia::geometry::primitives::Point;
     use eunoia::geometry::shapes::{Polygon, Rectangle};
     use eunoia::plotting::{
-        ExteriorPolicy, LeaderStrategy, PlacementKind, PlacementStrategy, RegionPiece,
-        RegionPolygons, TetherSource, place_labels,
+        ElbowOptions, ExteriorPolicy, LeaderStrategy, PlacementKind, PlacementStrategy,
+        RegionPiece, RegionPolygons, TetherSource, place_labels,
     };
     use eunoia::spec::Combination;
 
@@ -2855,19 +2855,26 @@ pub fn place_region_labels(
     }
 
     /// Leader strategy: the edge type plus the placement algorithm for it.
-    /// Mirrors [`eunoia::plotting::LeaderStrategy`]. Only `type: "straight"`
-    /// exists today; `placement` selects the straight-edge exterior solver.
+    /// Mirrors [`eunoia::plotting::LeaderStrategy`]. `type: "straight"`
+    /// (default) uses `placement` to select the straight-edge exterior
+    /// solver; `type: "elbow"` uses the column-based orthogonal-leader
+    /// algorithm (`placement`/`iterations` are ignored).
     #[derive(serde::Deserialize, Default)]
     #[serde(default)]
     struct LeaderJson {
-        /// Edge type: `"straight"` (default). Future: `"elbow"`.
+        /// Edge type: `"straight"` (default) or `"elbow"`.
         r#type: Option<String>,
         /// Placement algorithm for straight leaders: `"Raycast"` (default)
-        /// or `"ForceDirected"`.
+        /// or `"ForceDirected"`. Ignored for `"elbow"`.
         placement: Option<String>,
+        /// Margin around the diagram (both edge types).
         margin: Option<f64>,
         /// Iteration cap for `ForceDirected`; ignored otherwise.
         iterations: Option<usize>,
+        /// Minimum vertical centre-to-centre spacing between stacked elbow
+        /// labels; ignored for straight leaders.
+        #[serde(rename = "minGap")]
+        min_gap: Option<f64>,
     }
 
     #[derive(serde::Deserialize, Default)]
@@ -2921,25 +2928,31 @@ pub fn place_region_labels(
     };
 
     let leader_in = strategy_in.leader.unwrap_or_default();
-    match leader_in.r#type.as_deref() {
-        None | Some("straight") => {}
-        Some(other) => {
-            return Err(JsValue::from_str(&format!(
-                "invalid strategy.leader.type '{other}' (expected 'straight')"
-            )));
+    let leader = match leader_in.r#type.as_deref() {
+        None | Some("straight") => {
+            let exterior = match leader_in.placement.as_deref() {
+                None | Some("Raycast") => ExteriorPolicy::Raycast {
+                    margin: leader_in.margin,
+                },
+                Some("ForceDirected") => ExteriorPolicy::ForceDirected {
+                    margin: leader_in.margin,
+                    iterations: leader_in.iterations,
+                },
+                Some(other) => {
+                    return Err(JsValue::from_str(&format!(
+                        "invalid strategy.leader.placement '{other}' (expected 'Raycast' or 'ForceDirected')"
+                    )));
+                }
+            };
+            LeaderStrategy::Straight(exterior)
         }
-    }
-    let exterior = match leader_in.placement.as_deref() {
-        None | Some("Raycast") => ExteriorPolicy::Raycast {
+        Some("elbow") => LeaderStrategy::Elbow(ElbowOptions {
             margin: leader_in.margin,
-        },
-        Some("ForceDirected") => ExteriorPolicy::ForceDirected {
-            margin: leader_in.margin,
-            iterations: leader_in.iterations,
-        },
+            min_gap: leader_in.min_gap,
+        }),
         Some(other) => {
             return Err(JsValue::from_str(&format!(
-                "invalid strategy.leader.placement '{other}' (expected 'Raycast' or 'ForceDirected')"
+                "invalid strategy.leader.type '{other}' (expected 'straight' or 'elbow')"
             )));
         }
     };
@@ -2953,7 +2966,7 @@ pub fn place_region_labels(
         }
     };
     let strategy = PlacementStrategy {
-        leader: LeaderStrategy::Straight(exterior),
+        leader,
         precision: strategy_in.precision.unwrap_or(0.01),
         tether,
         leader_gap: strategy_in.leader_gap.unwrap_or(0.0),
@@ -2990,6 +3003,7 @@ pub fn place_region_labels(
             PlacementKind::Interior => "Interior",
             PlacementKind::ExteriorRaycast => "ExteriorRaycast",
             PlacementKind::ExteriorForceDirected => "ExteriorForceDirected",
+            PlacementKind::ExteriorElbow => "ExteriorElbow",
         };
         out.insert(
             key,
