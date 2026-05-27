@@ -332,6 +332,20 @@ pub fn place_labels(
     };
     let centroid = diagram_bbox.map(|r| *r.center());
 
+    // Below this POI-to-centroid distance the radial exit direction is
+    // unreliable and `direction_from` falls back to the region's principal
+    // axis. Scaled to the diagram (a fraction of the bbox diagonal) so it
+    // fires consistently whatever the canvas units: a POI within this radius
+    // of the centre is "central". The key case is a thin region straddling
+    // the gap between disjoint clusters — its POI lands near the global
+    // centroid, so the radial direction points straight back into the
+    // neighbouring shapes; the principal axis instead sends the label out
+    // along the sliver, into open space. `0.0` when the bbox is missing
+    // (degenerate), which keeps the old `> 1e-9` floor in `direction_from`.
+    let degenerate_dir_threshold = diagram_bbox
+        .map(|r| 0.05 * r.width().hypot(r.height()))
+        .unwrap_or(0.0);
+
     let pois = regions.label_points(strategy.precision);
     let mut out: HashMap<String, LabelPlacement> = HashMap::with_capacity(sizes.len());
     let mut exteriors: Vec<ExteriorEntry> = Vec::new();
@@ -379,10 +393,33 @@ pub fn place_labels(
             continue;
         };
 
-        let direction = direction_from(&poi, &centroid, pieces);
+        let mut direction = direction_from(&poi, &centroid, pieces, degenerate_dir_threshold);
         let margin = raycast_margin_opt.unwrap_or_else(|| 0.5 * w.max(h));
-        let anchor = raycast_anchor_union(&poi, w, h, &union_pieces, margin, direction)
+        let mut anchor = raycast_anchor_union(&poi, w, h, &union_pieces, margin, direction)
             .unwrap_or_else(|| raycast_anchor(&poi, w, h, &bbox, margin, direction));
+
+        // Backstop: if the placement still sits on a region this label doesn't
+        // belong to, the exit ray pointed into occupied space — the typical
+        // case being a thin region on the gap-facing edge of its cluster whose
+        // POI is too far from the global centroid for the degeneracy fallback
+        // above to catch (so the radial ray points straight into a neighbour).
+        // Re-cast along the region's principal axis, which runs out along the
+        // sliver into the open space at its tips; try both senses (+axis then
+        // −axis) and keep the first that actually clears. If neither clears we
+        // leave the original placement untouched, so this can only improve.
+        if box_overlaps_foreign(&anchor, w, h, regions, &combo) {
+            let pa = principal_axis_direction(pieces);
+            for cand in [pa, (-pa.0, -pa.1)] {
+                let alt = raycast_anchor_union(&poi, w, h, &union_pieces, margin, cand)
+                    .unwrap_or_else(|| raycast_anchor(&poi, w, h, &bbox, margin, cand));
+                if !box_overlaps_foreign(&alt, w, h, regions, &combo) {
+                    direction = cand;
+                    anchor = alt;
+                    break;
+                }
+            }
+        }
+
         exteriors.push(ExteriorEntry {
             key: key.clone(),
             combo,
@@ -1537,19 +1574,42 @@ fn union_bbox(regions: &RegionPolygons) -> Option<Rectangle> {
 }
 
 /// Pick a unit-length ray direction from `centroid` through `poi`. When the
-/// two coincide (typical for a centred Venn region), fall back to the
-/// region's principal axis on its largest piece; if the region is
-/// effectively isotropic (elongation < 1.05), use a fixed `+y` convention.
-fn direction_from(poi: &Point, centroid: &Point, pieces: &[RegionPiece]) -> (f64, f64) {
+/// two are closer than `degenerate_threshold`, the radial direction is
+/// unreliable — either the POI coincides with the centroid (a centred Venn
+/// region) or it sits near the global centroid because the region straddles
+/// the gap between disjoint clusters, where "away from the centroid" points
+/// straight back into the neighbouring shapes. In that case fall back to the
+/// region's principal axis on its largest piece (sending the label out along
+/// an elongated sliver, into open space); if the region is effectively
+/// isotropic (elongation < 1.05), use a fixed `+y` convention.
+///
+/// `degenerate_threshold` is scaled to the diagram by [`place_labels`] so the
+/// fallback fires consistently regardless of canvas units. A hard `1e-9`
+/// floor guards the division below when the threshold is zero.
+fn direction_from(
+    poi: &Point,
+    centroid: &Point,
+    pieces: &[RegionPiece],
+    degenerate_threshold: f64,
+) -> (f64, f64) {
     let dx = poi.x() - centroid.x();
     let dy = poi.y() - centroid.y();
     let mag = (dx * dx + dy * dy).sqrt();
-    let eps = 1e-9;
-    if mag > eps {
+    if mag > degenerate_threshold.max(1e-9) {
         return (dx / mag, dy / mag);
     }
-
     // POI ≈ centroid: principal-axis tiebreak.
+    principal_axis_direction(pieces)
+}
+
+/// Unit direction along the region's principal axis — the long axis of its
+/// largest piece — used as the exit direction when the centroid ray is
+/// unreliable (a centred or gap-straddling region) or when the centroid ray
+/// lands the label on a foreign region (see [`place_labels`]'s backstop). For
+/// an elongated sliver this points out along its length, into the open space
+/// at its tips; an effectively isotropic region (elongation < 1.05) has no
+/// meaningful long axis, so fall back to a fixed `+y` convention.
+fn principal_axis_direction(pieces: &[RegionPiece]) -> (f64, f64) {
     let largest = pieces.iter().max_by(|a, b| {
         a.area()
             .partial_cmp(&b.area())
@@ -1562,6 +1622,51 @@ fn direction_from(poi: &Point, centroid: &Point, pieces: &[RegionPiece]) -> (f64
         }
     }
     (0.0, 1.0)
+}
+
+/// Does the `w × h` label box centred at `center` overlap any region this
+/// label doesn't belong to? "Foreign" is every region whose combination
+/// differs from `own` — the label may freely sit on its own region (an
+/// exterior label exists precisely because it didn't fit inside it), but
+/// landing on a *neighbour's* shape is the failure the placement backstop
+/// catches. Cheap and robust enough: tests the box centre and corners for
+/// containment in each piece, plus each piece outer vertex for containment in
+/// the box.
+fn box_overlaps_foreign(
+    center: &Point,
+    w: f64,
+    h: f64,
+    regions: &RegionPolygons,
+    own: &Combination,
+) -> bool {
+    let (cx, cy) = (center.x(), center.y());
+    let (hw, hh) = (0.5 * w, 0.5 * h);
+    let probes = [
+        (cx, cy),
+        (cx - hw, cy - hh),
+        (cx + hw, cy - hh),
+        (cx - hw, cy + hh),
+        (cx + hw, cy + hh),
+    ];
+    for (combo, pieces) in regions.iter() {
+        if combo == own {
+            continue;
+        }
+        for piece in pieces {
+            if probes
+                .iter()
+                .any(|&(px, py)| signed_clearance(px, py, piece) > 0.0)
+            {
+                return true;
+            }
+            if piece.outer.vertices().iter().any(|v| {
+                v.x() >= cx - hw && v.x() <= cx + hw && v.y() >= cy - hh && v.y() <= cy + hh
+            }) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Build the diagram's outer-boundary polygon as a list of pieces
@@ -2328,6 +2433,132 @@ mod tests {
         // +y fallback: anchor's x ≈ POI's x (≈ 0), y >> 5.
         assert!(p.anchor.x().abs() < 1e-6, "anchor x = {}", p.anchor.x());
         assert!(p.anchor.y() > 5.0, "anchor y = {}", p.anchor.y());
+    }
+
+    #[test]
+    fn test_gap_straddling_sliver_deflects_to_principal_axis() {
+        // Regression: a thin region straddling the gap between two disjoint
+        // clusters has its POI near the global centroid, so the radial exit
+        // direction (`poi − centroid`) points back into a neighbouring
+        // cluster's shapes. The scale-aware degeneracy fallback must deflect
+        // along the sliver's principal axis (vertical here), placing the label
+        // in the open space above/below the gap rather than on the neighbours.
+        //
+        // Left cluster (A) fills x[0,48]; a tall 1-wide B sliver sits on its
+        // gap-facing edge at x[48,49]; right cluster (C) is x[52,100]. The
+        // union centroid is ≈(50, 24), so B's POI (≈48.5, 24) is only ~1.5
+        // units away — well inside the scaled degeneracy radius — and the raw
+        // radial direction would be ≈(−1, 0), straight into A.
+        let rect = |x0: f64, y0: f64, x1: f64, y1: f64| RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(x0, y0),
+                Point::new(x1, y0),
+                Point::new(x1, y1),
+                Point::new(x0, y1),
+            ]),
+            holes: vec![],
+        };
+        let mut map = HashMap::new();
+        map.insert(Combination::new(&["A"]), vec![rect(0.0, 0.0, 48.0, 48.0)]);
+        map.insert(Combination::new(&["B"]), vec![rect(48.0, 0.0, 49.0, 48.0)]);
+        map.insert(Combination::new(&["C"]), vec![rect(52.0, 0.0, 100.0, 48.0)]);
+        let regions = RegionPolygons::from_map(map);
+
+        // B's label is far too wide for the 1-unit sliver, so it goes exterior.
+        let mut sizes = HashMap::new();
+        sizes.insert("B".to_string(), (20.0, 10.0));
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+        let p = placements.get("B").expect("B placed");
+        assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
+
+        // Deflected vertically: the anchor stays near the sliver's x (it is
+        // NOT cast left into A) and is pushed clear of the diagram body in y.
+        assert!(
+            p.anchor.x() > 40.0,
+            "B should not be cast left into A: anchor.x = {}",
+            p.anchor.x()
+        );
+        assert!(
+            p.anchor.y() < 0.0 || p.anchor.y() > 48.0,
+            "B should be pushed vertically clear of the diagram body [0,48]: anchor.y = {}",
+            p.anchor.y()
+        );
+    }
+
+    #[test]
+    fn test_offcenter_edge_sliver_backstop_clears_neighbour() {
+        // Regression for the *backstop* path (not the centroid-degeneracy
+        // threshold): a thin sliver on the gap-facing edge of a cluster that
+        // sits well away from the global centroid. The radial direction then
+        // points into the adjacent cluster's shape AND the sliver's POI is too
+        // far from the centroid for the degeneracy fallback to fire, so only
+        // the "placement overlaps a foreign region → re-cast along the
+        // principal axis" backstop can rescue it.
+        //
+        // Layout: L fills x[0,40]; the right cluster's big region C fills
+        // x[60,100]; D is a tall 1-wide sliver on C's gap-facing (left) edge
+        // at x[59,60]. The union centroid is ≈(50, 25), so D's POI (≈59.5) is
+        // ~9.5 units away — past the ~5.4 (5% of diagonal) degeneracy radius —
+        // and the raw radial direction is ≈(+1, 0), straight into C.
+        let rect = |verts: &[(f64, f64)]| RegionPiece {
+            outer: Polygon::new(verts.iter().map(|&(x, y)| Point::new(x, y)).collect()),
+            holes: vec![],
+        };
+        let mut map = HashMap::new();
+        map.insert(
+            Combination::new(&["L"]),
+            vec![rect(&[(0.0, 5.0), (40.0, 5.0), (40.0, 45.0), (0.0, 45.0)])],
+        );
+        // C's left edge carries an extra vertex at y=25 (in D's y-slab) so the
+        // rightward raycast actually lands the label *on* C rather than
+        // flying past it — reproducing the real polygonised-square geometry.
+        map.insert(
+            Combination::new(&["C"]),
+            vec![rect(&[
+                (60.0, 5.0),
+                (100.0, 5.0),
+                (100.0, 45.0),
+                (60.0, 45.0),
+                (60.0, 25.0),
+            ])],
+        );
+        map.insert(
+            Combination::new(&["D"]),
+            vec![rect(&[
+                (59.0, 20.0),
+                (60.0, 20.0),
+                (60.0, 30.0),
+                (59.0, 30.0),
+            ])],
+        );
+        let regions = RegionPolygons::from_map(map);
+
+        let mut sizes = HashMap::new();
+        sizes.insert("D".to_string(), (8.0, 6.0));
+        let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+        let p = placements.get("D").expect("D placed");
+        assert_eq!(p.kind, PlacementKind::ExteriorRaycast);
+
+        // Deflected along its (vertical) principal axis: pushed clear of C's
+        // y-range [5,45] rather than parked on C at y≈25, and kept near the
+        // sliver's x rather than driven deep into C.
+        assert!(
+            p.anchor.y() < 5.0 || p.anchor.y() > 45.0,
+            "D should be deflected vertically clear of C's body: anchor.y = {}",
+            p.anchor.y()
+        );
+        assert!(
+            p.anchor.x() < 65.0,
+            "D should not be driven right into C: anchor.x = {}",
+            p.anchor.x()
+        );
+        // And the final box must not sit on the foreign C region.
+        assert!(
+            !box_overlaps_foreign(&p.anchor, 8.0, 6.0, &regions, &Combination::new(&["D"])),
+            "D's box still overlaps a foreign region at ({}, {})",
+            p.anchor.x(),
+            p.anchor.y(),
+        );
     }
 
     #[test]
