@@ -26,6 +26,63 @@
 
   let snapshot = $derived(JSON.stringify(current(), null, 2));
 
+  /**
+   * Disjoint clusters of the current fit: groups of sets that form
+   * geometrically separate sub-diagrams. Two sets share a cluster when some
+   * region contains both (i.e. they overlap), so this is the connected
+   * components of the "sets co-occur in a region" graph.
+   *
+   * Sourced from `result.regions` (post-fit geometry, what's actually drawn)
+   * in region mode; falls back to the input rows otherwise. Surfacing this
+   * makes multi-cluster layouts — where exterior label placement can fling a
+   * label across the gap onto a neighbouring cluster — visible at a glance.
+   */
+  function clustersFromCombinations(combos: string[]): string[][] {
+    const parent = new Map<string, string>();
+    const find = (x: string): string => {
+      let r = x;
+      while (parent.get(r) !== r) r = parent.get(r)!;
+      // Path compression.
+      let cur = x;
+      while (parent.get(cur) !== r) {
+        const next = parent.get(cur)!;
+        parent.set(cur, r);
+        cur = next;
+      }
+      return r;
+    };
+    const add = (s: string) => {
+      if (!parent.has(s)) parent.set(s, s);
+    };
+    for (const combo of combos) {
+      const sets = combo
+        .split("&")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      sets.forEach(add);
+      for (let i = 1; i < sets.length; i++) {
+        parent.set(find(sets[i]), find(sets[0]));
+      }
+    }
+    const groups = new Map<string, string[]>();
+    for (const s of parent.keys()) {
+      const root = find(s);
+      (groups.get(root) ?? groups.set(root, []).get(root)!).push(s);
+    }
+    return Array.from(groups.values())
+      .map((g) => g.sort())
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }
+
+  let clusters: string[][] = $derived.by(() => {
+    const result = appState.result;
+    const combos =
+      result && result.shapeMode === "region" && result.regions.length > 0
+        ? result.regions.map((r) => r.combination)
+        : appState.rows.map((r) => r.input).filter(Boolean);
+    return clustersFromCombinations(combos);
+  });
+
   $effect(() => {
     // Keep textarea synced with state until the user starts editing.
     editor = snapshot;
@@ -77,6 +134,25 @@
 </script>
 
 <div class="space-y-2">
+  <div class="text-xs">
+    <span class="font-medium">
+      Disjoint clusters: {clusters.length}
+    </span>
+    {#if clusters.length > 0}
+      <span class="text-muted">
+        {#each clusters as cluster, i (i)}
+          {#if i > 0}{" · "}{/if}
+          &#123;{cluster.join(", ")}&#125;
+        {/each}
+      </span>
+    {/if}
+    {#if clusters.length > 1}
+      <p class="text-muted mt-0.5">
+        Multiple clusters: exterior labels are placed against the whole-diagram
+        centroid, so a label can be cast across the gap onto another cluster.
+      </p>
+    {/if}
+  </div>
   <p class="text-xs text-muted">
     Reproducer for the current diagram (spec + advanced options). Copy to share,
     or paste a snapshot and click Apply.
