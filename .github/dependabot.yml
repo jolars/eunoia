@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
@@ -14,7 +18,15 @@ updates:
     directory: "/web"
     schedule:
       interval: "weekly"
+    groups:
+      npm:
+        patterns:
+          - "*"
   - package-ecosystem: "npm"
     directory: "/ts"
     schedule:
       interval: "weekly"
+    groups:
+      npm:
+        patterns:
+          - "*"
