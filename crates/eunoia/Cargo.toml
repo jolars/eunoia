@@ -19,7 +19,7 @@ basin = { version = "0.4", default-features = false, features = ["nalgebra"] }
 finitediff = "0.2"
 i_overlay = { version = "6", optional = true }
 log = { version = "0.4", features = ["release_max_level_info"] }
-nalgebra = "0.34"
+nalgebra = "0.35"
 num-complex = "0.4"
 polylabel-mini = "0.1"
 rand = "0.10"
