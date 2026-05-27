@@ -74,6 +74,29 @@ they're pre-existing behaviour the harness now exposes.
       LM termination on `with_patience` or relax the tightened budget in the
       test; the spec itself is fittable.
 
+- [ ] **issue89 (17-set) ellipse fits are highly multimodal and the global
+      escape doesn't help**. Best-of-`n_restarts=10` ellipse stress swings
+      wildly with the master seed: `1.8e-3`/`1.9e-3`/`2.3e-3`/`2.4e-3` (good)
+      on seeds 8/5/3/7, but `2.9e-2`, `1.6e-1`, `6.1e-1`, `9.8e-1` (poor →
+      failed) on seeds 1/4/6/2. The CMA-ES global escape provides **no**
+      benefit here: every restart's plain-LM loss is above
+      `cmaes_fallback_threshold` (1e-3) so the escape fires on all of them, yet
+      `Optimizer::CmaEsTrf`, `Optimizer::CmaEsLm`, and bare
+      `Optimizer::LevenbergMarquardt` produce *bit-identical* per-seed stress —
+      i.e. the escape + polish never beats the plain-LM result, and the lower
+      loss kept is always LM's. So quality is determined entirely by the MDS
+      init + local LM convergence, and the escape stage is pure wasted compute
+      for this spec. Not caused by the LM→TRF default switch in 8eda26d
+      (CmaEsLm ≡ CmaEsTrf here) nor by the sparse-mask perf fix
+      (mathematically identical; circle fits are bit-identical before/after).
+      Most likely root cause is the circle-equivalent ellipse MDS warm-start
+      (see "Ellipse MDS still warm-starts as a circle" below): 17 ellipses
+      seeded with no rotational information land in bad rotational basins the
+      local solver can't leave and CMA-ES can't span. Probed via a throwaway
+      example (deleted after measurement). Surfaced 2026-05-27. Circles fit
+      fine (stress consistently `~2e-3`). Worth re-checking after any MDS or
+      global-stage redesign.
+
 ## Spec representation follow-ups
 
 - [x] **Make `DiagramSpec::inclusive_areas` lazy or drop it**. Done (option 2):
