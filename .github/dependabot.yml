@@ -8,6 +8,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "nalgebra"
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
