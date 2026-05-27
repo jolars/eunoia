@@ -91,11 +91,11 @@ pub enum Optimizer {
     /// region-area Jacobian, `JᵀJ` Gram) but constrains every step to a
     /// per-shape box via Coleman-Li affine scaling.
     ///
-    /// Bounds come from [`optimizer_bounds_for`] under the wider
-    /// [`BoundsEnvelope::LOCAL`] safety-cage (positions to centroid ±
+    /// Bounds come from `optimizer_bounds_for` under the wider
+    /// `BoundsEnvelope::LOCAL` safety-cage (positions to centroid ±
     /// `8·span`, radii / semi-axes to `[1e-8·max_radius, 12·max_radius]`,
     /// log-space for ellipses), distinct from the tighter
-    /// [`BoundsEnvelope::CMAES`] the global escape uses — a local refinement
+    /// `BoundsEnvelope::CMAES` the global escape uses — a local refinement
     /// only needs to catch blow-up, not constrain the optimum. The periodic
     /// ellipse angle is `±∞`; the affine scaling degrades to unconstrained on
     /// infinite-bound coordinates, so no finite angle cap is needed. Where
@@ -116,7 +116,7 @@ pub enum Optimizer {
     /// Same threshold-fired structure: plain LM first, and if it stalls above
     /// `cmaes_fallback_threshold`, a bounded CMA-ES global escape — but the
     /// best CMA-ES candidate is then refined with the **bounded** TRF polish
-    /// (under [`BoundsEnvelope::LOCAL`]) instead of unbounded LM, so the
+    /// (under `BoundsEnvelope::LOCAL`) instead of unbounded LM, so the
     /// refinement can't wander outside the feasible box. Combines the global
     /// escape (which fixes the wrong-basin specs a purely local solver
     /// regresses on) with the bounded local refinement (which wins
