@@ -20,7 +20,7 @@
     "@tailwindcss/typography": "^0.5.16",
     "@tailwindcss/vite": "^4.3.0",
     "@tsconfig/svelte": "^5.0.6",
-    "@types/node": "^24.10.1",
+    "@types/node": "^25.9.1",
     "d3": "^7.9.0",
     "mdsvex": "^0.12.6",
     "prettier-plugin-svelte": "^3.4.0",
