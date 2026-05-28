@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.16.0](https://github.com/jolars/eunoia/compare/v0.15.0...v0.16.0) (2026-05-28)
+
+### Breaking changes
+- remove plotting feature (make it non-optionable) ([`4056952`](https://github.com/jolars/eunoia/commit/405695285a2061a89e7e90adeac0e2369da3b047))
+- **fitter:** add box-constrained TRF optimizers, default to CmaEsTrf ([`8eda26d`](https://github.com/jolars/eunoia/commit/8eda26d12d510b6ebbdac6cf320cecf81101a7cf))
+- **plotting:** replace curved leaders with edge-coupled leader strategy ([`848c739`](https://github.com/jolars/eunoia/commit/848c739bfdbba21280f43e9ae5a9b725dbff0a4b))
+- add opt-in `parallel` feauture and jobs parameter ([`a42e8a0`](https://github.com/jolars/eunoia/commit/a42e8a0c24cb2c3d6ca594a32ab8be3c004bd30a))
+- drop argmin + argmin-math, complete the basin migration ([`92c6acf`](https://github.com/jolars/eunoia/commit/92c6acf18f17228562070dbceb2e2cd4f4d9d5d7))
+- raise MSRV to 1.91.1 and adopt edition 2024 ([`2f3d282`](https://github.com/jolars/eunoia/commit/2f3d2822e3e106446befd43860c162f4d40baf13))
+
+### Features
+- remove plotting feature (make it non-optionable) ([`4056952`](https://github.com/jolars/eunoia/commit/405695285a2061a89e7e90adeac0e2369da3b047))
+- **fitter:** add box-constrained TRF optimizers, default to CmaEsTrf ([`8eda26d`](https://github.com/jolars/eunoia/commit/8eda26d12d510b6ebbdac6cf320cecf81101a7cf))
+- **plotting:** add elbow labeling strategy ([`79881eb`](https://github.com/jolars/eunoia/commit/79881ebc1515fb9afae8891143aad69b683bbf82))
+- **plotting:** replace curved leaders with edge-coupled leader strategy ([`848c739`](https://github.com/jolars/eunoia/commit/848c739bfdbba21280f43e9ae5a9b725dbff0a4b))
+- **ts:** add venn interface for canonical venn diagrams ([`4bd1304`](https://github.com/jolars/eunoia/commit/4bd13048fa41f64318fb7d039312bdc217cb7f56))
+- **plotting:** add curved leaders ([`33c160e`](https://github.com/jolars/eunoia/commit/33c160e7ed0f9fc6f016d413e67af9515bf83e30))
+- add opt-in `parallel` feauture and jobs parameter ([`a42e8a0`](https://github.com/jolars/eunoia/commit/a42e8a0c24cb2c3d6ca594a32ab8be3c004bd30a))
+
+### Bug Fixes
+- **plotting:** keep gap-straddling labels clear of neighbouring shapes ([`becae27`](https://github.com/jolars/eunoia/commit/becae277b29c358ec2d3b959eab1b1a31d791eb8))
+- **wasm:** fix wasm build failure ([`d720e2c`](https://github.com/jolars/eunoia/commit/d720e2c3c5b13d784d61df4c82f337a5cdde5b69))
+- **ts:** set esModuleInterop to true ([`0de05d5`](https://github.com/jolars/eunoia/commit/0de05d533c85380612f05b3aaa125fc41cb3009f))
+
+### Performance Improvements
+- **fitter:** parallelize corpus-quality test fits across cores ([`9dc0785`](https://github.com/jolars/eunoia/commit/9dc0785d269c479bcff3a517288f18f32e535819))
+- **fitter:** score LM/TRF residual over sparse mask set ([`0bdaf66`](https://github.com/jolars/eunoia/commit/0bdaf660613e70472cc1799171d383ae190900f1)), issue [#89](https://github.com/jolars/eunoia/issues/89)
 ## [0.15.0](https://github.com/jolars/eunoia/compare/v0.14.0...v0.15.0) (2026-05-12)
 
 ### Features
