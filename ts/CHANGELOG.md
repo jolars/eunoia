@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.15.0...eunoia-npm-v0.16.0) (2026-05-28)
+
+### Breaking changes
+- **plotting:** replace curved leaders with edge-coupled leader strategy ([`848c739`](https://github.com/jolars/eunoia/commit/848c739bfdbba21280f43e9ae5a9b725dbff0a4b))
+
+### Features
+- **plotting:** add elbow labeling strategy ([`79881eb`](https://github.com/jolars/eunoia/commit/79881ebc1515fb9afae8891143aad69b683bbf82))
+- **plotting:** replace curved leaders with edge-coupled leader strategy ([`848c739`](https://github.com/jolars/eunoia/commit/848c739bfdbba21280f43e9ae5a9b725dbff0a4b))
+- **ts:** add venn interface for canonical venn diagrams ([`4bd1304`](https://github.com/jolars/eunoia/commit/4bd13048fa41f64318fb7d039312bdc217cb7f56))
+- **plotting:** add curved leaders ([`33c160e`](https://github.com/jolars/eunoia/commit/33c160e7ed0f9fc6f016d413e67af9515bf83e30))
+
+### Bug Fixes
+- **ts:** set esModuleInterop to true ([`0de05d5`](https://github.com/jolars/eunoia/commit/0de05d533c85380612f05b3aaa125fc41cb3009f))
 ## [0.15.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.14.0...eunoia-npm-v0.15.0) (2026-05-12)
 
 ### Features
