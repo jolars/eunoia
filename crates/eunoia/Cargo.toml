@@ -21,7 +21,6 @@ i_overlay = "6"
 log = { version = "0.4", features = ["release_max_level_info"] }
 nalgebra = "0.34"
 num-complex = "0.4"
-polylabel-mini = "0.1"
 rand = "0.10"
 rayon = { version = "1.10", optional = true }
 

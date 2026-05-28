@@ -378,7 +378,6 @@ dependencies = [
  "log",
  "nalgebra",
  "num-complex",
- "polylabel-mini",
  "proptest",
  "rand 0.10.1",
  "rayon",
@@ -982,12 +981,6 @@ checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
 dependencies = [
  "plotters-backend",
 ]
-
-[[package]]
-name = "polylabel-mini"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faee212fadf37bc93666b566a657c78c7947f65bfe6bf9d81ce8f2a28ec1e4d1"
 
 [[package]]
 name = "portable-atomic"

@@ -4,9 +4,10 @@
 //! for plotting and export to other formats. They are not used in the core
 //! diagram computation.
 
-use crate::geometry::primitives::Point;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
-use polylabel_mini::polylabel;
+use crate::geometry::primitives::Point;
 
 /// A polygon defined by a sequence of vertices.
 ///
@@ -175,51 +176,7 @@ impl Polygon {
         if self.vertices.len() < 3 {
             return (self.centroid(), 0.0);
         }
-
-        // polylabel-mini short-circuits and returns (0, 0) when the polygon's
-        // *signed* shoelace area is negative (i.e. clockwise winding). Our
-        // callers (notably i_overlay's boolean-op output for subtracted
-        // regions) can legitimately produce clockwise rings, so we orient the
-        // vertex list counter-clockwise before handing it off.
-        let signed_area_x2: f64 = (0..self.vertices.len())
-            .map(|i| {
-                let j = (i + 1) % self.vertices.len();
-                self.vertices[i].x() * self.vertices[j].y()
-                    - self.vertices[j].x() * self.vertices[i].y()
-            })
-            .sum();
-
-        let oriented: Vec<Point> = if signed_area_x2 < 0.0 {
-            self.vertices.iter().rev().copied().collect()
-        } else {
-            self.vertices.clone()
-        };
-
-        let mut points: Vec<polylabel_mini::Point> = oriented
-            .iter()
-            .map(|p| polylabel_mini::Point { x: p.x(), y: p.y() })
-            .collect();
-
-        if let (Some(first), Some(last)) = (oriented.first(), oriented.last())
-            && ((first.x() - last.x()).abs() > 1e-10 || (first.y() - last.y()).abs() > 1e-10)
-        {
-            points.push(polylabel_mini::Point {
-                x: first.x(),
-                y: first.y(),
-            });
-        }
-
-        let exterior = polylabel_mini::LineString { points };
-        let poly = polylabel_mini::Polygon {
-            exterior,
-            interiors: vec![],
-        };
-
-        let pole = polylabel(&poly, precision);
-        let pole_pt = Point::new(pole.x, pole.y);
-
-        let distance = min_distance_to_boundary(&pole_pt, &oriented);
-        (pole_pt, distance)
+        polylabel(&self.vertices, self.centroid(), precision)
     }
 }
 
@@ -248,6 +205,136 @@ fn min_distance_to_boundary(point: &Point, vertices: &[Point]) -> f64 {
         }
     }
     best
+}
+
+fn point_in_polygon(x: f64, y: f64, vertices: &[Point]) -> bool {
+    let n = vertices.len();
+    if n < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = n - 1;
+    for i in 0..n {
+        let (xi, yi) = (vertices[i].x(), vertices[i].y());
+        let (xj, yj) = (vertices[j].x(), vertices[j].y());
+        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn signed_distance_to_polygon(x: f64, y: f64, vertices: &[Point]) -> f64 {
+    let d = min_distance_to_boundary(&Point::new(x, y), vertices);
+    if point_in_polygon(x, y, vertices) {
+        d
+    } else {
+        -d
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Cell {
+    x: f64,
+    y: f64,
+    h: f64,
+    d: f64,
+    max: f64,
+}
+
+impl Cell {
+    fn new(x: f64, y: f64, h: f64, vertices: &[Point]) -> Self {
+        let d = signed_distance_to_polygon(x, y, vertices);
+        let max = d + h * std::f64::consts::SQRT_2;
+        Self { x, y, h, d, max }
+    }
+}
+
+impl PartialEq for Cell {
+    fn eq(&self, other: &Self) -> bool {
+        self.max == other.max
+    }
+}
+
+impl Eq for Cell {}
+
+impl PartialOrd for Cell {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Cell {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.max.partial_cmp(&other.max).unwrap_or(Ordering::Equal)
+    }
+}
+
+/// Mapbox's polylabel algorithm: priority-queue quadtree subdivision over the
+/// polygon's bounding box, scored by signed distance to the boundary.
+/// Winding-agnostic — relies on a ray-cast point-in-polygon test rather than
+/// signed area.
+fn polylabel(vertices: &[Point], centroid: Point, precision: f64) -> (Point, f64) {
+    let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
+    let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for v in vertices {
+        if v.x() < min_x {
+            min_x = v.x();
+        }
+        if v.y() < min_y {
+            min_y = v.y();
+        }
+        if v.x() > max_x {
+            max_x = v.x();
+        }
+        if v.y() > max_y {
+            max_y = v.y();
+        }
+    }
+
+    let width = max_x - min_x;
+    let height = max_y - min_y;
+    let cell_size = width.min(height);
+    if cell_size <= 0.0 {
+        return (Point::new(min_x, min_y), 0.0);
+    }
+    let half = cell_size / 2.0;
+
+    let mut heap: BinaryHeap<Cell> = BinaryHeap::new();
+    let mut x = min_x;
+    while x < max_x {
+        let mut y = min_y;
+        while y < max_y {
+            heap.push(Cell::new(x + half, y + half, half, vertices));
+            y += cell_size;
+        }
+        x += cell_size;
+    }
+
+    let bbox_center = Cell::new(min_x + width / 2.0, min_y + height / 2.0, 0.0, vertices);
+    let centroid_cell = Cell::new(centroid.x(), centroid.y(), 0.0, vertices);
+    let mut best = if centroid_cell.d > bbox_center.d {
+        centroid_cell
+    } else {
+        bbox_center
+    };
+
+    while let Some(cell) = heap.pop() {
+        if cell.max - best.d <= precision {
+            continue;
+        }
+        if cell.d > best.d {
+            best = cell;
+        }
+        let h2 = cell.h / 2.0;
+        heap.push(Cell::new(cell.x - h2, cell.y - h2, h2, vertices));
+        heap.push(Cell::new(cell.x + h2, cell.y - h2, h2, vertices));
+        heap.push(Cell::new(cell.x - h2, cell.y + h2, h2, vertices));
+        heap.push(Cell::new(cell.x + h2, cell.y + h2, h2, vertices));
+    }
+
+    (Point::new(best.x, best.y), best.d.max(0.0))
 }
 
 #[cfg(test)]
@@ -355,5 +442,104 @@ mod tests {
         // Should be somewhere inside the triangle
         assert!(pole.x() >= 0.0 && pole.x() <= 1.0);
         assert!(pole.y() >= 0.0 && pole.y() <= 1.0);
+    }
+
+    #[test]
+    fn test_pole_clockwise_matches_counterclockwise() {
+        // Regression guard: polylabel-mini used to return (0, 0) for CW rings.
+        // The in-house implementation is winding-agnostic.
+        let ccw = vec![
+            Point::new(0.0, 0.0),
+            Point::new(4.0, 0.0),
+            Point::new(4.0, 1.0),
+            Point::new(1.0, 1.0),
+            Point::new(1.0, 4.0),
+            Point::new(0.0, 4.0),
+        ];
+        let cw: Vec<Point> = ccw.iter().rev().copied().collect();
+
+        let (pole_ccw, dist_ccw) = Polygon::new(ccw).pole_of_inaccessibility_with_distance(0.01);
+        let (pole_cw, dist_cw) = Polygon::new(cw).pole_of_inaccessibility_with_distance(0.01);
+
+        assert!((pole_ccw.x() - pole_cw.x()).abs() < 0.02);
+        assert!((pole_ccw.y() - pole_cw.y()).abs() < 0.02);
+        assert!((dist_ccw - dist_cw).abs() < 0.02);
+        assert!(dist_ccw > 0.0);
+    }
+
+    #[test]
+    fn test_pole_closed_ring_matches_open_ring() {
+        // The old code re-closed the ring before handing off; the rewrite
+        // should be agnostic to whether the input already repeats vertex 0.
+        let open = vec![
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 10.0),
+            Point::new(0.0, 10.0),
+        ];
+        let mut closed = open.clone();
+        closed.push(Point::new(0.0, 0.0));
+
+        let pole_open = Polygon::new(open).pole_of_inaccessibility(0.01);
+        let pole_closed = Polygon::new(closed).pole_of_inaccessibility(0.01);
+
+        assert!((pole_open.x() - pole_closed.x()).abs() < 0.02);
+        assert!((pole_open.y() - pole_closed.y()).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_pole_distance_positive_and_bounded_by_inradius() {
+        // 10x10 square: inradius is 5, so the pole's distance must be in (0, 5].
+        let polygon = Polygon::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 10.0),
+            Point::new(0.0, 10.0),
+        ]);
+        let (_, dist) = polygon.pole_of_inaccessibility_with_distance(0.01);
+        assert!(dist > 0.0);
+        assert!(dist <= 5.0 + 1e-9);
+        // Square's true inradius is 5; precision is 0.01, so dist should be close.
+        assert!((dist - 5.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_pole_thin_sliver() {
+        // Long thin rectangle: pole should sit on the long axis with
+        // distance equal to half the short side.
+        let polygon = Polygon::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 0.1),
+            Point::new(0.0, 0.1),
+        ]);
+        let (pole, dist) = polygon.pole_of_inaccessibility_with_distance(0.001);
+        assert!((pole.y() - 0.05).abs() < 0.01);
+        assert!(pole.x() > 0.05 && pole.x() < 9.95);
+        assert!((dist - 0.05).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_pole_concave_chevron() {
+        // Concave chevron whose centroid lies outside the polygon — the pole
+        // must end up inside and farther from the boundary than the centroid.
+        let polygon = Polygon::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(4.0, 0.0),
+            Point::new(2.0, 2.0),
+            Point::new(4.0, 4.0),
+            Point::new(0.0, 4.0),
+        ]);
+        let (pole, dist) = polygon.pole_of_inaccessibility_with_distance(0.01);
+        assert!(point_in_polygon(pole.x(), pole.y(), polygon.vertices()));
+        let centroid = polygon.centroid();
+        let centroid_dist = min_distance_to_boundary(&centroid, polygon.vertices());
+        let centroid_dist_signed =
+            if point_in_polygon(centroid.x(), centroid.y(), polygon.vertices()) {
+                centroid_dist
+            } else {
+                -centroid_dist
+            };
+        assert!(dist > centroid_dist_signed);
     }
 }
