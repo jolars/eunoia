@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.16.1](https://github.com/jolars/eunoia/compare/v0.16.0...v0.16.1) (2026-05-28)
+
+### Bug Fixes
+- **fitter:** perturb initial ellipse rotation per restart ([`171786f`](https://github.com/jolars/eunoia/commit/171786fe2844c6b16611f6324638bf4849564020))
+- **fitter:** race TRF from MDS init inside CmaEsTrf when LM stalls ([`f0b02c3`](https://github.com/jolars/eunoia/commit/f0b02c3d9565f63b6b8d19632ca119469011b441))
 ## [0.16.0](https://github.com/jolars/eunoia/compare/v0.15.0...v0.16.0) (2026-05-28)
 
 ### Breaking changes
