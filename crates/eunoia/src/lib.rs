@@ -38,7 +38,6 @@ pub mod spec;
 pub mod constants;
 pub mod venn;
 
-#[cfg(feature = "plotting")]
 pub mod plotting;
 
 // Internal test utilities. Also reachable from example binaries when the

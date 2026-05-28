@@ -3,21 +3,11 @@
 //! This example shows how to use the pole_of_inaccessibility method
 //! to find optimal label positions for polygons.
 //!
-//! Run with: cargo run --example label_placement --features plotting
+//! Run with: cargo run --example label_placement
 
-#[cfg(feature = "plotting")]
 use eunoia::geometry::primitives::Point;
-#[cfg(feature = "plotting")]
 use eunoia::geometry::shapes::Polygon;
 
-#[cfg(not(feature = "plotting"))]
-fn main() {
-    eprintln!("This example requires the 'plotting' feature.");
-    eprintln!("Run with: cargo run --example label_placement --features plotting");
-    std::process::exit(1);
-}
-
-#[cfg(feature = "plotting")]
 fn main() {
     println!("=== Label Placement Example ===\n");
 

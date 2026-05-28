@@ -256,8 +256,6 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     /// This is useful for visualization where you want to fill each region
     /// with a different color or pattern.
     ///
-    /// **Requires the `plotting` feature to be enabled.**
-    ///
     /// # Arguments
     ///
     /// * `spec` - The diagram specification
@@ -284,7 +282,6 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     ///     println!("{}: {} polygons", combination, polygons.len());
     /// }
     /// ```
-    #[cfg(feature = "plotting")]
     pub fn region_polygons(
         &self,
         spec: &DiagramSpec,
@@ -311,8 +308,6 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     /// routine needs from the fitted layout, with options for
     /// polygonization resolution and label-anchor precision.
     ///
-    /// **Requires the `plotting` feature to be enabled.**
-    ///
     /// # Examples
     ///
     /// ```
@@ -336,7 +331,6 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
     /// ```
     ///
     /// [`PlotData`]: crate::plotting::PlotData
-    #[cfg(feature = "plotting")]
     pub fn plot_data(
         &self,
         spec: &DiagramSpec,

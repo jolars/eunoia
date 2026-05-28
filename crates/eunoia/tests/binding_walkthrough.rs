@@ -15,9 +15,7 @@
 //!    now-public `classify_into_pieces` for one-shape output without
 //!    going through `decompose_regions`.
 //!
-//! Run with `cargo test --features plotting --test binding_walkthrough`.
-
-#![cfg(feature = "plotting")]
+//! Run with `cargo test --test binding_walkthrough`.
 
 use eunoia::geometry::primitives::Point;
 use eunoia::geometry::shapes::{Circle, Ellipse, Square};

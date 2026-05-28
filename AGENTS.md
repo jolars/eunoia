@@ -138,10 +138,10 @@ until fit time**:
    (`smooth_abs` Huber-style, `smooth_max` logsumexp) so gradient-based
    optimizers behave. Selected via `LossType`.
 
-5. **`plotting`** (feature `plotting`, on by default in the wasm build) — turns a
-   `Layout` into renderable output: region polygon extraction, clipping
-   (`i_overlay`), and **label placement** via poles of inaccessibility
-   (`polylabel-mini`). See also `LABEL_PLACEMENT_PLAN.md`.
+5. **`plotting`** — turns a `Layout` into renderable output: region polygon
+   extraction, clipping (`i_overlay`), and **label placement** via poles of
+   inaccessibility (`polylabel-mini`). Always available. See also
+   `LABEL_PLACEMENT_PLAN.md`.
 
 6. **`venn`** — canonical n-set Venn diagrams independent of the fitter (circles
    for n≤3, Wilkinson/Edwards ellipse arrangements for n=4..5).
@@ -168,7 +168,6 @@ the same `[x, y, ln(w·h), ln(w/h)]` rectangle encoding.
 
 - `parallel` — rayon-parallel restart loop. **Not** a default and intentionally
   off for wasm (no threads).
-- `plotting` — enables `i_overlay` and the `plotting` module.
 - `corpus` — exposes the shared test fixtures (`test_utils::corpus`) to example
   binaries and benches outside `cfg(test)`. Internal, not part of the public API.
 

@@ -180,12 +180,11 @@ Deferred from the axis-aligned `Square` PR (`crates/eunoia/src/geometry/shapes/s
 - [ ] **Rotated squares / general axis-aligned rectangles**. Axis-aligned
       `Square` keeps n-way intersections trivially axis-aligned. Rotation
       breaks that (the n-way intersection becomes a convex polygon), so a
-      rotated variant either gates on the `plotting` feature for polygon
-      clipping or pulls `i_overlay` into the core dependencies. Needs a
-      design pass before implementation. Same reasoning applies to general
-      axis-aligned `Rectangle` (currently a bounding-box primitive only,
-      not a `DiagramShape`); promoting it to `DiagramShape` is a separate
-      smaller change.
+      rotated variant would lean on `i_overlay` for polygon clipping.
+      Needs a design pass before implementation. Same reasoning applies
+      to general axis-aligned `Rectangle` (currently a bounding-box
+      primitive only, not a `DiagramShape`); promoting it to
+      `DiagramShape` is a separate smaller change.
 
 - [x] **Venn warm-start for `Square`**. Done: `venn_warm_start_params` in
       `fitter.rs` now dispatches via `TypeId` to a dedicated Square branch

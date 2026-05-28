@@ -107,9 +107,6 @@ struct LayoutDiagnostics {
 /// Compute one `(label_x, label_y)` per set via the canonical
 /// [`PlotData::set_anchors`] entry point, returning a map from set name to
 /// the hole-aware pole of inaccessibility of that set's exclusive region.
-///
-/// Returns the empty map if the build is missing the `plotting` feature; the
-/// caller should fall back to the shape's centre in that case.
 fn compute_set_label_anchors<S>(
     layout: &eunoia::Layout<S>,
     spec: &eunoia::spec::DiagramSpec,
@@ -2119,7 +2116,7 @@ pub fn generate_region_polygons_circles(
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
-    // Get region polygons using the plotting feature
+    // Get region polygons.
     let (region_anchors_map, set_anchors_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
@@ -2206,7 +2203,7 @@ pub fn generate_region_polygons_ellipses(
         .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
-    // Get region polygons using the plotting feature
+    // Get region polygons.
     let (region_anchors_map, set_anchors_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);

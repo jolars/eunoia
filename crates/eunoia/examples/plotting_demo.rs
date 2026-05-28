@@ -1,8 +1,7 @@
 //! Demonstrates the polygon clipping and region decomposition features.
 //!
-//! Run with: cargo run -p eunoia --example plotting_demo --features plotting
+//! Run with: cargo run -p eunoia --example plotting_demo
 
-#[cfg(feature = "plotting")]
 fn main() {
     use eunoia::Fitter;
     use eunoia::geometry::shapes::Circle;
@@ -80,11 +79,4 @@ fn main() {
     println!("  Expected total: {:.3}", expected_total);
     println!("  Difference: {:.3}", (total_area - expected_total).abs());
     println!("\nNote: Small differences are due to polygonization approximation.");
-}
-
-#[cfg(not(feature = "plotting"))]
-fn main() {
-    eprintln!("This example requires the 'plotting' feature.");
-    eprintln!("Run with: cargo run -p eunoia --example plotting_demo --features plotting");
-    std::process::exit(1);
 }

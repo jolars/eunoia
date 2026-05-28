@@ -568,7 +568,6 @@ pub fn classify_into_pieces(rings: Vec<Polygon>) -> Vec<RegionPiece> {
 /// Shared between [`poi_with_holes`] and the inscribed-rectangle search in
 /// [`crate::plotting::inscribed`]; both need the same per-point clearance
 /// calculation against an outer ring plus its holes.
-#[cfg(feature = "plotting")]
 pub(crate) fn min_dist_to_rings(px: f64, py: f64, rings: &[&[Point]]) -> f64 {
     let mut best = f64::INFINITY;
     for ring in rings {
@@ -601,7 +600,6 @@ pub(crate) fn min_dist_to_rings(px: f64, py: f64, rings: &[&[Point]]) -> f64 {
 /// Signed clearance of `(px, py)` to a region piece. Positive when the point
 /// lies inside `piece.outer` and outside every hole; negative otherwise.
 /// Magnitude is the minimum Euclidean distance to any ring.
-#[cfg(feature = "plotting")]
 pub(crate) fn signed_clearance(px: f64, py: f64, piece: &RegionPiece) -> f64 {
     let mut all: Vec<&[Point]> = Vec::with_capacity(1 + piece.holes.len());
     all.push(piece.outer.vertices());
@@ -631,7 +629,6 @@ pub(crate) fn signed_clearance(px: f64, py: f64, piece: &RegionPiece) -> f64 {
 ///
 /// Returns `None` when there are no pieces with positive area or every
 /// search-cell clearance comes out non-positive (degenerate input).
-#[cfg(feature = "plotting")]
 pub(crate) fn poi_with_holes(pieces: &[RegionPiece], precision: f64) -> Option<(Point, f64)> {
     let mut best_overall: Option<(Point, f64)> = None;
     for piece in pieces {

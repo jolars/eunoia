@@ -1,14 +1,10 @@
 //! Integration tests for the plotting module.
 
-#[cfg(feature = "plotting")]
 use eunoia::Fitter;
-#[cfg(feature = "plotting")]
 use eunoia::geometry::shapes::Circle;
-#[cfg(feature = "plotting")]
 use eunoia::spec::{DiagramSpecBuilder, InputType};
 
 #[test]
-#[cfg(feature = "plotting")]
 fn test_region_decomposition_two_sets() {
     let spec = DiagramSpecBuilder::new()
         .set("A", 10.0)
@@ -39,7 +35,6 @@ fn test_region_decomposition_two_sets() {
 }
 
 #[test]
-#[cfg(feature = "plotting")]
 fn test_region_decomposition_three_sets() {
     let spec = DiagramSpecBuilder::new()
         .set("A", 5.0)
@@ -72,7 +67,6 @@ fn test_region_decomposition_three_sets() {
 }
 
 #[test]
-#[cfg(feature = "plotting")]
 fn test_region_polygons_with_ellipses() {
     use eunoia::geometry::shapes::Ellipse;
 

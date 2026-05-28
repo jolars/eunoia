@@ -6,7 +6,6 @@
 
 use crate::geometry::primitives::Point;
 
-#[cfg(feature = "plotting")]
 use polylabel_mini::polylabel;
 
 /// A polygon defined by a sequence of vertices.
@@ -159,7 +158,6 @@ impl Polygon {
     /// let pole = polygon.pole_of_inaccessibility(0.1);
     /// // pole will be near (0.5625, 0.5625) - much better than centroid for L-shapes
     /// ```
-    #[cfg(feature = "plotting")]
     pub fn pole_of_inaccessibility(&self, precision: f64) -> Point {
         self.pole_of_inaccessibility_with_distance(precision).0
     }
@@ -173,7 +171,6 @@ impl Polygon {
     /// that best fits a label.
     ///
     /// [`pole_of_inaccessibility`]: Self::pole_of_inaccessibility
-    #[cfg(feature = "plotting")]
     pub fn pole_of_inaccessibility_with_distance(&self, precision: f64) -> (Point, f64) {
         if self.vertices.len() < 3 {
             return (self.centroid(), 0.0);
@@ -226,7 +223,6 @@ impl Polygon {
     }
 }
 
-#[cfg(feature = "plotting")]
 fn min_distance_to_boundary(point: &Point, vertices: &[Point]) -> f64 {
     if vertices.len() < 2 {
         return 0.0;
@@ -293,7 +289,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "plotting")]
     fn test_pole_of_inaccessibility_square() {
         // For a square, pole should be near the center
         let polygon = Polygon::new(vec![
@@ -310,7 +305,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "plotting")]
     fn test_pole_of_inaccessibility_l_shape() {
         // L-shaped polygon - pole should be better than centroid
         let polygon = Polygon::new(vec![
@@ -336,7 +330,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "plotting")]
     fn test_pole_of_inaccessibility_circle() {
         // For a circle polygon, pole should be at center
         let circle = Circle::new(Point::new(3.0, 4.0), 5.0);
@@ -350,7 +343,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "plotting")]
     fn test_pole_degenerate_polygon() {
         // Triangle (should not panic)
         let polygon = Polygon::new(vec![

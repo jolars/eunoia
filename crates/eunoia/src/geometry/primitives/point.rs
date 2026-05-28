@@ -4,7 +4,6 @@ use crate::geometry::projective::HomogeneousPoint;
 use crate::geometry::shapes::Ellipse;
 use crate::geometry::traits::Distance;
 
-#[cfg(feature = "plotting")]
 use i_overlay::i_float::float::compatible::FloatPointCompatible;
 
 /// A point in 2D Cartesian space.
@@ -177,7 +176,6 @@ impl Distance for Point {
     }
 }
 
-#[cfg(feature = "plotting")]
 impl FloatPointCompatible for Point {
     type Scalar = f64;
 
