@@ -230,8 +230,9 @@ impl Default for FinalLayoutConfig {
 /// Returns the optimized parameters as a flat vector along with the loss.
 pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
-    initial_positions: &[f64], // [x0, y0, x1, y1, ..., xn, yn]
-    initial_radii: &[f64],     // [r0, r1, ..., rn]
+    initial_positions: &[f64],         // [x0, y0, x1, y1, ..., xn, yn]
+    initial_radii: &[f64],             // [r0, r1, ..., rn]
+    initial_rotations: Option<&[f64]>, // [φ0, φ1, …]; only honoured for ellipse-like 5-param shapes
     config: FinalLayoutConfig,
 ) -> Result<(Vec<f64>, f64), DiagramError> {
     let n_sets = spec.n_sets;
@@ -272,7 +273,24 @@ pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
             let x = positions[i * 2];
             let y = positions[i * 2 + 1];
             let r = initial_radii[i];
-            initial_params.extend(S::optimizer_params_from_circle(x, y, r));
+            let mut p = S::optimizer_params_from_circle(x, y, r);
+            // Seed the rotation for ellipse-like 5-param shapes when the caller
+            // supplied per-shape rotations. The MDS init has no rotational
+            // information (`mds_target_distance` treats every ellipse as a
+            // circle of equal area), so without a seeded rotation every
+            // restart starts at `φ = 0` and the local solver is stuck along
+            // that ridge on inputs whose true orientation is far from 0
+            // (e.g. needle-in-blob 3-ellipse configurations where 13/16
+            // master seeds fail at `n_restarts = 10` without rotational
+            // diversity). For circles, squares, and rectangles `n_params != 5`
+            // so this is a no-op.
+            if params_per_shape == 5
+                && let Some(rotations) = initial_rotations
+                && let Some(&theta) = rotations.get(i)
+            {
+                p[4] = theta;
+            }
+            initial_params.extend(p);
         }
         // Append container init params when the spec carries a complement.
         // Container init: centred on the (perturbed) MDS positions, square
@@ -1510,7 +1528,7 @@ mod tests {
             gtol: None,
         };
 
-        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
+        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, None, config);
         assert!(result.is_ok());
 
         let (final_params, loss) = result.unwrap();
@@ -1591,7 +1609,7 @@ mod tests {
             gtol: None,
         };
 
-        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
+        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, None, config);
         assert!(result.is_ok());
 
         let (_, loss) = result.unwrap();
@@ -1640,7 +1658,7 @@ mod tests {
             gtol: None,
         };
 
-        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
+        let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, None, config);
         assert!(result.is_ok());
 
         let (_final_pos, loss) = result.unwrap();
@@ -1701,7 +1719,7 @@ mod tests {
                 gtol: None,
             };
 
-            let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, config);
+            let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, None, config);
             assert!(result.is_ok(), "Optimization failed for config {}", i);
 
             let (_, loss) = result.unwrap();
@@ -2751,7 +2769,8 @@ mod tests {
             };
             let t0 = Instant::now();
             let (_p_an, loss_an) =
-                optimize_layout::<Circle>(&spec, &positions, &radii, cfg_an).expect("analytic fit");
+                optimize_layout::<Circle>(&spec, &positions, &radii, None, cfg_an)
+                    .expect("analytic fit");
             let dt_an = t0.elapsed();
 
             // FD path: SumAbsoute has no compute_with_gradient → falls back to FD.
@@ -2770,7 +2789,7 @@ mod tests {
             };
             let t0 = Instant::now();
             let (_p_fd, loss_fd) =
-                optimize_layout::<Circle>(&spec, &positions, &radii, cfg_fd).expect("fd fit");
+                optimize_layout::<Circle>(&spec, &positions, &radii, None, cfg_fd).expect("fd fit");
             let dt_fd = t0.elapsed();
 
             eprintln!(

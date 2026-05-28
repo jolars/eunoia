@@ -865,10 +865,30 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     return Ok((params, 0.0));
                 }
 
+                // Per-restart rotational diversity for ellipse-like 5-param
+                // shapes. The MDS init has no rotational information (it
+                // treats every ellipse as a circle of equal area), so without
+                // this every restart starts at `φ = 0` and the local solver
+                // is pinned along that ridge on inputs whose true orientation
+                // is far from 0. Attempt 0 keeps `φ = 0` to preserve the
+                // existing behaviour as the baseline; later attempts draw a
+                // uniform random rotation from `[0, π)` per shape. For
+                // non-ellipse shapes the array is `None` and the rotation
+                // hook in `optimize_layout` is a no-op.
+                let initial_rotations: Option<Vec<f64>> = if S::n_params() == 5 && attempt_idx > 0 {
+                    Some(
+                        (0..n_sets)
+                            .map(|_| attempt_rng.random_range(0.0..std::f64::consts::PI))
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
                 match final_layout::optimize_layout::<S>(
                     &spec,
                     &initial_positions,
                     &initial_radii,
+                    initial_rotations.as_deref(),
                     final_config,
                 ) {
                     Ok((params, loss)) => Ok((params, loss)),
