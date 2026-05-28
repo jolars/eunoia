@@ -793,7 +793,7 @@ impl<S: DiagramShape + Copy + 'static> basin::Gradient for BasinDiagramCost<'_, 
 /// `basin::BoundedCmaEs` runs on the nalgebra backend directly — the whole tree
 /// is aligned on a single nalgebra, so basin's vector type *is*
 /// [`DVector<f64>`]. Box bounds live on the problem (basin's tenet 4); the
-/// solver's adaptive quadratic penalty reads them through [`BoxConstrained`].
+/// solver's adaptive quadratic penalty reads them through [`BoxConstraints`].
 struct BoundedDiagramCost<'a, S: DiagramShape + Copy + 'static> {
     inner: DiagramCost<'a, S>,
     lower: DVector<f64>,
@@ -814,7 +814,7 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedDiagramCos
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> basin::BoxConstrained for BoundedDiagramCost<'_, S> {
+impl<S: DiagramShape + Copy + 'static> basin::BoxConstraints for BoundedDiagramCost<'_, S> {
     fn lower(&self) -> &DVector<f64> {
         &self.lower
     }
@@ -828,8 +828,8 @@ impl<S: DiagramShape + Copy + 'static> basin::BoxConstrained for BoundedDiagramC
 /// (trust-region-reflective) solver — [`Optimizer::Trf`].
 ///
 /// Delegates `Residual`/`Jacobian` to the inner least-squares problem
-/// unchanged and adds the box bounds `Trf` requires via [`BoxConstrained`].
-/// The `CostFunction` impl exists only to satisfy basin's `BoxConstrained:
+/// unchanged and adds the box bounds `Trf` requires via [`BoxConstraints`].
+/// The `CostFunction` impl exists only to satisfy basin's `BoxConstraints:
 /// CostFunction` supertrait bound — `Trf` computes `½‖r‖²` from the residual
 /// directly and never queries `cost()`, so it carries no extra kernel
 /// evaluations on the solve path.
@@ -862,14 +862,14 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedLmDiagramP
     type Output = f64;
 
     fn cost(&self, x: &DVector<f64>) -> f64 {
-        // Present only for the `BoxConstrained: CostFunction` bound; `Trf`
+        // Present only for the `BoxConstraints: CostFunction` bound; `Trf`
         // never calls this. Mirror its `½‖r‖²` convention so any incidental
         // query stays consistent with `state.cost`.
         0.5 * basin::Residual::residual(&self.inner, x).norm_squared()
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> basin::BoxConstrained for BoundedLmDiagramProblem<'_, S> {
+impl<S: DiagramShape + Copy + 'static> basin::BoxConstraints for BoundedLmDiagramProblem<'_, S> {
     fn lower(&self) -> &DVector<f64> {
         &self.lower
     }

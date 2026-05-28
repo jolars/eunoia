@@ -299,7 +299,7 @@ struct SeparationCost {
     r2: f64,
     target_overlap: f64,
     /// Lower / upper of the feasible centre-distance bracket, stored so
-    /// `basin::Brent` can read them via [`basin::BoxConstrained`].
+    /// `basin::Brent` can read them via [`basin::BoxConstraints`].
     lower: f64,
     upper: f64,
 }
@@ -317,7 +317,7 @@ impl basin::CostFunction for SeparationCost {
     }
 }
 
-impl basin::BoxConstrained for SeparationCost {
+impl basin::BoxConstraints for SeparationCost {
     fn lower(&self) -> &f64 {
         &self.lower
     }
@@ -458,7 +458,7 @@ pub(crate) fn distance_for_overlap(
     // `tol` is the relative x-tolerance on the centre distance. The default
     // `sqrt(machine epsilon)` matches eulerr; `Brent::new` uses the same
     // relative tolerance with a `1e-12` absolute floor. basin's `Brent` reads
-    // the `[min_distance, max_distance]` bracket from `BoxConstrained`, seeded
+    // the `[min_distance, max_distance]` bracket from `BoxConstraints`, seeded
     // at the bracket midpoint. `state.param` tracks the incumbent minimiser,
     // so the final value is the best distance found.
     let solver = match tol {
