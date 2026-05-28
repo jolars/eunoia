@@ -184,17 +184,20 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // `examples/quality_report`.
             // CMA-ES global escape with a box-constrained TRF polish,
             // threshold-fired (see `cmaes_fallback_threshold`) so easy specs
-            // pay no extra wall time. The escape closes specs LM-on-LM gets
-            // stuck on (`issue92_3_set_dropped_pair` 1.3e-4 → 1.5e-29,
+            // pay no extra wall time. Above threshold the path also races a
+            // bounded TRF retry from the same MDS init against plain LM
+            // (closes `three_inside_fourth` seed=1's LM-only 1.5e-2 stall to
+            // ~3.7e-11 — TRF's box reaches a basin unconstrained LM doesn't
+            // from the same seed). If the better of the two is still above
+            // threshold the CMA-ES escape closes specs purely-local solvers
+            // get stuck on (`issue92_3_set_dropped_pair` 1.3e-4 → 1.5e-29,
             // `random_4_set` 8.5e-3 → 4.1e-3); the bounded TRF polish then
-            // refines inside the feasible box rather than letting unbounded LM
-            // wander, picking up further wins on the `examples/quality_report`
-            // sweep (ellipse `three_inside_fourth` 1.4e-7 → ~5e-18, rectangle
-            // `unequal_overlaps` 1.7e-2 → 1.6e-2). It trades one small,
-            // bound-independent regression (circle `issue103` 4.6e-3 → 4.8e-3,
-            // an intrinsic TRF-vs-LM stopping difference) for net-positive
-            // quality elsewhere — see `Optimizer::CmaEsTrf`. Use
-            // `Optimizer::CmaEsLm` for the previous unbounded-LM-polish path.
+            // refines inside the feasible box rather than letting unbounded
+            // LM wander. It trades one small, bound-independent regression
+            // (circle `issue103` 4.6e-3 → 4.8e-3, an intrinsic TRF-vs-LM
+            // stopping difference) for net-positive quality elsewhere — see
+            // `Optimizer::CmaEsTrf`. Use `Optimizer::CmaEsLm` for the
+            // previous unbounded-LM-polish path.
             optimizer_pool: vec![Optimizer::CmaEsTrf],
             // Default loss threshold below which the CMA-ES global stage is
             // skipped. Consulted by `Optimizer::CmaEsTrf` / `Optimizer::CmaEsLm`.

@@ -113,16 +113,19 @@ pub enum Optimizer {
     /// unbounded LM to box-constrained [`Trf`](Optimizer::Trf). **Default for
     /// [`Fitter`].**
     ///
-    /// Same threshold-fired structure: plain LM first, and if it stalls above
-    /// `cmaes_fallback_threshold`, a bounded CMA-ES global escape — but the
-    /// best CMA-ES candidate is then refined with the **bounded** TRF polish
-    /// (under `BoundsEnvelope::LOCAL`) instead of unbounded LM, so the
-    /// refinement can't wander outside the feasible box. Combines the global
-    /// escape (which fixes the wrong-basin specs a purely local solver
-    /// regresses on) with the bounded local refinement (which wins
-    /// extreme-scale / nested specs). The lower-loss of {plain LM, CMA-ES →
-    /// TRF polish} is returned, so it is strictly non-regressing vs
-    /// `LevenbergMarquardt` like `CmaEsLm`.
+    /// Threshold-fired structure: plain LM first, and if it stalls above
+    /// `cmaes_fallback_threshold` a **bounded TRF retry from the same MDS
+    /// init** is raced against it. LM and TRF reach different basins on a
+    /// handful of specs (TRF closes `three_inside_fourth` seed=1's LM 1.5e-2
+    /// stall to ~3.7e-11; LM finds `gene_sets`'s 5.1e-8 basin TRF can't
+    /// reach from the MDS init), so racing both is what keeps the path
+    /// strictly non-regressing on each spec individually. If the better of
+    /// the two is still above threshold, a bounded CMA-ES global escape
+    /// runs and its best candidate is refined with the same **bounded** TRF
+    /// polish (under `BoundsEnvelope::LOCAL`), so the refinement can't
+    /// wander outside the feasible box. The lowest-loss of {plain LM,
+    /// TRF-from-init, CMA-ES → TRF polish} is returned, so it is strictly
+    /// non-regressing vs `LevenbergMarquardt` like `CmaEsLm`.
     ///
     /// On the `examples/quality_report` sweep this matches `CmaEsLm` on nearly
     /// every spec, wins a few (ellipse `three_inside_fourth`, rectangle
@@ -389,11 +392,17 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
             params_per_shape,
             initial_param,
             config,
+            None,
             run_lm_or_lbfgs::<S>,
         )?,
-        Optimizer::CmaEsTrf => {
-            run_cmaes_escape::<S>(spec, params_per_shape, initial_param, config, run_trf::<S>)?
-        }
+        Optimizer::CmaEsTrf => run_cmaes_escape::<S>(
+            spec,
+            params_per_shape,
+            initial_param,
+            config,
+            Some(run_trf::<S>),
+            run_trf::<S>,
+        )?,
     };
 
     Ok((final_params, loss))
@@ -564,32 +573,54 @@ type FinalSolver = fn(
 /// 1. Run plain LM. If it lands at or below `config.cmaes_fallback_threshold`,
 ///    return immediately — CMA-ES wouldn't beat that and would only burn
 ///    ~1k–2k extra evals per restart, so easy specs pay no extra wall time.
-/// 2. Otherwise LM is stuck in a wrong basin (issue92, eulerape, …). Run
-///    bounded CMA-ES, then refine its best candidate with `polish` — unbounded
-///    [`run_lm_or_lbfgs`] for `CmaEsLm`, bounded [`run_trf`] for `CmaEsTrf`.
-///    The bounded TRF polish keeps the refinement inside the box CMA-ES
-///    explored; the unbounded LM polish picks up the analytic Jacobian for
-///    free. Either way, return the lower-loss of {LM-only, CMA-ES → polish},
-///    so the path is strictly non-regressing vs `LevenbergMarquardt` even if
-///    CMA-ES wanders into a worse basin (the guard that fixed
-///    `issue47_3_set_huge_triple`).
+/// 2. If `baseline_extra` is `Some` (the `CmaEsTrf` case — TRF from the MDS
+///    init), race it against LM and use the lower-loss of the two as the
+///    baseline. LM and TRF reach *different* basins on a handful of specs:
+///    TRF's box constraint finds a basin LM misses on `three_inside_fourth`
+///    seed=1 (LM stalls at 2.97e-3, TRF reaches ~1e-18), and LM's unbounded
+///    steps find a basin TRF can't on `gene_sets` (LM 5.1e-8, TRF 5.1e-5,
+///    and CMA-ES + TRF polish doesn't rediscover LM's basin). Racing both
+///    is what makes the path strictly non-regressing on each spec
+///    individually. If the better baseline drops at or below the threshold,
+///    return it — CMA-ES adds no value below threshold and would only burn
+///    evals.
+/// 3. Otherwise both local solvers are stuck in a wrong basin (issue92,
+///    eulerape, …). Run bounded CMA-ES, then refine its best candidate with
+///    `polish` — unbounded [`run_lm_or_lbfgs`] for `CmaEsLm`, bounded
+///    [`run_trf`] for `CmaEsTrf`. The bounded TRF polish keeps the
+///    refinement inside the box CMA-ES explored; the unbounded LM polish
+///    picks up the analytic Jacobian for free. Return the lowest-loss of
+///    {baseline, CMA-ES → polish}, so the path is strictly non-regressing
+///    vs the local solvers even if CMA-ES wanders into a worse basin (the
+///    guard that fixed `issue47_3_set_huge_triple`).
 fn run_cmaes_escape<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
     params_per_shape: usize,
     initial_param: &DVector<f64>,
     config: &FinalLayoutConfig,
+    baseline_extra: Option<FinalSolver>,
     polish: FinalSolver,
 ) -> Result<(DVector<f64>, f64), DiagramError> {
     let lm_only = run_lm_or_lbfgs::<S>(spec, params_per_shape, initial_param, config)?;
     if lm_only.1 <= config.cmaes_fallback_threshold {
         return Ok(lm_only);
     }
+    let mut baseline = lm_only;
+    if let Some(extra) = baseline_extra {
+        let alt = extra(spec, params_per_shape, initial_param, config)?;
+        if alt.1 < baseline.1 {
+            baseline = alt;
+        }
+        if baseline.1 <= config.cmaes_fallback_threshold {
+            return Ok(baseline);
+        }
+    }
     let cma_seed = run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config);
     let cma_polish = polish(spec, params_per_shape, &cma_seed, config)?;
-    Ok(if cma_polish.1 < lm_only.1 {
+    Ok(if cma_polish.1 < baseline.1 {
         cma_polish
     } else {
-        lm_only
+        baseline
     })
 }
 
