@@ -296,13 +296,6 @@ roadmap didn't require but would tighten the surface.
       `PlacementError::Unimplemented` (see `plotting/placement.rs`). Moved
       from `AGENTS.md` "Open work" 2026-05-22.
 
-- [ ] **Tighter inscribed-rectangle solver**. `largest_inscribed_rect`
-      currently bounds the label rectangle by a radial clearance from the
-      region's POI; replace it with directional (per-edge) clearance to the
-      region boundary so labels fill anisotropic regions (thin crescents,
-      elongated lenses) more fully. Moved from `AGENTS.md` "Open work"
-      2026-05-22.
-
 ## Language bindings
 
 - [ ] **Julia bindings**. The core is platform-independent and designed

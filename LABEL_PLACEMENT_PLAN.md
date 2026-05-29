@@ -88,7 +88,7 @@ renderer (`leader.ts`) needed no change — it already draws arbitrary polylines
 
 Phase 1 (already shipped) added a *predicate* layer for label fit-checks:
 
-- Rust core: `fit_label_in_region(pieces, w, h, precision) -> Option<Point>` and `fit_labels_in_regions(regions, sizes, precision) -> HashMap<String, Point>` in `crates/eunoia/src/plotting/inscribed.rs`. Built on top of the existing `largest_inscribed_rect` (radial-conservative bound).
+- Rust core: `fit_label_in_region(pieces, w, h, precision) -> Option<Point>` and `fit_labels_in_regions(regions, sizes, precision) -> HashMap<String, Point>` in `crates/eunoia/src/plotting/inscribed.rs`. Built on top of `largest_inscribed_rect` (POI-centred directional clearance).
 - WASM: `compute_region_label_placements(...)` (re-fits the diagram) and `fit_labels_for_polygons(polygons_json, sizes_json, precision)` (operates on already-decomposed regions, no re-fit) in `crates/eunoia-wasm/src/lib.rs`.
 - TS wrapper: `placeRegionLabels({ sets, sizes, ... })` and `placeRegionLabelsForRegions({ regions, sizes, precision })` in `ts/index.ts`.
 - Web demo (`web/src/lib/components/DiagramSvg.svelte`): hidden `<text data-fit-region="...">` measured via `getBBox()`, fit-check called per-region, labels gated on the result.
@@ -231,7 +231,7 @@ Open algorithmic questions worth resolving during implementation:
 
 5. **Docs** (`AGENTS.md`):
    - Update the "Current Status" entry for label-anchor utilities to mention the new placement API + the `Strict + Raycast` default.
-   - Note the deferred strategy variants under "Future Considerations" alongside the existing radial-conservative-bound follow-up.
+   - Note the deferred strategy variants under "Future Considerations".
 
 ## Open questions to confirm before implementing
 
@@ -247,7 +247,6 @@ Open algorithmic questions worth resolving during implementation:
 - `ExteriorPolicy::None` implementation (caller can use `fit_labels_in_regions` predicate directly for that).
 - `ExteriorPolicy::ForceDirected` implementation.
 - Inter-label collision avoidance (force-directed handles this when implemented).
-- Tighter inscribed-rectangle bound (existing follow-up on `largest_inscribed_rect`).
 - Exterior leader-line entry-point refinement (use POI as tether for now).
 
 ## Verification

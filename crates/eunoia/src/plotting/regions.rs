@@ -407,7 +407,7 @@ fn signed_polygon_area(p: &Polygon) -> f64 {
     0.5 * s
 }
 
-fn point_in_polygon(p: &Point, poly: &Polygon) -> bool {
+pub(crate) fn point_in_polygon(p: &Point, poly: &Polygon) -> bool {
     let v = poly.vertices();
     let n = v.len();
     if n < 3 {

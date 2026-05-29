@@ -13,7 +13,7 @@
 
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::{Polygon, Rectangle};
-use crate::plotting::regions::{RegionPiece, poi_with_holes, signed_clearance};
+use crate::plotting::regions::{RegionPiece, poi_with_holes, point_in_polygon, signed_clearance};
 
 /// Best-effort largest axis-aligned rectangle of the given `aspect_ratio`
 /// (width / height) inscribed in the union of `pieces` (each piece's outer
@@ -25,36 +25,30 @@ use crate::plotting::regions::{RegionPiece, poi_with_holes, signed_clearance};
 /// `aspect_ratio = 1.0` is a square; `aspect_ratio = 2.0` is "twice as wide
 /// as tall". Values `<= 0.0` return `None`.
 ///
-/// # Algorithm (radial-conservative)
+/// # Algorithm (directional clearance, POI-centred)
 ///
-/// The rectangle is inscribed inside the largest empty disc that fits
-/// entirely inside the region (i.e. inside the outer boundary and outside
-/// every hole). With `r` the signed clearance at the optimal centre,
+/// The rectangle is centred at the region's hole-aware pole of
+/// inaccessibility (POI) — the same anchor every other label-position in
+/// the crate uses, including [`crate::plotting::PlotData::region_anchors`].
+/// With the centre fixed, the rectangle's short side `s` is found by
+/// binary search up to `precision`: at each step a hole-aware containment
+/// predicate decides whether an axis-aligned `a·s × s` rectangle (with
+/// `a = aspect_ratio`) fits inside the winning piece's outer boundary and
+/// outside every hole. The search is monotone (fits at `s` ⇒ fits at any
+/// smaller `s`) so bisection is sound.
 ///
-/// ```text
-/// half_width  = r * a / sqrt(1 + a^2)
-/// half_height = r     / sqrt(1 + a^2)
-/// ```
-///
-/// where `a = aspect_ratio`. Because this rectangle objective is monotonic
-/// in `r`, the search reduces to the same hole-aware pole of
-/// inaccessibility that [`crate::plotting::PlotData::region_anchors`]
-/// already computes, so the returned centre coincides with the region's
-/// POI.
-///
-/// **Tradeoff**: this is conservative for high-aspect targets in regions
-/// that are wide-and-short (or tall-and-narrow) — a directional-clearance
-/// solve would yield a larger rectangle. The radial form is correct (the
-/// returned rectangle is always strictly inscribed) and answers the
-/// "does my label fit?" question well; a tighter solve is a planned
-/// follow-up.
+/// The search is seeded with the radial-disc result
+/// (`s = 2r/√(1+a²)` from the POI's signed clearance `r`) as its
+/// guaranteed-fitting lower bound, so the returned rectangle is never
+/// smaller than the inscribed-disc bound — and is typically much larger
+/// in anisotropic regions (thin lenses, wide-and-short slabs, crescents).
 ///
 /// # Fit score
 ///
 /// `score = (achieved short side) / min(outer_bbox_width, outer_bbox_height)`
 /// of the *winning piece* (the piece whose interior contains the centre),
 /// clamped to `[0, 1]`. A value near `1.0` means the rectangle saturates
-/// the available short dimension; a value near `0.0` means the region
+/// the region's short dimension; a value near `0.0` means the region
 /// won't comfortably hold a rectangular label.
 ///
 /// # Returns
@@ -77,7 +71,7 @@ use crate::plotting::regions::{RegionPiece, poi_with_holes, signed_clearance};
 /// ]);
 /// let pieces = vec![RegionPiece { outer, holes: vec![] }];
 /// let (rect, score) = largest_inscribed_rect(&pieces, 1.0, 0.01).unwrap();
-/// assert!(score > 0.6); // ≈ 1/sqrt(2) under the radial-conservative bound
+/// assert!(score > 0.95); // directional bound ≈ 1.0 for the bbox-aligned square
 /// assert!(rect.width() > 0.0 && rect.height() > 0.0);
 /// ```
 pub fn largest_inscribed_rect(
@@ -94,11 +88,6 @@ pub fn largest_inscribed_rect(
         return None;
     }
 
-    let inv = 1.0 / (1.0 + aspect_ratio * aspect_ratio).sqrt();
-    let half_w = r * aspect_ratio * inv;
-    let half_h = r * inv;
-    let rect = Rectangle::new(centre, 2.0 * half_w, 2.0 * half_h);
-
     // Identify the winning piece — the one whose interior contains the POI
     // centre. Pieces are disjoint by construction, so at most one matches;
     // if numerical noise leaves several with positive clearance we pick the
@@ -114,6 +103,9 @@ pub fn largest_inscribed_rect(
     }
     let winning = winning?;
 
+    // Outer-bbox of the winning piece, used both for the score denominator
+    // and as the upper cap on the binary-search range (no rect can exceed
+    // the bbox of the polygon it's inscribed in).
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
@@ -124,15 +116,164 @@ pub fn largest_inscribed_rect(
         min_y = min_y.min(p.y());
         max_y = max_y.max(p.y());
     }
-    let bbox_short = (max_x - min_x).min(max_y - min_y);
+    let bbox_w = max_x - min_x;
+    let bbox_h = max_y - min_y;
+    let bbox_short = bbox_w.min(bbox_h);
+    if bbox_short <= 0.0 {
+        return None;
+    }
+
+    // Binary search the short side `s`. With aspect `a = aspect_ratio`,
+    // width = a·s and height = s, so the bbox caps `s` at
+    // `min(bbox_h, bbox_w / a)`.
+    let cx = centre.x();
+    let cy = centre.y();
+    let a = aspect_ratio;
+    let inv = 1.0 / (1.0 + a * a).sqrt();
+    let s_radial = 2.0 * r * inv;
+    let s_cap = bbox_h.min(bbox_w / a);
+    let mut lo = s_radial.min(s_cap);
+    let mut hi = s_cap;
+    let precision_clamped = precision.max(1e-12);
+    let mut iters = 0;
+    while hi - lo > precision_clamped && iters < 64 {
+        let mid = 0.5 * (lo + hi);
+        let hw = 0.5 * a * mid;
+        let hh = 0.5 * mid;
+        if rect_fits_in_piece(winning, cx, cy, hw, hh) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+        iters += 1;
+    }
+    let s = lo;
+    let half_w = 0.5 * a * s;
+    let half_h = 0.5 * s;
+    let rect = Rectangle::new(centre, 2.0 * half_w, 2.0 * half_h);
+
     let achieved_short = (2.0 * half_w).min(2.0 * half_h);
-    let score = if bbox_short > 0.0 {
-        (achieved_short / bbox_short).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let score = (achieved_short / bbox_short).clamp(0.0, 1.0);
 
     Some((rect, score))
+}
+
+/// Hole-aware test: does the axis-aligned rectangle centred at `(cx, cy)`
+/// with half-extents `(hw, hh)` fit entirely inside `piece` (inside the
+/// outer ring and outside every hole)?
+///
+/// Combines four cheap checks, any failing returns false:
+///
+/// 1. All 4 corners lie inside `piece.outer`.
+/// 2. No corner lies inside any hole.
+/// 3. No outer-ring edge crosses any of the rect's 4 axis-aligned edges.
+/// 4. No hole-ring edge crosses any rect edge.
+/// 5. No hole lies entirely inside the rect (any single hole vertex inside
+///    the rect AABB while no hole edge crossed any rect edge ⇒ contained).
+///
+/// Edge-vs-axis-aligned-edge intersection uses strict inequalities so
+/// touching the boundary from inside counts as fitting (which is what a
+/// label inscribed up to the boundary should be).
+fn rect_fits_in_piece(piece: &RegionPiece, cx: f64, cy: f64, hw: f64, hh: f64) -> bool {
+    if hw <= 0.0 || hh <= 0.0 {
+        return false;
+    }
+    let xl = cx - hw;
+    let xr = cx + hw;
+    let yb = cy - hh;
+    let yt = cy + hh;
+    let corners = [
+        Point::new(xl, yb),
+        Point::new(xr, yb),
+        Point::new(xr, yt),
+        Point::new(xl, yt),
+    ];
+    for c in &corners {
+        if !point_in_polygon(c, &piece.outer) {
+            return false;
+        }
+    }
+    for hole in &piece.holes {
+        for c in &corners {
+            if point_in_polygon(c, hole) {
+                return false;
+            }
+        }
+    }
+    if ring_crosses_rect(piece.outer.vertices(), xl, xr, yb, yt) {
+        return false;
+    }
+    for hole in &piece.holes {
+        if ring_crosses_rect(hole.vertices(), xl, xr, yb, yt) {
+            return false;
+        }
+        // Step 5: if a hole's edges never cross the rect (caught above) and
+        // no rect corner sits inside the hole (caught above), the hole is
+        // either entirely inside the rect or entirely outside. A single hole
+        // vertex inside the rect AABB tells us which.
+        if let Some(p) = hole.vertices().first()
+            && p.x() > xl
+            && p.x() < xr
+            && p.y() > yb
+            && p.y() < yt
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// Does any segment of `verts` (treated as a closed ring) cross any of the
+/// 4 axis-aligned edges of the rectangle `[xl, xr] × [yb, yt]`?
+///
+/// For each ring segment `(a, b)` and each rect edge, we use the
+/// axis-aligned specialisation of segment-vs-segment intersection: a
+/// segment crosses a horizontal line `y = y0` iff `(a.y - y0)` and
+/// `(b.y - y0)` have strictly opposite signs, and the x-intercept lies
+/// strictly inside `[xl, xr]`. Strict inequalities mean a touching ring
+/// (endpoint on a rect edge) is not flagged — touching from inside is the
+/// boundary case for a strictly-inscribed rectangle.
+fn ring_crosses_rect(verts: &[Point], xl: f64, xr: f64, yb: f64, yt: f64) -> bool {
+    let n = verts.len();
+    if n < 2 {
+        return false;
+    }
+    for i in 0..n {
+        let a = &verts[i];
+        let b = &verts[(i + 1) % n];
+        let (ax, ay) = (a.x(), a.y());
+        let (bx, by) = (b.x(), b.y());
+
+        // Bottom edge y = yb.
+        if (ay - yb) * (by - yb) < 0.0 {
+            let x = ax + (yb - ay) * (bx - ax) / (by - ay);
+            if x > xl && x < xr {
+                return true;
+            }
+        }
+        // Top edge y = yt.
+        if (ay - yt) * (by - yt) < 0.0 {
+            let x = ax + (yt - ay) * (bx - ax) / (by - ay);
+            if x > xl && x < xr {
+                return true;
+            }
+        }
+        // Left edge x = xl.
+        if (ax - xl) * (bx - xl) < 0.0 {
+            let y = ay + (xl - ax) * (by - ay) / (bx - ax);
+            if y > yb && y < yt {
+                return true;
+            }
+        }
+        // Right edge x = xr.
+        if (ax - xr) * (bx - xr) < 0.0 {
+            let y = ay + (xr - ax) * (by - ay) / (bx - ax);
+            if y > yb && y < yt {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Principal axis (radians, in `[-π/2, π/2]`) and elongation
@@ -252,15 +393,14 @@ pub fn principal_axis(piece: &RegionPiece) -> (f64, f64) {
 /// * The largest inscribed rectangle of aspect `w / h` is strictly smaller
 ///   than the request.
 ///
-/// # Caveat (radial-conservative bound)
+/// # Caveat (POI-centred)
 ///
-/// `largest_inscribed_rect` uses a radial-conservative bound (it inscribes
-/// the rectangle inside the largest empty disc), which is conservative for
-/// very anisotropic regions. A `None` return can therefore be a *false
-/// negative* in wide-and-short or tall-and-narrow regions where a
-/// directional-clearance solver would have found a fit. A tighter solver
-/// is a planned follow-up; until then, the predicate is sound (a `Some`
-/// rectangle is always strictly inscribed) but conservative.
+/// [`largest_inscribed_rect`] keeps the rectangle centre fixed at the
+/// region's POI and grows directionally up to the configured `precision`,
+/// so the predicate is sound (a `Some` rectangle is always strictly
+/// inscribed) and tight for that centre. Callers wanting a non-POI anchor
+/// — e.g. shifting toward one end of a strongly anisotropic region —
+/// should compose their own centre search on top of `largest_inscribed_rect`.
 ///
 /// # Examples
 ///
@@ -326,48 +466,45 @@ mod tests {
 
     #[test]
     fn test_inscribed_square_aspect_1() {
-        // 10×10 square, aspect = 1. Under radial-conservative MVP, the
-        // largest inscribed square sits inside the inscribed disc of radius
-        // 5, so its side ≈ 10/sqrt(2) ≈ 7.07. (Directional clearance would
-        // yield ≈ 10×10; this test pins the documented MVP behaviour.)
+        // 10×10 square, aspect = 1. Directional clearance from the POI at
+        // (5, 5) finds the full 10×10 fit (limited by the bbox cap, not
+        // the disc radius). Result tolerated to `precision` (0.01) below.
         let pieces = vec![axis_aligned_square_piece(10.0)];
         let (rect, score) = largest_inscribed_rect(&pieces, 1.0, 0.01).unwrap();
-        let expected = 10.0 / std::f64::consts::SQRT_2;
         assert!(
-            (rect.width() - expected).abs() < 0.1,
+            (rect.width() - 10.0).abs() < 0.05,
             "width = {}",
             rect.width()
         );
         assert!(
-            (rect.height() - expected).abs() < 0.1,
+            (rect.height() - 10.0).abs() < 0.05,
             "height = {}",
             rect.height()
         );
-        assert!((score - 1.0 / std::f64::consts::SQRT_2).abs() < 0.05);
+        assert!(score > 0.99, "score = {}", score);
         assert!((rect.center().x() - 5.0).abs() < 0.2);
         assert!((rect.center().y() - 5.0).abs() < 0.2);
     }
 
     #[test]
     fn test_inscribed_square_aspect_2() {
-        // 10×10 square, aspect = 2. Expected: width ≈ 8.94, height ≈ 4.47.
+        // 10×10 square, aspect = 2. Width is bbox-capped at 10, so the
+        // rectangle is 10×5 (height = width/aspect). The radial bound used
+        // to give ≈ 8.94×4.47; the directional bound saturates the bbox.
         let pieces = vec![axis_aligned_square_piece(10.0)];
         let (rect, score) = largest_inscribed_rect(&pieces, 2.0, 0.01).unwrap();
-        let inv = 1.0 / 5.0_f64.sqrt();
-        let exp_w = 10.0 * 2.0 * inv;
-        let exp_h = 10.0 * inv;
         assert!(
-            (rect.width() - exp_w).abs() < 0.1,
+            (rect.width() - 10.0).abs() < 0.05,
             "width = {}",
             rect.width()
         );
         assert!(
-            (rect.height() - exp_h).abs() < 0.1,
+            (rect.height() - 5.0).abs() < 0.05,
             "height = {}",
             rect.height()
         );
         // Score = achieved short side / bbox short side; both bbox dims are 10.
-        assert!((score - exp_h / 10.0).abs() < 0.02);
+        assert!((score - 0.5).abs() < 0.02, "score = {}", score);
     }
 
     #[test]
@@ -388,10 +525,15 @@ mod tests {
         let (rect, score) = largest_inscribed_rect(&pieces, 1.0, 0.01).unwrap();
         assert!(rect.width() > 0.0 && rect.height() > 0.0);
         // POI of the L sits in the corner arm near (~0.5, ~0.5) with
-        // clearance ~0.5, giving a square of side ~0.7 inside a 4×4 bbox.
+        // clearance ~0.5. Directional growth fills the arm thickness
+        // (~1×1 square) inside a 4×4 bbox — score ≈ 0.25.
         assert!(rect.center().x() < 1.5);
         assert!(rect.center().y() < 1.5);
-        assert!(score > 0.05, "score = {}", score);
+        assert!(score > 0.2, "score = {}", score);
+        // The rectangle is bounded by the arm width (1.0) — neither
+        // dimension can exceed the arm thickness.
+        assert!(rect.width() <= 1.05, "width = {}", rect.width());
+        assert!(rect.height() <= 1.05, "height = {}", rect.height());
     }
 
     #[test]
@@ -428,13 +570,97 @@ mod tests {
             cx,
             cy
         );
-        // Hole carves out clearance, so the rectangle and score shrink.
+        // Hole carves out clearance, so the rectangle and score shrink
+        // relative to the unholed baseline (which saturates at ≈1.0 under
+        // the directional bound).
         assert!(
-            score < baseline_score - 0.05,
+            score < baseline_score - 0.1,
             "score {} not lower than baseline {}",
             score,
             baseline_score
         );
+        // Rect must not overlap the hole — every corner strictly outside
+        // the open hole interior (4, 6)². Touching the hole boundary at a
+        // corner is acceptable (the rectangle is still strictly inscribed).
+        let half_w = rect.width() * 0.5;
+        let half_h = rect.height() * 0.5;
+        for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let x = cx + dx * half_w;
+            let y = cy + dy * half_h;
+            let strictly_in_hole = x > 4.0 && x < 6.0 && y > 4.0 && y < 6.0;
+            assert!(!strictly_in_hole, "corner ({}, {}) overlaps hole", x, y);
+        }
+    }
+
+    #[test]
+    fn test_inscribed_wide_and_short_anisotropic() {
+        // 10×2 outer, aspect = 5. Radial bound would give a tiny rect
+        // (inscribed disc radius = 1 → ~1.96×0.39); the directional bound
+        // saturates the bbox to 10×2.
+        let piece = RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(0.0, 0.0),
+                Point::new(10.0, 0.0),
+                Point::new(10.0, 2.0),
+                Point::new(0.0, 2.0),
+            ]),
+            holes: vec![],
+        };
+        let pieces = vec![piece];
+        let (rect, _score) = largest_inscribed_rect(&pieces, 5.0, 0.01).unwrap();
+        assert!(
+            (rect.width() - 10.0).abs() < 0.05,
+            "width = {}",
+            rect.width()
+        );
+        assert!(
+            (rect.height() - 2.0).abs() < 0.05,
+            "height = {}",
+            rect.height()
+        );
+    }
+
+    #[test]
+    fn test_inscribed_concave_notch_outer() {
+        // 10×10 outer with a triangular notch on the right side. The
+        // notch makes the region non-convex; the directional solver must
+        // respect outer-edge crossings (not just hole boundaries) so the
+        // returned rectangle's corners all stay inside the polygon and no
+        // outer-edge slices through it.
+        let outer = Polygon::new(vec![
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 4.0),
+            Point::new(3.0, 5.0),
+            Point::new(10.0, 6.0),
+            Point::new(10.0, 10.0),
+            Point::new(0.0, 10.0),
+        ]);
+        let piece = RegionPiece {
+            outer: outer.clone(),
+            holes: vec![],
+        };
+        let pieces = vec![piece];
+        let (rect, _score) = largest_inscribed_rect(&pieces, 1.0, 0.01).unwrap();
+        // Soundness: all 4 corners lie inside the outer polygon — this is
+        // the guarantee the outer-edge crossing check exists to enforce.
+        let cx = rect.center().x();
+        let cy = rect.center().y();
+        let half_w = rect.width() * 0.5;
+        let half_h = rect.height() * 0.5;
+        // Probe just inside each corner so point_in_polygon isn't on the
+        // boundary FP-ambiguous knife edge.
+        let inset = 1e-6;
+        for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let x = cx + dx * (half_w - inset);
+            let y = cy + dy * (half_h - inset);
+            assert!(
+                crate::plotting::regions::point_in_polygon(&Point::new(x, y), &outer),
+                "near-corner ({}, {}) escaped outer polygon",
+                x,
+                y
+            );
+        }
     }
 
     #[test]
