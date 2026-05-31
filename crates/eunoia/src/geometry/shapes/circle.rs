@@ -307,13 +307,14 @@ struct SeparationCost {
 impl basin::CostFunction for SeparationCost {
     type Param = f64;
     type Output = f64;
+    type Error = std::convert::Infallible;
 
-    fn cost(&self, distance: &f64) -> f64 {
+    fn cost(&self, distance: &f64) -> Result<f64, std::convert::Infallible> {
         let c1 = Circle::new(Point::new(0.0, 0.0), self.r1);
         let c2 = Circle::new(Point::new(*distance, 0.0), self.r2);
 
         let current_overlap = c1.intersection_area(&c2);
-        (current_overlap - self.target_overlap).powi(2)
+        Ok((current_overlap - self.target_overlap).powi(2))
     }
 }
 
@@ -468,7 +469,8 @@ pub(crate) fn distance_for_overlap(
     let x0 = 0.5 * (min_distance + max_distance);
     let result = basin::Executor::new(cost_fun, solver, basin::BasicState::new(x0))
         .max_iter(max_iter.unwrap_or(1000))
-        .run();
+        .run()
+        .expect("solver problem is infallible");
 
     Ok(*result.param())
 }

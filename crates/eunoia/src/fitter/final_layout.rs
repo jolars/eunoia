@@ -10,6 +10,7 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::Infallible;
 
 use crate::error::DiagramError;
 use crate::geometry::diagram::RegionMask;
@@ -470,7 +471,8 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
                 basin::BasicState::new(initial_param.clone()),
             )
             .max_iter(config.max_iterations.max(1) as u64)
-            .run();
+            .run()
+            .expect("solver problem is infallible");
             let final_param = result.param().clone();
             // basin LM's `state.cost()` is ½·Σrᵢ² over the normalised
             // residuals; the existing loss is Σrᵢ², so ×2.
@@ -554,7 +556,8 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
                 .tol_grad(config.gtol.unwrap_or(1e-8));
             let result = basin::Executor::new(problem, solver, basin::BasicState::new(x0))
                 .max_iter(config.max_iterations.max(1) as u64)
-                .run();
+                .run()
+                .expect("solver problem is infallible");
             let final_param = result.param().clone();
             // `Trf::state.cost` is ½·Σrᵢ² over the normalised residuals; the
             // configured loss is Σrᵢ², so ×2 (matches the LM arm).
@@ -689,7 +692,8 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
     let solver = basin::NelderMead::standard();
     let result = basin::Executor::new(cost_function, solver, state)
         .max_iter(config.max_iterations as u64)
-        .run();
+        .run()
+        .expect("solver problem is infallible");
     Ok((DVector::from_vec(result.param().clone()), result.cost()))
 }
 
@@ -721,12 +725,13 @@ fn run_lbfgs<S: DiagramShape + Copy + 'static>(
         },
     };
     let x0 = initial_param.as_slice().to_vec();
-    let solver = basin::LBFGS::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
+    let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
     let result = basin::Executor::new(cost_function, solver, basin::LbfgsState::new(x0, 10))
         .max_iter(config.max_iterations.max(1) as u64)
         .terminate_on(basin::GradientTolerance(config.tolerance))
         .terminate_on(basin::CostTolerance::new(config.tolerance))
-        .run();
+        .run()
+        .expect("solver problem is infallible");
     (DVector::from_vec(result.param().clone()), result.cost())
 }
 
@@ -785,7 +790,8 @@ fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
         basin::BasicPopulationState::<DVector<f64>>::with_size(lambda),
     )
     .max_iter(100)
-    .run();
+    .run()
+    .expect("solver problem is infallible");
     result.param().clone()
 }
 
@@ -805,32 +811,32 @@ struct BasinDiagramCost<'a, S: DiagramShape + Copy + 'static> {
 impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BasinDiagramCost<'_, S> {
     type Param = Vec<f64>;
     type Output = f64;
+    type Error = Infallible;
 
-    fn cost(&self, param: &Vec<f64>) -> f64 {
+    fn cost(&self, param: &Vec<f64>) -> Result<f64, Infallible> {
         let p = DVector::from_vec(param.clone());
         // `DiagramCost::cost` returns a Result; map both Err and NaN to +∞
         // so a single bad evaluation can't poison the simplex sort.
-        match self.inner.cost(&p) {
+        Ok(match self.inner.cost(&p) {
             Ok(c) if c.is_finite() => c,
             _ => f64::INFINITY,
-        }
+        })
     }
 }
 
 impl<S: DiagramShape + Copy + 'static> basin::Gradient for BasinDiagramCost<'_, S> {
-    type Param = Vec<f64>;
     type Gradient = Vec<f64>;
 
-    fn gradient(&self, param: &Vec<f64>) -> Vec<f64> {
+    fn gradient(&self, param: &Vec<f64>) -> Result<Vec<f64>, Infallible> {
         let p = DVector::from_vec(param.clone());
         // `DiagramCost::gradient` takes the analytic boundary-velocity path
         // when the shape + loss support it and falls back to central FD
         // otherwise. A failed evaluation becomes a zero vector so L-BFGS
         // treats the point as stationary rather than stepping on garbage.
-        match self.inner.gradient(&p) {
+        Ok(match self.inner.gradient(&p) {
             Ok(g) => g.as_slice().to_vec(),
             Err(_) => vec![0.0; param.len()],
-        }
+        })
     }
 }
 
@@ -852,14 +858,15 @@ struct BoundedDiagramCost<'a, S: DiagramShape + Copy + 'static> {
 impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedDiagramCost<'_, S> {
     type Param = DVector<f64>;
     type Output = f64;
+    type Error = Infallible;
 
-    fn cost(&self, param: &DVector<f64>) -> f64 {
+    fn cost(&self, param: &DVector<f64>) -> Result<f64, Infallible> {
         // Map both `Err` and non-finite costs to +∞ so a single bad sample
         // can't poison the population sort (mirrors `BasinDiagramCost::cost`).
-        match self.inner.cost(param) {
+        Ok(match self.inner.cost(param) {
             Ok(c) if c.is_finite() => c,
             _ => f64::INFINITY,
-        }
+        })
     }
 }
 
@@ -891,17 +898,17 @@ struct BoundedLmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
 impl<S: DiagramShape + Copy + 'static> basin::Residual for BoundedLmDiagramProblem<'_, S> {
     type Param = DVector<f64>;
     type Output = DVector<f64>;
+    type Error = Infallible;
 
-    fn residual(&self, x: &DVector<f64>) -> DVector<f64> {
+    fn residual(&self, x: &DVector<f64>) -> Result<DVector<f64>, Infallible> {
         basin::Residual::residual(&self.inner, x)
     }
 }
 
 impl<S: DiagramShape + Copy + 'static> basin::Jacobian for BoundedLmDiagramProblem<'_, S> {
-    type Param = DVector<f64>;
-    type Output = DMatrix<f64>;
+    type Jacobian = DMatrix<f64>;
 
-    fn jacobian(&self, x: &DVector<f64>) -> DMatrix<f64> {
+    fn jacobian(&self, x: &DVector<f64>) -> Result<DMatrix<f64>, Infallible> {
         basin::Jacobian::jacobian(&self.inner, x)
     }
 }
@@ -909,12 +916,13 @@ impl<S: DiagramShape + Copy + 'static> basin::Jacobian for BoundedLmDiagramProbl
 impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedLmDiagramProblem<'_, S> {
     type Param = DVector<f64>;
     type Output = f64;
+    type Error = Infallible;
 
-    fn cost(&self, x: &DVector<f64>) -> f64 {
+    fn cost(&self, x: &DVector<f64>) -> Result<f64, Infallible> {
         // Present only for the `BoxConstraints: CostFunction` bound; `Trf`
         // never calls this. Mirror its `½‖r‖²` convention so any incidental
         // query stays consistent with `state.cost`.
-        0.5 * basin::Residual::residual(&self.inner, x).norm_squared()
+        Ok(0.5 * basin::Residual::residual(&self.inner, x)?.norm_squared())
     }
 }
 
@@ -1377,25 +1385,25 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
 impl<S: DiagramShape + Copy + 'static> basin::Residual for LmDiagramProblem<'_, S> {
     type Param = DVector<f64>;
     type Output = DVector<f64>;
+    type Error = Infallible;
 
-    fn residual(&self, x: &DVector<f64>) -> DVector<f64> {
+    fn residual(&self, x: &DVector<f64>) -> Result<DVector<f64>, Infallible> {
         self.ensure_cache(x.as_slice());
         let slot = self.cache.borrow();
         let (_, cache) = slot.as_ref().expect("cache populated by ensure_cache");
-        DVector::from_fn(cache.masks.len(), |i, _| {
+        Ok(DVector::from_fn(cache.masks.len(), |i, _| {
             let mask = cache.masks[i];
             let f = cache.fitted.get(&mask).copied().unwrap_or(0.0);
             let t = self.spec.exclusive_areas.get(&mask).copied().unwrap_or(0.0);
             self.norm_factor * (f - t)
-        })
+        }))
     }
 }
 
 impl<S: DiagramShape + Copy + 'static> basin::Jacobian for LmDiagramProblem<'_, S> {
-    type Param = DVector<f64>;
-    type Output = DMatrix<f64>;
+    type Jacobian = DMatrix<f64>;
 
-    fn jacobian(&self, x: &DVector<f64>) -> DMatrix<f64> {
+    fn jacobian(&self, x: &DVector<f64>) -> Result<DMatrix<f64>, Infallible> {
         self.ensure_cache(x.as_slice());
         let slot = self.cache.borrow();
         let (_, cache) = slot.as_ref().expect("cache populated by ensure_cache");
@@ -1410,7 +1418,7 @@ impl<S: DiagramShape + Copy + 'static> basin::Jacobian for LmDiagramProblem<'_, 
                 }
             }
         }
-        jac
+        Ok(jac)
     }
 }
 
@@ -2875,8 +2883,8 @@ mod tests {
 
             let problem =
                 LmDiagramProblem::<Circle>::new(&spec, Circle::n_params(), loss_type).unwrap();
-            let r = basin::Residual::residual(&problem, &param_dvec);
-            let j = basin::Jacobian::jacobian(&problem, &param_dvec);
+            let r = basin::Residual::residual(&problem, &param_dvec).unwrap();
+            let j = basin::Jacobian::jacobian(&problem, &param_dvec).unwrap();
             // lm_grad = 2 · Jᵀ·r, assembled elementwise over the nalgebra DVector/DMatrix.
             let n_params = param_dvec.len();
             let n_res = r.nrows();

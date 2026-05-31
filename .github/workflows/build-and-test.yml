@@ -25,7 +25,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.91.1
+          toolchain: 1.87.0
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           v=$(cargo --version | grep -oE '1\.[0-9]+\.[0-9]+' | head -1)
-          [ "$v" = "1.91.1" ] || { echo "::error::cargo is on $v, expected 1.91.1"; exit 1; }
+          [ "$v" = "1.87.0" ] || { echo "::error::cargo is on $v, expected 1.87.0"; exit 1; }
 
       - name: Build
         run: cargo build --workspace --verbose
@@ -64,7 +64,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           components: llvm-tools-preview
-          toolchain: 1.91.1
+          toolchain: 1.87.0
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -93,7 +93,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.91.1
+          toolchain: 1.87.0
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -116,7 +116,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.91.1
+          toolchain: 1.87.0
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -140,7 +140,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.91.1
+          toolchain: 1.87.0
 
       - id: versionary
         uses: jolars/versionary@v0

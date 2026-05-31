@@ -2,6 +2,7 @@ use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
+use std::convert::Infallible;
 
 use crate::error::DiagramError;
 use crate::spec::PairwiseRelations;
@@ -237,7 +238,7 @@ fn run_attempt(
                     target_norm: target_norm(distances),
                 },
             };
-            let solver = basin::LBFGS::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
+            let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
             let result = basin::Executor::new(
                 cost_function,
                 solver,
@@ -246,7 +247,8 @@ fn run_attempt(
             .max_iter(200)
             .terminate_on(basin::GradientTolerance(f64::EPSILON.sqrt()))
             .terminate_on(basin::CostTolerance::new(f64::EPSILON))
-            .run();
+            .run()
+            .expect("solver problem is infallible");
             Ok((result.cost(), result.param().clone()))
         }
         MdsSolver::LevenbergMarquardt => {
@@ -272,7 +274,8 @@ fn run_attempt(
                 basin::BasicState::new(initial_param.clone()),
             )
             .max_iter(200)
-            .run();
+            .run()
+            .expect("solver problem is infallible");
             // basin LM minimises ½·Σrᵢ² with rᵢ = raw_dᵢ / sqrt(target_norm);
             // MdsCost returns Σ raw_d² / target_norm = Σ rᵢ², so ×2.
             Ok((result.cost() * 2.0, result.param().as_slice().to_vec()))
@@ -292,26 +295,26 @@ struct BasinMdsCost<'a> {
 impl basin::CostFunction for BasinMdsCost<'_> {
     type Param = Vec<f64>;
     type Output = f64;
+    type Error = Infallible;
 
-    fn cost(&self, p: &Vec<f64>) -> f64 {
+    fn cost(&self, p: &Vec<f64>) -> Result<f64, Infallible> {
         // `MdsCost::cost` is infallible in practice; map a non-finite or
         // error result to +∞ so a stray evaluation can't derail the search.
-        match self.inner.cost(&DVector::from_vec(p.clone())) {
+        Ok(match self.inner.cost(&DVector::from_vec(p.clone())) {
             Ok(c) if c.is_finite() => c,
             _ => f64::INFINITY,
-        }
+        })
     }
 }
 
 impl basin::Gradient for BasinMdsCost<'_> {
-    type Param = Vec<f64>;
     type Gradient = Vec<f64>;
 
-    fn gradient(&self, p: &Vec<f64>) -> Vec<f64> {
-        match self.inner.gradient(&DVector::from_vec(p.clone())) {
+    fn gradient(&self, p: &Vec<f64>) -> Result<Vec<f64>, Infallible> {
+        Ok(match self.inner.gradient(&DVector::from_vec(p.clone())) {
             Ok(g) => g.as_slice().to_vec(),
             Err(_) => vec![0.0; p.len()],
-        }
+        })
     }
 }
 
@@ -585,22 +588,22 @@ impl<'a> LmMdsProblem<'a> {
 impl basin::Residual for LmMdsProblem<'_> {
     type Param = DVector<f64>;
     type Output = DVector<f64>;
+    type Error = Infallible;
 
-    fn residual(&self, params: &DVector<f64>) -> DVector<f64> {
+    fn residual(&self, params: &DVector<f64>) -> Result<DVector<f64>, Infallible> {
         let s = self.inv_sqrt_target_norm;
-        DVector::from_fn(self.pairs.len(), |k, _| {
+        Ok(DVector::from_fn(self.pairs.len(), |k, _| {
             let (i, j) = self.pairs[k];
             let (d, _xd, _yd, active) = self.pair_state(params, i, j);
             if active { d * s } else { 0.0 }
-        })
+        }))
     }
 }
 
 impl basin::Jacobian for LmMdsProblem<'_> {
-    type Param = DVector<f64>;
-    type Output = DMatrix<f64>;
+    type Jacobian = DMatrix<f64>;
 
-    fn jacobian(&self, params: &DVector<f64>) -> DMatrix<f64> {
+    fn jacobian(&self, params: &DVector<f64>) -> Result<DMatrix<f64>, Infallible> {
         let n = self.n_sets;
         let s = self.inv_sqrt_target_norm;
         let mut jacobian = DMatrix::zeros(self.pairs.len(), params.len());
@@ -618,7 +621,7 @@ impl basin::Jacobian for LmMdsProblem<'_> {
             jacobian[(k, n + i)] = 2.0 * yd * s;
             jacobian[(k, n + j)] = -2.0 * yd * s;
         }
-        jacobian
+        Ok(jacobian)
     }
 }
 
@@ -792,8 +795,8 @@ mod gradient_check {
         let analytic = cost.gradient(&p).unwrap();
 
         let problem = LmMdsProblem::new(&distances, &relations, 4);
-        let r = basin::Residual::residual(&problem, &p);
-        let j = basin::Jacobian::jacobian(&problem, &p);
+        let r = basin::Residual::residual(&problem, &p).unwrap();
+        let j = basin::Jacobian::jacobian(&problem, &p).unwrap();
         let lm_grad = j.transpose() * &r * 2.0;
 
         let max_abs_diff = analytic

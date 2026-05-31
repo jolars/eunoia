@@ -28,7 +28,7 @@ How the JS layers fit together: `eunoia-wasm` is compiled by `wasm-pack` into
 high-level API as the default entry and the raw wasm-bindgen surface at
 `@jolars/eunoia/raw`.
 
-Edition 2024, MSRV pinned to **1.91.1** (in `rust-toolchain.toml` and `devenv.nix`).
+Edition 2024, MSRV pinned to **1.87.0** (in `rust-toolchain.toml` and `devenv.nix`).
 Code uses the `module.rs` + `module/` layout — never `module/mod.rs`.
 
 ## Commands
