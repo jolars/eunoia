@@ -41,7 +41,7 @@ fn six_set_spec() -> eunoia::spec::DiagramSpec {
 
 fn bench(label: &str, n: usize, loss: LossType) {
     let spec = six_set_spec();
-    print!("  {:<46}", label);
+    print!("  {label:<46}");
     std::io::stdout().flush().unwrap();
     let _ = Fitter::<Ellipse>::new(&spec)
         .loss_type(loss)
@@ -59,10 +59,7 @@ fn bench(label: &str, n: usize, loss: LossType) {
         last_diag = layout.diag_error();
     }
     let per = t.elapsed().as_secs_f64() * 1000.0 / n as f64;
-    println!(
-        ": {:>2} fits, {:>9.1} ms/fit, last diag_error = {:.4e}",
-        n, per, last_diag
-    );
+    println!(": {n:>2} fits, {per:>9.1} ms/fit, last diag_error = {last_diag:.4e}");
 }
 
 fn main() {

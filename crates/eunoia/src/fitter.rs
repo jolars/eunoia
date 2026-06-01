@@ -817,8 +817,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     .map(|(p, l)| (p.as_slice().to_vec(), l))
                     .map_err(|e| {
                         DiagramError::InvalidCombination(format!(
-                            "Venn-seed final optimisation failed: {}",
-                            e
+                            "Venn-seed final optimisation failed: {e}"
                         ))
                     });
                 }
@@ -839,8 +838,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     Ok(p) => p,
                     Err(e) => {
                         return Err(DiagramError::InvalidCombination(format!(
-                            "Initial layout failed: {}",
-                            e
+                            "Initial layout failed: {e}"
                         )));
                     }
                 };
@@ -893,8 +891,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                 ) {
                     Ok((params, loss)) => Ok((params, loss)),
                     Err(e) => Err(DiagramError::InvalidCombination(format!(
-                        "Optimization failed: {}",
-                        e
+                        "Optimization failed: {e}"
                     ))),
                 }
             };
@@ -1659,9 +1656,9 @@ mod tests {
                 .unwrap();
             let preprocessed = spec.preprocess().unwrap();
             let params = venn_warm_start_params::<Ellipse>(&preprocessed);
-            assert!(params.is_some(), "ellipse n={} should produce params", n);
+            assert!(params.is_some(), "ellipse n={n} should produce params");
             let params = params.unwrap();
-            assert_eq!(params.len(), n * 5, "ellipse n={} param length", n);
+            assert_eq!(params.len(), n * 5, "ellipse n={n} param length");
         }
     }
 
@@ -1684,7 +1681,7 @@ mod tests {
                 .unwrap();
             let preprocessed = spec.preprocess().unwrap();
             let params = venn_warm_start_params::<Circle>(&preprocessed);
-            assert!(params.is_some(), "circle n={} should produce params", n);
+            assert!(params.is_some(), "circle n={n} should produce params");
             assert_eq!(params.unwrap().len(), n * 3);
         }
     }
@@ -1711,8 +1708,7 @@ mod tests {
             let preprocessed = spec.preprocess().unwrap();
             assert!(
                 venn_warm_start_params::<Circle>(&preprocessed).is_none(),
-                "circle n={} must reject (Venn is non-circular)",
-                n
+                "circle n={n} must reject (Venn is non-circular)"
             );
         }
     }
@@ -1784,9 +1780,9 @@ mod tests {
                 .unwrap();
             let preprocessed = spec.preprocess().unwrap();
             let params = venn_warm_start_params::<Square>(&preprocessed);
-            assert!(params.is_some(), "square n={} should produce params", n);
+            assert!(params.is_some(), "square n={n} should produce params");
             let params = params.unwrap();
-            assert_eq!(params.len(), n * 3, "square n={} param length", n);
+            assert_eq!(params.len(), n * 3, "square n={n} param length");
             // Sides are scaled by mean(sqrt(area_i)) ≈ √10 ≈ 3.162. Canonical
             // sides are 1.0 for n ∈ {2, 3}, so every emitted side should be
             // strictly positive and roughly that magnitude.
@@ -1914,8 +1910,7 @@ mod tests {
         let area = container.width() * container.height();
         assert!(
             (area - 75.0).abs() / 75.0 < 0.05,
-            "container area {} ≠ 75 (within 5%)",
-            area
+            "container area {area} ≠ 75 (within 5%)"
         );
         // L-BFGS with analytical gradients (S2) on the clipped landscape
         // reaches a low residual when the shapes have room inside the box.
@@ -1946,17 +1941,14 @@ mod tests {
         let area = container.width() * container.height();
         assert!(
             (area - 1000.0).abs() / 1000.0 < 0.05,
-            "container area {} ≠ 1000 (within 5%)",
-            area
+            "container area {area} ≠ 1000 (within 5%)"
         );
         // The disks together occupy ~55 area; the rest is complement. Container
         // should be much larger than the union.
         let union_target = 25.0 + 25.0 + 5.0; // 55
         assert!(
             area > 10.0 * union_target,
-            "container area {} should be much larger than union {}",
-            area,
-            union_target
+            "container area {area} should be much larger than union {union_target}"
         );
     }
 
@@ -1983,9 +1975,7 @@ mod tests {
         let universe = 151.5;
         assert!(
             (area - universe).abs() / universe < 0.05,
-            "container area {} ≠ {} (within 5%)",
-            area,
-            universe
+            "container area {area} ≠ {universe} (within 5%)"
         );
     }
 
@@ -2037,8 +2027,7 @@ mod tests {
         let area = container.width() * container.height();
         assert!(
             (area - 75.0).abs() / 75.0 < 0.05,
-            "container area {} ≠ 75 (within 5%)",
-            area
+            "container area {area} ≠ 75 (within 5%)"
         );
         // FD-gradient L-BFGS is less accurate than the circle's analytical
         // path; allow a higher residual.
@@ -2070,15 +2059,12 @@ mod tests {
         let area = container.width() * container.height();
         assert!(
             (area - 1000.0).abs() / 1000.0 < 0.05,
-            "container area {} ≠ 1000 (within 5%)",
-            area
+            "container area {area} ≠ 1000 (within 5%)"
         );
         let union_target = 55.0;
         assert!(
             area > 10.0 * union_target,
-            "container area {} should be much larger than union {}",
-            area,
-            union_target
+            "container area {area} should be much larger than union {union_target}"
         );
     }
 
@@ -2137,9 +2123,7 @@ mod tests {
         let expected = 45.0 + 30.0;
         assert!(
             (universe - expected).abs() / expected < 0.05,
-            "container area {} should match universe {} within 5%",
-            universe,
-            expected,
+            "container area {universe} should match universe {expected} within 5%",
         );
     }
 
@@ -2207,8 +2191,7 @@ fn test_circles_ac_issue_seed42() {
     if dist_ac > shape_a.radius() + shape_c.radius() {
         assert!(
             ac_fitted <= 0.001,
-            "A&C fitted area is {:.3} but circles are separated",
-            ac_fitted
+            "A&C fitted area is {ac_fitted:.3} but circles are separated"
         );
     }
 }

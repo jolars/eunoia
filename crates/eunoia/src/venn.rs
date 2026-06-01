@@ -394,8 +394,7 @@ mod tests {
                 DiagramError::InvalidValue { ref combination, value }
                     if combination == "<complement>" && value < 0.0
             ),
-            "expected InvalidValue, got {:?}",
-            err,
+            "expected InvalidValue, got {err:?}",
         );
     }
 
@@ -474,10 +473,7 @@ mod tests {
             for (combo, &area) in fitted {
                 assert!(
                     area > 1e-9,
-                    "n={}: region {} has area {} (too small)",
-                    n,
-                    combo,
-                    area
+                    "n={n}: region {combo} has area {area} (too small)"
                 );
             }
         }
@@ -510,10 +506,7 @@ mod tests {
             for (combo, &area) in fitted {
                 assert!(
                     area > 1e-9,
-                    "square n={}: region {} has area {} (too small)",
-                    n,
-                    combo,
-                    area
+                    "square n={n}: region {combo} has area {area} (too small)"
                 );
             }
         }
@@ -563,10 +556,7 @@ mod tests {
             for (combo, &area) in fitted {
                 assert!(
                     area > 1e-9,
-                    "rectangle n={}: region {} has area {} (too small)",
-                    n,
-                    combo,
-                    area
+                    "rectangle n={n}: region {combo} has area {area} (too small)"
                 );
             }
         }
@@ -592,10 +582,7 @@ mod tests {
             for (combo, &area) in fitted {
                 assert!(
                     area > 1e-9,
-                    "circle n={}: region {} has area {} (too small)",
-                    n,
-                    combo,
-                    area
+                    "circle n={n}: region {combo} has area {area} (too small)"
                 );
             }
         }

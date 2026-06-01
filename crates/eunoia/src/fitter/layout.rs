@@ -480,23 +480,19 @@ mod tests {
         // All intersection areas should be zero (or negligible) since shapes are disjoint
         assert!(
             ab_area < 1e-6,
-            "A&B should be ~0 for disjoint shapes, got {}",
-            ab_area
+            "A&B should be ~0 for disjoint shapes, got {ab_area}"
         );
         assert!(
             ac_area < 1e-6,
-            "A&C should be ~0 for disjoint shapes, got {}",
-            ac_area
+            "A&C should be ~0 for disjoint shapes, got {ac_area}"
         );
         assert!(
             bc_area < 1e-6,
-            "B&C should be ~0 for disjoint shapes, got {}",
-            bc_area
+            "B&C should be ~0 for disjoint shapes, got {bc_area}"
         );
         assert!(
             abc_area < 1e-6,
-            "A&B&C should be ~0 for disjoint shapes, got {}",
-            abc_area
+            "A&B&C should be ~0 for disjoint shapes, got {abc_area}"
         );
 
         // Individual areas should match shape areas
@@ -508,8 +504,7 @@ mod tests {
         let expected_a = std::f64::consts::PI * 1.0 * 1.0;
         assert!(
             (a_only - expected_a).abs() < 0.01,
-            "A area should be ~π, got {}",
-            a_only
+            "A area should be ~π, got {a_only}"
         );
     }
 

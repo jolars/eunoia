@@ -544,9 +544,7 @@ mod tests {
 
         assert!(
             packed_width < original_bbox_width,
-            "Packed width {} should be less than original width {}",
-            packed_width,
-            original_bbox_width
+            "Packed width {packed_width} should be less than original width {original_bbox_width}"
         );
 
         // Verify layout is centered around origin using bounding boxes
@@ -571,13 +569,11 @@ mod tests {
 
         assert!(
             (bb_center_x).abs() < 1e-6,
-            "Should be centered in x, got {}",
-            bb_center_x
+            "Should be centered in x, got {bb_center_x}"
         );
         assert!(
             (bb_center_y).abs() < 1e-6,
-            "Should be centered in y, got {}",
-            bb_center_y
+            "Should be centered in y, got {bb_center_y}"
         );
     }
 

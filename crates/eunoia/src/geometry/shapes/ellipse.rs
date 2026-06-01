@@ -125,13 +125,11 @@ impl Ellipse {
     pub fn new(center: Point, semi_major: f64, semi_minor: f64, rotation: f64) -> Self {
         assert!(
             semi_major > 0.0,
-            "Ellipse semi_major must be > 0, got {}",
-            semi_major
+            "Ellipse semi_major must be > 0, got {semi_major}"
         );
         assert!(
             semi_minor > 0.0,
-            "Ellipse semi_minor must be > 0, got {}",
-            semi_minor
+            "Ellipse semi_minor must be > 0, got {semi_minor}"
         );
         Self {
             center,
@@ -1950,9 +1948,7 @@ mod tests {
 
         assert!(
             approx_eq(sector_between, expected),
-            "Expected {}, got {}",
-            expected,
-            sector_between
+            "Expected {expected}, got {sector_between}"
         );
 
         // The sector should be positive and cover most of the ellipse
@@ -2047,10 +2043,7 @@ mod tests {
             let circle_sector = circle.sector_area(angle);
             assert!(
                 approx_eq(ellipse_sector, circle_sector),
-                "Mismatch at angle {}: ellipse={}, circle={}",
-                angle,
-                ellipse_sector,
-                circle_sector
+                "Mismatch at angle {angle}: ellipse={ellipse_sector}, circle={circle_sector}"
             );
         }
     }
@@ -2087,9 +2080,7 @@ mod tests {
 
         assert!(
             approx_eq(ellipse_segment, circle_segment),
-            "Circular ellipse segment should match circle segment: ellipse={}, circle={}",
-            ellipse_segment,
-            circle_segment
+            "Circular ellipse segment should match circle segment: ellipse={ellipse_segment}, circle={circle_segment}"
         );
     }
 
@@ -2138,9 +2129,7 @@ mod tests {
 
         assert!(
             approx_eq(segment_quarter, expected_quarter),
-            "Quarter segment: expected {}, got {}",
-            expected_quarter,
-            segment_quarter
+            "Quarter segment: expected {expected_quarter}, got {segment_quarter}"
         );
 
         // Half ellipse segment (from θ=0 to θ=π)
@@ -2150,9 +2139,7 @@ mod tests {
 
         assert!(
             approx_eq(segment_half, expected_half),
-            "Half segment: expected {}, got {}",
-            expected_half,
-            segment_half
+            "Half segment: expected {expected_half}, got {segment_half}"
         );
 
         // Half segment should also equal half the ellipse area
@@ -2175,9 +2162,7 @@ mod tests {
 
         assert!(
             approx_eq(segment_30deg, expected_30deg),
-            "30° segment: expected {}, got {}",
-            expected_30deg,
-            segment_30deg
+            "30° segment: expected {expected_30deg}, got {segment_30deg}"
         );
 
         // 60 degree segment (π/3)
@@ -2191,9 +2176,7 @@ mod tests {
 
         assert!(
             approx_eq(segment_60deg, expected_60deg),
-            "60° segment: expected {}, got {}",
-            expected_60deg,
-            segment_60deg
+            "60° segment: expected {expected_60deg}, got {segment_60deg}"
         );
 
         // Additional sanity checks
@@ -2220,9 +2203,7 @@ mod tests {
 
         assert!(
             approx_eq(segment_270deg, expected_270deg),
-            "270° segment: expected {}, got {}",
-            expected_270deg,
-            segment_270deg
+            "270° segment: expected {expected_270deg}, got {segment_270deg}"
         );
 
         // Verify this is indeed the major arc (> half the ellipse area)
@@ -2462,7 +2443,7 @@ mod tests {
         let e2 = Ellipse::new(Point::new(10.0, 0.0), 2.0, 1.5, 0.0);
 
         let area = e1.intersection_area(&e2);
-        assert!(approx_eq(area, 0.0), "Expected 0, got {}", area);
+        assert!(approx_eq(area, 0.0), "Expected 0, got {area}");
     }
 
     #[test]
@@ -2476,18 +2457,14 @@ mod tests {
 
         assert!(
             (area - expected).abs() < 1e-8,
-            "Expected {}, got {}",
-            expected,
-            area
+            "Expected {expected}, got {area}"
         );
 
         // Symmetric test
         let area_reverse = e2.intersection_area(&e1);
         assert!(
             (area_reverse - expected).abs() < 1e-8,
-            "Expected {}, got {}",
-            expected,
-            area_reverse
+            "Expected {expected}, got {area_reverse}"
         );
     }
 
@@ -2501,9 +2478,7 @@ mod tests {
 
         assert!(
             (area - expected).abs() < 1e-8,
-            "Expected {}, got {}",
-            expected,
-            area
+            "Expected {expected}, got {area}"
         );
     }
 
@@ -2523,9 +2498,7 @@ mod tests {
 
         assert!(
             (area - expected).abs() < 1e-6,
-            "Expected {}, got {}",
-            expected,
-            area
+            "Expected {expected}, got {area}"
         );
     }
 
@@ -2538,7 +2511,7 @@ mod tests {
         let area = e1.intersection_area(&e2);
 
         // Tangent circles should have zero intersection area
-        assert!(area < 1e-6, "Expected ~0, got {}", area);
+        assert!(area < 1e-6, "Expected ~0, got {area}");
     }
 
     #[test]
@@ -2552,9 +2525,7 @@ mod tests {
 
         assert!(
             (area1 - area2).abs() < 1e-8,
-            "Areas should be symmetric: {} vs {}",
-            area1,
-            area2
+            "Areas should be symmetric: {area1} vs {area2}"
         );
     }
 
@@ -2569,14 +2540,11 @@ mod tests {
 
         assert!(
             area >= 0.0,
-            "Intersection area should be non-negative: {}",
-            area
+            "Intersection area should be non-negative: {area}"
         );
         assert!(
             area <= min_area + 1e-6,
-            "Intersection area {} should not exceed smaller ellipse area {}",
-            area,
-            min_area
+            "Intersection area {area} should not exceed smaller ellipse area {min_area}"
         );
     }
 
@@ -2589,11 +2557,10 @@ mod tests {
         let area = e1.intersection_area(&e2);
 
         // Should have some intersection
-        assert!(area > 0.0, "Expected positive area, got {}", area);
+        assert!(area > 0.0, "Expected positive area, got {area}");
         assert!(
             area < e1.area() && area < e2.area(),
-            "Area {} should be less than both ellipse areas",
-            area
+            "Area {area} should be less than both ellipse areas"
         );
     }
 
@@ -2609,9 +2576,7 @@ mod tests {
         // Should be very close to full area
         assert!(
             (area - expected).abs() < 0.1,
-            "Expected ~{}, got {}",
-            expected,
-            area
+            "Expected ~{expected}, got {area}"
         );
     }
 
@@ -2720,9 +2685,7 @@ mod tests {
             // Both should be small
             assert!(
                 exact < 1.0 && mc_estimate < 1.0,
-                "Both should be small: exact={}, mc={}",
-                exact,
-                mc_estimate
+                "Both should be small: exact={exact}, mc={mc_estimate}"
             );
         }
     }
@@ -2740,9 +2703,7 @@ mod tests {
         assert!(e1.contains(&e2), "e1 should contain e2");
         assert!(
             (exact - expected).abs() < 1e-6,
-            "Intersection should equal smaller ellipse area: exact={}, expected={}",
-            exact,
-            expected
+            "Intersection should equal smaller ellipse area: exact={exact}, expected={expected}"
         );
 
         // Monte Carlo validation
@@ -3070,8 +3031,7 @@ mod tests {
         // When all three are identical and overlapping, the 3-way intersection should be ~1.0
         assert!(
             (all_three - 1.0).abs() < 0.01,
-            "Complete overlap should give area ~1.0, got {}",
-            all_three
+            "Complete overlap should give area ~1.0, got {all_three}"
         );
     }
 
@@ -3178,13 +3138,11 @@ mod tests {
 
         assert!(
             (ellipse_area - expected_ellipse).abs() < 1e-9,
-            "ellipse area {} ≠ 2π",
-            ellipse_area
+            "ellipse area {ellipse_area} ≠ 2π"
         );
         assert!(
             (complement - (60.0 - expected_ellipse)).abs() < 1e-9,
-            "complement {} ≠ 60 − 2π",
-            complement
+            "complement {complement} ≠ 60 − 2π"
         );
     }
 
@@ -3209,13 +3167,11 @@ mod tests {
 
         assert!(
             (ellipse_area - expected_ellipse).abs() < 1e-9,
-            "rotated ellipse area {} ≠ 6π",
-            ellipse_area
+            "rotated ellipse area {ellipse_area} ≠ 6π"
         );
         assert!(
             (complement - (144.0 - expected_ellipse)).abs() < 1e-9,
-            "complement {} ≠ 144 − 6π",
-            complement
+            "complement {complement} ≠ 144 − 6π"
         );
     }
 
@@ -3230,15 +3186,10 @@ mod tests {
         let ellipse_area = areas.get(&0b1).copied().unwrap_or(0.0);
         let complement = areas.get(&0).copied().unwrap_or(0.0);
 
-        assert!(
-            ellipse_area.abs() < 1e-9,
-            "ellipse area {} ≠ 0",
-            ellipse_area
-        );
+        assert!(ellipse_area.abs() < 1e-9, "ellipse area {ellipse_area} ≠ 0");
         assert!(
             (complement - 16.0).abs() < 1e-9,
-            "complement {} ≠ 16",
-            complement
+            "complement {complement} ≠ 16"
         );
     }
 
@@ -3256,10 +3207,9 @@ mod tests {
 
         assert!(
             (inside - 24.0).abs() < 1e-9,
-            "ellipse-clipped {} ≠ container area",
-            inside
+            "ellipse-clipped {inside} ≠ container area"
         );
-        assert!(complement.abs() < 1e-9, "complement {} ≠ 0", complement);
+        assert!(complement.abs() < 1e-9, "complement {complement} ≠ 0");
     }
 
     /// Sanity: with no shapes, the complement equals the container area.
@@ -3272,8 +3222,7 @@ mod tests {
         let complement = areas.get(&0).copied().unwrap_or(0.0);
         assert!(
             (complement - 12.0).abs() < 1e-9,
-            "complement {} ≠ 12",
-            complement
+            "complement {complement} ≠ 12"
         );
     }
 
@@ -3304,14 +3253,11 @@ mod tests {
 
         assert!(
             (union - expected_union).abs() < 1e-9,
-            "union via per-mask sum {} ≠ {}",
-            union,
-            expected_union
+            "union via per-mask sum {union} ≠ {expected_union}"
         );
         assert!(
             (complement - (48.0 - expected_union)).abs() < 1e-9,
-            "complement {} ≠ box − union",
-            complement
+            "complement {complement} ≠ box − union"
         );
     }
 
@@ -3355,9 +3301,7 @@ mod tests {
         // empirically.
         assert!(
             (kept - mc_area).abs() < 0.05,
-            "clipped ellipse {} vs MC {}",
-            kept,
-            mc_area
+            "clipped ellipse {kept} vs MC {mc_area}"
         );
     }
 
@@ -3435,11 +3379,7 @@ mod tests {
             let analytic_area = areas.get(mask).copied().unwrap_or(0.0);
             assert!(
                 (analytic_area - direct).abs() < 1e-12,
-                "{}: mask {:b} area {} vs direct {} mismatch",
-                label,
-                mask,
-                analytic_area,
-                direct
+                "{label}: mask {mask:b} area {analytic_area} vs direct {direct} mismatch"
             );
             let diff_norm: f64 = analytic
                 .iter()
@@ -3455,13 +3395,7 @@ mod tests {
             };
             assert!(
                 rel < tol,
-                "{}: mask {:b} analytic vs FD mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
-                label,
-                mask,
-                rel,
-                fd_norm,
-                analytic,
-                fd
+                "{label}: mask {mask:b} analytic vs FD mismatch (rel={rel:.3e}, |fd|={fd_norm:.3e})\n  analytic={analytic:?}\n  fd      ={fd:?}"
             );
         }
     }

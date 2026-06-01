@@ -2210,8 +2210,7 @@ mod tests {
         let t = ((le.x() - tether.x()) * dx + (le.y() - tether.y()) * dy) / denom;
         assert!(
             (0.0..=1.0).contains(&t),
-            "leader_end should sit on the tether→anchor segment (t = {})",
-            t
+            "leader_end should sit on the tether→anchor segment (t = {t})"
         );
         let reconstructed_x = tether.x() + t * dx;
         let reconstructed_y = tether.y() + t * dy;
@@ -2631,11 +2630,7 @@ mod tests {
                 let dy = (entries[i].anchor.y() - entries[j].anchor.y()).abs();
                 assert!(
                     dx >= 20.0 - 1e-6 || dy >= 20.0 - 1e-6,
-                    "pair ({}, {}) overlaps: dx = {}, dy = {}",
-                    i,
-                    j,
-                    dx,
-                    dy
+                    "pair ({i}, {j}) overlaps: dx = {dx}, dy = {dy}"
                 );
             }
         }
@@ -2872,11 +2867,7 @@ mod tests {
                 let dy = (entries[i].anchor.y() - entries[j].anchor.y()).abs();
                 assert!(
                     dx >= 20.0 - 1e-3 || dy >= 20.0 - 1e-3,
-                    "pair ({}, {}) overlaps after ForceDirected: dx = {}, dy = {}",
-                    i,
-                    j,
-                    dx,
-                    dy
+                    "pair ({i}, {j}) overlaps after ForceDirected: dx = {dx}, dy = {dy}"
                 );
             }
         }

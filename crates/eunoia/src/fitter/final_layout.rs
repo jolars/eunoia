@@ -1457,7 +1457,7 @@ mod tests {
 
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
-            let set_names: Vec<String> = (0..n_sets).map(|i| format!("Set{}", i)).collect();
+            let set_names: Vec<String> = (0..n_sets).map(|i| format!("Set{i}")).collect();
 
             let mut circles = Vec::new();
 
@@ -1625,8 +1625,7 @@ mod tests {
         // Should be able to reproduce the layout with very low error
         assert!(
             loss < 1e-2,
-            "Should reproduce layout with low error, got: {}",
-            loss
+            "Should reproduce layout with low error, got: {loss}"
         );
     }
 
@@ -1676,8 +1675,7 @@ mod tests {
         // Relaxed tolerance to account for optimization challenges
         assert!(
             loss < 5.0,
-            "Should reproduce random layout reasonably, got: {}",
-            loss
+            "Should reproduce random layout reasonably, got: {loss}"
         );
     }
 
@@ -1728,7 +1726,7 @@ mod tests {
             };
 
             let result = optimize_layout::<Circle>(&preprocessed, &positions, &radii, None, config);
-            assert!(result.is_ok(), "Optimization failed for config {}", i);
+            assert!(result.is_ok(), "Optimization failed for config {i}");
 
             let (_, loss) = result.unwrap();
 
@@ -1748,13 +1746,9 @@ mod tests {
             };
             assert!(
                 loss < tol,
-                "configuration n_sets={}, seed={} produced loss={:.6}, \
-                 exceeds tolerance {:.1} — optimizer may have regressed, \
-                 or the seed lands in a bad basin on this platform",
-                n_sets,
-                seed,
-                loss,
-                tol
+                "configuration n_sets={n_sets}, seed={seed} produced loss={loss:.6}, \
+                 exceeds tolerance {tol:.1} — optimizer may have regressed, \
+                 or the seed lands in a bad basin on this platform"
             );
         }
     }
@@ -1828,7 +1822,7 @@ mod tests {
     /// without sitting at the optimum.
     fn spec_from_circles(circles: &[Circle]) -> PreprocessedSpec {
         use helpers::create_spec_from_exclusive;
-        let names: Vec<String> = (0..circles.len()).map(|i| format!("S{}", i)).collect();
+        let names: Vec<String> = (0..circles.len()).map(|i| format!("S{i}")).collect();
         let exclusive = diagram::compute_exclusive_areas_from_layout(circles, &names);
         create_spec_from_exclusive(exclusive).preprocess().unwrap()
     }
@@ -1896,7 +1890,7 @@ mod tests {
         let base_tol = 1e-4;
         for (loss_type, mul, name) in smooth_losses_for_grad_test() {
             assert_analytic_matches_fd(&spec, &params, loss_type, 1e-6, base_tol * mul, || {
-                format!("two_circle_overlap {}", name)
+                format!("two_circle_overlap {name}")
             });
         }
     }
@@ -1918,7 +1912,7 @@ mod tests {
         let base_tol = 1e-3;
         for (loss_type, mul, name) in smooth_losses_for_grad_test() {
             assert_analytic_matches_fd(&spec, &params, loss_type, 1e-6, base_tol * mul, || {
-                format!("three_circle_venn {}", name)
+                format!("three_circle_venn {name}")
             });
         }
     }
@@ -1943,7 +1937,7 @@ mod tests {
         let base_tol = 1e-4;
         for (loss_type, mul, name) in smooth_losses_for_grad_test() {
             assert_analytic_matches_fd(&spec, &perturbed, loss_type, 1e-6, base_tol * mul, || {
-                format!("disjoint {}", name)
+                format!("disjoint {name}")
             });
         }
     }
@@ -1963,7 +1957,7 @@ mod tests {
         let base_tol = 1e-4;
         for (loss_type, mul, name) in smooth_losses_for_grad_test() {
             assert_analytic_matches_fd(&spec, &params, loss_type, 1e-6, base_tol * mul, || {
-                format!("nested {}", name)
+                format!("nested {name}")
             });
         }
     }
@@ -1979,7 +1973,7 @@ mod tests {
         use crate::geometry::shapes::circle::compute_exclusive_regions_clipped;
         use crate::spec::{DiagramSpec, DiagramSpecBuilder};
 
-        let names: Vec<String> = (0..circles.len()).map(|i| format!("S{}", i)).collect();
+        let names: Vec<String> = (0..circles.len()).map(|i| format!("S{i}")).collect();
         let areas = compute_exclusive_regions_clipped(circles, container);
 
         // Build a builder mirroring `helpers::create_spec_from_exclusive` but
@@ -2083,11 +2077,7 @@ mod tests {
         };
         assert!(
             rel < 1e-3,
-            "complement gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
-            rel,
-            fd_norm,
-            analytic_slice,
-            fd
+            "complement gradient mismatch (rel={rel:.3e}, |fd|={fd_norm:.3e})\n  analytic={analytic_slice:?}\n  fd      ={fd:?}"
         );
     }
 
@@ -2144,11 +2134,7 @@ mod tests {
         };
         assert!(
             rel < 1e-3,
-            "complement+clip gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
-            rel,
-            fd_norm,
-            analytic_slice,
-            fd
+            "complement+clip gradient mismatch (rel={rel:.3e}, |fd|={fd_norm:.3e})\n  analytic={analytic_slice:?}\n  fd      ={fd:?}"
         );
     }
 
@@ -2162,7 +2148,7 @@ mod tests {
         use crate::geometry::shapes::ellipse::compute_exclusive_regions_clipped_ellipse;
         use crate::spec::{DiagramSpec, DiagramSpecBuilder};
 
-        let names: Vec<String> = (0..ellipses.len()).map(|i| format!("S{}", i)).collect();
+        let names: Vec<String> = (0..ellipses.len()).map(|i| format!("S{i}")).collect();
         let areas = compute_exclusive_regions_clipped_ellipse(ellipses, container);
 
         let mut builder = DiagramSpecBuilder::new();
@@ -2264,11 +2250,7 @@ mod tests {
         };
         assert!(
             rel < 1e-3,
-            "ellipse complement gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
-            rel,
-            fd_norm,
-            analytic_slice,
-            fd
+            "ellipse complement gradient mismatch (rel={rel:.3e}, |fd|={fd_norm:.3e})\n  analytic={analytic_slice:?}\n  fd      ={fd:?}"
         );
     }
 
@@ -2326,11 +2308,7 @@ mod tests {
         };
         assert!(
             rel < 1e-3,
-            "ellipse complement+clip gradient mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
-            rel,
-            fd_norm,
-            analytic_slice,
-            fd
+            "ellipse complement+clip gradient mismatch (rel={rel:.3e}, |fd|={fd_norm:.3e})\n  analytic={analytic_slice:?}\n  fd      ={fd:?}"
         );
     }
 
@@ -2484,7 +2462,7 @@ mod tests {
         let exclusive =
             crate::geometry::shapes::ellipse::Ellipse::compute_exclusive_regions(ellipses);
         // Convert mask->area map into Combination-keyed map.
-        let names: Vec<String> = (0..ellipses.len()).map(|i| format!("S{}", i)).collect();
+        let names: Vec<String> = (0..ellipses.len()).map(|i| format!("S{i}")).collect();
         let mut combos: HashMap<Combination, f64> = HashMap::new();
         for (mask, area) in exclusive {
             if area > 0.0 {
@@ -2606,7 +2584,7 @@ mod tests {
                 loss_type,
                 1e-6,
                 base_tol * mul,
-                || format!("ellipse two_overlap {}", name),
+                || format!("ellipse two_overlap {name}"),
             );
         }
     }
@@ -2633,7 +2611,7 @@ mod tests {
                 loss_type,
                 1e-6,
                 base_tol * mul,
-                || format!("ellipse three_venn {}", name),
+                || format!("ellipse three_venn {name}"),
             );
         }
     }
@@ -2659,7 +2637,7 @@ mod tests {
                 loss_type,
                 1e-6,
                 base_tol * mul,
-                || format!("ellipse disjoint {}", name),
+                || format!("ellipse disjoint {name}"),
             );
         }
     }
@@ -2685,7 +2663,7 @@ mod tests {
                 loss_type,
                 1e-6,
                 base_tol * mul,
-                || format!("ellipse nested {}", name),
+                || format!("ellipse nested {name}"),
             );
         }
     }
@@ -2719,7 +2697,7 @@ mod tests {
                 crate::loss::LossType::SumSquared,
                 1e-6,
                 1e-2,
-                || format!("ellipse random n={}, seed={}", n, seed),
+                || format!("ellipse random n={n}, seed={seed}"),
             );
         }
     }
@@ -2840,7 +2818,7 @@ mod tests {
                 crate::loss::LossType::SumSquared,
                 1e-6,
                 5e-3,
-                || format!("random n={}, seed={}", n, seed),
+                || format!("random n={n}, seed={seed}"),
             );
         }
     }
@@ -2903,12 +2881,7 @@ mod tests {
                 .fold(0.0_f64, f64::max);
             assert!(
                 max_abs_diff < 1e-9 + 1e-8 * max_abs,
-                "n={} seed={} loss={:?}: |2·Jᵀ·r − ∇L| = {:.3e} (max |∇L| = {:.3e})",
-                n,
-                seed,
-                loss_type,
-                max_abs_diff,
-                max_abs
+                "n={n} seed={seed} loss={loss_type:?}: |2·Jᵀ·r − ∇L| = {max_abs_diff:.3e} (max |∇L| = {max_abs:.3e})"
             );
         }
     }

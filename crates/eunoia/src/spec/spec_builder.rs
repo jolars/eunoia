@@ -539,8 +539,7 @@ mod tests {
                 Err(DiagramError::TooManySets { requested, max })
                 if requested == MAX_SETS + 1 && max == MAX_SETS
             ),
-            "expected TooManySets for n = MAX_SETS + 1, got {:?}",
-            result
+            "expected TooManySets for n = MAX_SETS + 1, got {result:?}"
         );
     }
 
@@ -587,8 +586,7 @@ mod tests {
                 Err(DiagramError::TooManySets { requested, max })
                 if requested == limit + 1 && max == limit
             ),
-            "expected TooManySets reporting the overridden cap, got {:?}",
-            result
+            "expected TooManySets reporting the overridden cap, got {result:?}"
         );
     }
 
@@ -608,8 +606,7 @@ mod tests {
                 Err(DiagramError::TooManySets { requested, max })
                 if requested == n && max == MAX_SETS_HARD_CAP
             ),
-            "expected TooManySets clamped to MAX_SETS_HARD_CAP, got {:?}",
-            result
+            "expected TooManySets clamped to MAX_SETS_HARD_CAP, got {result:?}"
         );
     }
 
@@ -627,8 +624,7 @@ mod tests {
                 Err(DiagramError::TooManySets { requested, max })
                 if requested == 3 && max == 2
             ),
-            "expected TooManySets with tightened cap, got {:?}",
-            result
+            "expected TooManySets with tightened cap, got {result:?}"
         );
     }
 
@@ -667,8 +663,7 @@ mod tests {
                 Err(DiagramError::InvalidValue { ref combination, value })
                     if combination == "<complement>" && value < 0.0
             ),
-            "expected InvalidValue for negative complement, got {:?}",
-            result
+            "expected InvalidValue for negative complement, got {result:?}"
         );
     }
 
@@ -709,8 +704,7 @@ mod tests {
             .build();
         assert!(
             matches!(result, Err(DiagramError::InvalidValue { .. })),
-            "inclusive-input inconsistency should be rejected even with complement, got {:?}",
-            result,
+            "inclusive-input inconsistency should be rejected even with complement, got {result:?}",
         );
     }
 
@@ -821,8 +815,7 @@ mod tests {
         // microseconds.
         assert!(
             elapsed < std::time::Duration::from_secs(1),
-            "30-way build took {:?}; expected sub-second",
-            elapsed
+            "30-way build took {elapsed:?}; expected sub-second"
         );
     }
 }

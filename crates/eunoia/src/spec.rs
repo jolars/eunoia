@@ -478,8 +478,7 @@ mod tests {
 
         assert!(
             matches!(result, Err(DiagramError::InvalidValue { .. })),
-            "expected InvalidValue for negative-disjoint inclusive input, got {:?}",
-            result
+            "expected InvalidValue for negative-disjoint inclusive input, got {result:?}"
         );
     }
 

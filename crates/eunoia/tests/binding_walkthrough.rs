@@ -51,7 +51,7 @@ fn binding_author_walkthrough() {
             assert_eq!(param, "semi_minor");
             assert!(value < 0.0);
         }
-        other => panic!("expected InvalidShapeParameter, got {:?}", other),
+        other => panic!("expected InvalidShapeParameter, got {other:?}"),
     }
 
     // ---------------------------------------------------------------------

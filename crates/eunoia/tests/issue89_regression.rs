@@ -119,9 +119,7 @@ fn issue89_circles_terminate() {
     let elapsed = t0.elapsed();
     assert!(
         elapsed < TIME_BUDGET,
-        "circle fit took {:?}, exceeds budget {:?}",
-        elapsed,
-        TIME_BUDGET
+        "circle fit took {elapsed:?}, exceeds budget {TIME_BUDGET:?}"
     );
     assert!(
         layout.diag_error().is_finite(),
@@ -141,9 +139,7 @@ fn issue89_ellipses_terminate() {
     let elapsed = t0.elapsed();
     assert!(
         elapsed < TIME_BUDGET,
-        "ellipse fit took {:?}, exceeds budget {:?}",
-        elapsed,
-        TIME_BUDGET
+        "ellipse fit took {elapsed:?}, exceeds budget {TIME_BUDGET:?}"
     );
     assert!(
         layout.diag_error().is_finite(),

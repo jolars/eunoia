@@ -53,32 +53,27 @@ impl Display for DiagramError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DiagramError::UndefinedSet(set) => {
-                write!(f, "Set '{}' is referenced but never defined", set)
+                write!(f, "Set '{set}' is referenced but never defined")
             }
             DiagramError::InvalidValue { combination, value } => {
-                write!(
-                    f,
-                    "Invalid value {} for combination '{}'",
-                    value, combination
-                )
+                write!(f, "Invalid value {value} for combination '{combination}'")
             }
             DiagramError::EmptySets => {
                 write!(f, "No sets defined in diagram")
             }
             DiagramError::DuplicateCombination(combo) => {
-                write!(f, "Combination '{}' defined multiple times", combo)
+                write!(f, "Combination '{combo}' defined multiple times")
             }
             DiagramError::InvalidCombination(combo) => {
-                write!(f, "Invalid combination format: '{}'", combo)
+                write!(f, "Invalid combination format: '{combo}'")
             }
             DiagramError::UnsupportedSetCount(n) => {
-                write!(f, "Unsupported set count: {}", n)
+                write!(f, "Unsupported set count: {n}")
             }
             DiagramError::TooManySets { requested, max } => {
                 write!(
                     f,
-                    "Too many sets: {} requested, but maximum supported is {}",
-                    requested, max
+                    "Too many sets: {requested} requested, but maximum supported is {max}"
                 )
             }
             DiagramError::InvalidShapeParameter {
@@ -86,7 +81,7 @@ impl Display for DiagramError {
                 param,
                 value,
             } => {
-                write!(f, "Invalid {} for {}: {} must be > 0", param, shape, value)
+                write!(f, "Invalid {param} for {shape}: {value} must be > 0")
             }
         }
     }
@@ -103,7 +98,7 @@ mod tests {
         let error = DiagramError::UndefinedSet("X".to_string());
         assert_eq!(error, DiagramError::UndefinedSet("X".to_string()));
         assert_eq!(
-            format!("{}", error),
+            format!("{error}"),
             "Set 'X' is referenced but never defined"
         );
     }
@@ -121,17 +116,14 @@ mod tests {
                 value: -5.0,
             }
         );
-        assert_eq!(
-            format!("{}", error),
-            "Invalid value -5 for combination 'A&B'"
-        );
+        assert_eq!(format!("{error}"), "Invalid value -5 for combination 'A&B'");
     }
 
     #[test]
     fn test_empty_sets_error() {
         let error = DiagramError::EmptySets;
         assert_eq!(error, DiagramError::EmptySets);
-        assert_eq!(format!("{}", error), "No sets defined in diagram");
+        assert_eq!(format!("{error}"), "No sets defined in diagram");
     }
 
     #[test]
@@ -139,7 +131,7 @@ mod tests {
         let error = DiagramError::DuplicateCombination("A&B".to_string());
         assert_eq!(error, DiagramError::DuplicateCombination("A&B".to_string()));
         assert_eq!(
-            format!("{}", error),
+            format!("{error}"),
             "Combination 'A&B' defined multiple times"
         );
     }
@@ -148,26 +140,26 @@ mod tests {
     fn test_invalid_combination_error() {
         let error = DiagramError::InvalidCombination("A&".to_string());
         assert_eq!(error, DiagramError::InvalidCombination("A&".to_string()));
-        assert_eq!(format!("{}", error), "Invalid combination format: 'A&'");
+        assert_eq!(format!("{error}"), "Invalid combination format: 'A&'");
     }
 
     #[test]
     fn test_unsupported_set_count_error() {
         let error = DiagramError::UnsupportedSetCount(7);
         assert_eq!(error, DiagramError::UnsupportedSetCount(7));
-        assert_eq!(format!("{}", error), "Unsupported set count: 7");
+        assert_eq!(format!("{error}"), "Unsupported set count: 7");
     }
 
     #[test]
     fn test_error_trait_implementation() {
         let error: Box<dyn std::error::Error> = Box::new(DiagramError::EmptySets);
-        assert_eq!(format!("{}", error), "No sets defined in diagram");
+        assert_eq!(format!("{error}"), "No sets defined in diagram");
     }
 
     #[test]
     fn test_debug_implementation() {
         let error = DiagramError::UndefinedSet("A".to_string());
-        let debug_str = format!("{:?}", error);
+        let debug_str = format!("{error:?}");
         assert!(debug_str.contains("UndefinedSet"));
         assert!(debug_str.contains("A"));
     }
@@ -180,7 +172,7 @@ mod tests {
             value: -1.5,
         };
         assert_eq!(
-            format!("{}", error),
+            format!("{error}"),
             "Invalid radius for Circle: -1.5 must be > 0"
         );
     }

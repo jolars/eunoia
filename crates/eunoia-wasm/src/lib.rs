@@ -162,7 +162,7 @@ fn build_diagram_spec(
     builder
         .input_type(input_type_enum)
         .build()
-        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))
+        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {e}")))
 }
 
 /// Convert the optional `Rectangle` container from a fitted layout into a
@@ -205,9 +205,9 @@ where
         diag_error: layout.diag_error(),
         iterations: layout.iterations(),
         region_error_json: serde_json::to_string(&region_error)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         residuals_json: serde_json::to_string(&residuals)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -954,7 +954,7 @@ pub fn generate_from_spec(
     let diagram_spec = builder
         .input_type(input_type)
         .build()
-        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {e}")))?;
 
     // Fit the diagram using circles
     let mut fitter = Fitter::<Circle>::new(&diagram_spec);
@@ -966,7 +966,7 @@ pub fn generate_from_spec(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {e}")))?;
 
     // Convert circles to WasmCircle with labels
     let wasm_circles: Vec<WasmCircle> = diagram_spec
@@ -1001,9 +1001,9 @@ pub fn generate_from_spec(
         circles: wasm_circles,
         loss: layout.loss(),
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -1053,13 +1053,13 @@ pub fn generate_from_spec_with_debug(
     let diagram_spec = builder
         .input_type(input_type)
         .build()
-        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {e}")))?;
 
     // Fit the diagram using circles
     let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {e}")))?;
 
     // Convert circles to WasmCircle with labels
     let wasm_circles: Vec<WasmCircle> = diagram_spec
@@ -1099,9 +1099,9 @@ pub fn generate_from_spec_with_debug(
 
     // Convert to JSON strings
     let target_areas_json = serde_json::to_string(&target_areas_map)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize target areas: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize target areas: {e}")))?;
     let fitted_areas_json = serde_json::to_string(&fitted_areas_map)
-        .map_err(|e| JsValue::from_str(&format!("Failed to serialize fitted areas: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize fitted areas: {e}")))?;
 
     Ok(DiagramResult {
         circles: wasm_circles,
@@ -1146,13 +1146,13 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
     let diagram_spec = builder
         .input_type(input_type_enum)
         .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
     web_sys::console::log_1(&"[Rust] Fitting...".into());
     let fitter = Fitter::<Circle>::new(&diagram_spec);
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
     web_sys::console::log_1(&"[Rust] Computing target areas...".into());
     let mut target: HashMap<String, f64> = HashMap::new();
@@ -1181,7 +1181,7 @@ pub fn get_debug_info(specs: Vec<DiagramSpec>, input_type: String) -> Result<Str
     });
 
     web_sys::console::log_1(&"[Rust] Serializing...".into());
-    serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{}", e)))
+    serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{e}")))
 }
 /// Get debug information as JSON string - takes raw inputs instead of DiagramSpec objects
 #[wasm_bindgen]
@@ -1218,7 +1218,7 @@ pub fn get_debug_info_simple(
     let diagram_spec = builder
         .input_type(input_type_enum)
         .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
     // Compute fitted areas based on shape type
     let fitted: HashMap<String, f64> = if shape_type == "ellipse" {
@@ -1228,7 +1228,7 @@ pub fn get_debug_info_simple(
         }
         let layout = fitter
             .fit()
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
         layout
             .fitted()
@@ -1242,7 +1242,7 @@ pub fn get_debug_info_simple(
         }
         let layout = fitter
             .fit()
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
         layout
             .fitted()
@@ -1276,7 +1276,7 @@ pub fn get_debug_info_simple(
         "fitted_areas": fitted
     });
 
-    serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{}", e)))
+    serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{e}")))
 }
 
 /// Generate layout from diagram specification (initial layout only, no optimization)
@@ -1323,7 +1323,7 @@ pub fn generate_from_spec_initial(
     let diagram_spec = builder
         .input_type(input_type)
         .build()
-        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to build spec: {e}")))?;
 
     // Fit using initial layout only
     let mut fitter = Fitter::<Circle>::new(&diagram_spec);
@@ -1332,7 +1332,7 @@ pub fn generate_from_spec_initial(
     }
     let layout = fitter
         .fit_initial_only()
-        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to fit diagram: {e}")))?;
 
     // Convert to WasmCircles
     let wasm_circles: Vec<WasmCircle> = diagram_spec
@@ -1367,9 +1367,9 @@ pub fn generate_from_spec_initial(
         circles: wasm_circles,
         loss: layout.loss(),
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -1408,7 +1408,7 @@ pub fn get_debug_info_initial(
     let diagram_spec = builder
         .input_type(input_type_enum)
         .build()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
     // Compute fitted areas based on shape type
     let (loss, fitted) = if shape_type == "ellipse" {
@@ -1418,7 +1418,7 @@ pub fn get_debug_info_initial(
         }
         let layout = fitter
             .fit_initial_only()
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
         let fitted_map: HashMap<String, f64> = layout
             .fitted()
@@ -1434,7 +1434,7 @@ pub fn get_debug_info_initial(
         }
         let layout = fitter
             .fit_initial_only()
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
         let fitted_map: HashMap<String, f64> = layout
             .fitted()
@@ -1456,7 +1456,7 @@ pub fn get_debug_info_initial(
         "fitted_areas": fitted
     });
 
-    serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{}", e)))
+    serde_json::to_string(&response).map_err(|e| JsValue::from_str(&format!("{e}")))
 }
 
 /// Generate ellipse layout from diagram specification
@@ -1481,7 +1481,7 @@ pub fn generate_ellipses_from_spec(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
     let wasm_ellipses: Vec<WasmEllipse> = diagram_spec
         .set_names()
@@ -1517,9 +1517,9 @@ pub fn generate_ellipses_from_spec(
         ellipses: wasm_ellipses,
         loss: layout.loss(),
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -1549,7 +1549,7 @@ pub fn generate_from_spec_square(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
     let wasm_squares: Vec<WasmSquare> = diagram_spec
         .set_names()
@@ -1582,9 +1582,9 @@ pub fn generate_from_spec_square(
         squares: wasm_squares,
         loss: layout.loss(),
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -1613,7 +1613,7 @@ pub fn generate_from_spec_rectangle(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
 
     let wasm_rectangles: Vec<WasmRectangle> = diagram_spec
         .set_names()
@@ -1647,9 +1647,9 @@ pub fn generate_from_spec_rectangle(
         rectangles: wasm_rectangles,
         loss: layout.loss(),
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -1684,7 +1684,7 @@ pub fn generate_circles_as_polygons(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
     let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
@@ -1752,9 +1752,9 @@ pub fn generate_circles_as_polygons(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
     })
@@ -1791,7 +1791,7 @@ pub fn generate_ellipses_as_polygons(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
     let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
@@ -1861,9 +1861,9 @@ pub fn generate_ellipses_as_polygons(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
     })
@@ -1900,7 +1900,7 @@ pub fn generate_squares_as_polygons(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
     let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
@@ -1967,9 +1967,9 @@ pub fn generate_squares_as_polygons(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
     })
@@ -2006,7 +2006,7 @@ pub fn generate_rectangles_as_polygons(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
     let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
 
@@ -2074,9 +2074,9 @@ pub fn generate_rectangles_as_polygons(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
     })
@@ -2113,7 +2113,7 @@ pub fn generate_region_polygons_circles(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons.
@@ -2159,13 +2159,13 @@ pub fn generate_region_polygons_circles(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -2200,7 +2200,7 @@ pub fn generate_region_polygons_ellipses(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons.
@@ -2246,13 +2246,13 @@ pub fn generate_region_polygons_ellipses(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -2287,7 +2287,7 @@ pub fn generate_region_polygons_squares(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
     let (region_anchors_map, set_anchors_map) =
@@ -2329,13 +2329,13 @@ pub fn generate_region_polygons_squares(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -2370,7 +2370,7 @@ pub fn generate_region_polygons_rectangles(
     }
     let layout = fitter
         .fit()
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
     let (region_anchors_map, set_anchors_map) =
@@ -2412,13 +2412,13 @@ pub fn generate_region_polygons_rectangles(
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -2455,11 +2455,11 @@ where
         &std::collections::HashMap<String, (f64, f64)>,
     ) -> VennShapeParams,
 {
-    let mut venn = VennDiagram::<S>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let mut venn = VennDiagram::<S>::new(n).map_err(|e| JsValue::from_str(&format!("{e}")))?;
     if let Some(c) = complement {
         venn = venn
             .complement(c)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     }
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
@@ -2509,9 +2509,9 @@ where
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
     })
@@ -2675,11 +2675,11 @@ fn venn_region_result<S>(
 where
     S: eunoia::geometry::traits::DiagramShape + Polygonize + Copy + 'static,
 {
-    let mut venn = VennDiagram::<S>::new(n).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let mut venn = VennDiagram::<S>::new(n).map_err(|e| JsValue::from_str(&format!("{e}")))?;
     if let Some(c) = complement {
         venn = venn
             .complement(c)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     }
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
@@ -2723,13 +2723,13 @@ where
         diag_error: diagnostics.diag_error,
         iterations: diagnostics.iterations,
         target_areas_json: serde_json::to_string(&target_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         fitted_areas_json: serde_json::to_string(&fitted_areas)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
-            .map_err(|e| JsValue::from_str(&format!("{}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -2909,22 +2909,22 @@ pub fn place_region_labels(
 
     let regions_in: std::collections::HashMap<String, Vec<PieceJson>> =
         serde_json::from_str(&polygons_json)
-            .map_err(|e| JsValue::from_str(&format!("invalid polygons_json: {}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("invalid polygons_json: {e}")))?;
     let sizes: std::collections::HashMap<String, (f64, f64)> = serde_json::from_str(&sizes_json)
-        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {e}")))?;
 
     let container = container_json
         .as_deref()
         .map(|s| {
             serde_json::from_str::<ContainerJson>(s)
-                .map_err(|e| JsValue::from_str(&format!("invalid container_json: {}", e)))
+                .map_err(|e| JsValue::from_str(&format!("invalid container_json: {e}")))
         })
         .transpose()?
         .map(|c| Rectangle::new(Point::new(c.x, c.y), c.width, c.height));
 
     let strategy_in: StrategyJson = match strategy_json.as_deref() {
         Some(s) => serde_json::from_str(s)
-            .map_err(|e| JsValue::from_str(&format!("invalid strategy_json: {}", e)))?,
+            .map_err(|e| JsValue::from_str(&format!("invalid strategy_json: {e}")))?,
         None => StrategyJson::default(),
     };
 
@@ -3018,7 +3018,7 @@ pub fn place_region_labels(
         );
     }
 
-    serde_json::to_string(&out).map_err(|e| JsValue::from_str(&format!("{}", e)))
+    serde_json::to_string(&out).map_err(|e| JsValue::from_str(&format!("{e}")))
 }
 
 /// Bounding box of every placed label box.
@@ -3068,9 +3068,9 @@ pub fn placements_bbox(
 
     let placements_in: std::collections::HashMap<String, PlacementJson> =
         serde_json::from_str(&placements_json)
-            .map_err(|e| JsValue::from_str(&format!("invalid placements_json: {}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("invalid placements_json: {e}")))?;
     let sizes: std::collections::HashMap<String, (f64, f64)> = serde_json::from_str(&sizes_json)
-        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {e}")))?;
 
     let placements: std::collections::HashMap<String, LabelPlacement> = placements_in
         .into_iter()
@@ -3101,5 +3101,5 @@ pub fn placements_bbox(
     };
     serde_json::to_string(&payload)
         .map(Some)
-        .map_err(|e| JsValue::from_str(&format!("{}", e)))
+        .map_err(|e| JsValue::from_str(&format!("{e}")))
 }

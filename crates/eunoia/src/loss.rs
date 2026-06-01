@@ -913,8 +913,7 @@ mod tests {
         let result = loss.compute(&fitted, &target);
         assert!(
             (result - 0.015385).abs() < 1e-5,
-            "expected 0.015385, got {}",
-            result
+            "expected 0.015385, got {result}"
         );
     }
 
@@ -997,8 +996,7 @@ mod tests {
         let result = loss.compute(&fitted, &target);
         assert!(
             (result - 25.0 / 34.0).abs() < 1e-10,
-            "expected 0.735294, got {}",
-            result
+            "expected 0.735294, got {result}"
         );
     }
 
@@ -1087,11 +1085,7 @@ mod tests {
             let smoothed = smooth_loss.compute(&fitted, &target);
             assert!(
                 (smoothed - exact).abs() < 1e-3 * exact.abs().max(1e-3),
-                "{:?} vs {:?}: smoothed = {}, exact = {}",
-                true_loss,
-                smooth_loss,
-                smoothed,
-                exact
+                "{true_loss:?} vs {smooth_loss:?}: smoothed = {smoothed}, exact = {exact}"
             );
         }
     }
@@ -1135,10 +1129,7 @@ mod tests {
         let plain = loss.compute(&fitted, &target);
         assert!(
             (loss_val - plain).abs() <= 1e-9 + 1e-9 * plain.abs(),
-            "{:?}: analytic loss {} vs compute() {}",
-            loss,
-            loss_val,
-            plain
+            "{loss:?}: analytic loss {loss_val} vs compute() {plain}"
         );
 
         let masks: Vec<RegionMask> = {
@@ -1158,12 +1149,7 @@ mod tests {
             let rel = (an - fd).abs() / scale;
             assert!(
                 rel < tol,
-                "{:?}, mask {:b}: analytic={} fd={} rel={:.3e}",
-                loss,
-                mask,
-                an,
-                fd,
-                rel
+                "{loss:?}, mask {mask:b}: analytic={an} fd={fd} rel={rel:.3e}"
             );
         }
     }
@@ -1244,8 +1230,8 @@ mod tests {
             let (l, g) = loss
                 .compute_with_gradient(&fitted, &empty)
                 .expect("smooth losses always return Some");
-            assert_eq!(l, 0.0, "{:?}: loss should be 0 for empty target", loss);
-            assert!(g.is_empty(), "{:?}: grad should be empty", loss);
+            assert_eq!(l, 0.0, "{loss:?}: loss should be 0 for empty target");
+            assert!(g.is_empty(), "{loss:?}: grad should be empty");
         }
 
         // Non-smooth losses still fall back to FD (return None).
@@ -1259,8 +1245,7 @@ mod tests {
         for loss in non_smooth {
             assert!(
                 loss.compute_with_gradient(&fitted, &empty).is_none(),
-                "{:?}: should return None to trigger FD fallback",
-                loss
+                "{loss:?}: should return None to trigger FD fallback"
             );
         }
     }

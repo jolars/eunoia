@@ -351,7 +351,7 @@ impl Circle {
     /// let circle = Circle::new(Point::new(1.0, 2.0), 3.0);
     /// ```
     pub fn new(center: Point, radius: f64) -> Self {
-        assert!(radius > 0.0, "Circle radius must be > 0, got {}", radius);
+        assert!(radius > 0.0, "Circle radius must be > 0, got {radius}");
         Circle { center, radius }
     }
 
@@ -2076,8 +2076,7 @@ mod tests {
 
         assert!(
             (all_three - PI).abs() < 1e-6,
-            "Complete overlap should give area ~π, got {}",
-            all_three
+            "Complete overlap should give area ~π, got {all_three}"
         );
     }
 
@@ -2100,9 +2099,7 @@ mod tests {
 
         assert!(
             (all_three - expected).abs() < 1e-6,
-            "Expected area {}, got {}",
-            expected,
-            all_three
+            "Expected area {expected}, got {all_three}"
         );
     }
 
@@ -2119,11 +2116,10 @@ mod tests {
         let disk = areas.get(&0b1).copied().unwrap_or(0.0);
         let complement = areas.get(&0).copied().unwrap_or(0.0);
 
-        assert!((disk - PI).abs() < 1e-9, "disk area {} ≠ π", disk);
+        assert!((disk - PI).abs() < 1e-9, "disk area {disk} ≠ π");
         assert!(
             (complement - (36.0 - PI)).abs() < 1e-9,
-            "complement {} ≠ 36 − π",
-            complement
+            "complement {complement} ≠ 36 − π"
         );
     }
 
@@ -2138,11 +2134,10 @@ mod tests {
         let disk = areas.get(&0b1).copied().unwrap_or(0.0);
         let complement = areas.get(&0).copied().unwrap_or(0.0);
 
-        assert!(disk.abs() < 1e-9, "disk area {} ≠ 0", disk);
+        assert!(disk.abs() < 1e-9, "disk area {disk} ≠ 0");
         assert!(
             (complement - 16.0).abs() < 1e-9,
-            "complement {} ≠ 16",
-            complement
+            "complement {complement} ≠ 16"
         );
     }
 
@@ -2168,9 +2163,7 @@ mod tests {
 
         assert!(
             (disk_clipped - expected).abs() < 1e-9,
-            "clipped disk {} ≠ π − segment ({})",
-            disk_clipped,
-            expected
+            "clipped disk {disk_clipped} ≠ π − segment ({expected})"
         );
     }
 
@@ -2187,10 +2180,9 @@ mod tests {
 
         assert!(
             (disk - 24.0).abs() < 1e-9,
-            "disk-clipped {} ≠ container area",
-            disk
+            "disk-clipped {disk} ≠ container area"
         );
-        assert!(complement.abs() < 1e-9, "complement {} ≠ 0", complement);
+        assert!(complement.abs() < 1e-9, "complement {complement} ≠ 0");
     }
 
     /// Two overlapping disks both fully inside the container: the per-mask
@@ -2218,14 +2210,11 @@ mod tests {
 
         assert!(
             (union - expected_union).abs() < 1e-9,
-            "union via per-mask sum {} ≠ {}",
-            union,
-            expected_union
+            "union via per-mask sum {union} ≠ {expected_union}"
         );
         assert!(
             (complement - (36.0 - expected_union)).abs() < 1e-9,
-            "complement {} ≠ box − union",
-            complement
+            "complement {complement} ≠ box − union"
         );
     }
 
@@ -2239,8 +2228,7 @@ mod tests {
         let complement = areas.get(&0).copied().unwrap_or(0.0);
         assert!(
             (complement - 12.0).abs() < 1e-9,
-            "complement {} ≠ 12",
-            complement
+            "complement {complement} ≠ 12"
         );
     }
 
@@ -2283,9 +2271,7 @@ mod tests {
         // 400k samples → stderr ≈ √(p(1-p)/n) · 4 ≈ 0.005 typically.
         assert!(
             (kept - mc_area).abs() < 0.02,
-            "clipped disk {} vs MC {}",
-            kept,
-            mc_area
+            "clipped disk {kept} vs MC {mc_area}"
         );
     }
 
@@ -2370,11 +2356,7 @@ mod tests {
             let analytic_area = areas.get(mask).copied().unwrap_or(0.0);
             assert!(
                 (analytic_area - direct).abs() < 1e-12,
-                "{}: mask {:b} area {} vs direct {} mismatch",
-                label,
-                mask,
-                analytic_area,
-                direct
+                "{label}: mask {mask:b} area {analytic_area} vs direct {direct} mismatch"
             );
             // Compare gradients.
             let diff_norm: f64 = analytic
@@ -2391,13 +2373,7 @@ mod tests {
             };
             assert!(
                 rel < tol,
-                "{}: mask {:b} analytic vs FD mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
-                label,
-                mask,
-                rel,
-                fd_norm,
-                analytic,
-                fd
+                "{label}: mask {mask:b} analytic vs FD mismatch (rel={rel:.3e}, |fd|={fd_norm:.3e})\n  analytic={analytic:?}\n  fd      ={fd:?}"
             );
         }
     }

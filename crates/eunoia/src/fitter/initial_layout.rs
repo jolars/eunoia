@@ -704,8 +704,8 @@ mod gradient_check {
         let max_abs = numeric.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
         println!("analytic = {:?}", analytic.as_slice());
         println!("numeric  = {:?}", numeric.as_slice());
-        println!("max abs diff: {:.4e}", max_abs_diff);
-        println!("max abs num : {:.4e}", max_abs);
+        println!("max abs diff: {max_abs_diff:.4e}");
+        println!("max abs num : {max_abs:.4e}");
         println!("ratio analytic/numeric per element:");
         for i in 0..p.len() {
             if numeric[i].abs() > 1e-9 {
@@ -759,9 +759,7 @@ mod gradient_check {
         }
         assert!(
             max_abs_diff < 1e-3 * max_abs.max(1.0),
-            "analytic Hessian disagrees with FD reference: max abs diff {:.4e}, max abs {:.4e}",
-            max_abs_diff,
-            max_abs,
+            "analytic Hessian disagrees with FD reference: max abs diff {max_abs_diff:.4e}, max abs {max_abs:.4e}",
         );
     }
 
@@ -810,9 +808,7 @@ mod gradient_check {
             .fold(0.0_f64, f64::max);
         assert!(
             max_abs_diff < 1e-9 + 1e-8 * max_abs,
-            "|2·Jᵀ·r − ∇L| = {:.3e} (max |∇L| = {:.3e})",
-            max_abs_diff,
-            max_abs
+            "|2·Jᵀ·r − ∇L| = {max_abs_diff:.3e} (max |∇L| = {max_abs:.3e})"
         );
     }
 }
@@ -897,8 +893,7 @@ mod tests {
         // Should be close to 2.0
         assert!(
             approx_eq(actual_distance, 2.0, 0.1),
-            "Distance {} should be close to 2.0",
-            actual_distance
+            "Distance {actual_distance} should be close to 2.0"
         );
     }
 
@@ -922,8 +917,7 @@ mod tests {
 
         assert!(
             approx_eq(actual_distance, 1.0, 0.1),
-            "Distance {} should be close to 1.0",
-            actual_distance
+            "Distance {actual_distance} should be close to 1.0"
         );
     }
 
@@ -947,8 +941,7 @@ mod tests {
 
         assert!(
             approx_eq(actual_distance, 5.0, 0.1),
-            "Distance {} should be close to 5.0",
-            actual_distance
+            "Distance {actual_distance} should be close to 5.0"
         );
     }
 
@@ -975,8 +968,7 @@ mod tests {
         // For disjoint sets, distance should be at least the specified distance
         assert!(
             actual_distance >= 3.0 - 0.1,
-            "Distance {} should be at least 3.0",
-            actual_distance
+            "Distance {actual_distance} should be at least 3.0"
         );
     }
 
@@ -1004,11 +996,7 @@ mod tests {
 
                 assert!(
                     approx_eq(actual_distance, d, 0.2),
-                    "Distance between {} and {} is {}, should be close to {}",
-                    i,
-                    j,
-                    actual_distance,
-                    d
+                    "Distance between {i} and {j} is {actual_distance}, should be close to {d}"
                 );
             }
         }
@@ -1037,9 +1025,9 @@ mod tests {
         let d12 = ((x[1] - x[2]).powi(2) + (y[1] - y[2]).powi(2)).sqrt();
         let d02 = ((x[0] - x[2]).powi(2) + (y[0] - y[2]).powi(2)).sqrt();
 
-        assert!(approx_eq(d01, 1.0, 0.2), "Distance 0-1: {}", d01);
-        assert!(approx_eq(d12, 1.0, 0.2), "Distance 1-2: {}", d12);
-        assert!(approx_eq(d02, 2.0, 0.2), "Distance 0-2: {}", d02);
+        assert!(approx_eq(d01, 1.0, 0.2), "Distance 0-1: {d01}");
+        assert!(approx_eq(d12, 1.0, 0.2), "Distance 1-2: {d12}");
+        assert!(approx_eq(d02, 2.0, 0.2), "Distance 0-2: {d02}");
     }
 
     #[test]
@@ -1093,8 +1081,8 @@ mod tests {
         let (x2, y2) = result2.split_at(2);
         let d2 = ((x2[0] - x2[1]).powi(2) + (y2[0] - y2[1]).powi(2)).sqrt();
 
-        assert!(approx_eq(d1, 1.5, 0.2), "Distance with first run: {}", d1);
-        assert!(approx_eq(d2, 1.5, 0.2), "Distance with second run: {}", d2);
+        assert!(approx_eq(d1, 1.5, 0.2), "Distance with first run: {d1}");
+        assert!(approx_eq(d2, 1.5, 0.2), "Distance with second run: {d2}");
     }
 
     #[test]
@@ -1118,8 +1106,7 @@ mod tests {
         // Should be very close to 0
         assert!(
             actual_distance < 0.1,
-            "Distance {} should be close to 0.0",
-            actual_distance
+            "Distance {actual_distance} should be close to 0.0"
         );
     }
 

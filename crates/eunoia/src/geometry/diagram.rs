@@ -627,9 +627,7 @@ mod tests {
         let error = (area - expected).abs() / expected;
         assert!(
             error < 0.001,
-            "Single circle area should match: {} vs {}",
-            area,
-            expected
+            "Single circle area should match: {area} vs {expected}"
         );
     }
 
@@ -649,9 +647,7 @@ mod tests {
         let error = (area - expected).abs() / expected;
         assert!(
             error < 0.001,
-            "Two circle intersection area should match: {} vs {}",
-            area,
-            expected
+            "Two circle intersection area should match: {area} vs {expected}"
         );
     }
 

@@ -481,7 +481,7 @@ mod tests {
             "height = {}",
             rect.height()
         );
-        assert!(score > 0.99, "score = {}", score);
+        assert!(score > 0.99, "score = {score}");
         assert!((rect.center().x() - 5.0).abs() < 0.2);
         assert!((rect.center().y() - 5.0).abs() < 0.2);
     }
@@ -504,7 +504,7 @@ mod tests {
             rect.height()
         );
         // Score = achieved short side / bbox short side; both bbox dims are 10.
-        assert!((score - 0.5).abs() < 0.02, "score = {}", score);
+        assert!((score - 0.5).abs() < 0.02, "score = {score}");
     }
 
     #[test]
@@ -529,7 +529,7 @@ mod tests {
         // (~1×1 square) inside a 4×4 bbox — score ≈ 0.25.
         assert!(rect.center().x() < 1.5);
         assert!(rect.center().y() < 1.5);
-        assert!(score > 0.2, "score = {}", score);
+        assert!(score > 0.2, "score = {score}");
         // The rectangle is bounded by the arm width (1.0) — neither
         // dimension can exceed the arm thickness.
         assert!(rect.width() <= 1.05, "width = {}", rect.width());
@@ -566,18 +566,14 @@ mod tests {
         let cy = rect.center().y();
         assert!(
             !(4.0..=6.0).contains(&cx) || !(4.0..=6.0).contains(&cy),
-            "centre ({}, {}) lies inside the hole",
-            cx,
-            cy
+            "centre ({cx}, {cy}) lies inside the hole"
         );
         // Hole carves out clearance, so the rectangle and score shrink
         // relative to the unholed baseline (which saturates at ≈1.0 under
         // the directional bound).
         assert!(
             score < baseline_score - 0.1,
-            "score {} not lower than baseline {}",
-            score,
-            baseline_score
+            "score {score} not lower than baseline {baseline_score}"
         );
         // Rect must not overlap the hole — every corner strictly outside
         // the open hole interior (4, 6)². Touching the hole boundary at a
@@ -588,7 +584,7 @@ mod tests {
             let x = cx + dx * half_w;
             let y = cy + dy * half_h;
             let strictly_in_hole = x > 4.0 && x < 6.0 && y > 4.0 && y < 6.0;
-            assert!(!strictly_in_hole, "corner ({}, {}) overlaps hole", x, y);
+            assert!(!strictly_in_hole, "corner ({x}, {y}) overlaps hole");
         }
     }
 
@@ -656,9 +652,7 @@ mod tests {
             let y = cy + dy * (half_h - inset);
             assert!(
                 crate::plotting::regions::point_in_polygon(&Point::new(x, y), &outer),
-                "near-corner ({}, {}) escaped outer polygon",
-                x,
-                y
+                "near-corner ({x}, {y}) escaped outer polygon"
             );
         }
     }
@@ -710,11 +704,7 @@ mod tests {
         // Angle is mathematically undefined for an isotropic shape — only
         // pin elongation. A 64-vertex circle has very small numerical
         // anisotropy.
-        assert!(
-            (elongation - 1.0).abs() < 0.05,
-            "elongation = {}",
-            elongation
-        );
+        assert!((elongation - 1.0).abs() < 0.05, "elongation = {elongation}");
     }
 
     #[test]
@@ -734,8 +724,8 @@ mod tests {
         if diff > std::f64::consts::FRAC_PI_2 {
             diff = std::f64::consts::PI - diff;
         }
-        assert!(diff < 0.05, "angle = {}, expected ≈ {}", angle, theta);
-        assert!(elongation > 3.5, "elongation = {}", elongation);
+        assert!(diff < 0.05, "angle = {angle}, expected ≈ {theta}");
+        assert!(elongation > 3.5, "elongation = {elongation}");
     }
 
     #[test]
@@ -759,7 +749,7 @@ mod tests {
             holes: vec![hole],
         };
         let (_angle, elongation) = principal_axis(&piece);
-        assert!(elongation > 1.0, "elongation = {}", elongation);
+        assert!(elongation > 1.0, "elongation = {elongation}");
     }
 
     #[test]

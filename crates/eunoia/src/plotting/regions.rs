@@ -1108,7 +1108,7 @@ mod tests {
         let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
         assert!(!regions.is_empty(), "no regions decomposed");
         for (combo, polys) in regions.iter() {
-            assert!(!polys.is_empty(), "Region {:?} should have polygons", combo);
+            assert!(!polys.is_empty(), "Region {combo:?} should have polygons");
         }
     }
 
@@ -1137,7 +1137,7 @@ mod tests {
 
         // Check that we have some polygons
         for (combo, polys) in regions.iter() {
-            assert!(!polys.is_empty(), "Region {:?} should have polygons", combo);
+            assert!(!polys.is_empty(), "Region {combo:?} should have polygons");
         }
     }
 
@@ -1195,8 +1195,7 @@ mod tests {
         for combo in regions.iter().map(|(c, _)| c) {
             assert!(
                 labels.contains_key(combo),
-                "Missing label point for region {:?}",
-                combo
+                "Missing label point for region {combo:?}"
             );
         }
 
@@ -1334,9 +1333,7 @@ mod tests {
         // Allow some tolerance due to polygonization
         assert!(
             (total_area - expected_total).abs() < 0.5,
-            "Total area {:.3} should be close to expected {:.3}",
-            total_area,
-            expected_total
+            "Total area {total_area:.3} should be close to expected {expected_total:.3}"
         );
     }
 
@@ -1441,8 +1438,7 @@ mod tests {
         // The total should be close to sum of individual shapes minus overlaps
         assert!(
             total_area > 5.0,
-            "Total area should be substantial, got {:.3}",
-            total_area
+            "Total area should be substantial, got {total_area:.3}"
         );
     }
 

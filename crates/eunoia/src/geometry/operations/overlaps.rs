@@ -176,10 +176,7 @@ mod tests {
         let error = (estimated - expected).abs() / expected;
         assert!(
             error < 0.01,
-            "Error too large: {} (estimated: {}, expected: {})",
-            error,
-            estimated,
-            expected
+            "Error too large: {error} (estimated: {estimated}, expected: {expected})"
         );
     }
 
@@ -195,8 +192,7 @@ mod tests {
 
         assert!(
             estimated.abs() < 0.001,
-            "Should be near zero but got: {}",
-            estimated
+            "Should be near zero but got: {estimated}"
         );
     }
 
@@ -223,10 +219,7 @@ mod tests {
         let error = (estimated - expected).abs() / expected;
         assert!(
             error < 0.02,
-            "Error too large: {} (estimated: {}, expected: {})",
-            error,
-            estimated,
-            expected
+            "Error too large: {error} (estimated: {estimated}, expected: {expected})"
         );
     }
 
@@ -245,8 +238,7 @@ mod tests {
         // Just verify it's positive and reasonable
         assert!(
             estimated > 0.5 && estimated < 5.0,
-            "Expected reasonable 3-way intersection area, got: {}",
-            estimated
+            "Expected reasonable 3-way intersection area, got: {estimated}"
         );
     }
 
@@ -265,9 +257,7 @@ mod tests {
         let error = (exact - expected).abs() / expected;
         assert!(
             error < 0.001,
-            "Exact should be very close: {} vs {}",
-            exact,
-            expected
+            "Exact should be very close: {exact} vs {expected}"
         );
     }
 
@@ -284,8 +274,7 @@ mod tests {
         // Should be positive (there is a 3-way intersection)
         assert!(
             exact > 0.0,
-            "Expected positive 3-way intersection area, got: {}",
-            exact
+            "Expected positive 3-way intersection area, got: {exact}"
         );
     }
 
@@ -306,10 +295,7 @@ mod tests {
         let error = (exact - monte_carlo).abs() / exact;
         assert!(
             error < 0.02,
-            "Exact and Monte Carlo should agree: exact={}, monte_carlo={}, error={}",
-            exact,
-            monte_carlo,
-            error
+            "Exact and Monte Carlo should agree: exact={exact}, monte_carlo={monte_carlo}, error={error}"
         );
     }
 
@@ -331,10 +317,7 @@ mod tests {
         let error = (exact - monte_carlo).abs() / exact;
         assert!(
             error < 0.03,
-            "Exact and Monte Carlo should agree: exact={}, monte_carlo={}, error={}",
-            exact,
-            monte_carlo,
-            error
+            "Exact and Monte Carlo should agree: exact={exact}, monte_carlo={monte_carlo}, error={error}"
         );
     }
 
@@ -354,9 +337,7 @@ mod tests {
         // Both should be essentially zero
         assert!(
             exact.abs() < 0.001 && monte_carlo.abs() < 0.001,
-            "Both should be near zero: exact={}, monte_carlo={}",
-            exact,
-            monte_carlo
+            "Both should be near zero: exact={exact}, monte_carlo={monte_carlo}"
         );
     }
 
@@ -379,17 +360,13 @@ mod tests {
         let error = (exact - monte_carlo).abs() / exact;
         assert!(
             error < 0.03,
-            "Exact and Monte Carlo should agree: exact={}, monte_carlo={}, error={}",
-            exact,
-            monte_carlo,
-            error
+            "Exact and Monte Carlo should agree: exact={exact}, monte_carlo={monte_carlo}, error={error}"
         );
 
         // Should have substantial area (large overlapping circles)
         assert!(
             exact > 5.0,
-            "Expected large 3-way intersection for highly overlapping circles, got: {}",
-            exact
+            "Expected large 3-way intersection for highly overlapping circles, got: {exact}"
         );
     }
 
@@ -413,18 +390,13 @@ mod tests {
             let error = (exact - monte_carlo).abs() / exact;
             assert!(
                 error < 0.05,
-                "Exact and Monte Carlo should agree: exact={}, monte_carlo={}, error={}",
-                exact,
-                monte_carlo,
-                error
+                "Exact and Monte Carlo should agree: exact={exact}, monte_carlo={monte_carlo}, error={error}"
             );
         } else {
             // Both should be very small
             assert!(
                 exact < 0.5 && monte_carlo < 0.5,
-                "Both should be small for barely overlapping circles: exact={}, monte_carlo={}",
-                exact,
-                monte_carlo
+                "Both should be small for barely overlapping circles: exact={exact}, monte_carlo={monte_carlo}"
             );
         }
     }
@@ -440,9 +412,7 @@ mod tests {
         let error = (exact - expected).abs() / expected;
         assert!(
             error < 0.001,
-            "Single circle should return its area: exact={}, expected={}",
-            exact,
-            expected
+            "Single circle should return its area: exact={exact}, expected={expected}"
         );
     }
 
@@ -459,9 +429,7 @@ mod tests {
         let error = (exact - expected).abs() / expected;
         assert!(
             error < 0.001,
-            "Contained circle intersection should be smaller circle area: exact={}, expected={}",
-            exact,
-            expected
+            "Contained circle intersection should be smaller circle area: exact={exact}, expected={expected}"
         );
     }
 }

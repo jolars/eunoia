@@ -28,9 +28,7 @@ fn test_region_decomposition_two_sets() {
 
     assert!(
         (total_area - expected_total).abs() < 1.0,
-        "Total area {:.3} should be close to expected {:.3}",
-        total_area,
-        expected_total
+        "Total area {total_area:.3} should be close to expected {expected_total:.3}"
     );
 }
 
@@ -56,7 +54,7 @@ fn test_region_decomposition_three_sets() {
 
     // Verify each region has pieces with non-degenerate outer rings.
     for (combo, pieces) in regions.iter() {
-        assert!(!pieces.is_empty(), "Region {:?} should have pieces", combo);
+        assert!(!pieces.is_empty(), "Region {combo:?} should have pieces");
         for piece in pieces {
             assert!(
                 piece.outer.vertices().len() >= 3,

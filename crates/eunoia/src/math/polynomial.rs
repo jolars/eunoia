@@ -212,7 +212,7 @@ mod tests {
 
         // All roots should be real
         for root in &roots {
-            assert!(root.im.abs() < 1e-10, "Root should be real: {:?}", root);
+            assert!(root.im.abs() < 1e-10, "Root should be real: {root:?}");
         }
 
         // Check root values
@@ -313,7 +313,7 @@ mod tests {
         let real_roots = extract_real_roots(&roots);
         assert!(!real_roots.is_empty(), "expected a real fallback root");
         for r in &real_roots {
-            assert!(approx_eq(*r, 1.0, 1e-9), "got {}", r);
+            assert!(approx_eq(*r, 1.0, 1e-9), "got {r}");
         }
     }
 

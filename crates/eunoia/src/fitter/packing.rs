@@ -138,7 +138,7 @@ mod tests {
 
                 let overlaps =
                     !(x1_max <= x2_min || x2_max <= x1_min || y1_max <= y2_min || y2_max <= y1_min);
-                assert!(!overlaps, "Rectangles {} and {} overlap", i, j);
+                assert!(!overlaps, "Rectangles {i} and {j} overlap");
             }
         }
     }
@@ -185,7 +185,7 @@ mod tests {
 
                 let overlaps =
                     !(x1_max <= x2_min || x2_max <= x1_min || y1_max <= y2_min || y2_max <= y1_min);
-                assert!(!overlaps, "Rectangles {} and {} overlap", i, j);
+                assert!(!overlaps, "Rectangles {i} and {j} overlap");
             }
         }
     }
@@ -221,8 +221,7 @@ mod tests {
         // Should be somewhere between 0.5 and 4.0 (reasonable range for small n)
         assert!(
             aspect > 0.4 && aspect < 4.5,
-            "Aspect ratio {} is too extreme",
-            aspect
+            "Aspect ratio {aspect} is too extreme"
         );
     }
 
@@ -255,8 +254,7 @@ mod tests {
         // Should be reasonable - not too tall or too wide
         assert!(
             aspect > 0.8 && aspect < 2.5,
-            "Aspect ratio {} is too extreme",
-            aspect
+            "Aspect ratio {aspect} is too extreme"
         );
     }
 }

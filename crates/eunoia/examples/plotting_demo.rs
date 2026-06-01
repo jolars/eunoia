@@ -53,10 +53,10 @@ fn main() {
             .sum::<usize>() as f64
             / num_pieces as f64;
 
-        println!("  Region: {}", combination);
-        println!("    Net area: {:.3}", total_area);
-        println!("    Pieces: {}", num_pieces);
-        println!("    Avg outer vertices: {:.1}", avg_outer_vertices);
+        println!("  Region: {combination}");
+        println!("    Net area: {total_area:.3}");
+        println!("    Pieces: {num_pieces}");
+        println!("    Avg outer vertices: {avg_outer_vertices:.1}");
 
         if let Some(first_piece) = pieces.first() {
             let centroid = first_piece.outer.centroid();
@@ -75,8 +75,8 @@ fn main() {
     let expected_total: f64 = spec.exclusive_areas().values().sum();
 
     println!("Summary:");
-    println!("  Total polygon area: {:.3}", total_area);
-    println!("  Expected total: {:.3}", expected_total);
+    println!("  Total polygon area: {total_area:.3}");
+    println!("  Expected total: {expected_total:.3}");
     println!("  Difference: {:.3}", (total_area - expected_total).abs());
     println!("\nNote: Small differences are due to polygonization approximation.");
 }

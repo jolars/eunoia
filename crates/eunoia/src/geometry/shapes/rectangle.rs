@@ -1690,11 +1690,7 @@ mod tests {
             let analytic_area = areas.get(mask).copied().unwrap_or(0.0);
             assert!(
                 (analytic_area - direct).abs() < 1e-12,
-                "{}: mask {:b} area {} vs direct {} mismatch",
-                label,
-                mask,
-                analytic_area,
-                direct
+                "{label}: mask {mask:b} area {analytic_area} vs direct {direct} mismatch"
             );
             let diff_norm: f64 = analytic
                 .iter()
@@ -1710,13 +1706,7 @@ mod tests {
             };
             assert!(
                 rel < tol,
-                "{}: mask {:b} analytic vs FD mismatch (rel={:.3e}, |fd|={:.3e})\n  analytic={:?}\n  fd      ={:?}",
-                label,
-                mask,
-                rel,
-                fd_norm,
-                analytic,
-                fd
+                "{label}: mask {mask:b} analytic vs FD mismatch (rel={rel:.3e}, |fd|={fd_norm:.3e})\n  analytic={analytic:?}\n  fd      ={fd:?}"
             );
         }
     }
