@@ -15,7 +15,10 @@
     },
     "ts": {
       "release-type": "node",
-      "package-name": "eunoia-npm"
+      "package-name": "eunoia-npm",
+      "follows": [
+        "."
+      ]
     }
   }
 }
