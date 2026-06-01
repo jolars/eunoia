@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/jolars/eunoia/compare/v0.16.1...v0.17.0) (2026-06-01)
+
+### Features
+- upgrade to basin 0.9.0 and drop MSRV to 1.87.0 ([`48e89a5`](https://github.com/jolars/eunoia/commit/48e89a5f27aac2fc63c84e5d3494d44858cb0657))
+
+### Bug Fixes
+- bump MSRV to 1.88.0 ([`36e2d41`](https://github.com/jolars/eunoia/commit/36e2d41bcf87ced7d63dfda834be4eb552e7d754))
 ## [0.16.1](https://github.com/jolars/eunoia/compare/v0.16.0...v0.16.1) (2026-05-28)
 
 ### Bug Fixes
