@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
+      - "eunoia-npm-v*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
