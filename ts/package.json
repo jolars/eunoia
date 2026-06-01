@@ -1,6 +1,6 @@
 {
   "name": "@jolars/eunoia",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Area-proportional Euler and Venn diagrams",
   "private": true,
   "license": "MIT",
