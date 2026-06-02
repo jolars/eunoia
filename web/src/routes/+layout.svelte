@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount, type Snippet } from "svelte";
+import { page } from "$app/state";
 import "../app.css";
 import { hydrateFromStorage } from "$lib/state.svelte";
 import { initTheme } from "$lib/theme.svelte";
@@ -10,6 +11,8 @@ interface Props {
 }
 let { children }: Props = $props();
 
+const canonical = $derived(`https://eunoia.bz${page.url.pathname}`);
+
 onMount(() => {
   hydrateFromStorage();
   // The inline guard in app.html already set the class for first paint; this
@@ -17,6 +20,11 @@ onMount(() => {
   return initTheme();
 });
 </script>
+
+<svelte:head>
+  <link rel="canonical" href={canonical} />
+  <meta property="og:url" content={canonical} />
+</svelte:head>
 
 <div class="min-h-screen bg-canvas">
   <TopNav />
