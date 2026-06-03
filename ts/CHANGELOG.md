@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.17.0...eunoia-npm-v0.18.0) (2026-06-03)
+
+### Features
+- **ts:** add headless @jolars/eunoia/svg serializer ([`d0fb43b`](https://github.com/jolars/eunoia/commit/d0fb43b99411fcbd321a083d93f6a6853ad143d1))
+
+### Dependencies
+- updated eunoia to v0.18.0
+
 ## [0.16.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.15.0...eunoia-npm-v0.16.0) (2026-05-28)
 
 ### Breaking changes
