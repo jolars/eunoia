@@ -1,10 +1,10 @@
 <script lang="ts">
+import type { LabelPlacement } from "@jolars/eunoia";
+import { leaderPath } from "@jolars/eunoia/svg";
 import { onMount } from "svelte";
 import { browser } from "$app/environment";
-import type { LabelPlacement } from "@jolars/eunoia";
 import { defaultColorFor } from "$lib/colors";
 import { DEFAULT_FONT_FAMILY } from "$lib/fonts";
-import { leaderPath } from "$lib/leader";
 
 interface Props {
   /** Set sizes keyed by combination, e.g. `{ A: 5, B: 3, "A&B": 1.5 }`. */
@@ -71,7 +71,10 @@ const setNames = $derived(
   Array.from(
     new Set(
       Object.keys(sets).flatMap((k) =>
-        k.split("&").map((s) => s.trim()).filter(Boolean),
+        k
+          .split("&")
+          .map((s) => s.trim())
+          .filter(Boolean),
       ),
     ),
   ),
@@ -79,7 +82,9 @@ const setNames = $derived(
 
 const colorMap = $derived.by(() => {
   const m = new Map<string, string>();
-  setNames.forEach((n, i) => m.set(n, defaultColorFor(i)));
+  setNames.forEach((n, i) => {
+    m.set(n, defaultColorFor(i));
+  });
   return m;
 });
 
@@ -193,9 +198,8 @@ $effect(() => {
     return;
   }
   const sizes: Record<string, { w: number; h: number }> = {};
-  const nodes = measureContainer.querySelectorAll<SVGGraphicsElement>(
-    "text[data-measure]",
-  );
+  const nodes =
+    measureContainer.querySelectorAll<SVGGraphicsElement>("text[data-measure]");
   for (const t of Array.from(nodes)) {
     const combo = t.getAttribute("data-measure");
     if (combo === null) continue;

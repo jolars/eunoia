@@ -1,136 +1,145 @@
 <script lang="ts">
-  import { appState } from "../state.svelte";
-  import type { AdvancedOptions, DiagramType, InputType, Row, ShapeType, VennSetCount } from "../types/diagram";
+import { appState } from "../state.svelte";
+import type {
+  AdvancedOptions,
+  DiagramType,
+  InputType,
+  Row,
+  ShapeType,
+  VennSetCount,
+} from "../types/diagram";
 
-  interface Repro {
-    rows: Row[];
-    inputType: InputType;
-    shapeType: ShapeType;
-    diagramType: DiagramType;
-    vennN: VennSetCount;
-    advanced: AdvancedOptions;
-  }
+interface Repro {
+  rows: Row[];
+  inputType: InputType;
+  shapeType: ShapeType;
+  diagramType: DiagramType;
+  vennN: VennSetCount;
+  advanced: AdvancedOptions;
+}
 
-  let editor = $state("");
-  let status = $state("");
-  let statusKind: "ok" | "err" | "" = $state("");
+let editor = $state("");
+let status = $state("");
+let statusKind: "ok" | "err" | "" = $state("");
 
-  const current: () => Repro = () => ({
-    rows: $state.snapshot(appState.rows),
-    inputType: appState.inputType,
-    shapeType: appState.shapeType,
-    diagramType: appState.diagramType,
-    vennN: appState.vennN,
-    advanced: $state.snapshot(appState.advanced),
-  });
+const current: () => Repro = () => ({
+  rows: $state.snapshot(appState.rows),
+  inputType: appState.inputType,
+  shapeType: appState.shapeType,
+  diagramType: appState.diagramType,
+  vennN: appState.vennN,
+  advanced: $state.snapshot(appState.advanced),
+});
 
-  let snapshot = $derived(JSON.stringify(current(), null, 2));
+let snapshot = $derived(JSON.stringify(current(), null, 2));
 
-  /**
-   * Disjoint clusters of the current fit: groups of sets that form
-   * geometrically separate sub-diagrams. Two sets share a cluster when some
-   * region contains both (i.e. they overlap), so this is the connected
-   * components of the "sets co-occur in a region" graph.
-   *
-   * Sourced from `result.regions` (post-fit geometry, what's actually drawn)
-   * in region mode; falls back to the input rows otherwise. Surfacing this
-   * makes multi-cluster layouts — where exterior label placement can fling a
-   * label across the gap onto a neighbouring cluster — visible at a glance.
-   */
-  function clustersFromCombinations(combos: string[]): string[][] {
-    const parent = new Map<string, string>();
-    const find = (x: string): string => {
-      let r = x;
-      while (parent.get(r) !== r) r = parent.get(r)!;
-      // Path compression.
-      let cur = x;
-      while (parent.get(cur) !== r) {
-        const next = parent.get(cur)!;
-        parent.set(cur, r);
-        cur = next;
-      }
-      return r;
-    };
-    const add = (s: string) => {
-      if (!parent.has(s)) parent.set(s, s);
-    };
-    for (const combo of combos) {
-      const sets = combo
-        .split("&")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      sets.forEach(add);
-      for (let i = 1; i < sets.length; i++) {
-        parent.set(find(sets[i]), find(sets[0]));
-      }
+/**
+ * Disjoint clusters of the current fit: groups of sets that form
+ * geometrically separate sub-diagrams. Two sets share a cluster when some
+ * region contains both (i.e. they overlap), so this is the connected
+ * components of the "sets co-occur in a region" graph.
+ *
+ * Sourced from `result.regions` (post-fit geometry, what's actually drawn)
+ * in region mode; falls back to the input rows otherwise. Surfacing this
+ * makes multi-cluster layouts — where exterior label placement can fling a
+ * label across the gap onto a neighbouring cluster — visible at a glance.
+ */
+function clustersFromCombinations(combos: string[]): string[][] {
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    // Path compression.
+    let cur = x;
+    while (parent.get(cur) !== r) {
+      const next = parent.get(cur)!;
+      parent.set(cur, r);
+      cur = next;
     }
-    const groups = new Map<string, string[]>();
-    for (const s of parent.keys()) {
-      const root = find(s);
-      (groups.get(root) ?? groups.set(root, []).get(root)!).push(s);
-    }
-    return Array.from(groups.values())
-      .map((g) => g.sort())
-      .sort((a, b) => a[0].localeCompare(b[0]));
-  }
-
-  let clusters: string[][] = $derived.by(() => {
-    const result = appState.result;
-    const combos =
-      result && result.shapeMode === "region" && result.regions.length > 0
-        ? result.regions.map((r) => r.combination)
-        : appState.rows.map((r) => r.input).filter(Boolean);
-    return clustersFromCombinations(combos);
-  });
-
-  $effect(() => {
-    // Keep textarea synced with state until the user starts editing.
-    editor = snapshot;
-  });
-
-  function flash(msg: string, kind: "ok" | "err") {
-    status = msg;
-    statusKind = kind;
-    setTimeout(() => {
-      if (status === msg) {
-        status = "";
-        statusKind = "";
-      }
-    }, 2000);
-  }
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(snapshot);
-      flash("Copied to clipboard", "ok");
-    } catch (e) {
-      flash(`Copy failed: ${e instanceof Error ? e.message : String(e)}`, "err");
+    return r;
+  };
+  const add = (s: string) => {
+    if (!parent.has(s)) parent.set(s, s);
+  };
+  for (const combo of combos) {
+    const sets = combo
+      .split("&")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    sets.forEach(add);
+    for (let i = 1; i < sets.length; i++) {
+      parent.set(find(sets[i]), find(sets[0]));
     }
   }
+  const groups = new Map<string, string[]>();
+  for (const s of parent.keys()) {
+    const root = find(s);
+    (groups.get(root) ?? groups.set(root, []).get(root)!).push(s);
+  }
+  return Array.from(groups.values())
+    .map((g) => g.sort())
+    .sort((a, b) => a[0].localeCompare(b[0]));
+}
 
-  function apply() {
-    try {
-      const parsed = JSON.parse(editor) as Partial<Repro>;
-      if (parsed.rows && Array.isArray(parsed.rows)) appState.rows = parsed.rows;
-      if (parsed.inputType) appState.inputType = parsed.inputType;
-      if (parsed.shapeType) appState.shapeType = parsed.shapeType;
-      if (parsed.diagramType) appState.diagramType = parsed.diagramType;
-      if (parsed.vennN && parsed.vennN >= 1 && parsed.vennN <= 5) {
-        appState.vennN = parsed.vennN;
-      }
-      if (parsed.advanced) {
-        appState.advanced = { ...appState.advanced, ...parsed.advanced };
-      }
-      flash("Applied", "ok");
-    } catch (e) {
-      flash(`Parse error: ${e instanceof Error ? e.message : String(e)}`, "err");
+let clusters: string[][] = $derived.by(() => {
+  const result = appState.result;
+  const combos =
+    result &&
+    result.layout.mode === "regions" &&
+    result.layout.regions.length > 0
+      ? result.layout.regions.map((r) => r.combination)
+      : appState.rows.map((r) => r.input).filter(Boolean);
+  return clustersFromCombinations(combos);
+});
+
+$effect(() => {
+  // Keep textarea synced with state until the user starts editing.
+  editor = snapshot;
+});
+
+function flash(msg: string, kind: "ok" | "err") {
+  status = msg;
+  statusKind = kind;
+  setTimeout(() => {
+    if (status === msg) {
+      status = "";
+      statusKind = "";
     }
-  }
+  }, 2000);
+}
 
-  function refresh() {
-    editor = snapshot;
-    flash("Synced from state", "ok");
+async function copy() {
+  try {
+    await navigator.clipboard.writeText(snapshot);
+    flash("Copied to clipboard", "ok");
+  } catch (e) {
+    flash(`Copy failed: ${e instanceof Error ? e.message : String(e)}`, "err");
   }
+}
+
+function apply() {
+  try {
+    const parsed = JSON.parse(editor) as Partial<Repro>;
+    if (parsed.rows && Array.isArray(parsed.rows)) appState.rows = parsed.rows;
+    if (parsed.inputType) appState.inputType = parsed.inputType;
+    if (parsed.shapeType) appState.shapeType = parsed.shapeType;
+    if (parsed.diagramType) appState.diagramType = parsed.diagramType;
+    if (parsed.vennN && parsed.vennN >= 1 && parsed.vennN <= 5) {
+      appState.vennN = parsed.vennN;
+    }
+    if (parsed.advanced) {
+      appState.advanced = { ...appState.advanced, ...parsed.advanced };
+    }
+    flash("Applied", "ok");
+  } catch (e) {
+    flash(`Parse error: ${e instanceof Error ? e.message : String(e)}`, "err");
+  }
+}
+
+function refresh() {
+  editor = snapshot;
+  flash("Synced from state", "ok");
+}
 </script>
 
 <div class="space-y-2">

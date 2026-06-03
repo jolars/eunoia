@@ -30,6 +30,10 @@
       "types": "./index.d.ts",
       "default": "./index.js"
     },
+    "./svg": {
+      "types": "./svg.d.ts",
+      "default": "./svg.js"
+    },
     "./raw": {
       "types": "./eunoia_wasm.d.ts",
       "default": "./eunoia_wasm.js"
@@ -38,6 +42,8 @@
   "files": [
     "index.js",
     "index.d.ts",
+    "svg.js",
+    "svg.d.ts",
     "eunoia_wasm.js",
     "eunoia_wasm.d.ts",
     "eunoia_wasm_bg.js",

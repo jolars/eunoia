@@ -1,71 +1,7 @@
-export interface Point {
-  x: number;
-  y: number;
-}
-
-export interface Polygon {
-  vertices: Point[];
-  label: string;
-}
-
-/**
- * One connected component of a region: a CCW outer ring plus zero or more
- * CW hole rings (other regions cutting through this piece). Orientations
- * are normalised by the core library so renderers can use `fill-rule: nonzero`.
- */
-export interface RegionPiece {
-  outer: Polygon;
-  holes: Polygon[];
-}
-
-export interface CircleShape {
-  x: number;
-  y: number;
-  radius: number;
-  label: string;
-  /** Label anchor — pole of inaccessibility of `shape \ ⋃ others`. Defaults to (x, y). */
-  labelX: number;
-  labelY: number;
-}
-
-export interface EllipseShape {
-  x: number;
-  y: number;
-  semi_major: number;
-  semi_minor: number;
-  rotation: number;
-  label: string;
-  labelX: number;
-  labelY: number;
-}
-
-export interface SquareShape {
-  x: number;
-  y: number;
-  side: number;
-  label: string;
-  labelX: number;
-  labelY: number;
-}
-
-export interface RectangleShape {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  label: string;
-  labelX: number;
-  labelY: number;
-}
-
-export interface RegionPolygon {
-  combination: string;
-  pieces: RegionPiece[];
-  totalArea: number;
-  /** Hole-aware label anchor for this region — one point per region, even when fragmented across multiple pieces. */
-  labelX: number;
-  labelY: number;
-}
+// The fitted geometry now travels as the high-level package `Layout`
+// (`@jolars/eunoia`), so the app no longer redefines per-shape/region structs
+// here — see `FitResult.layout`.
+import type { Layout } from "@jolars/eunoia";
 
 export interface FitMetrics {
   loss: number;
@@ -79,25 +15,22 @@ export interface FitMetrics {
 }
 
 export interface FitResult {
-  shapeMode: "outline" | "region";
-  shapeType: "circle" | "ellipse" | "square" | "rectangle";
-  polygons: Polygon[];
-  circles: CircleShape[];
-  ellipses: EllipseShape[];
-  squares: SquareShape[];
-  rectangles: RectangleShape[];
-  regions: RegionPolygon[];
-  /** Per-set label anchors keyed by set name. Populated in region mode from `PlotData::set_anchors`; empty in outline mode (use shape `labelX/labelY` instead). */
-  setAnchors: Record<string, { x: number; y: number }>;
   /**
-   * Universe / container rectangle (x, y are the center; width and height
-   * are full extents) when the spec carried a complement. Same coordinate
-   * frame as the rest of the layout — already normalized to the ~100-unit
-   * canvas. `undefined` when no complement was set.
+   * The fitted layout in the high-level package shape (`@jolars/eunoia`),
+   * already normalized to the ~100-unit canvas so the style knobs
+   * (`labelSize`, `strokeWidth`, …) stay calibrated. This is exactly what the
+   * `@jolars/eunoia/svg` serializer (`toSvg`/`svgBody`/`viewBox`) consumes, so
+   * the app renders through the same surface external consumers use.
    */
-  container?: { x: number; y: number; width: number; height: number };
-  /** Complement value carried alongside the spec (number of items outside every named set). Useful for displaying as a label. */
+  layout: Layout;
+  shapeType: "circle" | "ellipse" | "square" | "rectangle";
+  /** Complement value carried alongside the spec (items outside every named set). */
   complement?: number;
+  /**
+   * Fit metrics, kept on the result (rather than read off `layout.metrics`) in
+   * the app's renamed `FitMetrics` shape so the metrics/table panels consume it
+   * directly.
+   */
   metrics: FitMetrics;
 }
 

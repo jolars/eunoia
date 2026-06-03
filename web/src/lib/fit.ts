@@ -5,8 +5,6 @@ import {
   type Point,
   euler as runFitWrapper,
   venn,
-  type Polygon as WrapperPolygon,
-  type Region as WrapperRegion,
 } from "@jolars/eunoia";
 import type {
   AdvancedOptions,
@@ -77,7 +75,7 @@ function normalizeBounds(boundsItems: Point[][]): {
       if (v.y > maxY) maxY = v.y;
     }
   }
-  if (!isFinite(minX)) {
+  if (!Number.isFinite(minX)) {
     minX = 0;
     minY = 0;
     maxX = 1;
@@ -97,31 +95,16 @@ function normPoint(p: Point, ctx: NormalizationContext): Point {
   return { x: (p.x - ctx.minX) * ctx.scale, y: (p.y - ctx.minY) * ctx.scale };
 }
 
-function normPolygon(p: WrapperPolygon, ctx: NormalizationContext) {
-  return {
-    label: p.label,
-    vertices: p.vertices.map((v) => normPoint(v, ctx)),
-  };
-}
+type RegionPieces = Extract<
+  Layout,
+  { mode: "regions" }
+>["regions"][number]["pieces"];
 
-function pieceVerts(piece: WrapperRegion["pieces"][number]): Point[] {
+function pieceVerts(piece: RegionPieces[number]): Point[] {
   const out: Point[] = [];
   out.push(...piece.outer.vertices);
   for (const h of piece.holes) out.push(...h.vertices);
   return out;
-}
-
-function normRegions(regions: WrapperRegion[], ctx: NormalizationContext) {
-  return regions.map((r) => ({
-    combination: r.combination,
-    totalArea: r.totalArea,
-    pieces: r.pieces.map((piece) => ({
-      outer: normPolygon(piece.outer, ctx),
-      holes: piece.holes.map((h) => normPolygon(h, ctx)),
-    })),
-    labelX: (r.labelAnchor.x - ctx.minX) * ctx.scale,
-    labelY: (r.labelAnchor.y - ctx.minY) * ctx.scale,
-  }));
 }
 
 function normSetAnchors(
@@ -177,6 +160,109 @@ function normContainer(
   };
 }
 
+// Scale every geometric coordinate in a `Layout` into the ~100-unit canvas the
+// app's style defaults are calibrated for, returning the *same* `Layout` shape
+// (so it feeds straight into `@jolars/eunoia/svg`). Non-geometric fields
+// (areas, totals, metrics, labels) pass through untouched.
+function scaleLayout(layout: Layout, ctx: NormalizationContext): Layout {
+  const s = ctx.scale;
+  const pt = (p: Point): Point => normPoint(p, ctx);
+  const poly = <T extends { vertices: Point[] }>(p: T): T => ({
+    ...p,
+    vertices: p.vertices.map(pt),
+  });
+  const container = normContainer(layout.container, ctx);
+  const tail = container
+    ? { metrics: layout.metrics, container }
+    : { metrics: layout.metrics };
+
+  if (layout.mode === "regions") {
+    return {
+      mode: "regions",
+      shape: layout.shape,
+      regions: layout.regions.map((r) => ({
+        combination: r.combination,
+        totalArea: r.totalArea,
+        pieces: r.pieces.map((pc) => ({
+          ...pc,
+          outer: poly(pc.outer),
+          holes: pc.holes.map(poly),
+        })),
+        labelAnchor: pt(r.labelAnchor),
+      })),
+      setAnchors: normSetAnchors(layout.setAnchors, ctx),
+      ...tail,
+    };
+  }
+
+  if (layout.mode !== "polygons") {
+    throw new Error(`unexpected layout mode: ${layout.mode}`);
+  }
+
+  const polygons = layout.polygons.map(poly);
+  switch (layout.shape) {
+    case "circle":
+      return {
+        mode: "polygons",
+        shape: "circle",
+        polygons,
+        circles: layout.circles.map((c) => ({
+          label: c.label,
+          x: pt(c).x,
+          y: pt(c).y,
+          radius: c.radius * s,
+          labelAnchor: pt(c.labelAnchor),
+        })),
+        ...tail,
+      };
+    case "ellipse":
+      return {
+        mode: "polygons",
+        shape: "ellipse",
+        polygons,
+        ellipses: layout.ellipses.map((e) => ({
+          label: e.label,
+          x: pt(e).x,
+          y: pt(e).y,
+          semiMajor: e.semiMajor * s,
+          semiMinor: e.semiMinor * s,
+          rotation: e.rotation,
+          labelAnchor: pt(e.labelAnchor),
+        })),
+        ...tail,
+      };
+    case "square":
+      return {
+        mode: "polygons",
+        shape: "square",
+        polygons,
+        squares: layout.squares.map((sq) => ({
+          label: sq.label,
+          x: pt(sq).x,
+          y: pt(sq).y,
+          side: sq.side * s,
+          labelAnchor: pt(sq.labelAnchor),
+        })),
+        ...tail,
+      };
+    case "rectangle":
+      return {
+        mode: "polygons",
+        shape: "rectangle",
+        polygons,
+        rectangles: layout.rectangles.map((r) => ({
+          label: r.label,
+          x: pt(r).x,
+          y: pt(r).y,
+          width: r.width * s,
+          height: r.height * s,
+          labelAnchor: pt(r.labelAnchor),
+        })),
+        ...tail,
+      };
+  }
+}
+
 function layoutToFitResult(
   layout: Layout,
   shapeType: ShapeType,
@@ -194,99 +280,28 @@ function layoutToFitResult(
     residuals: m.residuals,
   };
 
+  let boundsItems: Point[][];
   if (layout.mode === "regions") {
-    const allVerts = layout.regions.flatMap((r) =>
-      r.pieces.flatMap((p) => pieceVerts(p)),
-    );
-    const ctx = buildContext([allVerts, containerBoundsFor(layout.container)]);
-    return {
-      shapeMode: "region",
-      shapeType,
-      polygons: [],
-      circles: [],
-      ellipses: [],
-      squares: [],
-      rectangles: [],
-      regions: normRegions(layout.regions, ctx),
-      setAnchors: normSetAnchors(layout.setAnchors, ctx),
-      container: normContainer(layout.container, ctx),
-      complement,
-      metrics,
-    };
-  }
-
-  if (layout.mode !== "polygons") {
+    boundsItems = [
+      layout.regions.flatMap((r) => r.pieces.flatMap(pieceVerts)),
+      containerBoundsFor(layout.container),
+    ];
+  } else if (layout.mode === "polygons") {
+    boundsItems = [
+      ...layout.polygons.map((p) => p.vertices),
+      containerBoundsFor(layout.container),
+    ];
+  } else {
     throw new Error(`unexpected layout mode: ${layout.mode}`);
   }
+  const ctx = buildContext(boundsItems);
 
-  const polyVerts = layout.polygons.map((p) => p.vertices);
-  const ctx = buildContext([
-    ...polyVerts,
-    containerBoundsFor(layout.container),
-  ]);
-
-  const normPolygons = layout.polygons.map((p) => ({
-    label: p.label,
-    vertices: p.vertices.map((v) => normPoint(v, ctx)),
-  }));
-
-  const result: FitResult = {
-    shapeMode: "outline",
+  return {
+    layout: scaleLayout(layout, ctx),
     shapeType,
-    polygons: normPolygons,
-    circles: [],
-    ellipses: [],
-    squares: [],
-    rectangles: [],
-    regions: [],
-    setAnchors: {},
-    container: normContainer(layout.container, ctx),
     complement,
     metrics,
   };
-
-  if (layout.shape === "circle") {
-    result.circles = layout.circles.map((c) => ({
-      label: c.label,
-      x: (c.x - ctx.minX) * ctx.scale,
-      y: (c.y - ctx.minY) * ctx.scale,
-      radius: c.radius * ctx.scale,
-      labelX: (c.labelAnchor.x - ctx.minX) * ctx.scale,
-      labelY: (c.labelAnchor.y - ctx.minY) * ctx.scale,
-    }));
-  } else if (layout.shape === "ellipse") {
-    result.ellipses = layout.ellipses.map((e) => ({
-      label: e.label,
-      x: (e.x - ctx.minX) * ctx.scale,
-      y: (e.y - ctx.minY) * ctx.scale,
-      semi_major: e.semiMajor * ctx.scale,
-      semi_minor: e.semiMinor * ctx.scale,
-      rotation: e.rotation,
-      labelX: (e.labelAnchor.x - ctx.minX) * ctx.scale,
-      labelY: (e.labelAnchor.y - ctx.minY) * ctx.scale,
-    }));
-  } else if (layout.shape === "square") {
-    result.squares = layout.squares.map((s) => ({
-      label: s.label,
-      x: (s.x - ctx.minX) * ctx.scale,
-      y: (s.y - ctx.minY) * ctx.scale,
-      side: s.side * ctx.scale,
-      labelX: (s.labelAnchor.x - ctx.minX) * ctx.scale,
-      labelY: (s.labelAnchor.y - ctx.minY) * ctx.scale,
-    }));
-  } else if (layout.shape === "rectangle") {
-    result.rectangles = layout.rectangles.map((r) => ({
-      label: r.label,
-      x: (r.x - ctx.minX) * ctx.scale,
-      y: (r.y - ctx.minY) * ctx.scale,
-      width: r.width * ctx.scale,
-      height: r.height * ctx.scale,
-      labelX: (r.labelAnchor.x - ctx.minX) * ctx.scale,
-      labelY: (r.labelAnchor.y - ctx.minY) * ctx.scale,
-    }));
-  }
-
-  return result;
 }
 
 export function runFit(inputs: FitInputs): FitResult | null {

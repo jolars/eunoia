@@ -47,6 +47,16 @@ tasks:
     cmds:
       - cargo test --workspace -- --ignored
 
+  test-ts:
+    desc: Compile the TS wrapper and run the @jolars/eunoia/svg unit tests
+    # `prepare-package.mjs` recompiles `ts/*.ts` → `npm/*.js` first, so the
+    # tests always run against fresh output. It only needs the (checked-in)
+    # wasm `.d.ts` in `npm/`, not a fresh wasm-pack build. The svg module is
+    # pure/wasm-free, so `node --test` loads `npm/svg.js` directly.
+    cmds:
+      - node ts/prepare-package.mjs
+      - node --test 'ts/tests/**/*.test.mjs'
+
   coverage:
     desc: Generate code coverage report
     cmds:
@@ -76,6 +86,8 @@ tasks:
       # enforces this in its doc job; mirror just the build here since the doc
       # tests already ran under `cargo test --workspace` above. See `task doc`.
       - RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+      # JS/TS surface: compile the wrapper and run the pure svg-serializer tests.
+      - task: test-ts
 
   build-wasm:
     desc: Build WASM bindings and prepare npm/ as @jolars/eunoia

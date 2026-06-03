@@ -391,7 +391,15 @@ roadmap didn't require but would tighten the surface.
 
 ## npm rendering surface
 
-- [ ] **Renderer-agnostic SVG *string* serializer for the npm/TS surface**.
+- [x] **Renderer-agnostic SVG *string* serializer for the npm/TS surface**.
+      Done: `ts/svg.ts` → `@jolars/eunoia/svg` (`toSvg`/`svgBody`/`viewBox`/
+      `boundingBox` + `regionPath`/`polygonPath`/`leaderPath`/`mixColors` +
+      palettes), pure & wasm-free (`import type` only, not in `sideEffects`).
+      The web app dog-foods it: `DiagramSvg.svelte` renders via
+      `viewBox()`+`svgBody()` into its own bound `<svg>` (keeps the export
+      toolbar's live-DOM grab), `FitResult` now carries a normalized `Layout`,
+      and `$lib/colors`/`$lib/leader` collapse to the package. Tested via
+      `task test-ts` (`node --test`). Framework components still deferred.
       `@jolars/eunoia` stops one step short of pixels: `euler`/`venn` return
       shapes/polygons/regions and `placeLabelsForRegions` returns anchors +
       bezier leader control points, but every consumer (incl. our own `web/`
