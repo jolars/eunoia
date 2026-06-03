@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.18.0](https://github.com/jolars/eunoia/compare/v0.17.0...v0.18.0) (2026-06-03)
+
+### Features
+- **ts:** add headless @jolars/eunoia/svg serializer ([`d0fb43b`](https://github.com/jolars/eunoia/commit/d0fb43b99411fcbd321a083d93f6a6853ad143d1))
+
 ## [0.17.0](https://github.com/jolars/eunoia/compare/v0.16.1...v0.17.0) (2026-06-01)
 
 ### Features
