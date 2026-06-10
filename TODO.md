@@ -101,11 +101,18 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       no longer breaking changes for npm consumers. Updated `ts/package.json`,
       `npm/package.json`, `README.md`, and `AGENTS.md`.
 
-- [ ] **Optimizer surface mismatch (core vs TS)**. The default core optimizer is
-      `CmaEsTrf`, but the TS `Optimizer` union (`ts/index.ts`) is
-      `"cmaEsLm" | "levenbergMarquardt" | "lbfgs" | "nelderMead"` --- it can't
-      even name its own default (`cmaEsTrf` and `trf` are omitted). Reconcile or
-      document why.
+- [x] **Optimizer surface mismatch (core vs TS)**. Resolved 2026-06-10. The TS
+      `Optimizer` union (`ts/index.ts`) now lists all six core variants
+      (`cmaEsTrf`, `cmaEsLm`, `levenbergMarquardt`, `trf`, `lbfgs`, `nelderMead`)
+      and `OPTIMIZER_MAP` maps each to its `WasmOptimizer`. The wrapper no longer
+      hard-codes a TS-side default of `"cmaEsLm"`: when `optimizer` is omitted it
+      passes `undefined` to wasm so the **core** default (`CmaEsTrf`) applies ---
+      same pattern as `loss`, so the TS surface can never silently drift from the
+      core default again. (Behaviour change: callers who relied on the implicit
+      `cmaEsLm` now get `CmaEsTrf`, which the core docs note is strictly
+      non-regressing vs `CmaEsLm`.) The `web/` playground's dropdown allow-list
+      (`web/src/lib/fit.ts`) still offers only the original four --- a UI choice,
+      left as-is.
 
 - [ ] **`complement` naming**. It's an area/size, not a boolean, but reads like
       a flag in `EulerOptions`/`VennOptions` (`ts/index.ts`) and on
