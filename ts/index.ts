@@ -19,8 +19,10 @@ export type ShapeType = "circle" | "ellipse" | "square" | "rectangle";
 export type InputType = "exclusive" | "inclusive";
 export type OutputMode = "shapes" | "polygons" | "regions";
 export type Optimizer =
+  | "cmaEsTrf"
   | "cmaEsLm"
   | "levenbergMarquardt"
+  | "trf"
   | "lbfgs"
   | "nelderMead";
 export type LossType =
@@ -200,7 +202,7 @@ export interface EulerOptions {
   output?: OutputMode;
   /** RNG seed for reproducible layouts. Accepts `number` or `bigint`. */
   seed?: number | bigint;
-  /** Final-stage optimizer. Default `"cmaEsLm"`. */
+  /** Final-stage optimizer. When omitted, the core default (`"cmaEsTrf"`) is used. */
   optimizer?: Optimizer;
   /** Loss function. Defaults to the optimizer's preferred loss. */
   loss?: LossType;
@@ -444,8 +446,10 @@ export interface VennOptions {
 // ============================================================================
 
 const OPTIMIZER_MAP: Record<Optimizer, wasm.WasmOptimizer> = {
+  cmaEsTrf: wasm.WasmOptimizer.CmaEsTrf,
   cmaEsLm: wasm.WasmOptimizer.CmaEsLm,
   levenbergMarquardt: wasm.WasmOptimizer.LevenbergMarquardt,
+  trf: wasm.WasmOptimizer.Trf,
   lbfgs: wasm.WasmOptimizer.Lbfgs,
   nelderMead: wasm.WasmOptimizer.NelderMead,
 };
@@ -633,7 +637,7 @@ export function euler(options: EulerOptions): Layout {
     shape = "circle",
     output = "shapes",
     seed,
-    optimizer = "cmaEsLm",
+    optimizer,
     loss,
     tolerance,
     polygonVertices = 256,
@@ -652,8 +656,9 @@ export function euler(options: EulerOptions): Layout {
   }
 
   const seedArg = toSeed(seed);
-  const optimizerArg = OPTIMIZER_MAP[optimizer];
-  if (optimizerArg === undefined) {
+  const optimizerArg =
+    optimizer !== undefined ? OPTIMIZER_MAP[optimizer] : undefined;
+  if (optimizer !== undefined && optimizerArg === undefined) {
     throw new RangeError(`euler: unknown optimizer "${optimizer}"`);
   }
   const lossArg = loss !== undefined ? LOSS_MAP[loss] : undefined;
