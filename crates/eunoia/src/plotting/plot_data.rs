@@ -130,6 +130,27 @@ pub struct PlotData {
     /// [`RegionPolygons::set_label_points`].
     pub set_anchors: HashMap<String, Point>,
 
+    /// For each set whose label was anchored to a region, the canonical
+    /// combination string of that region (the same key used by
+    /// [`region_anchors`](PlotData::region_anchors)). This records the source
+    /// the label position came from in the first two cases of the
+    /// [`set_anchors`](PlotData::set_anchors) fallback chain:
+    ///
+    /// - exclusive-area set → its own exclusive region (e.g. `A` → `"A"`);
+    /// - fully-nested set → the largest containing region (e.g. `B` nested
+    ///   in `A` → `"A&B"`).
+    ///
+    /// A set is **omitted** when its label fell through to the last-resort
+    /// whole-shape POI (case 3), i.e. it appears in no fitted region. So
+    /// `set_anchors[s]` always equals `region_anchors[set_anchor_regions[s]]`
+    /// when the key is present.
+    ///
+    /// Renderers that draw both set labels and per-region quantities use this
+    /// to detect when a set label and a region quantity share a point (a
+    /// nested set's name lands on its region's count) and stack them instead
+    /// of overlapping — without matching anchor points by float equality.
+    pub set_anchor_regions: HashMap<String, String>,
+
     /// Polygonised outline of each set's shape, keyed by set name (so
     /// bindings don't have to rely on positional ordering with
     /// `spec.set_names()`).
@@ -266,7 +287,7 @@ where
         .iter()
         .map(|s| s.polygonize(options.n_vertices))
         .collect();
-    let set_anchors = compute_set_anchors(
+    let (set_anchors, set_anchor_regions) = compute_set_anchors(
         &outline_vec,
         spec.set_names(),
         &regions,
@@ -285,6 +306,7 @@ where
         region_anchors,
         region_areas,
         set_anchors,
+        set_anchor_regions,
         shape_outlines,
     }
 }
@@ -298,16 +320,23 @@ where
 /// Sliver filtering is handled inside the classifier-and-clipper pipeline:
 /// pieces below the relative-area threshold are rejected during piece
 /// construction, so callers don't need a separate threshold here.
+///
+/// Returns the anchor map plus a companion map recording, for each set whose
+/// anchor came from a region (cases 1 and 2 of the fallback chain), the
+/// canonical string of that region — see [`PlotData::set_anchor_regions`].
+/// Sets that fell through to the whole-shape POI (case 3) are absent from the
+/// second map.
 fn compute_set_anchors(
     shape_outlines: &[Polygon],
     set_names: &[String],
     regions: &RegionPolygons,
     region_anchors: &HashMap<Combination, Point>,
     precision: f64,
-) -> HashMap<String, Point> {
+) -> (HashMap<String, Point>, HashMap<String, String>) {
     let mut result = HashMap::new();
+    let mut sources = HashMap::new();
     if shape_outlines.is_empty() {
-        return result;
+        return (result, sources);
     }
 
     for (i, name) in set_names.iter().enumerate() {
@@ -358,36 +387,49 @@ fn compute_set_anchors(
             pieces.into_iter().filter(|p| p.area() > 0.0).collect()
         };
 
-        // Hole-aware POI on the (possibly hole-bearing) exclusive pieces.
-        let anchor = poi_with_holes(&kept, precision).map(|(p, _)| p);
-
-        // Fallback chain: largest-area containing region (eulerr behaviour
-        // for nested sets), then the shape's own POI as a last resort.
-        let anchor =
-            anchor.or_else(|| largest_containing_region_anchor(name, regions, region_anchors));
-        let anchor = anchor.or_else(|| {
-            let (p, _) = shape_outlines[i].pole_of_inaccessibility_with_distance(precision);
-            Some(p)
-        });
+        // Hole-aware POI on the (possibly hole-bearing) exclusive pieces. This
+        // lobe is the set's exclusive region `{name}`, so when it succeeds the
+        // anchor coincides with that region's anchor.
+        let (anchor, source) = match poi_with_holes(&kept, precision) {
+            Some((p, _)) => {
+                let exclusive = Combination::new(&[name]);
+                let source = region_anchors
+                    .contains_key(&exclusive)
+                    .then(|| exclusive.to_string());
+                (Some(p), source)
+            }
+            // Fallback chain: largest-area containing region (eulerr behaviour
+            // for nested sets), then the shape's own POI as a last resort.
+            None => match largest_containing_region_anchor(name, regions, region_anchors) {
+                Some((p, combo)) => (Some(p), Some(combo.to_string())),
+                None => {
+                    let (p, _) = shape_outlines[i].pole_of_inaccessibility_with_distance(precision);
+                    (Some(p), None)
+                }
+            },
+        };
 
         if let Some(point) = anchor {
             result.insert(name.clone(), point);
+            if let Some(combo) = source {
+                sources.insert(name.clone(), combo);
+            }
         }
     }
 
-    result
+    (result, sources)
 }
 
 /// Picks the anchor of the largest-area region whose combination contains
 /// `name`, or `None` if the set never appears in any non-empty region.
 /// "Largest area" sums the absolute polygon areas of every piece in the
 /// region — matches the JS `fallbackSetLabels` heuristic this replaces.
-fn largest_containing_region_anchor(
+fn largest_containing_region_anchor<'a>(
     name: &str,
-    regions: &RegionPolygons,
+    regions: &'a RegionPolygons,
     region_anchors: &HashMap<Combination, Point>,
-) -> Option<Point> {
-    let mut best: Option<(&Combination, f64)> = None;
+) -> Option<(Point, &'a Combination)> {
+    let mut best: Option<(&'a Combination, f64)> = None;
     for (combo, polys) in regions.iter() {
         if !combo.sets().iter().any(|s| s == name) {
             continue;
@@ -397,7 +439,7 @@ fn largest_containing_region_anchor(
             best = Some((combo, area));
         }
     }
-    best.and_then(|(combo, _)| region_anchors.get(combo).copied())
+    best.and_then(|(combo, _)| region_anchors.get(combo).map(|p| (*p, combo)))
 }
 
 #[cfg(test)]
@@ -510,6 +552,47 @@ mod tests {
         let dx = a_anchor.x() - a_circle.center().x();
         let dy = a_anchor.y() - a_circle.center().y();
         assert!(dx * dx + dy * dy <= a_circle.radius() * a_circle.radius());
+    }
+
+    /// `set_anchor_regions` exposes the region each set label was anchored to:
+    /// the exclusive region for a set with its own area, and the largest
+    /// containing region for a fully-nested set. The documented invariant —
+    /// `set_anchors[s] == region_anchors[set_anchor_regions[s]]` — must hold
+    /// for every recorded set.
+    #[test]
+    fn test_set_anchor_regions_maps_nested_and_exclusive() {
+        // B has no exclusive area: it sits entirely inside A.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 0.0)
+            .intersection(&["A", "B"], 5.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let layout = Fitter::<Circle>::new(&spec).seed(1).fit().unwrap();
+        let plot = layout.plot_data(&spec, PlotOptions::default());
+
+        // A has exclusive area → anchored to its own exclusive region "A".
+        assert_eq!(
+            plot.set_anchor_regions.get("A").map(String::as_str),
+            Some("A")
+        );
+        // B is fully nested → anchored to the containing region "A&B".
+        assert_eq!(
+            plot.set_anchor_regions.get("B").map(String::as_str),
+            Some("A&B")
+        );
+
+        // Documented invariant: the recorded region's anchor *is* the set anchor.
+        for (set, combo) in &plot.set_anchor_regions {
+            let set_anchor = plot.set_anchors.get(set).expect("set anchor present");
+            let region_anchor = plot
+                .region_anchors
+                .get(combo)
+                .expect("recorded region must have an anchor");
+            assert_eq!(set_anchor, region_anchor);
+        }
     }
 
     #[test]
