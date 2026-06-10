@@ -461,14 +461,14 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
             // normalisation makes `‖Jᵀr‖_∞` scale-dependent (a fixed bound
             // over-iterates small-area specs and stops large-area ones early).
             let solver = basin::LevenbergMarquardt::new()
-                .tol_grad(0.0)
-                .tol_grad_rel(config.gtol.unwrap_or(1e-8))
-                .ftol(config.ftol.unwrap_or(config.tolerance))
-                .xtol(config.xtol.unwrap_or(1e-6));
+                .with_tol_grad(0.0)
+                .with_tol_grad_rel(config.gtol.unwrap_or(1e-8))
+                .with_tol_cost_rel(config.ftol.unwrap_or(config.tolerance))
+                .with_tol_step_rel(config.xtol.unwrap_or(1e-6));
             let result = basin::Executor::new(
                 problem,
                 solver,
-                basin::BasicState::new(initial_param.clone()),
+                basin::NllsState::new(initial_param.clone()),
             )
             .max_iter(config.max_iterations.max(1) as u64)
             .run()
@@ -553,8 +553,8 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
             // primary stop here. We still thread `config.gtol` through for
             // parity with the LM dispatch.
             let solver = basin::Trf::<DVector<f64>, DMatrix<f64>>::new()
-                .tol_grad(config.gtol.unwrap_or(1e-8));
-            let result = basin::Executor::new(problem, solver, basin::BasicState::new(x0))
+                .with_tol_grad(config.gtol.unwrap_or(1e-8));
+            let result = basin::Executor::new(problem, solver, basin::NllsState::new(x0))
                 .max_iter(config.max_iterations.max(1) as u64)
                 .run()
                 .expect("solver problem is infallible");
@@ -689,7 +689,7 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
         },
     };
     let state = basin::BasicSimplexState::from_simplex(simplex);
-    let solver = basin::NelderMead::standard();
+    let solver = basin::NelderMead::new();
     let result = basin::Executor::new(cost_function, solver, state)
         .max_iter(config.max_iterations as u64)
         .run()
@@ -725,7 +725,7 @@ fn run_lbfgs<S: DiagramShape + Copy + 'static>(
         },
     };
     let x0 = initial_param.as_slice().to_vec();
-    let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
+    let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().with_m_capacity(10);
     let result = basin::Executor::new(cost_function, solver, basin::LbfgsState::new(x0, 10))
         .max_iter(config.max_iterations.max(1) as u64)
         .terminate_on(basin::GradientTolerance(config.tolerance))
@@ -773,25 +773,20 @@ fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
         lower: DVector::from_vec(lower),
         upper: DVector::from_vec(upper),
     };
-    let n = initial_param.len();
-    let lambda = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::default_lambda(n);
     let solver = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::new(
-        initial_param.clone(),
-        // initial_sigma = 1: the per-coordinate scale lives entirely in
-        // `with_stds`, so the search runs on the unitless `diag(stds)`-scaled
-        // space (matches the old inline solver's internal `sigma = 1`).
-        1.0,
         config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
-    )
-    .with_stds(DVector::from_vec(initial_std));
-    let result = basin::Executor::new(
-        problem,
-        solver,
-        basin::BasicPopulationState::<DVector<f64>>::with_size(lambda),
-    )
-    .max_iter(100)
-    .run()
-    .expect("solver problem is infallible");
+    );
+    // initial_sigma = 1: the per-coordinate scale lives entirely in
+    // `with_stds`, so the search runs on the unitless `diag(stds)`-scaled
+    // space (matches the old inline solver's internal `sigma = 1`). The
+    // distribution (mean / sigma / stds) now lives on the `CmaEsState`; the
+    // default population size `4 + ⌊3 ln n⌋` is what `default_lambda` returned.
+    let state = basin::CmaEsState::<DVector<f64>, DMatrix<f64>>::new(initial_param.clone(), 1.0)
+        .with_stds(DVector::from_vec(initial_std));
+    let result = basin::Executor::new(problem, solver, state)
+        .max_iter(100)
+        .run()
+        .expect("solver problem is infallible");
     result.param().clone()
 }
 

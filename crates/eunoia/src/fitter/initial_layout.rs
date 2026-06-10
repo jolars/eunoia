@@ -238,7 +238,7 @@ fn run_attempt(
                     target_norm: target_norm(distances),
                 },
             };
-            let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().m_capacity(10);
+            let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().with_m_capacity(10);
             let result = basin::Executor::new(
                 cost_function,
                 solver,
@@ -263,15 +263,15 @@ fn run_attempt(
             // fixed `‖Jᵀr‖∞` bound spec-dependent.
             let lm_tol = 1e-10;
             let solver = basin::LevenbergMarquardt::new()
-                .tau(1.0)
-                .tol_grad(0.0)
-                .tol_grad_rel(lm_tol)
-                .ftol(lm_tol)
-                .xtol(lm_tol);
+                .with_tau(1.0)
+                .with_tol_grad(0.0)
+                .with_tol_grad_rel(lm_tol)
+                .with_tol_cost_rel(lm_tol)
+                .with_tol_step_rel(lm_tol);
             let result = basin::Executor::new(
                 problem,
                 solver,
-                basin::BasicState::new(initial_param.clone()),
+                basin::NllsState::new(initial_param.clone()),
             )
             .max_iter(200)
             .run()

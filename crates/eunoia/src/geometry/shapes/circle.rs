@@ -467,7 +467,7 @@ pub(crate) fn distance_for_overlap(
         None => basin::Brent::new(),
     };
     let x0 = 0.5 * (min_distance + max_distance);
-    let result = basin::Executor::new(cost_fun, solver, basin::BasicState::new(x0))
+    let result = basin::Executor::new(cost_fun, solver, basin::ScalarState::new(x0))
         .max_iter(max_iter.unwrap_or(1000))
         .run()
         .expect("solver problem is infallible");
