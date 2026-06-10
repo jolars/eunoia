@@ -105,7 +105,7 @@ struct LayoutDiagnostics {
 }
 
 /// Compute one `(label_x, label_y)` per set via the canonical
-/// [`PlotData::set_anchors`] entry point, returning a map from set name to
+/// `PlotData::set_anchors` entry point, returning a map from set name to
 /// the hole-aware pole of inaccessibility of that set's exclusive region.
 fn compute_set_label_anchors<S>(
     layout: &eunoia::Layout<S>,
@@ -214,7 +214,7 @@ where
 /// A circle representation for WASM with label.
 ///
 /// `label_x` / `label_y` carry the per-set label anchor (the pole of
-/// inaccessibility of `shape \ ⋃ others`, computed via [`PlotData::set_anchors`]).
+/// inaccessibility of `shape \ ⋃ others`, computed via `PlotData::set_anchors`).
 /// They default to the shape centre when no anchor is provided — for example
 /// when constructed directly from JS via [`WasmCircle::new`].
 #[wasm_bindgen]
@@ -795,7 +795,7 @@ fn region_piece_to_wasm(piece: &eunoia::plotting::RegionPiece) -> WasmRegionPiec
 /// Collection of region polygons for visualization.
 ///
 /// `set_anchors_json` is a JSON string mapping set name → `[x, y]`, computed
-/// from [`PlotData::set_anchors`]. Use it for per-set labels in region-mode
+/// from `PlotData::set_anchors`. Use it for per-set labels in region-mode
 /// rendering (e.g. when a set has no exclusive region of its own).
 #[wasm_bindgen]
 pub struct WasmRegionPolygons {
@@ -2518,7 +2518,7 @@ where
 }
 
 /// Canonical n-set circle Venn diagram (`n ∈ {1, 2, 3}`), per-set outlines as
-/// polygons plus the circle parameters. See [`venn_polygon_result`] for the
+/// polygons plus the circle parameters. See `venn_polygon_result` for the
 /// metric caveats.
 #[wasm_bindgen]
 pub fn generate_venn_polygons_circles(
@@ -2554,7 +2554,7 @@ pub fn generate_venn_polygons_circles(
 }
 
 /// Canonical n-set ellipse Venn diagram (`n ∈ {1..=5}`), per-set outlines as
-/// polygons plus the ellipse parameters. See [`venn_polygon_result`] for the
+/// polygons plus the ellipse parameters. See `venn_polygon_result` for the
 /// metric caveats.
 #[wasm_bindgen]
 pub fn generate_venn_polygons_ellipses(
@@ -2592,7 +2592,7 @@ pub fn generate_venn_polygons_ellipses(
 }
 
 /// Canonical n-set square Venn diagram (`n ∈ {1, 2, 3}`), per-set outlines as
-/// polygons plus the square parameters. See [`venn_polygon_result`] for the
+/// polygons plus the square parameters. See `venn_polygon_result` for the
 /// metric caveats.
 #[wasm_bindgen]
 pub fn generate_venn_polygons_squares(
@@ -2628,7 +2628,7 @@ pub fn generate_venn_polygons_squares(
 }
 
 /// Canonical n-set rectangle Venn diagram (`n ∈ {1, 2, 3}`), per-set outlines
-/// as polygons plus the rectangle parameters. See [`venn_polygon_result`] for
+/// as polygons plus the rectangle parameters. See `venn_polygon_result` for
 /// the metric caveats.
 #[wasm_bindgen]
 pub fn generate_venn_polygons_rectangles(
@@ -2780,7 +2780,7 @@ pub fn generate_venn_regions_rectangles(
 /// Strategy-driven label placement on already-decomposed region polygons
 /// (no re-fit).
 ///
-/// `polygons_json` mirrors [`fit_labels_for_polygons`]: a JSON object keyed
+/// `polygons_json` is a JSON object keyed
 /// by canonical combination string (use `""` for the complement region),
 /// where each value is an array of pieces:
 /// `{ "outer": [[x, y], ...], "holes": [[[x, y], ...], ...] }`.
