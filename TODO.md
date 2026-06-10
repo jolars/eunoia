@@ -14,32 +14,36 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 
 ### P0 --- decide before 1.0 (un-fixable later without a major bump)
 
-- [ ] **No public enum is `#[non_exhaustive]`** --- verified: the attribute
-      appears nowhere in the crate, so adding any variant post-1.0 is breaking.
+- [~] **No public enum is `#[non_exhaustive]`** --- verified: the attribute
+      appeared nowhere in the crate, so adding any variant post-1.0 is breaking.
       Add it to the selector/output enums that are an open set:
-      - `LossType` (`crates/eunoia/src/loss.rs:93`) --- 14 variants, clearly
-        open.
-      - `Optimizer` (`crates/eunoia/src/fitter/final_layout.rs:22`) --- new
-        solvers are the roadmap.
-      - `MdsSolver` (`crates/eunoia/src/fitter/initial_layout.rs:190`).
-      - `InitialSampler` (`crates/eunoia/src/fitter/initial_layout.rs:35`).
-      - `DiagramError` (`crates/eunoia/src/error.rs:7`) --- new failure modes
-        are inevitable.
-      - `Line` (`crates/eunoia/src/geometry/primitives/line.rs`) --- only if
-        `Point`/`Line` stay public (see module-sealing item below). `InputType`
-        (2 variants, conceptually closed) is a judgment call; lower priority.
-        Note: these are pick-a-variant enums, so `#[non_exhaustive]` only blocks
-        external exhaustive `match` (the desired effect, same as
-        `std::io::ErrorKind`) --- construction of existing variants still works.
+      - [x] `LossType` (`crates/eunoia/src/loss.rs`) --- 14 variants, clearly
+        open. Done 2026-06-10.
+      - [x] `Optimizer` (`crates/eunoia/src/fitter/final_layout.rs`) --- new
+        solvers are the roadmap. Done 2026-06-10.
+      - [x] `MdsSolver` (`crates/eunoia/src/fitter/initial_layout.rs`).
+        Done 2026-06-10.
+      - [x] `InitialSampler` (`crates/eunoia/src/fitter/initial_layout.rs`).
+        Done 2026-06-10.
+      - [x] `DiagramError` (`crates/eunoia/src/error.rs`) --- new failure modes
+        are inevitable. Done 2026-06-10.
+      - [ ] `Line` (`crates/eunoia/src/geometry/primitives/line.rs`) --- only if
+        `Point`/`Line` stay public (deferred; depends on the module-sealing
+        item below). `InputType` (2 variants, conceptually closed) is a judgment
+        call; lower priority, left as-is for now.
+      Note: these are pick-a-variant enums, so `#[non_exhaustive]` only blocks
+      external exhaustive `match` (the desired effect, same as
+      `std::io::ErrorKind`) --- construction of existing variants still works.
+      Adding it forced one wildcard arm in the `corpus`-gated
+      `examples/quality_report.rs` `LossType` match (compiled as an external
+      crate) --- exactly the intended guard firing.
 
-- [ ] **`LossType::SumAbsoute` is misspelled** → `SumAbsolute`
-      (`crates/eunoia/src/loss.rs:112`; also the matches at lines 220, 313, 450,
-      842, and the doc-link references). Verified the constructor
-      `sum_absolute()` and the wasm variant `WasmLossType::SumAbsolute` are both
-      spelled correctly --- so the wasm layer currently maps a correct name onto
-      the wrong core variant. The one rename that is genuinely now-or-never;
-      pre-1.0 is the moment. Touches the `WasmLossType → LossType` mapping in
-      `crates/eunoia-wasm/src/lib.rs`.
+- [x] **`LossType::SumAbsoute` was misspelled** → renamed to `SumAbsolute`
+      (`crates/eunoia/src/loss.rs:112` + all matches/doc-links, the
+      `examples/` references, and the `WasmLossType → LossType` mapping in
+      `crates/eunoia-wasm/src/lib.rs`). The wasm variant `WasmLossType::SumAbsolute`
+      was already correct and now maps to the correctly-spelled core variant.
+      Done 2026-06-10.
 
 - [ ] **Internal math is leaking as public API --- seal before 1.0**
       (un-publishing after 1.0 is breaking). All are `pub` and reachable:
@@ -100,9 +104,10 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       (`crates/eunoia-wasm/src/lib.rs`). The high-level TS normalizes to
       `labelAnchor`, so this only bites `/raw` consumers.
 
-- [ ] **`DiagramSpecBuilder` missing `Clone`**
+- [x] **`DiagramSpecBuilder` missing `Clone`**
       (`crates/eunoia/src/spec/spec_builder.rs:30`) --- all fields are `Clone`;
-      builders are commonly cloned to branch variants. Cheap to add now.
+      builders are commonly cloned to branch variants. Added `Clone` to the
+      derive. Done 2026-06-10.
 
 - [ ] **Undocumented panics in builder methods**. `Fitter::optimizer_pool`
       (`crates/eunoia/src/fitter.rs:477`) and `initial_solver_pool` (`:312`)
