@@ -32,7 +32,7 @@ pub mod error;
 pub mod fitter;
 pub mod geometry;
 pub mod loss;
-pub mod math;
+pub(crate) mod math;
 pub mod spec;
 
 pub mod constants;

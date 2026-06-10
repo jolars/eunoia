@@ -25,21 +25,6 @@ use crate::{
 /// [x, y, w]ᵀ C [x, y, w] = 0
 /// ```
 /// where C is a 3×3 symmetric matrix.
-///
-/// # Examples
-///
-/// ```
-/// use eunoia::geometry::projective::Conic;
-/// use nalgebra::Matrix3;
-///
-/// // Unit circle: x² + y² - 1 = 0
-/// let matrix = Matrix3::new(
-///     1.0, 0.0, 0.0,
-///     0.0, 1.0, 0.0,
-///     0.0, 0.0, -1.0,
-/// );
-/// let conic = Conic::new(matrix);
-/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Conic {
     matrix: Matrix3<f64>,
@@ -49,16 +34,6 @@ impl Conic {
     /// Creates a conic from a 3×3 matrix.
     ///
     /// The matrix should be symmetric for a proper conic section.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::Conic;
-    /// use nalgebra::Matrix3;
-    ///
-    /// let matrix = Matrix3::identity();
-    /// let conic = Conic::new(matrix);
-    /// ```
     pub fn new(matrix: Matrix3<f64>) -> Self {
         Self { matrix }
     }
@@ -67,17 +42,6 @@ impl Conic {
     ///
     /// Converts an ellipse parameterized by center (h, k), semi-major axis a,
     /// semi-minor axis b, and rotation angle φ into the conic matrix representation.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::Conic;
-    /// use eunoia::geometry::shapes::Ellipse;
-    /// use eunoia::geometry::primitives::Point;
-    ///
-    /// let ellipse = Ellipse::new(Point::new(0.0, 0.0), 2.0, 1.0, 0.0);
-    /// let conic = Conic::from_ellipse(ellipse);
-    /// ```
     pub fn from_ellipse(e: Ellipse) -> Self {
         let h = e.center().x();
         let k = e.center().y();
@@ -126,29 +90,6 @@ impl Conic {
     /// Tests if a point lies on the conic.
     ///
     /// A point p = [x, y, w] lies on the conic if pᵀCp ≈ 0.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::{Conic, HomogeneousPoint};
-    /// use nalgebra::Matrix3;
-    ///
-    /// // Unit circle: x² + y² = 1
-    /// let circle = Matrix3::new(
-    ///     1.0, 0.0, 0.0,
-    ///     0.0, 1.0, 0.0,
-    ///     0.0, 0.0, -1.0,
-    /// );
-    /// let conic = Conic::new(circle);
-    ///
-    /// let p1 = HomogeneousPoint::new(1.0, 0.0, 1.0);  // (1, 0)
-    /// let p2 = HomogeneousPoint::new(0.0, 1.0, 1.0);  // (0, 1)
-    /// let p3 = HomogeneousPoint::new(0.0, 0.0, 1.0);  // (0, 0)
-    ///
-    /// assert!(conic.contains(&p1));
-    /// assert!(conic.contains(&p2));
-    /// assert!(!conic.contains(&p3));
-    /// ```
     pub fn contains(&self, point: &HomogeneousPoint) -> bool {
         let p = point.coords();
         let value = p.transpose() * self.matrix * p;
@@ -159,17 +100,6 @@ impl Conic {
     ///
     /// The dual conic C* satisfies the property that a line ℓ is tangent to
     /// the conic C if and only if ℓᵀC*ℓ = 0.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::Conic;
-    /// use nalgebra::Matrix3;
-    ///
-    /// let matrix = Matrix3::identity();
-    /// let conic = Conic::new(matrix);
-    /// let dual = conic.dual();
-    /// ```
     pub fn dual(&self) -> Self {
         use crate::math::linear_algebra::Matrix3Ext;
         Self::new(self.matrix.adjugate())

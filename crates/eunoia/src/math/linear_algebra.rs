@@ -30,25 +30,11 @@ use num_complex::Complex64;
 /// Extension trait for `nalgebra::Matrix3`.
 ///
 /// Provides cofactor and adjugate matrix operations.
-pub trait Matrix3Ext {
+pub(crate) trait Matrix3Ext {
     /// Computes the cofactor matrix.
     ///
     /// Each element `C[i,j]` = (-1)^(i+j) × minor(i,j), where the minor is the
     /// determinant of the 2×2 submatrix formed by removing row i and column j.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::math::linear_algebra::Matrix3Ext;
-    /// use nalgebra::Matrix3;
-    ///
-    /// let m: Matrix3<f64> = Matrix3::new(
-    ///     1.0, 2.0, 3.0,
-    ///     0.0, 4.0, 5.0,
-    ///     1.0, 0.0, 6.0,
-    /// );
-    /// let cof = m.cofactor_matrix();
-    /// ```
     fn cofactor_matrix(&self) -> Matrix3<f64>;
 
     /// Computes the adjugate (classical adjoint) matrix.
@@ -59,24 +45,6 @@ pub trait Matrix3Ext {
     ///
     /// - A × adj(A) = det(A) × I
     /// - A^(-1) = adj(A) / det(A) when det(A) ≠ 0
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::math::linear_algebra::Matrix3Ext;
-    /// use nalgebra::Matrix3;
-    ///
-    /// let m: Matrix3<f64> = Matrix3::new(
-    ///     1.0, 2.0, 3.0,
-    ///     0.0, 1.0, 4.0,
-    ///     5.0, 6.0, 0.0,
-    /// );
-    /// let adj = m.adjugate();
-    ///
-    /// // Verify: A × adj(A) = det(A) × I
-    /// let product = m * adj;
-    /// let det = m.determinant();
-    /// ```
     fn adjugate(&self) -> Matrix3<f64>;
 }
 
@@ -111,7 +79,7 @@ impl Matrix3Ext for Matrix3<f64> {
 }
 
 /// Generic extension trait for Vector3
-pub trait Vector3Ext {
+pub(crate) trait Vector3Ext {
     type Output;
     fn skew_symmetric_matrix(&self) -> Self::Output;
 }

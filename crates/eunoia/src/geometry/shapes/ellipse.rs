@@ -218,6 +218,11 @@ impl Ellipse {
     /// assert!((ellipse.semi_major() - 2.828).abs() < 0.01);
     /// assert!((ellipse.semi_minor() - 1.414).abs() < 0.01);
     /// ```
+    ///
+    /// The radius / log-aspect parameterization is fitter-internal optimizer
+    /// encoding and carries no stability guarantee; it is hidden from the
+    /// public docs.
+    #[doc(hidden)]
     pub fn from_radius_ratio(center: Point, radius: f64, log_aspect: f64, rotation: f64) -> Self {
         let radius = radius.abs();
 

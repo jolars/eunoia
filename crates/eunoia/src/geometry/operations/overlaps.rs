@@ -4,27 +4,6 @@ use crate::geometry::traits::{Area, Closed, DiagramShape};
 use rand::RngExt;
 use std::collections::HashMap;
 
-pub enum OverlapMethod {
-    MonteCarlo,
-    Exact,
-}
-
-pub fn compute_overlaps<S: DiagramShape>(
-    shapes: &[S],
-    method: OverlapMethod,
-    rng: &mut dyn rand::Rng,
-) -> f64 {
-    match method {
-        OverlapMethod::MonteCarlo => monte_carlo_overlap(shapes, 100_000, rng),
-        OverlapMethod::Exact => {
-            // Exact computation requires shape-specific implementations
-            // For generic shapes, we fall back to Monte Carlo
-            // Use compute_overlaps_circles() for exact circle computation
-            monte_carlo_overlap(shapes, 100_000, rng)
-        }
-    }
-}
-
 /// Compute exact overlap areas for circles using geometric calculation.
 ///
 /// Uses the boundary-arc integral via `region_boundary_arcs` +

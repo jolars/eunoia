@@ -15,9 +15,8 @@ use num_complex::Complex64;
 const DEGENERATE_COEFF_EPS: f64 = 1e-12;
 
 /// Sentinel placeholder for "missing" root slots when the input equation
-/// degenerates to a lower degree. Both components are NaN, so consumers like
-/// [`extract_real_roots`] and [`extract_real_pairs`] reject it via their
-/// imaginary-part checks (`NaN == 0.0` and `NaN.abs() < tol` are both false).
+/// degenerates to a lower degree. Both components are NaN, so [`extract_real_roots`]
+/// rejects it via its imaginary-part check (`NaN == 0.0` is false).
 const MISSING_ROOT: Complex64 = Complex64::new(f64::NAN, f64::NAN);
 
 /// Solves a cubic equation of the form αx³ + βx² + γx + δ = 0.
@@ -36,7 +35,7 @@ const MISSING_ROOT: Complex64 = Complex64::new(f64::NAN, f64::NAN);
 /// If `|alpha|` is below an internal tolerance the equation is treated as a
 /// quadratic in β, γ, δ; if `|beta|` is then also below tolerance it is
 /// treated as linear. Slots without a root are filled with a NaN sentinel
-/// that [`extract_real_roots`] / [`extract_real_pairs`] discard.
+/// that [`extract_real_roots`] discards.
 ///
 /// # Algorithm
 ///
@@ -44,26 +43,11 @@ const MISSING_ROOT: Complex64 = Complex64::new(f64::NAN, f64::NAN);
 /// - If R² < Q³: Three real roots (trigonometric solution)
 /// - If R² ≥ Q³: One real root and two complex conjugate roots
 ///
-/// # Examples
-///
-/// ```
-/// use eunoia::math::polynomial::solve_cubic;
-///
-/// // Solve x³ - 6x² + 11x - 6 = 0
-/// // Roots are x = 1, 2, 3
-/// let roots = solve_cubic(1.0, -6.0, 11.0, -6.0);
-///
-/// // All three roots should be real
-/// for root in &roots {
-///     assert!(root.im.abs() < 1e-10);
-/// }
-/// ```
-///
 /// # References
 ///
 /// This implementation is based on RConics (GPL-3), adapted from the C++ version
 /// by Emanuel Huber.
-pub fn solve_cubic(alpha: f64, beta: f64, gamma: f64, delta: f64) -> [Complex64; 3] {
+pub(crate) fn solve_cubic(alpha: f64, beta: f64, gamma: f64, delta: f64) -> [Complex64; 3] {
     use std::f64::consts::PI;
 
     if alpha.abs() < DEGENERATE_COEFF_EPS {
@@ -167,30 +151,8 @@ fn solve_quadratic_padded(beta: f64, gamma: f64, delta: f64) -> [Complex64; 3] {
 ///
 /// A root is considered real if its imaginary part is exactly zero.
 /// This strict check matches RConics behavior.
-///
-/// # Examples
-///
-/// ```
-/// use eunoia::math::polynomial::{solve_cubic, extract_real_roots};
-///
-/// let roots = solve_cubic(1.0, -6.0, 11.0, -6.0);
-/// let real_roots = extract_real_roots(&roots);
-///
-/// assert_eq!(real_roots.len(), 3);
-/// ```
-pub fn extract_real_roots(roots: &[Complex64]) -> Vec<f64> {
+pub(crate) fn extract_real_roots(roots: &[Complex64]) -> Vec<f64> {
     roots.iter().filter(|r| r.im == 0.0).map(|r| r.re).collect()
-}
-
-/// Extracts real (λ, μ) pairs from complex pairs.
-///
-/// Returns only pairs where both λ and μ have imaginary parts smaller than tolerance.
-pub fn extract_real_pairs(pairs: &[(Complex64, Complex64)], tolerance: f64) -> Vec<(f64, f64)> {
-    pairs
-        .iter()
-        .filter(|(lambda, mu)| lambda.im.abs() < tolerance && mu.im.abs() < tolerance)
-        .map(|(lambda, mu)| (lambda.re, mu.re))
-        .collect()
 }
 
 #[cfg(test)]

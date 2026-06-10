@@ -1,5 +1,5 @@
-pub mod linear_algebra;
-pub mod polynomial;
+pub(crate) mod linear_algebra;
+pub(crate) mod polynomial;
 
 use crate::constants::EPSILON;
 
@@ -9,21 +9,7 @@ use crate::constants::EPSILON;
 ///
 /// * `val` - The value to check
 /// * `epsilon` - The threshold below which values are zeroed (default: [`EPSILON`])
-///
-/// # Examples
-///
-/// ```
-/// use eunoia::math::{zap_small, zap_small_with};
-/// use nalgebra::Matrix3;
-///
-/// // Using default epsilon
-/// let matrix = Matrix3::new(1.0, 1e-12, 0.0, 1e-12, 2.0, 0.0, 0.0, 0.0, 3.0);
-/// let cleaned = matrix.map(zap_small);
-///
-/// // Using custom epsilon
-/// let cleaned = matrix.map(|x| zap_small_with(x, 1e-8));
-/// ```
-pub fn zap_small(val: f64) -> f64 {
+pub(crate) fn zap_small(val: f64) -> f64 {
     zap_small_with(val, EPSILON)
 }
 
@@ -33,6 +19,23 @@ pub fn zap_small(val: f64) -> f64 {
 ///
 /// * `val` - The value to check
 /// * `epsilon` - The threshold below which values are zeroed
-pub fn zap_small_with(val: f64, epsilon: f64) -> f64 {
+pub(crate) fn zap_small_with(val: f64, epsilon: f64) -> f64 {
     if val.abs() < epsilon { 0.0 } else { val }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zap_small_zeros_below_default_epsilon() {
+        assert_eq!(zap_small(1e-12), 0.0);
+        assert_eq!(zap_small(2.0), 2.0);
+    }
+
+    #[test]
+    fn zap_small_with_respects_custom_epsilon() {
+        assert_eq!(zap_small_with(1e-9, 1e-8), 0.0);
+        assert_eq!(zap_small_with(1e-7, 1e-8), 1e-7);
+    }
 }

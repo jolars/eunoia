@@ -23,10 +23,10 @@
 //! - **Degeneracies**: Handling tangent cases and points at infinity gracefully
 //! - **Transformations**: Projective transformations unify affine and perspective operations
 
-pub mod conic;
-pub mod line;
-pub mod point;
+pub(crate) mod conic;
+pub(crate) mod line;
+pub(crate) mod point;
 
-pub use conic::Conic;
-pub use line::HomogeneousLine;
-pub use point::HomogeneousPoint;
+pub(crate) use conic::Conic;
+pub(crate) use line::HomogeneousLine;
+pub(crate) use point::HomogeneousPoint;

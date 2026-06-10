@@ -21,20 +21,6 @@ use super::HomogeneousPoint;
 /// # Line at Infinity
 ///
 /// The line [0, 0, 1] represents the "line at infinity" containing all ideal points.
-///
-/// # Examples
-///
-/// ```
-/// use eunoia::geometry::projective::{HomogeneousLine, HomogeneousPoint};
-///
-/// // Create a line: x - 2y + 3 = 0
-/// let line = HomogeneousLine::new(1.0, -2.0, 3.0);
-///
-/// // Create line through two points
-/// let p1 = HomogeneousPoint::new(1.0, 0.0, 1.0);
-/// let p2 = HomogeneousPoint::new(0.0, 1.0, 1.0);
-/// let line = HomogeneousLine::through_points(&p1, &p2);
-/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HomogeneousLine {
     coeffs: Vector3<f64>,
@@ -44,15 +30,6 @@ impl HomogeneousLine {
     /// Creates a line from coefficients [a, b, c].
     ///
     /// The line represents ax + by + cw = 0.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousLine;
-    ///
-    /// // Line x - y + 1 = 0
-    /// let line = HomogeneousLine::new(1.0, -1.0, 1.0);
-    /// ```
     pub fn new(a: f64, b: f64, c: f64) -> Self {
         Self {
             coeffs: Vector3::new(a, b, c),
@@ -62,20 +39,6 @@ impl HomogeneousLine {
     /// Creates a line passing through two homogeneous points.
     ///
     /// Uses the cross product: the line through points p₁ and p₂ is p₁ × p₂.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::{HomogeneousLine, HomogeneousPoint};
-    ///
-    /// let p1 = HomogeneousPoint::new(1.0, 0.0, 1.0);  // (1, 0)
-    /// let p2 = HomogeneousPoint::new(0.0, 1.0, 1.0);  // (0, 1)
-    /// let line = HomogeneousLine::through_points(&p1, &p2);
-    ///
-    /// // Both points should lie on the line
-    /// assert!(line.contains(&p1));
-    /// assert!(line.contains(&p2));
-    /// ```
     pub fn through_points(p1: &HomogeneousPoint, p2: &HomogeneousPoint) -> Self {
         let cross = p1.coords().cross(p2.coords());
         Self { coeffs: cross }
@@ -89,25 +52,6 @@ impl HomogeneousLine {
     ///
     /// - Returns a finite point if the lines intersect at a regular point
     /// - Returns a point at infinity if the lines are parallel
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousLine;
-    ///
-    /// // Line 1: x + y = 1  →  x + y - 1 = 0
-    /// let l1 = HomogeneousLine::new(1.0, 1.0, -1.0);
-    ///
-    /// // Line 2: x - y = 0
-    /// let l2 = HomogeneousLine::new(1.0, -1.0, 0.0);
-    ///
-    /// let intersection = l1.intersect(&l2);
-    /// let euclidean = intersection.to_euclidean().unwrap();
-    ///
-    /// // Should intersect at (0.5, 0.5)
-    /// assert!((euclidean.x() - 0.5).abs() < 1e-10);
-    /// assert!((euclidean.y() - 0.5).abs() < 1e-10);
-    /// ```
     pub fn intersect(&self, other: &HomogeneousLine) -> HomogeneousPoint {
         let cross = self.coeffs.cross(&other.coeffs);
         HomogeneousPoint::new(cross[0], cross[1], cross[2])
@@ -116,21 +60,6 @@ impl HomogeneousLine {
     /// Tests if a point lies on this line.
     ///
     /// A point [x, y, w] lies on the line [a, b, c] if ax + by + cw ≈ 0.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::{HomogeneousLine, HomogeneousPoint};
-    ///
-    /// let line = HomogeneousLine::new(1.0, 1.0, -2.0);  // x + y - 2 = 0
-    /// let p1 = HomogeneousPoint::new(1.0, 1.0, 1.0);    // (1, 1)
-    /// let p2 = HomogeneousPoint::new(0.0, 2.0, 1.0);    // (0, 2)
-    /// let p3 = HomogeneousPoint::new(0.0, 0.0, 1.0);    // (0, 0)
-    ///
-    /// assert!(line.contains(&p1));
-    /// assert!(line.contains(&p2));
-    /// assert!(!line.contains(&p3));
-    /// ```
     pub fn contains(&self, point: &HomogeneousPoint) -> bool {
         let dot = self.coeffs.dot(point.coords());
         dot.abs() < 1e-10
@@ -139,22 +68,6 @@ impl HomogeneousLine {
     /// Tests if two lines are parallel.
     ///
     /// Lines are parallel if their intersection point is at infinity.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousLine;
-    ///
-    /// // Both lines have slope 1 (parallel)
-    /// let l1 = HomogeneousLine::new(1.0, -1.0, 0.0);  // x - y = 0
-    /// let l2 = HomogeneousLine::new(1.0, -1.0, 1.0);  // x - y + 1 = 0
-    ///
-    /// assert!(l1.is_parallel(&l2));
-    ///
-    /// // Non-parallel lines
-    /// let l3 = HomogeneousLine::new(1.0, 1.0, 0.0);   // x + y = 0
-    /// assert!(!l1.is_parallel(&l3));
-    /// ```
     pub fn is_parallel(&self, other: &HomogeneousLine) -> bool {
         self.intersect(other).is_at_infinity()
     }
@@ -163,19 +76,6 @@ impl HomogeneousLine {
     ///
     /// Scales the coefficients so that a² + b² = 1 (when possible).
     /// The line at infinity [0, 0, c] is returned unchanged.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousLine;
-    ///
-    /// let line = HomogeneousLine::new(3.0, 4.0, 5.0);
-    /// let normalized = line.normalize();
-    ///
-    /// // a² + b² should equal 1
-    /// let sum_squares = normalized.a().powi(2) + normalized.b().powi(2);
-    /// assert!((sum_squares - 1.0).abs() < 1e-10);
-    /// ```
     pub fn normalize(&self) -> Self {
         let norm = (self.coeffs[0].powi(2) + self.coeffs[1].powi(2)).sqrt();
         if norm < 1e-10 {

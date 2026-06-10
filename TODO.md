@@ -45,25 +45,34 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       was already correct and now maps to the correctly-spelled core variant.
       Done 2026-06-10.
 
-- [ ] **Internal math is leaking as public API --- seal before 1.0**
-      (un-publishing after 1.0 is breaking). All are `pub` and reachable:
-      - `math` module (`crates/eunoia/src/math.rs` + submodules) ---
-        `zap_small`, `zap_small_with`, `solve_cubic`, `extract_real_roots`,
-        `extract_real_pairs`, `Matrix3Ext`, `Vector3Ext`. Numerical plumbing,
-        not a diagram API. → `pub(crate)`.
-      - `geometry::projective` (`crates/eunoia/src/geometry.rs:9`) --- `Conic`,
-        `HomogeneousPoint`, `HomogeneousLine`. Ellipse-intersection internals. →
-        `pub(crate)`.
-      - `geometry::operations`, `geometry::diagram` internals (e.g.
-        `IntersectionPoint`). Review what genuinely needs to be public.
-      - Optimizer-encoding methods on the public shapes:
-        `Ellipse::from_log_aspect`, `Rectangle::to_optimizer_params` /
-        `from_optimizer_params`. AGENTS.md states the optimizer encoding is
-        "internal to the fitter" yet it sits on the public shape API. →
-        `#[doc(hidden)]` (the fitter needs them cross-module; users don't).
-        Per-module decision: `pub(crate)` vs `#[doc(hidden)]` + "no stability
-        guarantee". Recommendation: `pub(crate)` for `math`/`projective`,
-        `#[doc(hidden)]` for the optimizer-encoding methods.
+- [x] **Internal math is leaking as public API --- seal before 1.0**
+      (un-publishing after 1.0 is breaking). All were `pub` and reachable.
+      Done 2026-06-10:
+      - `math` module → `pub(crate)` (module, submodules, `zap_small`,
+        `zap_small_with`, `solve_cubic`, `extract_real_roots`, `Matrix3Ext`,
+        `Vector3Ext`). `extract_real_pairs` was dead and was removed. Doctests
+        that referenced `eunoia::math::…` were dropped (the functions are
+        already covered by the module unit tests; added a `zap_small` test).
+      - `geometry::projective` → `pub(crate)` (`Conic`, `HomogeneousPoint`,
+        `HomogeneousLine`, submodules, re-exports). The many `# Examples`
+        doctests were removed (each is already mirrored by a unit test).
+        `HomogeneousPoint::to_euclidean` now takes `self` (Copy) to satisfy the
+        `wrong_self_convention` lint that only fires once an item is non-public.
+      - `geometry::operations` was test-only plumbing (a Monte-Carlo overlap
+        oracle); `compute_overlaps` / `OverlapMethod` had zero callers and were
+        removed, and the module is now `#[cfg(test)]`.
+      - `geometry::diagram` internals → `pub(crate)`: `IntersectionPoint`,
+        `compute_exclusive_regions`, `collect_intersections`, `discover_regions`,
+        `adopters_to_mask`, `mask_to_indices`, `to_exclusive_areas`, and the
+        deprecated `compute_region_area` (+ the two deprecated
+        `circle::multiple_overlap_areas*` helpers it exposed). Kept
+        `compute_exclusive_areas_from_layout` / `…_generic` **public** — the
+        `eunoia-wasm` debug path consumes the former ("public for WASM").
+      - Optimizer-encoding methods → `#[doc(hidden)]`: the `DiagramShape` trait
+        methods `to_optimizer_params` / `from_optimizer_params` /
+        `optimizer_params_from_circle` (must stay public for impls; hidden +
+        "no stability guarantee"), and `Ellipse::from_radius_ratio` (the
+        TODO's "from_log_aspect"; radius/log-aspect optimizer encoding).
 
 - [ ] **User-facing structs with all-public fields → `#[non_exhaustive]`**
       (adding a field later is breaking). These are returned to users:

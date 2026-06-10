@@ -13,25 +13,6 @@ use crate::geometry::primitives::Point;
 ///
 /// - **Finite points**: [x, y, w] with w ≠ 0 represents the Euclidean point (x/w, y/w)
 /// - **Points at infinity**: [x, y, 0] represents a direction or ideal point
-///
-/// # Examples
-///
-/// ```
-/// use eunoia::geometry::projective::HomogeneousPoint;
-/// use eunoia::geometry::primitives::Point;
-///
-/// // Create from Euclidean coordinates
-/// let euclidean = Point::new(2.0, 3.0);
-/// let homogeneous = HomogeneousPoint::from_euclidean(euclidean);
-///
-/// // Convert back
-/// assert_eq!(homogeneous.to_euclidean(), Some(euclidean));
-///
-/// // Point at infinity
-/// let at_infinity = HomogeneousPoint::new(1.0, 0.0, 0.0);
-/// assert!(at_infinity.is_at_infinity());
-/// assert_eq!(at_infinity.to_euclidean(), None);
-/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HomogeneousPoint {
     coords: Vector3<f64>,
@@ -39,21 +20,6 @@ pub struct HomogeneousPoint {
 
 impl HomogeneousPoint {
     /// Creates a homogeneous point from coordinates [x, y, w].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousPoint;
-    ///
-    /// // Finite point
-    /// let p = HomogeneousPoint::new(4.0, 6.0, 2.0);
-    /// assert_eq!(p.to_euclidean().unwrap().x(), 2.0);
-    /// assert_eq!(p.to_euclidean().unwrap().y(), 3.0);
-    ///
-    /// // Point at infinity
-    /// let inf = HomogeneousPoint::new(1.0, 1.0, 0.0);
-    /// assert!(inf.is_at_infinity());
-    /// ```
     pub fn new(x: f64, y: f64, w: f64) -> Self {
         Self {
             coords: Vector3::new(x, y, w),
@@ -63,20 +29,6 @@ impl HomogeneousPoint {
     /// Creates a homogeneous point from a Euclidean point.
     ///
     /// The Euclidean point (x, y) is represented as [x, y, 1] in homogeneous coordinates.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousPoint;
-    /// use eunoia::geometry::primitives::Point;
-    ///
-    /// let euclidean = Point::new(3.0, 4.0);
-    /// let homogeneous = HomogeneousPoint::from_euclidean(euclidean);
-    ///
-    /// assert_eq!(homogeneous.x(), 3.0);
-    /// assert_eq!(homogeneous.y(), 4.0);
-    /// assert_eq!(homogeneous.w(), 1.0);
-    /// ```
     pub fn from_euclidean(point: Point) -> Self {
         Self::new(point.x(), point.y(), 1.0)
     }
@@ -84,20 +36,7 @@ impl HomogeneousPoint {
     /// Converts to a Euclidean point by dehomogenization.
     ///
     /// Returns `None` if the point is at infinity (w ≈ 0).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousPoint;
-    /// use eunoia::geometry::primitives::Point;
-    ///
-    /// let h = HomogeneousPoint::new(6.0, 9.0, 3.0);
-    /// assert_eq!(h.to_euclidean(), Some(Point::new(2.0, 3.0)));
-    ///
-    /// let inf = HomogeneousPoint::new(1.0, 2.0, 0.0);
-    /// assert_eq!(inf.to_euclidean(), None);
-    /// ```
-    pub fn to_euclidean(&self) -> Option<Point> {
+    pub fn to_euclidean(self) -> Option<Point> {
         if self.is_at_infinity() {
             None
         } else {
@@ -111,18 +50,6 @@ impl HomogeneousPoint {
     /// Returns true if this is a point at infinity.
     ///
     /// A point is at infinity when its w coordinate is approximately zero.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousPoint;
-    ///
-    /// let finite = HomogeneousPoint::new(1.0, 2.0, 1.0);
-    /// assert!(!finite.is_at_infinity());
-    ///
-    /// let infinite = HomogeneousPoint::new(1.0, 0.0, 0.0);
-    /// assert!(infinite.is_at_infinity());
-    /// ```
     pub fn is_at_infinity(&self) -> bool {
         self.coords[2].abs() < 1e-10
     }
@@ -130,19 +57,6 @@ impl HomogeneousPoint {
     /// Normalizes the homogeneous coordinates so that w = 1.
     ///
     /// If the point is at infinity, returns the point unchanged.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use eunoia::geometry::projective::HomogeneousPoint;
-    ///
-    /// let p = HomogeneousPoint::new(4.0, 6.0, 2.0);
-    /// let normalized = p.normalize();
-    ///
-    /// assert_eq!(normalized.x(), 2.0);
-    /// assert_eq!(normalized.y(), 3.0);
-    /// assert_eq!(normalized.w(), 1.0);
-    /// ```
     pub fn normalize(&self) -> Self {
         if self.is_at_infinity() {
             *self

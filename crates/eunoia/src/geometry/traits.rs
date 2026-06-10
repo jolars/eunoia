@@ -127,6 +127,10 @@ pub trait DiagramShape: Closed {
     /// - Circle: `[x, y, r]`
     /// - Square: `[x, y, r·√π]` (equal-area mapping)
     /// - Ellipse: `[x, y, ln(r), ln(r), 0.0]` (circle ≡ a=b=r in log space)
+    ///
+    /// The optimizer encoding is fitter-internal and carries no stability
+    /// guarantee; it is hidden from the public docs.
+    #[doc(hidden)]
     fn optimizer_params_from_circle(x: f64, y: f64, radius: f64) -> Vec<f64>
     where
         Self: Sized;
@@ -200,6 +204,10 @@ pub trait DiagramShape: Closed {
     /// The default implementation delegates to `from_params`, which is
     /// correct for any shape whose two encodings coincide; shapes with a
     /// distinct optimizer encoding (e.g. Ellipse) override.
+    ///
+    /// The optimizer encoding is fitter-internal and carries no stability
+    /// guarantee; it is hidden from the public docs.
+    #[doc(hidden)]
     fn from_optimizer_params(params: &[f64]) -> Self
     where
         Self: Sized,
@@ -216,6 +224,10 @@ pub trait DiagramShape: Closed {
     /// The default implementation delegates to `to_params`, which is correct
     /// for any shape whose two encodings coincide; shapes with a distinct
     /// optimizer encoding (e.g. Ellipse) override.
+    ///
+    /// The optimizer encoding is fitter-internal and carries no stability
+    /// guarantee; it is hidden from the public docs.
+    #[doc(hidden)]
     fn to_optimizer_params(&self) -> Vec<f64> {
         self.to_params()
     }

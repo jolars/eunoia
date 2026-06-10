@@ -10,7 +10,7 @@ pub(crate) type RegionMask = usize;
 
 /// Information about a single intersection point between shapes.
 #[derive(Debug, Clone)]
-pub struct IntersectionPoint {
+pub(crate) struct IntersectionPoint {
     /// The intersection point
     point: Point,
     /// Indices of the two shapes that create this intersection
@@ -46,7 +46,7 @@ impl IntersectionPoint {
 }
 
 /// Compute all the exclusive regions and their areas from a set of circles.
-pub fn compute_exclusive_regions(circles: &[Circle]) -> HashMap<RegionMask, f64> {
+pub(crate) fn compute_exclusive_regions(circles: &[Circle]) -> HashMap<RegionMask, f64> {
     let n_sets = circles.len();
 
     let intersections = collect_intersections(circles, n_sets);
@@ -115,7 +115,7 @@ pub(crate) fn compute_exclusive_regions_with_gradient_circles(
 }
 
 /// Collect all intersection points between pairs of circles.
-pub fn collect_intersections(circles: &[Circle], n_sets: usize) -> Vec<IntersectionPoint> {
+pub(crate) fn collect_intersections(circles: &[Circle], n_sets: usize) -> Vec<IntersectionPoint> {
     let mut intersections = Vec::new();
 
     for i in 0..n_sets {
@@ -149,7 +149,7 @@ pub fn collect_intersections(circles: &[Circle], n_sets: usize) -> Vec<Intersect
 /// Sparse discovery is essential at large `n`: full enumeration would walk
 /// `2^n - 1` masks (e.g. 131,071 at n=17), whereas this returns only regions
 /// that can geometrically be non-empty.
-pub fn discover_regions<S: DiagramShape>(
+pub(crate) fn discover_regions<S: DiagramShape>(
     shapes: &[S],
     intersections: &[IntersectionPoint],
     n_sets: usize,
@@ -290,7 +290,7 @@ pub fn discover_regions<S: DiagramShape>(
 }
 
 /// Convert adopters vector to a region bit mask.
-pub fn adopters_to_mask(adopters: &[usize]) -> RegionMask {
+pub(crate) fn adopters_to_mask(adopters: &[usize]) -> RegionMask {
     adopters.iter().fold(0, |mask, &i| mask | (1 << i))
 }
 
@@ -299,8 +299,8 @@ pub fn adopters_to_mask(adopters: &[usize]) -> RegionMask {
     since = "0.3.1",
     note = "Delegates to `multiple_overlap_areas_with_mask`, which returns wrong areas for 3+-way regions where one circle in the mask contains the others' lens. Use `compute_exclusive_regions` (boundary-arc path) instead."
 )]
-#[allow(deprecated)]
-pub fn compute_region_area(
+#[allow(deprecated, dead_code)]
+pub(crate) fn compute_region_area(
     mask: RegionMask,
     circles: &[Circle],
     intersections: &[IntersectionPoint],
@@ -407,12 +407,12 @@ pub fn compute_region_area(
 }
 
 /// Convert a region mask to a list of circle indices.
-pub fn mask_to_indices(mask: RegionMask, n_sets: usize) -> Vec<usize> {
+pub(crate) fn mask_to_indices(mask: RegionMask, n_sets: usize) -> Vec<usize> {
     (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect()
 }
 
 /// Convert overlapping areas to exclusive areas using inclusion-exclusion.
-pub fn to_exclusive_areas(
+pub(crate) fn to_exclusive_areas(
     overlapping_areas: &HashMap<RegionMask, f64>,
 ) -> HashMap<RegionMask, f64> {
     let mut exclusive = overlapping_areas.clone();
