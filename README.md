@@ -52,6 +52,3 @@ const v = venn({ n: 3, output: "regions" });
 
 The package is built with `wasm-pack --target bundler`, so it works with any
 modern bundler (Vite, Webpack, Rollup, esbuild) and Node 20+.
-
-The raw wasm-bindgen surface is available at `@jolars/eunoia/raw` if you need to
-drop down to the underlying API.

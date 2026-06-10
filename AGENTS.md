@@ -24,9 +24,11 @@ This is a **Cargo workspace** plus two JS sub-projects. Four distinct artifacts:
 
 How the JS layers fit together: `eunoia-wasm` is compiled by `wasm-pack` into
 `npm/`, then `ts/prepare-package.mjs` compiles `ts/index.ts` on top and writes
-`npm/package.json` from `ts/package.json`. The npm package re-exports the
-high-level API as the default entry and the raw wasm-bindgen surface at
-`@jolars/eunoia/raw`.
+`npm/package.json` from `ts/package.json`. The npm package exposes only the
+high-level API: `@jolars/eunoia` (default entry) and `@jolars/eunoia/svg`. The
+wasm-bindgen surface still ships (it is the runtime backing `index.js`) but is
+intentionally *not* exported — the `exports` map encapsulates it, so there is no
+public `/raw` entry point.
 
 Edition 2024, MSRV pinned to **1.88.0** (in `rust-toolchain.toml` and `devenv.nix`).
 Code uses the `module.rs` + `module/` layout — never `module/mod.rs`.

@@ -91,11 +91,15 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 
 ### P1 --- strongly recommended (cross-layer naming consistency)
 
-- [ ] **`./raw` export stability stance**. `npm/package.json` exposes the raw
-      wasm-bindgen surface (`WasmCircle.label_x`, numeric `WasmOptimizer` /
-      `WasmLossType`, 25+ `generate_*` fns) as a public entry point. Either
-      commit to versioning it, or label it explicitly unstable. As-is, renaming
-      any `Wasm*` type is a breaking change to `@jolars/eunoia/raw`.
+- [x] **`./raw` export stability stance**. Resolved 2026-06-10 by **dropping
+      the `/raw` export** entirely (rather than versioning or labelling it
+      unstable). The wasm-bindgen surface (`WasmCircle.label_x`, numeric
+      `WasmOptimizer` / `WasmLossType`, 25+ `generate_*` fns) still ships as the
+      runtime backing `index.js`, but the `exports` map no longer lists it, so
+      Node encapsulates it — there is no public `@jolars/eunoia/raw` entry. Only
+      the high-level `.` and `./svg` entries are public, so `Wasm*` renames are
+      no longer breaking changes for npm consumers. Updated `ts/package.json`,
+      `npm/package.json`, `README.md`, and `AGENTS.md`.
 
 - [ ] **Optimizer surface mismatch (core vs TS)**. The default core optimizer is
       `CmaEsTrf`, but the TS `Optimizer` union (`ts/index.ts`) is
@@ -108,10 +112,12 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       `DiagramSpecBuilder::complement` / `Fitter`. Last chance to rename to
       `complementArea`/`complementSize` if desired.
 
-- [ ] **wasm `label_x`/`label_y` inconsistency** --- sometimes public fields,
+- [x] **wasm `label_x`/`label_y` inconsistency** --- sometimes public fields,
       sometimes getters across `WasmCircle`/`WasmRegion`/etc.
       (`crates/eunoia-wasm/src/lib.rs`). The high-level TS normalizes to
-      `labelAnchor`, so this only bites `/raw` consumers.
+      `labelAnchor`, so this only bit `/raw` consumers --- moot now that the
+      `/raw` export is dropped (the wasm surface is no longer public). Closed
+      2026-06-10.
 
 - [x] **`DiagramSpecBuilder` missing `Clone`**
       (`crates/eunoia/src/spec/spec_builder.rs:30`) --- all fields are `Clone`;
