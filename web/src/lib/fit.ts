@@ -191,6 +191,7 @@ function scaleLayout(layout: Layout, ctx: NormalizationContext): Layout {
         labelAnchor: pt(r.labelAnchor),
       })),
       setAnchors: normSetAnchors(layout.setAnchors, ctx),
+      setAnchorRegions: layout.setAnchorRegions,
       ...tail,
     };
   }

@@ -421,6 +421,26 @@ function setLabelsOf(layout: Layout): string[] {
 export function nestedSets(layout: Layout): Record<string, string[]> {
   const map: Record<string, string[]> = {};
   if (!isRegions(layout)) return map;
+
+  // Prefer the core's authoritative mapping (`PlotData::set_anchor_regions`):
+  // it already records which region each set label was anchored to, so we fold
+  // a set into a *multi-set* region exactly when the core did — no need to
+  // re-derive the "largest containing region" fallback by re-scanning areas.
+  // A set anchored to its own single-set region is titled directly by
+  // `regionTitleLines`, so those are skipped here.
+  const fromCore = layout.setAnchorRegions;
+  if (fromCore && Object.keys(fromCore).length > 0) {
+    for (const name of setLabelsOf(layout)) {
+      const combo = fromCore[name];
+      if (!combo?.includes("&")) continue;
+      if (!map[combo]) map[combo] = [];
+      map[combo].push(name);
+    }
+    return map;
+  }
+
+  // Fallback for layouts assembled without `setAnchorRegions` (e.g. hand-built
+  // region inputs): re-derive the largest containing region from piece areas.
   const hasExclusive = new Set<string>();
   for (const r of layout.regions) {
     if (!r.combination.includes("&")) hasExclusive.add(r.combination.trim());

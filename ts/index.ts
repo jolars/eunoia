@@ -181,6 +181,17 @@ export type Layout = (
       shape: ShapeType;
       regions: Region[];
       setAnchors: Record<string, Point>;
+      /**
+       * For each set whose label was anchored to a region, the canonical
+       * combination string of that region (a key of a `"regions"` entry):
+       * an exclusive-area set maps to its own region (`A` → `"A"`), a
+       * fully-nested set to its largest containing region (`B` → `"A&B"`).
+       * Sets that fell back to the bare-shape POI are omitted. Mirrors the
+       * core `PlotData::set_anchor_regions`; use it to pair a set label with
+       * its region without matching `setAnchors` against region anchors by
+       * coordinate.
+       */
+      setAnchorRegions: Record<string, string>;
       metrics: Metrics;
     }
 ) & {
@@ -507,6 +518,17 @@ function parseAnchors(s: string | undefined | null): Record<string, Point> {
   }
 }
 
+function parseStringRecord(
+  s: string | undefined | null,
+): Record<string, string> {
+  if (!s) return {};
+  try {
+    return JSON.parse(s) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
 function buildSpecs(sets: Record<string, number>): wasm.DiagramSpec[] {
   const specs: wasm.DiagramSpec[] = [];
   for (const [input, size] of Object.entries(sets)) {
@@ -698,6 +720,7 @@ export function euler(options: EulerOptions): Layout {
           shape,
           regions,
           setAnchors: parseAnchors(result.set_anchors_json),
+          setAnchorRegions: parseStringRecord(result.set_anchor_regions_json),
           metrics: metricsFromPolygonResult(result),
           ...(container ? { container } : {}),
         };
@@ -919,6 +942,7 @@ export function venn(options: VennOptions): Layout {
         shape,
         regions,
         setAnchors: parseAnchors(result.set_anchors_json),
+        setAnchorRegions: parseStringRecord(result.set_anchor_regions_json),
         metrics: metricsFromPolygonResult(result),
         ...(container ? { container } : {}),
       };

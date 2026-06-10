@@ -797,6 +797,13 @@ fn region_piece_to_wasm(piece: &eunoia::plotting::RegionPiece) -> WasmRegionPiec
 /// `set_anchors_json` is a JSON string mapping set name → `[x, y]`, computed
 /// from `PlotData::set_anchors`. Use it for per-set labels in region-mode
 /// rendering (e.g. when a set has no exclusive region of its own).
+///
+/// `set_anchor_regions_json` is a JSON string mapping set name → region
+/// combination string (e.g. `"A"`, `"A&B"`), computed from
+/// `PlotData::set_anchor_regions`. It records which region each set label was
+/// anchored to so consumers can pair a set's label with the matching region
+/// without comparing anchor coordinates. Sets that fell back to the bare-shape
+/// POI are omitted.
 #[wasm_bindgen]
 pub struct WasmRegionPolygons {
     regions: Vec<WasmRegion>,
@@ -812,6 +819,7 @@ pub struct WasmRegionPolygons {
     region_error_json: String,
     residuals_json: String,
     set_anchors_json: String,
+    set_anchor_regions_json: String,
 }
 
 #[wasm_bindgen]
@@ -852,19 +860,27 @@ impl WasmRegionPolygons {
     }
 
     #[wasm_bindgen(getter)]
+    pub fn set_anchor_regions_json(&self) -> String {
+        self.set_anchor_regions_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn container(&self) -> Option<WasmRectangle> {
         self.container.clone()
     }
 }
 
 type AnchorMap = std::collections::HashMap<String, (f64, f64)>;
+type SetAnchorRegionMap = std::collections::HashMap<String, String>;
 
-/// Compute one `(label_x, label_y)` per region (hole-aware) plus a name → `(x, y)`
-/// map for per-set labels, both sourced from [`eunoia::plotting::PlotData`].
+/// Compute one `(label_x, label_y)` per region (hole-aware), a name → `(x, y)`
+/// map for per-set labels, and a name → region-combo map recording which region
+/// each set label was anchored to — all sourced from
+/// [`eunoia::plotting::PlotData`].
 fn compute_region_label_anchors<S>(
     layout: &eunoia::Layout<S>,
     spec: &eunoia::spec::DiagramSpec,
-) -> (AnchorMap, AnchorMap)
+) -> (AnchorMap, AnchorMap, SetAnchorRegionMap)
 where
     S: eunoia::geometry::traits::DiagramShape + Polygonize + Copy + 'static,
 {
@@ -879,7 +895,7 @@ where
         .into_iter()
         .map(|(name, p)| (name, (p.x(), p.y())))
         .collect();
-    (region_anchors, set_anchors)
+    (region_anchors, set_anchors, plot.set_anchor_regions)
 }
 
 /// Generate a simple test layout for debugging
@@ -2117,7 +2133,7 @@ pub fn generate_region_polygons_circles(
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons.
-    let (region_anchors_map, set_anchors_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2165,6 +2181,8 @@ pub fn generate_region_polygons_circles(
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -2204,7 +2222,7 @@ pub fn generate_region_polygons_ellipses(
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons.
-    let (region_anchors_map, set_anchors_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2253,6 +2271,8 @@ pub fn generate_region_polygons_ellipses(
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -2290,7 +2310,7 @@ pub fn generate_region_polygons_squares(
         .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
-    let (region_anchors_map, set_anchors_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2335,6 +2355,8 @@ pub fn generate_region_polygons_squares(
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -2373,7 +2395,7 @@ pub fn generate_region_polygons_rectangles(
         .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
-    let (region_anchors_map, set_anchors_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2418,6 +2440,8 @@ pub fn generate_region_polygons_rectangles(
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -2684,7 +2708,7 @@ where
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
 
-    let (region_anchors_map, set_anchors_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2729,6 +2753,8 @@ where
         region_error_json: diagnostics.region_error_json,
         residuals_json: diagnostics.residuals_json,
         set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }

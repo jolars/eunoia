@@ -12,8 +12,10 @@ import {
   defaultColorFor,
   leaderPath,
   mixColors,
+  nestedSets,
   polygonPath,
   regionPath,
+  regionTitleLines,
   svgBody,
   toSvg,
   viewBox,
@@ -176,4 +178,44 @@ test("label text is XML-escaped", () => {
   const svg = toSvg(circleLayout("A&B"), { padding: 5 });
   assert.match(svg, />A&amp;B<\/text>/);
   assert.ok(!/>A&B</.test(svg));
+});
+
+// B is fully nested in A: it has no exclusive region, only "A" and "A&B".
+function nestedRegionLayout(withCoreMap) {
+  const layout = {
+    mode: "regions",
+    shape: "circle",
+    regions: [
+      {
+        combination: "A",
+        totalArea: 8,
+        labelAnchor: { x: 2, y: 5 },
+        pieces: [],
+      },
+      {
+        combination: "A&B",
+        totalArea: 3,
+        labelAnchor: { x: 7, y: 5 },
+        pieces: [],
+      },
+    ],
+    setAnchors: { A: { x: 2, y: 5 }, B: { x: 7, y: 5 } },
+    metrics,
+  };
+  // The core records B's label as anchored to region "A&B"; A keeps its own.
+  if (withCoreMap) layout.setAnchorRegions = { A: "A", B: "A&B" };
+  return layout;
+}
+
+test("nestedSets folds a nested set using the core setAnchorRegions map", () => {
+  const nested = nestedSets(nestedRegionLayout(true));
+  assert.deepEqual(nested, { "A&B": ["B"] });
+  // A is titled by its own exclusive region; B is folded into A&B.
+  assert.deepEqual(regionTitleLines("A", nested), ["A"]);
+  assert.deepEqual(regionTitleLines("A&B", nested), ["B"]);
+});
+
+test("nestedSets falls back to area scan without setAnchorRegions", () => {
+  // Same result as the core map, re-derived from region areas.
+  assert.deepEqual(nestedSets(nestedRegionLayout(false)), { "A&B": ["B"] });
 });
