@@ -54,7 +54,7 @@ mod bench {
         vec![
             ("MaxAbsolute", LossType::MaxAbsolute),
             ("MaxSquared", LossType::MaxSquared),
-            ("SumAbsolute", LossType::SumAbsoute),
+            ("SumAbsolute", LossType::SumAbsolute),
             ("SumAbsRegionErr", LossType::SumAbsoluteRegionError),
             ("DiagError", LossType::DiagError),
         ]

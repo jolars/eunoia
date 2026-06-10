@@ -4,6 +4,7 @@ use std::fmt::{self, Display};
 
 /// Errors that can occur when building or working with diagrams.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum DiagramError {
     /// A combination references a set that was never defined.
     UndefinedSet(String),

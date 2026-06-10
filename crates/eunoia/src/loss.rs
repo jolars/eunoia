@@ -72,7 +72,7 @@ fn softmax_weights(values: &[f64], eps: f64) -> Vec<f64> {
 ///
 /// # Smooth vs non-smooth losses
 ///
-/// Variants built from `|·|` or `max(·)` (`SumAbsoute`,
+/// Variants built from `|·|` or `max(·)` (`SumAbsolute`,
 /// `SumAbsoluteRegionError`, `MaxAbsolute`, `MaxSquared`, `DiagError`)
 /// are **non-smooth**: their gradients are zero almost everywhere or
 /// discontinuous at every zero crossing, which stalls L-BFGS. The
@@ -90,6 +90,7 @@ fn softmax_weights(values: &[f64], eps: f64) -> Vec<f64> {
 /// to the true loss but inherits more of its gradient pathology; larger
 /// `eps` gives crisper gradients but biases the optimum.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[non_exhaustive]
 pub enum LossType {
     /// Normalised sum of squared errors: `Σ(fitted - target)² / Σtarget²`.
     ///
@@ -109,7 +110,7 @@ pub enum LossType {
     /// surrogate.
     ///
     /// [`SmoothSumAbsolute`]: Self::SmoothSumAbsolute
-    SumAbsoute,
+    SumAbsolute,
     /// `Σ|fitted/Σfitted - target/Σtarget|`. Non-smooth — see
     /// [`SmoothSumAbsoluteRegionError`].
     ///
@@ -139,12 +140,12 @@ pub enum LossType {
     ///
     /// [`SmoothDiagError`]: Self::SmoothDiagError
     DiagError,
-    /// Smooth surrogate of [`SumAbsoute`]:
+    /// Smooth surrogate of [`SumAbsolute`]:
     /// `Σ smooth_abs(f - t, ε) / Σ|target|`.
     ///
-    /// [`SumAbsoute`]: Self::SumAbsoute
+    /// [`SumAbsolute`]: Self::SumAbsolute
     SmoothSumAbsolute {
-        /// Huber smoothing parameter; converges to true `SumAbsoute` as
+        /// Huber smoothing parameter; converges to true `SumAbsolute` as
         /// `eps → 0`. Pick ~1% of typical residual magnitude.
         eps: f64,
     },
@@ -217,7 +218,7 @@ impl LossType {
 
     /// Sum of absolute errors
     pub fn sum_absolute() -> Self {
-        Self::SumAbsoute
+        Self::SumAbsolute
     }
 
     /// Sum of absolute region errors
@@ -235,9 +236,9 @@ impl LossType {
         Self::DiagError
     }
 
-    /// Smooth surrogate of [`SumAbsoute`]. Converges to it as `eps → 0`.
+    /// Smooth surrogate of [`SumAbsolute`]. Converges to it as `eps → 0`.
     ///
-    /// [`SumAbsoute`]: Self::SumAbsoute
+    /// [`SumAbsolute`]: Self::SumAbsolute
     pub fn smooth_sum_absolute(eps: f64) -> Self {
         Self::SmoothSumAbsolute { eps }
     }
@@ -310,7 +311,7 @@ impl LossType {
             | LossType::SmoothMaxAbsolute { .. }
             | LossType::SmoothMaxSquared { .. }
             | LossType::SmoothDiagError { .. } => true,
-            LossType::SumAbsoute
+            LossType::SumAbsolute
             | LossType::SumAbsoluteRegionError
             | LossType::MaxAbsolute
             | LossType::MaxSquared
@@ -447,7 +448,7 @@ impl LossType {
                     })
                     .fold(0.0, f64::max)
             }
-            LossType::SumAbsoute => {
+            LossType::SumAbsolute => {
                 let sum_abs_t: f64 = target.values().map(|v| v.abs()).sum();
                 if sum_abs_t < 1e-20 {
                     return 0.0;
@@ -839,7 +840,7 @@ impl LossType {
                 }
                 Some((loss, grad))
             }
-            // Non-smooth variants (`SumAbsoute`, `SumAbsoluteRegionError`,
+            // Non-smooth variants (`SumAbsolute`, `SumAbsoluteRegionError`,
             // `MaxAbsolute`, `MaxSquared`, `DiagError`) deliberately fall
             // back to FD here. Their gradients are zero almost everywhere
             // or discontinuous at every zero crossing, so a subgradient
@@ -1021,7 +1022,7 @@ mod tests {
         assert!(LossType::Stress.is_smooth());
         assert!(LossType::SumSquaredRegionError.is_smooth());
 
-        assert!(!LossType::SumAbsoute.is_smooth());
+        assert!(!LossType::SumAbsolute.is_smooth());
         assert!(!LossType::SumAbsoluteRegionError.is_smooth());
         assert!(!LossType::MaxAbsolute.is_smooth());
         assert!(!LossType::MaxSquared.is_smooth());
@@ -1070,7 +1071,7 @@ mod tests {
         target.insert(0b100, 28.0);
 
         let pairs: &[(LossType, LossType)] = &[
-            (LossType::SumAbsoute, LossType::smooth_sum_absolute(1e-9)),
+            (LossType::SumAbsolute, LossType::smooth_sum_absolute(1e-9)),
             (LossType::MaxAbsolute, LossType::smooth_max_absolute(1e-9)),
             (LossType::MaxSquared, LossType::smooth_max_squared(1e-9)),
             (
@@ -1236,7 +1237,7 @@ mod tests {
 
         // Non-smooth losses still fall back to FD (return None).
         let non_smooth = [
-            LossType::SumAbsoute,
+            LossType::SumAbsolute,
             LossType::SumAbsoluteRegionError,
             LossType::MaxAbsolute,
             LossType::MaxSquared,

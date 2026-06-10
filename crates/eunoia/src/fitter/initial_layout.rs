@@ -32,6 +32,7 @@ pub(crate) fn sampling_scale(set_areas: &[f64]) -> f64 {
 ///
 /// [`Fitter::initial_sampler`]: crate::Fitter::initial_sampler
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum InitialSampler {
     /// Independent uniform draws on `[0, scale]` per attempt — matches eulerr's
     /// `runif(n*2, 0, sqrt(sum(r^2*pi)))`.
@@ -187,6 +188,7 @@ pub(crate) fn compute_initial_layout_with_solver(
 /// [`Fitter::initial_solver`]: crate::Fitter::initial_solver
 /// [`Fitter::initial_solver_pool`]: crate::Fitter::initial_solver_pool
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum MdsSolver {
     /// Limited-memory BFGS with More-Thuente line search. Gradient-only and
     /// cheap per iteration. Was the historical default; demoted from default

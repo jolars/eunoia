@@ -20,6 +20,7 @@ use crate::spec::PreprocessedSpec;
 
 /// Optimizer to use for final layout optimization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Optimizer {
     /// Levenberg-Marquardt with analytic Jacobian. Specialised for the
     /// sum-of-squares loss `LossType::SumSquared`. When configured with a
@@ -145,9 +146,9 @@ pub enum Optimizer {
 ///
 /// Internal benchmark knob (not a public `Optimizer` variant): all three
 /// share the identical baseline-race + external polish + non-regression guard
-/// in [`run_cmaes_escape`], so the *only* thing that varies is which solver
+/// in `run_cmaes_escape`, so the *only* thing that varies is which solver
 /// produces the post-escape seed. The two memetic variants fold an LM inner
-/// (over the existing [`BoundedLmDiagramProblem`], Hansen-2011 / DE injection)
+/// (over the existing `BoundedLmDiagramProblem`, Hansen-2011 / DE injection)
 /// into the population loop; the plain variant keeps the local refinement
 /// entirely external. See `examples/quality_report` for the head-to-head.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -424,7 +425,7 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
         }
         Optimizer::Lbfgs => {
             // L-BFGS with numerical gradients. On non-smooth losses
-            // (`MaxAbsolute`, `SumAbsoute`, …) gradients are unreliable —
+            // (`MaxAbsolute`, `SumAbsolute`, …) gradients are unreliable —
             // pick a `LossType::Smooth*` surrogate variant instead.
             run_lbfgs::<S>(spec, params_per_shape, initial_param, config)
         }
@@ -2914,7 +2915,7 @@ mod tests {
         // shape doesn't support it — we do this by routing through a wrapper
         // cost that always falls through to FD. The simplest implementation:
         // run the optimiser with a loss type that doesn't expose an analytic
-        // gradient (e.g. SumAbsoute), and compare against the same fit using
+        // gradient (e.g. SumAbsolute), and compare against the same fit using
         // SumSquared (which DOES). This isn't apples-to-apples on
         // loss surface but does exercise the gradient path. For a more direct
         // test, see comments below.
@@ -2958,11 +2959,11 @@ mod tests {
                     .expect("analytic fit");
             let dt_an = t0.elapsed();
 
-            // FD path: SumAbsoute has no compute_with_gradient → falls back to FD.
+            // FD path: SumAbsolute has no compute_with_gradient → falls back to FD.
             // (Same optimiser, different loss; serves as a relative timing reference.)
             let cfg_fd = FinalLayoutConfig {
                 optimizer: Optimizer::Lbfgs,
-                loss_type: LossType::SumAbsoute,
+                loss_type: LossType::SumAbsolute,
                 max_iterations: 200,
                 tolerance: 1e-6,
                 seed: 0,

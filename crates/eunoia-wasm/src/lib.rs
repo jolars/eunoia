@@ -75,7 +75,7 @@ impl From<WasmLossType> for LossType {
     fn from(loss: WasmLossType) -> Self {
         match loss {
             WasmLossType::SumSquared => LossType::SumSquared,
-            WasmLossType::SumAbsolute => LossType::SumAbsoute,
+            WasmLossType::SumAbsolute => LossType::SumAbsolute,
             WasmLossType::SumAbsoluteRegionError => LossType::SumAbsoluteRegionError,
             WasmLossType::SumSquaredRegionError => LossType::SumSquaredRegionError,
             WasmLossType::MaxAbsolute => LossType::MaxAbsolute,

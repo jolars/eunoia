@@ -412,7 +412,7 @@ mod quality_report {
     fn loss_type_name(t: LossType) -> &'static str {
         match t {
             LossType::SumSquared => "SumSquared",
-            LossType::SumAbsoute => "SumAbsolute",
+            LossType::SumAbsolute => "SumAbsolute",
             LossType::SumAbsoluteRegionError => "SumAbsoluteRegionError",
             LossType::SumSquaredRegionError => "SumSquaredRegionError",
             LossType::MaxAbsolute => "MaxAbsolute",
@@ -425,6 +425,7 @@ mod quality_report {
             LossType::SmoothMaxAbsolute { .. } => "SmoothMaxAbsolute",
             LossType::SmoothMaxSquared { .. } => "SmoothMaxSquared",
             LossType::SmoothDiagError { .. } => "SmoothDiagError",
+            _ => "Unknown",
         }
     }
 

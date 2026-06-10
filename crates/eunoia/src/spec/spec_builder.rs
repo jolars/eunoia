@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet};
 /// // Shape type is chosen when fitting
 /// let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DiagramSpecBuilder {
     combinations: HashMap<Combination, f64>,
     input_type: Option<InputType>,
