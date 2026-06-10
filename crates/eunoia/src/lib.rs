@@ -48,6 +48,10 @@ pub mod test_utils;
 
 // Re-export main API types
 pub use error::DiagramError;
+/// Internal global-escape solver selector, exposed only under the `corpus`
+/// feature for `examples/quality_report` (see [`Fitter::escape_solver`]).
+#[cfg(any(test, feature = "corpus"))]
+pub use fitter::final_layout::EscapeSolver;
 pub use fitter::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer};
 pub use spec::{Combination, DiagramSpecBuilder, InputType};
 pub use venn::VennDiagram;

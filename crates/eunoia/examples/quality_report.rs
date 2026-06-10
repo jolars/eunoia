@@ -50,7 +50,7 @@ mod quality_report {
     use eunoia::geometry::traits::DiagramShape;
     use eunoia::loss::LossType;
     use eunoia::test_utils::corpus::{CorpusEntry, Fittable, QUALITY_SEEDS, all};
-    use eunoia::{Fitter, InitialSampler, MdsSolver, Optimizer};
+    use eunoia::{EscapeSolver, Fitter, InitialSampler, MdsSolver, Optimizer};
 
     /// Common-across-configs description. Things that vary across configs
     /// (final-stage optimizer, MDS solver pool) are listed per config.
@@ -120,6 +120,24 @@ mod quality_report {
             // wins extreme-scale / nested specs (issue71, issue44). This is the
             // candidate to actually beat `cmaes_lm` (the default).
             ("cmaes_trf", |f| f.optimizer(Optimizer::CmaEsTrf)),
+            // Same escape path as `cmaes_trf`, but the global-escape *core* is
+            // swapped from plain `BoundedCmaEs` to the memetic
+            // `BoundedCmaInject` (CMA-ES with an inner LM refining the best-k
+            // each generation, Hansen-2011 injection). External TRF polish +
+            // non-regression guard are identical to `cmaes_trf`, so the diff is
+            // exclusively the escape solver. Head-to-head target on the
+            // wrong-basin specs (issue91/issue92/eulerape).
+            ("cmaes_inject_trf", |f| {
+                f.optimizer(Optimizer::CmaEsTrf)
+                    .escape_solver(EscapeSolver::BoundedCmaInject)
+            }),
+            // Same as `cmaes_inject_trf` but the escape core is memetic
+            // differential evolution (`DeInject`, LM inner) instead of CMA-ES.
+            // The DE-vs-CMA half of the head-to-head the user asked for.
+            ("de_inject_trf", |f| {
+                f.optimizer(Optimizer::CmaEsTrf)
+                    .escape_solver(EscapeSolver::DeInject)
+            }),
             // Same plus LM at the MDS stage. Tests whether the global step
             // benefits from a tighter MDS init.
             ("cmaes_lm_full", |f| {

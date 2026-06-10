@@ -108,6 +108,11 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     /// CMA-ES step is skipped, so easy specs pay no extra wall time. Other
     /// optimizers ignore this field.
     cmaes_fallback_threshold: f64,
+    /// Global-escape solver used by the `CmaEs*` arms once the local baseline
+    /// is stuck above `cmaes_fallback_threshold`. Internal benchmark knob (see
+    /// [`final_layout::EscapeSolver`]); the default keeps the historical plain
+    /// `BoundedCmaEs` escape.
+    escape_solver: final_layout::EscapeSolver,
     /// Strategy for drawing per-restart MDS initial positions. The default
     /// `Uniform` matches eulerr's `runif`-per-restart behaviour;
     /// `LatinHypercube` stratifies the batch of `n_restarts` draws across
@@ -204,6 +209,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // See `FinalLayoutConfig::cmaes_fallback_threshold` for the
             // empirical justification of `1e-3`.
             cmaes_fallback_threshold: 1e-3,
+            // Plain box-constrained CMA-ES escape; the memetic inject variants
+            // are opt-in benchmark knobs (see `Fitter::escape_solver`).
+            escape_solver: final_layout::EscapeSolver::BoundedCmaEs,
             // Number of full-pipeline restarts (fresh MDS init + final
             // optimizer per attempt, lowest-loss attempt kept). Matches
             // eulerr's `n_restarts = 10`. Each fit does that much work.
@@ -593,6 +601,27 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
+    /// Select the global-escape solver the `CmaEs*` arms use once the local
+    /// baseline is stuck above [`cmaes_fallback_threshold`].
+    ///
+    /// Internal benchmark knob, exposed only under the `corpus` feature (like
+    /// the corpus test fixtures) so `examples/quality_report` can sweep the
+    /// plain [`BoundedCmaEs`] escape against the memetic
+    /// [`BoundedCmaInject`]/[`DeInject`] variants without committing them to
+    /// the stable public API. The default is [`EscapeSolver::BoundedCmaEs`],
+    /// the historical behaviour.
+    ///
+    /// [`cmaes_fallback_threshold`]: Self::cmaes_fallback_threshold
+    /// [`BoundedCmaEs`]: final_layout::EscapeSolver::BoundedCmaEs
+    /// [`BoundedCmaInject`]: final_layout::EscapeSolver::BoundedCmaInject
+    /// [`DeInject`]: final_layout::EscapeSolver::DeInject
+    /// [`EscapeSolver::BoundedCmaEs`]: final_layout::EscapeSolver::BoundedCmaEs
+    #[cfg(any(test, feature = "corpus"))]
+    pub fn escape_solver(mut self, solver: final_layout::EscapeSolver) -> Self {
+        self.escape_solver = solver;
+        self
+    }
+
     /// Set the strategy for drawing initial MDS positions across the
     /// `n_restarts` batch.
     ///
@@ -703,6 +732,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let loss_type = self.loss_type;
         let optimizer_pool = self.optimizer_pool.clone();
         let cmaes_fallback_threshold = self.cmaes_fallback_threshold;
+        let escape_solver = self.escape_solver;
         let jobs = self.jobs;
 
         // Master RNG: derives a per-attempt seed for each full-pipeline restart.
@@ -797,6 +827,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
                     // MDS inits, so each attempt's final stage runs once.
                     n_restarts: 1,
                     cmaes_fallback_threshold,
+                    escape_solver,
                 };
 
                 if attempt_idx == 0
@@ -2380,4 +2411,46 @@ fn test_cmaes_trf_escapes_issue92_dropped_pair() {
         "CmaEsTrf loss = {:e} (expected < 1e-6 — global escape or TRF polish regressed)",
         layout.loss()
     );
+}
+
+/// Smoke coverage for the memetic escape solvers (`EscapeSolver::*Inject`):
+/// the same wrong-basin `issue92_3_set_dropped_pair` trap the plain
+/// `BoundedCmaEs` escape clears (see `test_cmaes_trf_escapes_issue92_dropped_pair`)
+/// must also be cleared when the escape core is swapped to `BoundedCmaInject`
+/// or `DeInject`. Validates that the memetic-LM escape paths actually run,
+/// stay numerically sound, and find the same basin. Internal benchmark knob,
+/// so this lives behind the same `test`/`corpus` gate as the builder.
+#[test]
+#[ignore = "slow regression coverage"]
+fn test_memetic_escapes_issue92_dropped_pair() {
+    use crate::fitter::final_layout::EscapeSolver;
+    use crate::fitter::{Fitter, Optimizer};
+    use crate::geometry::shapes::Ellipse;
+    use crate::spec::{DiagramSpecBuilder, InputType};
+
+    let spec = DiagramSpecBuilder::new()
+        .set("A", 164.0)
+        .set("B", 561.0)
+        .set("C", 166.0)
+        .intersection(&["A", "B"], 12.0)
+        .intersection(&["A", "C"], 459.0)
+        .intersection(&["B", "C"], 703.0)
+        .intersection(&["A", "B", "C"], 162.0)
+        .input_type(InputType::Exclusive)
+        .build()
+        .unwrap();
+
+    for escape in [EscapeSolver::BoundedCmaInject, EscapeSolver::DeInject] {
+        let layout = Fitter::<Ellipse>::new(&spec)
+            .optimizer(Optimizer::CmaEsTrf)
+            .escape_solver(escape)
+            .seed(1)
+            .fit()
+            .unwrap();
+        assert!(
+            layout.loss() < 1e-6,
+            "{escape:?} escape loss = {:e} (expected < 1e-6 — memetic global escape regressed)",
+            layout.loss()
+        );
+    }
 }

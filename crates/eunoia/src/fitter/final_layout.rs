@@ -139,6 +139,31 @@ pub enum Optimizer {
     CmaEsTrf,
 }
 
+/// Global-escape solver used inside [`Optimizer::CmaEsLm`] /
+/// [`Optimizer::CmaEsTrf`] when the local baseline is stuck above
+/// `cmaes_fallback_threshold`.
+///
+/// Internal benchmark knob (not a public `Optimizer` variant): all three
+/// share the identical baseline-race + external polish + non-regression guard
+/// in [`run_cmaes_escape`], so the *only* thing that varies is which solver
+/// produces the post-escape seed. The two memetic variants fold an LM inner
+/// (over the existing [`BoundedLmDiagramProblem`], Hansen-2011 / DE injection)
+/// into the population loop; the plain variant keeps the local refinement
+/// entirely external. See `examples/quality_report` for the head-to-head.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EscapeSolver {
+    /// Plain box-constrained CMA-ES (`basin::BoundedCmaEs`); local refinement
+    /// happens only in the external polish. The historical default.
+    #[default]
+    BoundedCmaEs,
+    /// Memetic box-constrained CMA-ES with an LM inner
+    /// (`basin::BoundedCmaInject<LevenbergMarquardt>`).
+    BoundedCmaInject,
+    /// Memetic differential evolution with an LM inner
+    /// (`basin::DeInject<LevenbergMarquardt>`).
+    DeInject,
+}
+
 /// Configuration for final layout optimization.
 #[derive(Debug, Clone)]
 pub(crate) struct FinalLayoutConfig {
@@ -192,6 +217,9 @@ pub(crate) struct FinalLayoutConfig {
     /// drops to that of `Optimizer::LevenbergMarquardt`. Only the
     /// `CmaEsLm` arm consults this; other optimizers ignore it.
     pub cmaes_fallback_threshold: f64,
+    /// Which global-escape solver the `CmaEs*` arms use once the local
+    /// baseline is stuck. Internal benchmark knob; see [`EscapeSolver`].
+    pub escape_solver: EscapeSolver,
 }
 
 impl Default for FinalLayoutConfig {
@@ -214,6 +242,7 @@ impl Default for FinalLayoutConfig {
             // below 1e-20, every spec where it stalls in a wrong basin
             // sits at or above 1e-4.
             cmaes_fallback_threshold: 1e-3,
+            escape_solver: EscapeSolver::BoundedCmaEs,
         }
     }
 }
@@ -636,7 +665,18 @@ fn run_cmaes_escape<S: DiagramShape + Copy + 'static>(
             return Ok(baseline);
         }
     }
-    let cma_seed = run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config);
+    // Global-escape seed. The solver is swappable for benchmarking (see
+    // `EscapeSolver`); the external `polish` + non-regression guard below are
+    // identical across all three, so the only variable is the escape core.
+    let cma_seed = match config.escape_solver {
+        EscapeSolver::BoundedCmaEs => {
+            run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config)
+        }
+        EscapeSolver::BoundedCmaInject => {
+            run_bounded_cma_inject::<S>(spec, params_per_shape, initial_param, config)
+        }
+        EscapeSolver::DeInject => run_de_inject::<S>(spec, params_per_shape, initial_param, config),
+    };
     let cma_polish = polish(spec, params_per_shape, &cma_seed, config)?;
     Ok(if cma_polish.1 < baseline.1 {
         cma_polish
@@ -785,6 +825,165 @@ fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
         .with_stds(DVector::from_vec(initial_std));
     let result = basin::Executor::new(problem, solver, state)
         .max_iter(100)
+        .run()
+        .expect("solver problem is infallible");
+    result.param().clone()
+}
+
+/// Outer-loop generation budget for the memetic escape solvers
+/// ([`EscapeSolver::BoundedCmaInject`] / [`EscapeSolver::DeInject`]). Lower
+/// than the plain [`run_bounded_cmaes`] budget (100) because each generation
+/// here *also* runs an inner LM refinement on the best [`MEMETIC_REFINE_K`]
+/// candidates, so the per-generation cost is much higher. First-pass value;
+/// tune from `examples/quality_report` against wall time.
+const MEMETIC_ESCAPE_GENERATIONS: u64 = 60;
+/// Inner LM iteration budget per refinement pass inside the memetic escapes.
+const MEMETIC_INNER_MAX_ITER: u64 = 25;
+/// Number of top-ranked candidates refined per generation by the memetic
+/// escapes (Hansen-2011 / DE injection `k`).
+const MEMETIC_REFINE_K: usize = 1;
+
+/// Inner LM solver shared by both memetic escapes, configured to mirror the
+/// final-stage LM tolerances in [`run_lm_or_lbfgs`].
+fn memetic_inner_lm(
+    config: &FinalLayoutConfig,
+) -> basin::LevenbergMarquardt<DVector<f64>, DMatrix<f64>> {
+    basin::LevenbergMarquardt::<DVector<f64>, DMatrix<f64>>::new()
+        .with_tol_grad(0.0)
+        .with_tol_grad_rel(config.gtol.unwrap_or(1e-8))
+        .with_tol_cost_rel(config.ftol.unwrap_or(config.tolerance))
+        .with_tol_step_rel(config.xtol.unwrap_or(1e-6))
+}
+
+/// Finite surrogate half-width for the ellipse angle's `±∞` box bound when DE
+/// needs to sample inside the box. The angle is periodic with period `π`, so a
+/// `±2π` window around the seed excludes no orientation while keeping uniform
+/// sampling well-defined. Only [`run_de_inject`] uses this — CMA-ES samples
+/// from a Gaussian + boundary penalty and handles `±∞` bounds directly.
+const DE_ANGLE_SURROGATE_SPAN: f64 = 2.0 * std::f64::consts::PI;
+
+/// Shared inputs for a memetic escape: the inner least-squares problem, the
+/// per-coordinate `lower`/`upper` box, and the initial-std vector. Returned by
+/// [`bounded_lm_escape_parts`].
+type EscapeParts<'a, S> = (LmDiagramProblem<'a, S>, Vec<f64>, Vec<f64>, Vec<f64>);
+
+/// Build the parts the memetic escapes share, under the same tight `CMAES`
+/// bounds envelope the plain escape uses: the inner least-squares problem, the
+/// per-coordinate `(lower, upper)` box, and the initial-std vector (for the
+/// CMA variant's `with_stds`). Returns `None` when the loss has no
+/// least-squares form (non-`SumSquared`) — in which case the caller falls back
+/// to plain [`run_bounded_cmaes`], mirroring how [`run_trf`] degrades.
+///
+/// The bounds may carry `±∞` entries (the ellipse angle is intentionally
+/// unbounded — see [`optimizer_bounds_for`]). CMA-ES tolerates that; DE must
+/// finitize first (see [`run_de_inject`]).
+fn bounded_lm_escape_parts<'a, S: DiagramShape + Copy + 'static>(
+    spec: &'a PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> Option<EscapeParts<'a, S>> {
+    let inner = LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type).ok()?;
+    let (lower, upper, initial_std) = optimizer_bounds_for(
+        initial_param.as_slice(),
+        params_per_shape,
+        BoundsEnvelope::CMAES,
+    );
+    Some((inner, lower, upper, initial_std))
+}
+
+/// Memetic box-constrained CMA-ES escape ([`EscapeSolver::BoundedCmaInject`]):
+/// `basin::BoundedCmaInject` over the shared [`BoundedLmDiagramProblem`] with
+/// an LM inner (Hansen-2011 injection — refine best-`k`, Mahalanobis-clip,
+/// inject back). Drop-in replacement for [`run_bounded_cmaes`] as the escape
+/// seed source; the external polish + non-regression guard in
+/// [`run_cmaes_escape`] are unchanged, so this only swaps the global core.
+fn run_bounded_cma_inject<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> DVector<f64> {
+    let Some((inner, lower, upper, initial_std)) =
+        bounded_lm_escape_parts::<S>(spec, params_per_shape, initial_param, config)
+    else {
+        return run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config);
+    };
+    // CMA-ES handles the angle's ±∞ bounds directly (Gaussian sample + penalty).
+    let problem = BoundedLmDiagramProblem::<S> {
+        inner,
+        lower: DVector::from_vec(lower),
+        upper: DVector::from_vec(upper),
+    };
+    let cma = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::new(
+        config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+    );
+    let solver = basin::BoundedCmaInject::with_inner_solver(cma, memetic_inner_lm(config))
+        .with_k(MEMETIC_REFINE_K)
+        .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
+    let state = basin::CmaEsState::<DVector<f64>, DMatrix<f64>>::new(initial_param.clone(), 1.0)
+        .with_stds(DVector::from_vec(initial_std));
+    let result = basin::Executor::new(problem, solver, state)
+        .max_iter(MEMETIC_ESCAPE_GENERATIONS)
+        .run()
+        .expect("solver problem is infallible");
+    result.param().clone()
+}
+
+/// Memetic differential-evolution escape ([`EscapeSolver::DeInject`]):
+/// `basin::DeInject` over the shared [`BoundedLmDiagramProblem`] with an LM
+/// inner (DE/rand/1/bin generation, then refine best-`k`, box-clip, write
+/// back). Sibling of [`run_bounded_cma_inject`] with a DE outer instead of
+/// CMA-ES; same drop-in contract as the escape seed source.
+fn run_de_inject<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> DVector<f64> {
+    let Some((inner, mut lower, mut upper, _initial_std)) =
+        bounded_lm_escape_parts::<S>(spec, params_per_shape, initial_param, config)
+    else {
+        return run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config);
+    };
+    // DE samples its initial population *uniformly inside* `[lower, upper]`, so
+    // any non-finite bound (the ellipse angle, left at ±∞ by
+    // `optimizer_bounds_for`) makes the draw undefined and panics in basin's
+    // backend (`NonFinite`). Replace each non-finite bound with a finite
+    // surrogate centred on the seed — a ±2π window, wider than the angle's π
+    // period, so no orientation is excluded. Finite bounds pass through
+    // untouched.
+    for i in 0..lower.len() {
+        let center = if initial_param[i].is_finite() {
+            initial_param[i]
+        } else {
+            0.0
+        };
+        if !lower[i].is_finite() {
+            lower[i] = center - DE_ANGLE_SURROGATE_SPAN;
+        }
+        if !upper[i].is_finite() {
+            upper[i] = center + DE_ANGLE_SURROGATE_SPAN;
+        }
+    }
+    let problem = BoundedLmDiagramProblem::<S> {
+        inner,
+        lower: DVector::from_vec(lower),
+        upper: DVector::from_vec(upper),
+    };
+    // DE's default population is Storn & Price's `10·D` — far too large here
+    // (300 candidates for a 6-set ellipse), which would dwarf the CMA variants
+    // on wall time. Cap it to a moderate band so the escape stays comparable;
+    // the report surfaces the resulting quality/time trade.
+    let pop_size = (2 * initial_param.len()).clamp(16, 48);
+    let de = basin::De::<f64>::new(config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        .with_pop_size(pop_size);
+    let solver = basin::DeInject::with_inner_solver(de, memetic_inner_lm(config))
+        .with_k(MEMETIC_REFINE_K)
+        .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
+    let state = basin::BasicPopulationState::<DVector<f64>, f64>::with_size(pop_size);
+    let result = basin::Executor::new(problem, solver, state)
+        .max_iter(MEMETIC_ESCAPE_GENERATIONS)
         .run()
         .expect("solver problem is infallible");
     result.param().clone()
@@ -1526,6 +1725,7 @@ mod tests {
             seed: 0,
             n_restarts: 1,
             cmaes_fallback_threshold: 1e-3,
+            escape_solver: EscapeSolver::BoundedCmaEs,
             xtol: None,
             ftol: None,
             gtol: None,
@@ -1607,6 +1807,7 @@ mod tests {
             seed: 0,
             n_restarts: 1,
             cmaes_fallback_threshold: 1e-3,
+            escape_solver: EscapeSolver::BoundedCmaEs,
             xtol: None,
             ftol: None,
             gtol: None,
@@ -1655,6 +1856,7 @@ mod tests {
             seed: 0,
             n_restarts: 1,
             cmaes_fallback_threshold: 1e-3,
+            escape_solver: EscapeSolver::BoundedCmaEs,
             xtol: None,
             ftol: None,
             gtol: None,
@@ -1715,6 +1917,7 @@ mod tests {
                 seed: 0,
                 n_restarts: 1,
                 cmaes_fallback_threshold: 1e-3,
+                escape_solver: EscapeSolver::BoundedCmaEs,
                 xtol: None,
                 ftol: None,
                 gtol: None,
@@ -2744,6 +2947,7 @@ mod tests {
                 seed: 0,
                 n_restarts: 1,
                 cmaes_fallback_threshold: 1e-3,
+                escape_solver: EscapeSolver::BoundedCmaEs,
                 xtol: None,
                 ftol: None,
                 gtol: None,
@@ -2764,6 +2968,7 @@ mod tests {
                 seed: 0,
                 n_restarts: 1,
                 cmaes_fallback_threshold: 1e-3,
+                escape_solver: EscapeSolver::BoundedCmaEs,
                 xtol: None,
                 ftol: None,
                 gtol: None,
