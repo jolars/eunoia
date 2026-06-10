@@ -33,10 +33,6 @@
     "./svg": {
       "types": "./svg.d.ts",
       "default": "./svg.js"
-    },
-    "./raw": {
-      "types": "./eunoia_wasm.d.ts",
-      "default": "./eunoia_wasm.js"
     }
   },
   "files": [
