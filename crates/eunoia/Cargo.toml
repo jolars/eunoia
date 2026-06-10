@@ -17,7 +17,7 @@ workspace = true
 [dependencies]
 basin = { version = "0.12", default-features = false, features = ["nalgebra"] }
 finitediff = "0.2"
-i_overlay = "6"
+i_overlay = "7"
 log = { version = "0.4", features = ["release_max_level_info"] }
 nalgebra = "0.34"
 num-complex = "0.4"
