@@ -219,6 +219,13 @@ export interface EulerOptions {
   loss?: LossType;
   /** Optimizer convergence tolerance. */
   tolerance?: number;
+  /**
+   * Number of random restarts of the two-phase fit; the lowest-loss attempt is
+   * kept. When omitted, the core default (10, mirroring eulerr) is used.
+   * Lowering it trades fit robustness for speed — useful for interactive
+   * previews where a fixed `seed` already pins the layout. Clamped to `>= 1`.
+   */
+  restarts?: number;
   /** Number of vertices per polygon outline (used when `output` is `"polygons"` or `"regions"`). Default 256. */
   polygonVertices?: number;
   /**
@@ -667,6 +674,7 @@ export function euler(options: EulerOptions): Layout {
     optimizer,
     loss,
     tolerance,
+    restarts,
     polygonVertices = 256,
     complement,
   } = options;
@@ -693,6 +701,8 @@ export function euler(options: EulerOptions): Layout {
     throw new RangeError(`euler: unknown loss "${loss}"`);
   }
   const tolArg = tolerance && tolerance > 0 ? tolerance : undefined;
+  const restartsArg =
+    restarts && restarts > 0 ? Math.max(1, Math.floor(restarts)) : undefined;
   const nVerts = Math.max(3, Math.floor(polygonVertices));
 
   try {
@@ -713,6 +723,7 @@ export function euler(options: EulerOptions): Layout {
         optimizerArg,
         lossArg,
         tolArg,
+        restartsArg,
         complement,
       );
       try {
@@ -751,6 +762,7 @@ export function euler(options: EulerOptions): Layout {
       optimizerArg,
       lossArg,
       tolArg,
+      restartsArg,
       complement,
     );
     try {

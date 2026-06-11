@@ -1679,6 +1679,7 @@ pub fn generate_circles_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
@@ -1697,6 +1698,9 @@ pub fn generate_circles_as_polygons(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
@@ -1786,6 +1790,7 @@ pub fn generate_ellipses_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
@@ -1804,6 +1809,9 @@ pub fn generate_ellipses_as_polygons(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
@@ -1895,6 +1903,7 @@ pub fn generate_squares_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
@@ -1913,6 +1922,9 @@ pub fn generate_squares_as_polygons(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
@@ -2001,6 +2013,7 @@ pub fn generate_rectangles_as_polygons(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<PolygonResult, JsValue> {
     use eunoia::fitter::Fitter;
@@ -2019,6 +2032,9 @@ pub fn generate_rectangles_as_polygons(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
@@ -2108,6 +2124,7 @@ pub fn generate_region_polygons_circles(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
@@ -2126,6 +2143,9 @@ pub fn generate_region_polygons_circles(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
@@ -2197,6 +2217,7 @@ pub fn generate_region_polygons_ellipses(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
@@ -2215,6 +2236,9 @@ pub fn generate_region_polygons_ellipses(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
@@ -2286,6 +2310,7 @@ pub fn generate_region_polygons_squares(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
@@ -2304,6 +2329,9 @@ pub fn generate_region_polygons_squares(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
@@ -2371,6 +2399,7 @@ pub fn generate_region_polygons_rectangles(
     optimizer: Option<WasmOptimizer>,
     loss_type: Option<WasmLossType>,
     tolerance: Option<f64>,
+    restarts: Option<usize>,
     complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     use eunoia::fitter::Fitter;
@@ -2389,6 +2418,9 @@ pub fn generate_region_polygons_rectangles(
     }
     if let Some(tol) = tolerance {
         fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
     }
     let layout = fitter
         .fit()
