@@ -345,6 +345,11 @@ export function runFit(inputs: FitInputs): FitResult | null {
     optimizer: OPTIMIZER_MAP[inputs.advanced.optimizer],
     loss: LOSS_MAP[inputs.advanced.lossType],
     tolerance,
+    restarts:
+      Number.isFinite(inputs.advanced.restarts) &&
+      (inputs.advanced.restarts ?? 0) > 0
+        ? inputs.advanced.restarts
+        : undefined,
     polygonVertices: POLYGON_VERTICES,
     complement,
   });

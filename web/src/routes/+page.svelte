@@ -6,6 +6,7 @@ import IconR from "~icons/simple-icons/r";
 import IconPython from "~icons/simple-icons/python";
 import IconJulia from "~icons/simple-icons/julia";
 import IconBook from "~icons/lucide/book-open";
+import HeroWidget from "$lib/components/HeroWidget.svelte";
 
 // Repo links — kept here so the landing has a single declarative source of
 // truth that's easy to scan and edit.
@@ -40,7 +41,7 @@ const johanUrl = "https://jolars.co";
           </h2>
           <p class="text-lg text-muted mb-4">
             A Rust library for fitting set-visualization diagrams with circles,
-            ellipses, squares, and rectangles—accurate, fast, and shipped with
+            ellipses, squares, and rectangles. Accurate, fast, and shipped with
             WASM bindings for the web. Powers the R package
             <a href={eulerrRepoUrl} class="text-accent hover:underline">eulerr</a>,
             npm package <a href={npmUrl} class="text-accent hover:underline">@jolars/eunoia</a>,
@@ -58,6 +59,16 @@ const johanUrl = "https://jolars.co";
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="space-y-4">
+      <h3 class="text-xl font-semibold">See It in Action</h3>
+      <p class="text-sm text-muted max-w-2xl">
+        A three-set diagram, fitted in your browser by the same WASM core the
+        packages ship. Drag the region sizes or switch the shape and watch it
+        re-solve live.
+      </p>
+      <HeroWidget />
     </section>
 
     <section class="space-y-4">

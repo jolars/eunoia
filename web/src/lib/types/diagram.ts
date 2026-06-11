@@ -120,6 +120,12 @@ export interface VectorSize {
 export interface AdvancedOptions {
   optimizer: OptimizerName;
   lossType: LossName;
+  /**
+   * Number of fit restarts (lowest-loss kept). Omitted in the app (the core
+   * default of 10 is used); the landing-page widget sets a small value to keep
+   * its live re-fit fast.
+   */
+  restarts?: number;
   showRegions: boolean;
   seed: number | undefined;
   useSeed: boolean;
