@@ -25,7 +25,7 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       fields. Construct via `PlotOptions::default().n_vertices(32)`. Enums are
       tracked separately in the next item.
 
-- [ ] **Input/config enums → `#[non_exhaustive]`?** Low cost (variants stay
+- [x] **Input/config enums → `#[non_exhaustive]`?** Low cost (variants stay
       constructible; only exhaustive `match` is lost) and matches the existing
       convention already applied to the fitter enums (`LossType`, `Optimizer`,
       `MdsSolver`, `InitialSampler`). Candidates: `LeaderStrategy`,

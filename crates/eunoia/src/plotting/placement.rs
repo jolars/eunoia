@@ -110,6 +110,7 @@ pub enum PlacementKind {
 /// Exterior fallback solver to use when a label doesn't fit inside its
 /// region's polygon.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum ExteriorPolicy {
     /// Deterministic ray from the diagram centroid through the region's POI.
     /// The anchor is placed outside the union polygon of the fitted shapes
@@ -203,6 +204,7 @@ impl ElbowOptions {
 /// / [`PlacementKind::ExteriorElbow`]); interior placements always carry
 /// `tether: None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum TetherSource {
     /// Tether is the region's pole of inaccessibility (deep inside the
     /// region). The rendered leader line runs from a point inside the
@@ -227,6 +229,7 @@ pub enum TetherSource {
 /// algorithm appropriate for it — raycasting, for instance, is a straight-line
 /// construction, so it's only offered for straight leaders.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum LeaderStrategy {
     /// Straight leader lines (a single `tether → leader_end` segment). The
     /// label is positioned by the chosen exterior solver: [`ExteriorPolicy`]

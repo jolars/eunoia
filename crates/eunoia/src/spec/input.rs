@@ -5,6 +5,7 @@
 /// This determines whether the provided values represent exclusive regions
 /// or complete set sizes including overlaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum InputType {
     /// Values represent exclusive regions that sum to the total set size.
     ///
