@@ -73,13 +73,36 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
         stability guarantee"), and `Ellipse::from_radius_ratio` (the TODO's
         "from_log_aspect"; radius/log-aspect optimizer encoding).
 
-- [ ] **User-facing structs with all-public fields → `#[non_exhaustive]`**
-      (adding a field later is breaking). These are returned to users:
-      - `PlotData` (`crates/eunoia/src/plotting/plot_data.rs`) --- 5 public
-        fields.
-      - `PlotOptions` (same file) --- 3 public fields; also a builder candidate.
-      - `RegionPiece` (`crates/eunoia/src/plotting/regions.rs`) --- `outer`,
-        `holes`. The TS `Metrics`/`Layout` types mirror these (see P1).
+- [x] **Output types with all-public fields → `#[non_exhaustive]`** (adding a
+      field later is breaking; these are values users *receive*, so the
+      attribute is pure upside — match with `..`). Done 2026-06-11:
+      - `PlotData` (`crates/eunoia/src/plotting/plot_data.rs`).
+      - `RegionPiece` (`crates/eunoia/src/plotting/regions.rs`). The public
+        `classify_into_pieces` is the sanctioned constructor for bindings; the
+        TS `Metrics`/`Layout` types mirror these (see P1).
+      - `LabelPlacement` (`crates/eunoia/src/plotting/placement.rs`). Bindings
+        reconstruct it for the `placements_bbox` round-trip, so a forward-
+        compatible `LabelPlacement::interior(anchor)` constructor was added
+        (the wasm crate is the canary — it hit E0639 and now uses it).
+      - `PlacementKind` (same file) --- output discriminator; new kinds (elbow
+        leaders) are already in flight, so downstream matches need a `_` arm.
+
+- [ ] **Input/config structs → `#[non_exhaustive]` *only bundled with a
+      builder*.** Unlike output types, `#[non_exhaustive]` on a struct users
+      *construct* forbids the struct literal entirely downstream (FRU included),
+      so it's a regression without a builder or `Default`+setters. Decide
+      together with the builder work:
+      - `PlotOptions` (`plotting/plot_data.rs`) --- 3 fields, derives `Default`.
+      - `ElbowOptions`, `PlacementStrategy` (`plotting/placement.rs`).
+
+- [ ] **Input/config enums → `#[non_exhaustive]`?** Low cost (variants stay
+      constructible; only exhaustive `match` is lost) and matches the existing
+      convention already applied to the fitter enums (`LossType`, `Optimizer`,
+      `MdsSolver`, `InitialSampler`). Candidates: `LeaderStrategy`,
+      `ExteriorPolicy`, `TetherSource` (`plotting/placement.rs` — docs already
+      promise more leader edge types), and `InputType` (`spec/input.rs`).
+      Deliberately **excluded**: `ClipOperation` (`plotting/clip.rs`) — the
+      boolean-op set is closed and it's low-level plumbing.
 
 - [ ] **Already-`#[deprecated]` functions would ship into 1.0** --- decide to
       remove now (free pre-1.0) or consciously keep:

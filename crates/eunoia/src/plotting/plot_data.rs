@@ -94,7 +94,12 @@ impl Default for PlotOptions {
 /// round-tripping through the [`Combination`] type.
 /// Use [`PlotData::pieces_for`] when you need to look up the underlying
 /// region pieces by the same string.
+///
+/// `#[non_exhaustive]`: this is an output type you receive from
+/// [`Layout::plot_data`](crate::Layout::plot_data), never construct by hand,
+/// so new fields can be added without a breaking change. Match with `..`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct PlotData {
     /// Per-region pieces (outer + holes per connected component) keyed by
     /// set combination. Renderers should fill each piece with the SVG /

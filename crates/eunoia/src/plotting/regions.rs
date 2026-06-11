@@ -52,7 +52,11 @@ use std::collections::HashMap;
 /// build them by hand: the topological classification that maps a flat
 /// list of clipper-output rings to outer/holes pairs is not part of the
 /// public API.
+///
+/// `#[non_exhaustive]`: an output type produced by [`decompose_regions`], not
+/// constructed by downstream callers, so fields can be added non-breakingly.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RegionPiece {
     /// CCW outer boundary of the piece (always non-degenerate after
     /// [`decompose_regions`]).

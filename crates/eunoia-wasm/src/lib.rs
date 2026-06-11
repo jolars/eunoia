@@ -2863,7 +2863,7 @@ pub fn place_region_labels(
     use eunoia::geometry::shapes::{Polygon, Rectangle};
     use eunoia::plotting::{
         ElbowOptions, ExteriorPolicy, LeaderStrategy, PlacementKind, PlacementStrategy,
-        RegionPiece, RegionPolygons, TetherSource, place_labels,
+        RegionPiece, RegionPolygons, TetherSource, classify_into_pieces, place_labels,
     };
     use eunoia::spec::Combination;
 
@@ -3010,11 +3010,15 @@ pub fn place_region_labels(
             Ok(c) => c,
             Err(_) => continue,
         };
+        // `RegionPiece` is `#[non_exhaustive]` and must not be hand-built;
+        // rebuild each piece through the public classifier (outer + holes as a
+        // flat ring list), which re-derives the outer/holes pairing.
         let pieces: Vec<RegionPiece> = pieces_json
             .into_iter()
-            .map(|p| RegionPiece {
-                outer: to_polygon(p.outer),
-                holes: p.holes.into_iter().map(to_polygon).collect(),
+            .flat_map(|p| {
+                let mut rings = vec![to_polygon(p.outer)];
+                rings.extend(p.holes.into_iter().map(to_polygon));
+                classify_into_pieces(rings)
             })
             .collect();
         region_map.insert(combo, pieces);
@@ -3031,6 +3035,9 @@ pub fn place_region_labels(
             PlacementKind::ExteriorRaycast => "ExteriorRaycast",
             PlacementKind::ExteriorForceDirected => "ExteriorForceDirected",
             PlacementKind::ExteriorElbow => "ExteriorElbow",
+            // `PlacementKind` is `#[non_exhaustive]`; surface unknown future
+            // kinds rather than failing to compile when one is added.
+            _ => "Unknown",
         };
         out.insert(
             key,
@@ -3069,9 +3076,7 @@ pub fn placements_bbox(
     sizes_json: String,
 ) -> Result<Option<String>, JsValue> {
     use eunoia::geometry::primitives::Point;
-    use eunoia::plotting::{
-        LabelPlacement, PlacementKind, placements_bbox as core_placements_bbox,
-    };
+    use eunoia::plotting::{LabelPlacement, placements_bbox as core_placements_bbox};
 
     #[derive(serde::Deserialize)]
     struct PlacementJson {
@@ -3102,15 +3107,9 @@ pub fn placements_bbox(
         .into_iter()
         .map(|(k, p)| {
             // The kind field doesn't affect bbox computation (only anchor +
-            // size do), so we can pick any discriminant; Interior is the
-            // cheapest sentinel since the core helper ignores it.
-            let placement = LabelPlacement {
-                anchor: Point::new(p.anchor[0], p.anchor[1]),
-                kind: PlacementKind::Interior,
-                tether: None,
-                leader_end: None,
-                leader_waypoints: Vec::new(),
-            };
+            // size do), and `LabelPlacement` is `#[non_exhaustive]`, so use
+            // the anchor-only `interior` constructor as the sentinel.
+            let placement = LabelPlacement::interior(Point::new(p.anchor[0], p.anchor[1]));
             (k, placement)
         })
         .collect();

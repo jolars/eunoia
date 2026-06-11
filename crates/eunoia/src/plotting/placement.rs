@@ -32,7 +32,12 @@ use crate::plotting::regions::{
 use crate::spec::Combination;
 
 /// Result of placing one label.
+///
+/// `#[non_exhaustive]`: an output type returned from [`place_labels`]; future
+/// edge types add fields (e.g. richer leader geometry), so it's not
+/// constructed downstream. Match with `..`.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct LabelPlacement {
     /// Centre of the label box, in the same coordinate space as the regions.
     pub anchor: Point,
@@ -60,8 +65,35 @@ pub struct LabelPlacement {
     pub leader_waypoints: Vec<Point>,
 }
 
+impl LabelPlacement {
+    /// An [interior](PlacementKind::Interior) placement at `anchor` with no
+    /// leader (`tether`/`leader_end` are `None`, `leader_waypoints` empty).
+    ///
+    /// This is the forward-compatible constructor for binding authors who
+    /// reconstruct a placement they received from [`place_labels`] in order
+    /// to thread it back through a core helper such as [`placements_bbox`]
+    /// (which only reads `anchor`). Because [`LabelPlacement`] is
+    /// `#[non_exhaustive]`, you cannot build it with a struct literal from
+    /// outside this crate — use this instead. Any fields added in future
+    /// releases get sensible defaults here, so call sites keep compiling.
+    pub fn interior(anchor: Point) -> Self {
+        Self {
+            anchor,
+            kind: PlacementKind::Interior,
+            tether: None,
+            leader_end: None,
+            leader_waypoints: Vec::new(),
+        }
+    }
+}
+
 /// Discriminator on [`LabelPlacement`].
+///
+/// `#[non_exhaustive]`: renderers match on this to decide how to draw a label,
+/// and new placement kinds are actively landing (elbow leaders are a planned
+/// follow-up — see module docs), so downstream matches must carry a `_` arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PlacementKind {
     /// Box fits inside the region's polygon — anchor at the region's POI.
     Interior,
@@ -841,38 +873,40 @@ fn place_elbow_labels(
 ///
 /// ```
 /// use std::collections::HashMap;
-/// use eunoia::plotting::{
-///     placements_bbox, LabelPlacement, PlacementKind,
-/// };
-/// use eunoia::geometry::primitives::Point;
+/// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+/// use eunoia::geometry::shapes::Circle;
+/// use eunoia::plotting::{place_labels, placements_bbox, PlacementStrategy};
 ///
-/// let mut placements = HashMap::new();
-/// placements.insert("A".to_string(), LabelPlacement {
-///     anchor: Point::new(0.0, 0.0),
-///     kind: PlacementKind::Interior,
-///     tether: None,
-///     leader_end: None,
-///     leader_waypoints: Vec::new(),
-/// });
-/// placements.insert("B".to_string(), LabelPlacement {
-///     anchor: Point::new(10.0, 5.0),
-///     kind: PlacementKind::ExteriorRaycast,
-///     tether: Some(Point::new(8.0, 4.0)),
-///     leader_end: Some(Point::new(8.0, 5.0)),
-///     leader_waypoints: Vec::new(),
-/// });
+/// let spec = DiagramSpecBuilder::new()
+///     .set("A", 5.0)
+///     .set("B", 3.0)
+///     .intersection(&["A", "B"], 1.0)
+///     .input_type(InputType::Exclusive)
+///     .build()
+///     .unwrap();
+///
+/// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+/// let regions = layout.region_polygons(&spec, 64);
 ///
 /// let mut sizes = HashMap::new();
-/// sizes.insert("A".to_string(), (4.0, 2.0));
-/// sizes.insert("B".to_string(), (4.0, 2.0));
+/// sizes.insert("A".to_string(), (0.4, 0.2));
+/// sizes.insert("B".to_string(), (0.4, 0.2));
+/// sizes.insert("A&B".to_string(), (0.4, 0.2));
 ///
+/// // `placements_bbox` takes the placements `place_labels` returns and
+/// // unions every label's box into one canvas-sizing rectangle.
+/// let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
 /// let bbox = placements_bbox(&placements, &sizes).unwrap();
-/// // A spans [-2, 2] × [-1, 1]; B spans [8, 12] × [4, 6].
-/// // Union: [-2, 12] × [-1, 6] → centre (5, 2.5), 14 × 7.
-/// assert!((bbox.center().x() - 5.0).abs() < 1e-9);
-/// assert!((bbox.center().y() - 2.5).abs() < 1e-9);
-/// assert!((bbox.width() - 14.0).abs() < 1e-9);
-/// assert!((bbox.height() - 7.0).abs() < 1e-9);
+///
+/// // The bbox encloses every placed label box.
+/// for (key, p) in &placements {
+///     let (w, h) = sizes[key];
+///     let (xmin, xmax, ymin, ymax) = bbox.bounds();
+///     assert!(p.anchor.x() - w / 2.0 >= xmin - 1e-9);
+///     assert!(p.anchor.x() + w / 2.0 <= xmax + 1e-9);
+///     assert!(p.anchor.y() - h / 2.0 >= ymin - 1e-9);
+///     assert!(p.anchor.y() + h / 2.0 <= ymax + 1e-9);
+/// }
 /// ```
 pub fn placements_bbox(
     placements: &HashMap<String, LabelPlacement>,

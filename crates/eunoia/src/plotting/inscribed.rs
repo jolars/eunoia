@@ -61,7 +61,7 @@ use crate::plotting::regions::{RegionPiece, poi_with_holes, point_in_polygon, si
 /// ```
 /// use eunoia::geometry::primitives::Point;
 /// use eunoia::geometry::shapes::Polygon;
-/// use eunoia::plotting::{largest_inscribed_rect, RegionPiece};
+/// use eunoia::plotting::{classify_into_pieces, largest_inscribed_rect};
 ///
 /// let outer = Polygon::new(vec![
 ///     Point::new(0.0, 0.0),
@@ -69,7 +69,8 @@ use crate::plotting::regions::{RegionPiece, poi_with_holes, point_in_polygon, si
 ///     Point::new(10.0, 10.0),
 ///     Point::new(0.0, 10.0),
 /// ]);
-/// let pieces = vec![RegionPiece { outer, holes: vec![] }];
+/// // Build the region piece via the public classifier rather than by hand.
+/// let pieces = classify_into_pieces(vec![outer]);
 /// let (rect, score) = largest_inscribed_rect(&pieces, 1.0, 0.01).unwrap();
 /// assert!(score > 0.95); // directional bound ≈ 1.0 for the bbox-aligned square
 /// assert!(rect.width() > 0.0 && rect.height() > 0.0);
@@ -407,7 +408,7 @@ pub fn principal_axis(piece: &RegionPiece) -> (f64, f64) {
 /// ```
 /// use eunoia::geometry::primitives::Point;
 /// use eunoia::geometry::shapes::Polygon;
-/// use eunoia::plotting::{fit_label_in_region, RegionPiece};
+/// use eunoia::plotting::{classify_into_pieces, fit_label_in_region};
 ///
 /// let outer = Polygon::new(vec![
 ///     Point::new(0.0, 0.0),
@@ -415,7 +416,8 @@ pub fn principal_axis(piece: &RegionPiece) -> (f64, f64) {
 ///     Point::new(10.0, 10.0),
 ///     Point::new(0.0, 10.0),
 /// ]);
-/// let pieces = vec![RegionPiece { outer, holes: vec![] }];
+/// // Build the region piece via the public classifier rather than by hand.
+/// let pieces = classify_into_pieces(vec![outer]);
 ///
 /// // A 2×1 label fits comfortably inside a 10×10 region.
 /// assert!(fit_label_in_region(&pieces, 2.0, 1.0, 0.01).is_some());
