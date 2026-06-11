@@ -14,79 +14,6 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 
 ### P0 --- decide before 1.0 (un-fixable later without a major bump)
 
-- [~] **No public enum is `#[non_exhaustive]`** --- verified: the attribute
-  appeared nowhere in the crate, so adding any variant post-1.0 is breaking. Add
-  it to the selector/output enums that are an open set:
-  - [x] `LossType` (`crates/eunoia/src/loss.rs`) --- 14 variants, clearly open.
-        Done 2026-06-10.
-  - [x] `Optimizer` (`crates/eunoia/src/fitter/final_layout.rs`) --- new solvers
-        are the roadmap. Done 2026-06-10.
-  - [x] `MdsSolver` (`crates/eunoia/src/fitter/initial_layout.rs`). Done
-        2026-06-10.
-  - [x] `InitialSampler` (`crates/eunoia/src/fitter/initial_layout.rs`). Done
-        2026-06-10.
-  - [x] `DiagramError` (`crates/eunoia/src/error.rs`) --- new failure modes are
-        inevitable. Done 2026-06-10.
-  - [ ] `Line` (`crates/eunoia/src/geometry/primitives/line.rs`) --- only if
-        `Point`/`Line` stay public (deferred; depends on the module-sealing item
-        below). `InputType` (2 variants, conceptually closed) is a judgment
-        call; lower priority, left as-is for now. Note: these are pick-a-variant
-        enums, so `#[non_exhaustive]` only blocks external exhaustive `match`
-        (the desired effect, same as `std::io::ErrorKind`) --- construction of
-        existing variants still works. Adding it forced one wildcard arm in the
-        `corpus`-gated `examples/quality_report.rs` `LossType` match (compiled
-        as an external crate) --- exactly the intended guard firing.
-
-- [x] **`LossType::SumAbsoute` was misspelled** → renamed to `SumAbsolute`
-      (`crates/eunoia/src/loss.rs:112` + all matches/doc-links, the `examples/`
-      references, and the `WasmLossType → LossType` mapping in
-      `crates/eunoia-wasm/src/lib.rs`). The wasm variant
-      `WasmLossType::SumAbsolute` was already correct and now maps to the
-      correctly-spelled core variant. Done 2026-06-10.
-
-- [x] **Internal math is leaking as public API --- seal before 1.0**
-      (un-publishing after 1.0 is breaking). All were `pub` and reachable. Done
-      2026-06-10:
-      - `math` module → `pub(crate)` (module, submodules, `zap_small`,
-        `zap_small_with`, `solve_cubic`, `extract_real_roots`, `Matrix3Ext`,
-        `Vector3Ext`). `extract_real_pairs` was dead and was removed. Doctests
-        that referenced `eunoia::math::…` were dropped (the functions are
-        already covered by the module unit tests; added a `zap_small` test).
-      - `geometry::projective` → `pub(crate)` (`Conic`, `HomogeneousPoint`,
-        `HomogeneousLine`, submodules, re-exports). The many `# Examples`
-        doctests were removed (each is already mirrored by a unit test).
-        `HomogeneousPoint::to_euclidean` now takes `self` (Copy) to satisfy the
-        `wrong_self_convention` lint that only fires once an item is non-public.
-      - `geometry::operations` was test-only plumbing (a Monte-Carlo overlap
-        oracle); `compute_overlaps` / `OverlapMethod` had zero callers and were
-        removed, and the module is now `#[cfg(test)]`.
-      - `geometry::diagram` internals → `pub(crate)`: `IntersectionPoint`,
-        `compute_exclusive_regions`, `collect_intersections`,
-        `discover_regions`, `adopters_to_mask`, `mask_to_indices`,
-        `to_exclusive_areas`, and the deprecated `compute_region_area` (+ the
-        two deprecated `circle::multiple_overlap_areas*` helpers it exposed).
-        Kept `compute_exclusive_areas_from_layout` / `…_generic` **public** ---
-        the `eunoia-wasm` debug path consumes the former ("public for WASM").
-      - Optimizer-encoding methods → `#[doc(hidden)]`: the `DiagramShape` trait
-        methods `to_optimizer_params` / `from_optimizer_params` /
-        `optimizer_params_from_circle` (must stay public for impls; hidden + "no
-        stability guarantee"), and `Ellipse::from_radius_ratio` (the TODO's
-        "from_log_aspect"; radius/log-aspect optimizer encoding).
-
-- [x] **Output types with all-public fields → `#[non_exhaustive]`** (adding a
-      field later is breaking; these are values users *receive*, so the
-      attribute is pure upside — match with `..`). Done 2026-06-11:
-      - `PlotData` (`crates/eunoia/src/plotting/plot_data.rs`).
-      - `RegionPiece` (`crates/eunoia/src/plotting/regions.rs`). The public
-        `classify_into_pieces` is the sanctioned constructor for bindings; the
-        TS `Metrics`/`Layout` types mirror these (see P1).
-      - `LabelPlacement` (`crates/eunoia/src/plotting/placement.rs`). Bindings
-        reconstruct it for the `placements_bbox` round-trip, so a forward-
-        compatible `LabelPlacement::interior(anchor)` constructor was added
-        (the wasm crate is the canary — it hit E0639 and now uses it).
-      - `PlacementKind` (same file) --- output discriminator; new kinds (elbow
-        leaders) are already in flight, so downstream matches need a `_` arm.
-
 - [ ] **Input/config structs → `#[non_exhaustive]` *only bundled with a
       builder*.** Unlike output types, `#[non_exhaustive]` on a struct users
       *construct* forbids the struct literal entirely downstream (FRU included),
@@ -99,9 +26,9 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       constructible; only exhaustive `match` is lost) and matches the existing
       convention already applied to the fitter enums (`LossType`, `Optimizer`,
       `MdsSolver`, `InitialSampler`). Candidates: `LeaderStrategy`,
-      `ExteriorPolicy`, `TetherSource` (`plotting/placement.rs` — docs already
+      `ExteriorPolicy`, `TetherSource` (`plotting/placement.rs` --- docs already
       promise more leader edge types), and `InputType` (`spec/input.rs`).
-      Deliberately **excluded**: `ClipOperation` (`plotting/clip.rs`) — the
+      Deliberately **excluded**: `ClipOperation` (`plotting/clip.rs`) --- the
       boolean-op set is closed and it's low-level plumbing.
 
 - [ ] **Already-`#[deprecated]` functions would ship into 1.0** --- decide to
@@ -113,45 +40,10 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 
 ### P1 --- strongly recommended (cross-layer naming consistency)
 
-- [x] **`./raw` export stability stance**. Resolved 2026-06-10 by **dropping the
-      `/raw` export** entirely (rather than versioning or labelling it
-      unstable). The wasm-bindgen surface (`WasmCircle.label_x`, numeric
-      `WasmOptimizer` / `WasmLossType`, 25+ `generate_*` fns) still ships as the
-      runtime backing `index.js`, but the `exports` map no longer lists it, so
-      Node encapsulates it --- there is no public `@jolars/eunoia/raw` entry.
-      Only the high-level `.` and `./svg` entries are public, so `Wasm*` renames
-      are no longer breaking changes for npm consumers. Updated
-      `ts/package.json`, `npm/package.json`, `README.md`, and `AGENTS.md`.
-
-- [x] **Optimizer surface mismatch (core vs TS)**. Resolved 2026-06-10. The TS
-      `Optimizer` union (`ts/index.ts`) now lists all six core variants
-      (`cmaEsTrf`, `cmaEsLm`, `levenbergMarquardt`, `trf`, `lbfgs`,
-      `nelderMead`) and `OPTIMIZER_MAP` maps each to its `WasmOptimizer`. The
-      wrapper no longer hard-codes a TS-side default of `"cmaEsLm"`: when
-      `optimizer` is omitted it passes `undefined` to wasm so the **core**
-      default (`CmaEsTrf`) applies --- same pattern as `loss`, so the TS surface
-      can never silently drift from the core default again. (Behaviour change:
-      callers who relied on the implicit `cmaEsLm` now get `CmaEsTrf`, which the
-      core docs note is strictly non-regressing vs `CmaEsLm`.) The `web/`
-      playground's dropdown allow-list (`web/src/lib/fit.ts`) still offers only
-      the original four --- a UI choice, left as-is.
-
 - [ ] **`complement` naming**. It's an area/size, not a boolean, but reads like
       a flag in `EulerOptions`/`VennOptions` (`ts/index.ts`) and on
       `DiagramSpecBuilder::complement` / `Fitter`. Last chance to rename to
       `complementArea`/`complementSize` if desired.
-
-- [x] **wasm `label_x`/`label_y` inconsistency** --- sometimes public fields,
-      sometimes getters across `WasmCircle`/`WasmRegion`/etc.
-      (`crates/eunoia-wasm/src/lib.rs`). The high-level TS normalizes to
-      `labelAnchor`, so this only bit `/raw` consumers --- moot now that the
-      `/raw` export is dropped (the wasm surface is no longer public). Closed
-      2026-06-10.
-
-- [x] **`DiagramSpecBuilder` missing `Clone`**
-      (`crates/eunoia/src/spec/spec_builder.rs:30`) --- all fields are `Clone`;
-      builders are commonly cloned to branch variants. Added `Clone` to the
-      derive. Done 2026-06-10.
 
 - [ ] **Undocumented panics in builder methods**. `Fitter::optimizer_pool`
       (`crates/eunoia/src/fitter.rs:477`) and `initial_solver_pool` (`:312`)
