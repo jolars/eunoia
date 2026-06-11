@@ -64,11 +64,6 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       canonical `sum_squared`/`root_mean_squared`, marked `sse`/`rmse`
       `#[deprecated]` aliases pointing to them, and migrated internal callers.
 
-- [ ] **`venn()` vs `euler()` option asymmetry + missing JSDoc**. `venn()` omits
-      `seed`/`optimizer`/`loss`/`tolerance` (intentional --- fixed layout) but
-      doesn't document why; option defaults and the valid `n` range per shape
-      aren't in the JSDoc (`ts/index.ts`).
-
 ## Surfaced fitter issues (regressions to investigate)
 
 The corpus / proptest surfaced these. None were introduced by the harness;

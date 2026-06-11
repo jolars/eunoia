@@ -425,6 +425,11 @@ export interface PlaceLabelsForRegionsOptions {
   strategy?: PlacementStrategy;
 }
 
+/**
+ * Options for a canonical Venn diagram. Unlike {@link EulerOptions}, there is no
+ * `seed`/`optimizer`/`loss`/`tolerance`: the layout is fixed and topological
+ * (not area-proportional), so no fitting runs.
+ */
 export interface VennOptions {
   /**
    * Number of sets in the Venn diagram. The valid range depends on `shape`:
