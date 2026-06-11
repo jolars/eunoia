@@ -40,6 +40,7 @@ use std::collections::HashMap;
 /// analytical shape via [`crate::geometry::traits::Polygonize`] at a
 /// higher resolution than the region decomposition uses.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct PlotOptions {
     /// Number of vertices used when polygonizing each shape (both for region
     /// decomposition and for the per-set outlines). Higher values produce
@@ -75,6 +76,26 @@ impl Default for PlotOptions {
             label_precision: 0.01,
             sliver_threshold: 1e-3,
         }
+    }
+}
+
+impl PlotOptions {
+    /// Sets [`n_vertices`](Self::n_vertices) and returns `self`.
+    pub fn n_vertices(mut self, n_vertices: usize) -> Self {
+        self.n_vertices = n_vertices;
+        self
+    }
+
+    /// Sets [`label_precision`](Self::label_precision) and returns `self`.
+    pub fn label_precision(mut self, label_precision: f64) -> Self {
+        self.label_precision = label_precision;
+        self
+    }
+
+    /// Sets [`sliver_threshold`](Self::sliver_threshold) and returns `self`.
+    pub fn sliver_threshold(mut self, sliver_threshold: f64) -> Self {
+        self.sliver_threshold = sliver_threshold;
+        self
     }
 }
 

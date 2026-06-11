@@ -153,6 +153,7 @@ pub enum ExteriorPolicy {
 /// Both fields take a proportional default consistent with the
 /// `0.5 * max(w, h)` margin convention used by [`ExteriorPolicy::Raycast`].
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct ElbowOptions {
     /// Horizontal gap between the diagram bounding box edge and the column's
     /// vertical bend rail (the shared `bend_x`). `None` selects a column-wide
@@ -176,6 +177,22 @@ impl Default for ElbowOptions {
             margin: None,
             min_gap: None,
         }
+    }
+}
+
+impl ElbowOptions {
+    /// Sets [`margin`](Self::margin) and returns `self`. Accepts a bare `f64`
+    /// or `None` (e.g. `.margin(0.5)` or `.margin(None)`).
+    pub fn margin(mut self, margin: impl Into<Option<f64>>) -> Self {
+        self.margin = margin.into();
+        self
+    }
+
+    /// Sets [`min_gap`](Self::min_gap) and returns `self`. Accepts a bare `f64`
+    /// or `None` (e.g. `.min_gap(8.0)` or `.min_gap(None)`).
+    pub fn min_gap(mut self, min_gap: impl Into<Option<f64>>) -> Self {
+        self.min_gap = min_gap.into();
+        self
     }
 }
 
@@ -234,6 +251,7 @@ impl Default for LeaderStrategy {
 
 /// Configuration bundle for [`place_labels`].
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct PlacementStrategy {
     /// Leader strategy — the edge type and the placement algorithm that
     /// positions exterior labels. Defaults to straight leaders placed by
@@ -272,6 +290,32 @@ impl Default for PlacementStrategy {
             tether: TetherSource::Poi,
             leader_gap: 0.0,
         }
+    }
+}
+
+impl PlacementStrategy {
+    /// Sets [`leader`](Self::leader) and returns `self`.
+    pub fn leader(mut self, leader: LeaderStrategy) -> Self {
+        self.leader = leader;
+        self
+    }
+
+    /// Sets [`precision`](Self::precision) and returns `self`.
+    pub fn precision(mut self, precision: f64) -> Self {
+        self.precision = precision;
+        self
+    }
+
+    /// Sets [`tether`](Self::tether) and returns `self`.
+    pub fn tether(mut self, tether: TetherSource) -> Self {
+        self.tether = tether;
+        self
+    }
+
+    /// Sets [`leader_gap`](Self::leader_gap) and returns `self`.
+    pub fn leader_gap(mut self, leader_gap: f64) -> Self {
+        self.leader_gap = leader_gap;
+        self
     }
 }
 

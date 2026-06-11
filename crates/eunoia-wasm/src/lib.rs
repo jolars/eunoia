@@ -2973,10 +2973,11 @@ pub fn place_region_labels(
             };
             LeaderStrategy::Straight(exterior)
         }
-        Some("elbow") => LeaderStrategy::Elbow(ElbowOptions {
-            margin: leader_in.margin,
-            min_gap: leader_in.min_gap,
-        }),
+        Some("elbow") => LeaderStrategy::Elbow(
+            ElbowOptions::default()
+                .margin(leader_in.margin)
+                .min_gap(leader_in.min_gap),
+        ),
         Some(other) => {
             return Err(JsValue::from_str(&format!(
                 "invalid strategy.leader.type '{other}' (expected 'straight' or 'elbow')"
@@ -2992,12 +2993,11 @@ pub fn place_region_labels(
             )));
         }
     };
-    let strategy = PlacementStrategy {
-        leader,
-        precision: strategy_in.precision.unwrap_or(0.01),
-        tether,
-        leader_gap: strategy_in.leader_gap.unwrap_or(0.0),
-    };
+    let strategy = PlacementStrategy::default()
+        .leader(leader)
+        .precision(strategy_in.precision.unwrap_or(0.01))
+        .tether(tether)
+        .leader_gap(strategy_in.leader_gap.unwrap_or(0.0));
 
     let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
         Polygon::new(pts.into_iter().map(|p| Point::new(p[0], p[1])).collect())

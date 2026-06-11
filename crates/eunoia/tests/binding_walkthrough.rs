@@ -216,10 +216,7 @@ fn binding_author_walkthrough() {
         &stored_shapes,
         &spec,
         layout.container(),
-        PlotOptions {
-            n_vertices: 32,
-            ..PlotOptions::default()
-        },
+        PlotOptions::default().n_vertices(32),
     );
     // Same regions appear at the lower resolution.
     assert_eq!(replot.regions.len(), plot.regions.len());

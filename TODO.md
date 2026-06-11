@@ -14,13 +14,16 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 
 ### P0 --- decide before 1.0 (un-fixable later without a major bump)
 
-- [ ] **Input/config structs → `#[non_exhaustive]` *only bundled with a
+- [x] **Input/config structs → `#[non_exhaustive]` *only bundled with a
       builder*.** Unlike output types, `#[non_exhaustive]` on a struct users
       *construct* forbids the struct literal entirely downstream (FRU included),
-      so it's a regression without a builder or `Default`+setters. Decide
-      together with the builder work:
-      - `PlotOptions` (`plotting/plot_data.rs`) --- 3 fields, derives `Default`.
-      - `ElbowOptions`, `PlacementStrategy` (`plotting/placement.rs`).
+      so it's a regression without a builder or `Default`+setters. Done for
+      `PlotOptions` (`plotting/plot_data.rs`) and `ElbowOptions`,
+      `PlacementStrategy` (`plotting/placement.rs`): each gained `#[non_exhaustive]`
+      plus fluent consuming setters (bare names, `mut self -> Self`, matching the
+      `Fitter`/`DiagramSpecBuilder` house style), keeping `Default` and `pub`
+      fields. Construct via `PlotOptions::default().n_vertices(32)`. Enums are
+      tracked separately in the next item.
 
 - [ ] **Input/config enums → `#[non_exhaustive]`?** Low cost (variants stay
       constructible; only exhaustive `match` is lost) and matches the existing
