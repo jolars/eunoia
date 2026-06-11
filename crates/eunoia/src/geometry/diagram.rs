@@ -1,6 +1,6 @@
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Circle;
-use crate::geometry::traits::{Area, Closed, DiagramShape};
+use crate::geometry::traits::{Closed, DiagramShape};
 use crate::spec::Combination;
 use std::collections::HashMap;
 
@@ -294,118 +294,6 @@ pub(crate) fn adopters_to_mask(adopters: &[usize]) -> RegionMask {
     adopters.iter().fold(0, |mask, &i| mask | (1 << i))
 }
 
-/// Compute the area of a region based on its bit mask.
-#[deprecated(
-    since = "0.3.1",
-    note = "Delegates to `multiple_overlap_areas_with_mask`, which returns wrong areas for 3+-way regions where one circle in the mask contains the others' lens. Use `compute_exclusive_regions` (boundary-arc path) instead."
-)]
-#[allow(deprecated, dead_code)]
-pub(crate) fn compute_region_area(
-    mask: RegionMask,
-    circles: &[Circle],
-    intersections: &[IntersectionPoint],
-    n_sets: usize,
-) -> f64 {
-    let circle_count = mask.count_ones();
-
-    match circle_count {
-        0 => 0.0,
-        1 => {
-            // Single circle - just return its area
-            let idx = mask.trailing_zeros() as usize;
-            circles[idx].area()
-        }
-        2 => {
-            // Two circles - use intersection_area
-            let indices = mask_to_indices(mask, n_sets);
-            circles[indices[0]].intersection_area(&circles[indices[1]])
-        }
-        _ => {
-            // 3+ circles - need to check if they have intersection points or are nested
-            let indices = mask_to_indices(mask, n_sets);
-
-            // Check if all circles are nested (one contains all others)
-            let mut all_nested = true;
-            let mut smallest_idx = indices[0];
-            let mut smallest_radius = circles[indices[0]].radius();
-
-            for &idx in &indices {
-                if circles[idx].radius() < smallest_radius {
-                    smallest_radius = circles[idx].radius();
-                    smallest_idx = idx;
-                }
-            }
-
-            // Check if all other circles contain the smallest
-            for &idx in &indices {
-                if idx != smallest_idx && !circles[idx].contains(&circles[smallest_idx]) {
-                    all_nested = false;
-                    break;
-                }
-            }
-
-            if all_nested {
-                // All circles contain the smallest one, so the intersection is the smallest circle
-                return circles[smallest_idx].area();
-            }
-
-            // Otherwise, use the polygon-based calculation from intersection points
-            // Following eulerr's approach, we need points where:
-            // 1. Both parent circles are in the mask
-            // 2. ALL circles in the mask contain the point (mask is subset of adopters)
-            let region_points: Vec<IntersectionPoint> = intersections
-                .iter()
-                .filter(|info| {
-                    let (p1, p2) = info.parents();
-                    let parents_in_mask = (mask & (1 << p1)) != 0 && (mask & (1 << p2)) != 0;
-
-                    let adopter_mask = adopters_to_mask(info.adopters());
-                    let mask_subset_of_adopters = (mask & adopter_mask) == mask;
-
-                    parents_in_mask && mask_subset_of_adopters
-                })
-                .cloned()
-                .collect();
-
-            if region_points.is_empty() {
-                // No intersection points: either disjoint or one circle is contained in all others
-                // Following eulerr's approach: check if the smallest circle's center is inside all others
-                let mut smallest_idx = indices[0];
-                let mut smallest_area = circles[indices[0]].area();
-
-                for &idx in &indices {
-                    let area = circles[idx].area();
-                    if area < smallest_area {
-                        smallest_area = area;
-                        smallest_idx = idx;
-                    }
-                }
-
-                // Check if the smallest circle's center is inside all other circles
-                let smallest_center = circles[smallest_idx].center();
-                let all_contain_center = indices.iter().all(|&idx| {
-                    idx == smallest_idx || circles[idx].contains_point(smallest_center)
-                });
-
-                if all_contain_center {
-                    // The smallest circle is contained in all others - return its area
-                    smallest_area
-                } else {
-                    // Circles are disjoint
-                    0.0
-                }
-            } else {
-                // Pass the mask so multiple_overlap_areas knows which circles to consider
-                crate::geometry::shapes::circle::multiple_overlap_areas_with_mask(
-                    circles,
-                    &region_points,
-                    &indices,
-                )
-            }
-        }
-    }
-}
-
 /// Convert a region mask to a list of circle indices.
 pub(crate) fn mask_to_indices(mask: RegionMask, n_sets: usize) -> Vec<usize> {
     (0..n_sets).filter(|&i| (mask & (1 << i)) != 0).collect()
@@ -610,65 +498,6 @@ mod tests {
         assert!(
             regions.contains(&(1 << 2)),
             "Region for circle 2 should exist"
-        );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_compute_region_area_single() {
-        let c = Circle::new(Point::new(0.0, 0.0), 2.0);
-        let circles = vec![c];
-        let intersections = vec![];
-
-        let mask = 1; // First circle only
-        let area = compute_region_area(mask, &circles, &intersections, 1);
-
-        let expected = c.area();
-        let error = (area - expected).abs() / expected;
-        assert!(
-            error < 0.001,
-            "Single circle area should match: {area} vs {expected}"
-        );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_compute_region_area_two_circles() {
-        let c1 = Circle::new(Point::new(0.0, 0.0), 1.0);
-        let c2 = Circle::new(Point::new(1.0, 0.0), 1.0);
-        let circles = vec![c1, c2];
-
-        let intersections = collect_intersections(&circles, 2);
-
-        let mask = 0b11; // Both circles
-        let area = compute_region_area(mask, &circles, &intersections, 2);
-
-        let expected = c1.intersection_area(&c2);
-        let error = (area - expected).abs() / expected;
-        assert!(
-            error < 0.001,
-            "Two circle intersection area should match: {area} vs {expected}"
-        );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_compute_region_area_three_circles() {
-        let c1 = Circle::new(Point::new(0.0, 0.0), 2.0);
-        let c2 = Circle::new(Point::new(1.5, 0.0), 2.0);
-        let c3 = Circle::new(Point::new(0.75, 1.3), 2.0);
-        let circles = vec![c1, c2, c3];
-
-        let intersections = collect_intersections(&circles, 3);
-
-        let mask = 0b111; // All three circles
-        let area = compute_region_area(mask, &circles, &intersections, 3);
-
-        // Should be positive and reasonable
-        assert!(area > 0.0, "Three circle intersection should exist");
-        assert!(
-            area < 10.0,
-            "Three circle intersection should be smaller than individual circles"
         );
     }
 
@@ -1263,46 +1092,6 @@ mod tests {
                 error
             );
         }
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn compare_abcdef_exact_vs_monte_carlo() {
-        let c1 = Circle::new(Point::new(1.5, 0.0), 1.8);
-        let c2 = Circle::new(Point::new(0.75, 1.2990381057), 1.8);
-        let c3 = Circle::new(Point::new(-0.75, 1.2990381057), 1.8);
-        let c4 = Circle::new(Point::new(-1.5, 0.0), 1.8);
-        let c5 = Circle::new(Point::new(-0.75, -1.2990381057), 1.8);
-        let c6 = Circle::new(Point::new(0.75, -1.2990381057), 1.8);
-
-        // Exact calculation
-        let circles = vec![c1, c2, c3, c4, c5, c6];
-        let intersections = collect_intersections(&circles, 6);
-        let exact = compute_region_area(0b111111, &circles, &intersections, 6);
-
-        // Sample the region directly - count points in all 6 circles
-        let bbox_min_x = -1.5 - 1.8;
-        let bbox_max_x = 1.5 + 1.8;
-        let bbox_min_y = -1.2990381057 - 1.8;
-        let bbox_max_y = 1.2990381057 + 1.8;
-        let bbox_area = (bbox_max_x - bbox_min_x) * (bbox_max_y - bbox_min_y);
-
-        let n_samples = 100_000; // 100k samples for reasonable accuracy
-        let mut in_all = 0;
-
-        for _ in 0..n_samples {
-            let x = bbox_min_x + (bbox_max_x - bbox_min_x) * rand::random::<f64>();
-            let y = bbox_min_y + (bbox_max_y - bbox_min_y) * rand::random::<f64>();
-            let p = Point::new(x, y);
-
-            if circles.iter().all(|c| c.contains_point(&p)) {
-                in_all += 1;
-            }
-        }
-
-        let mc = (in_all as f64 / n_samples as f64) * bbox_area;
-
-        assert!((exact - mc).abs() < 0.05, "MC and exact should be close");
     }
 
     #[test]

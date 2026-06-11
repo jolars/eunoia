@@ -35,13 +35,6 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       Deliberately **excluded**: `ClipOperation` (`plotting/clip.rs`) --- the
       boolean-op set is closed and it's low-level plumbing.
 
-- [ ] **Already-`#[deprecated]` functions would ship into 1.0** --- decide to
-      remove now (free pre-1.0) or consciously keep:
-      `crates/eunoia/src/geometry/shapes/circle.rs:478` and `:583`
-      (`multiple_overlap_areas*`, deprecated since 0.3.1), and
-      `crates/eunoia/src/geometry/diagram.rs:298`. Carrying a deprecation across
-      the 1.0 boundary is odd.
-
 ### P1 --- strongly recommended (cross-layer naming consistency)
 
 - [x] **Undocumented panics in builder methods**. `Fitter::optimizer_pool` and
