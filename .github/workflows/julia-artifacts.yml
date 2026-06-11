@@ -1,0 +1,81 @@
+# Option A: roll-your-own JLL. Cross-compile the `eunoia-capi` cdylib for every
+# Julia-supported platform from a single Ubuntu host using cargo-zigbuild, then
+# attach the per-platform tarballs to a `julia-v*` GitHub release. No
+# BinaryBuilder, no Yggdrasil. `julia/Eunoia/gen/generate_artifacts.jl` turns
+# the release assets into `Artifacts.toml`.
+name: Julia artifacts
+
+on:
+  push:
+    tags: ["julia-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.julia }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # rust = rustup target; julia = Julia/BinaryPlatforms triplet;
+          # glibc = optional cargo-zigbuild glibc floor; dir/lib = tarball layout.
+          - { rust: x86_64-unknown-linux-gnu,  julia: x86_64-linux-gnu,     glibc: ".2.17", dir: lib, lib: libeunoia_capi.so }
+          - { rust: aarch64-unknown-linux-gnu, julia: aarch64-linux-gnu,    glibc: ".2.17", dir: lib, lib: libeunoia_capi.so }
+          - { rust: x86_64-apple-darwin,       julia: x86_64-apple-darwin,  glibc: "",      dir: lib, lib: libeunoia_capi.dylib }
+          - { rust: aarch64-apple-darwin,      julia: aarch64-apple-darwin, glibc: "",      dir: lib, lib: libeunoia_capi.dylib }
+          - { rust: x86_64-pc-windows-gnu,     julia: x86_64-w64-mingw32,   glibc: "",      dir: bin, lib: eunoia_capi.dll }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust }}
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v1
+
+      - name: Install cargo-zigbuild
+        run: cargo install --locked cargo-zigbuild
+
+      - name: Build cdylib
+        run: cargo zigbuild -p eunoia-capi --release --target ${{ matrix.rust }}${{ matrix.glibc }}
+
+      - name: Package tarball
+        run: |
+          out="libeunoia_capi-${{ matrix.julia }}.tar.gz"
+          stage="stage/${{ matrix.dir }}"
+          mkdir -p "$stage"
+          cp "target/${{ matrix.rust }}/release/${{ matrix.lib }}" "$stage/"
+          tar -czf "$out" -C stage .
+          echo "Built $out:"; tar -tzf "$out"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.julia }}
+          path: libeunoia_capi-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Attach to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all tarballs
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz

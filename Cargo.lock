@@ -385,6 +385,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "eunoia-capi"
+version = "0.18.0"
+dependencies = [
+ "eunoia",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "eunoia-wasm"
 version = "0.18.0"
 dependencies = [

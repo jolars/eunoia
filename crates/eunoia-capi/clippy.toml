@@ -1,0 +1,11 @@
+# FFI-safety lints for the C ABI bindings crate (copied verbatim from the WASM
+# crate, as AGENTS.md invites downstream binding crates to do).
+#
+# The `*::new` shape constructors panic on invalid input; across a C ABI that
+# unwinds into the host (Julia) runtime, which is undefined behaviour. Use the
+# `try_new` variants instead and surface `DiagramError` as a JSON `error`.
+disallowed-methods = [
+    { path = "eunoia::geometry::shapes::Circle::new", reason = "FFI panic risk: use Circle::try_new and surface DiagramError as a JSON error." },
+    { path = "eunoia::geometry::shapes::Ellipse::new", reason = "FFI panic risk: use Ellipse::try_new and surface DiagramError as a JSON error." },
+    { path = "eunoia::geometry::shapes::Square::new", reason = "FFI panic risk: use Square::try_new and surface DiagramError as a JSON error." },
+]

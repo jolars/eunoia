@@ -31,6 +31,10 @@
       targets = [ "wasm32-unknown-unknown" ];
     };
 
+    julia = {
+      enable = true;
+    };
+
     javascript = {
       enable = true;
 

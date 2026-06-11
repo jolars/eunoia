@@ -1,0 +1,27 @@
+[package]
+name = "eunoia-capi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C ABI bindings for the eunoia library (backs the Julia package)"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+# Produces `libeunoia_capi.{so,dylib}` / `eunoia_capi.dll`. The Julia package
+# loads this by name via `Libdl`/`ccall` (see `julia/Eunoia`). `staticlib` is
+# kept so the same surface can be linked into other native consumers later.
+name = "eunoia_capi"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+# Native target has threads (unlike wasm), so opt into the rayon-parallel
+# restart loop — it's a free win the WASM binding can't take.
+eunoia = { path = "../eunoia", features = ["parallel"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
