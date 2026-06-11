@@ -19,11 +19,12 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       *construct* forbids the struct literal entirely downstream (FRU included),
       so it's a regression without a builder or `Default`+setters. Done for
       `PlotOptions` (`plotting/plot_data.rs`) and `ElbowOptions`,
-      `PlacementStrategy` (`plotting/placement.rs`): each gained `#[non_exhaustive]`
-      plus fluent consuming setters (bare names, `mut self -> Self`, matching the
-      `Fitter`/`DiagramSpecBuilder` house style), keeping `Default` and `pub`
-      fields. Construct via `PlotOptions::default().n_vertices(32)`. Enums are
-      tracked separately in the next item.
+      `PlacementStrategy` (`plotting/placement.rs`): each gained
+      `#[non_exhaustive]` plus fluent consuming setters (bare names,
+      `mut self -> Self`, matching the `Fitter`/`DiagramSpecBuilder` house
+      style), keeping `Default` and `pub` fields. Construct via
+      `PlotOptions::default().n_vertices(32)`. Enums are tracked separately in
+      the next item.
 
 - [x] **Input/config enums → `#[non_exhaustive]`?** Low cost (variants stay
       constructible; only exhaustive `match` is lost) and matches the existing
@@ -43,25 +44,25 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 
 ### P1 --- strongly recommended (cross-layer naming consistency)
 
-- [ ] **`complement` naming**. It's an area/size, not a boolean, but reads like
-      a flag in `EulerOptions`/`VennOptions` (`ts/index.ts`) and on
-      `DiagramSpecBuilder::complement` / `Fitter`. Last chance to rename to
-      `complementArea`/`complementSize` if desired.
-
-- [x] **Undocumented panics in builder methods**. `Fitter::optimizer_pool`
-      and `initial_solver_pool` panicked on an empty `Vec`. Resolved by
-      dropping the asserts and validating in `fit`/`fit_initial_only`, which
-      now return `DiagramError::EmptySolverPool { which }`.
+- [x] **Undocumented panics in builder methods**. `Fitter::optimizer_pool` and
+      `initial_solver_pool` panicked on an empty `Vec`. Resolved by dropping the
+      asserts and validating in `fit`/`fit_initial_only`, which now return
+      `DiagramError::EmptySolverPool { which }`.
 
 ### P2 --- polish / documentation (not blocking)
 
-- [ ] **Public constants are an API contract** --- `EPSILON`, `MAX_SETS`,
-      `MAX_SETS_HARD_CAP` (`crates/eunoia/src/constants.rs:13,30,40`). Their
-      *values* become part of the contract. Probably fine; just be intentional.
+- [x] **Public constants are an API contract** --- `EPSILON`, `MAX_SETS`,
+      `MAX_SETS_HARD_CAP` (`crates/eunoia/src/constants.rs`). Documented an
+      explicit `# Stability` stance on each (plus a module-level framing):
+      `MAX_SETS_HARD_CAP` is a structural invariant callers may rely on,
+      `MAX_SETS` is a default that may rise (read it, don't hard-code 32), and
+      `EPSILON` is a tuning value not pinned across versions.
 
-- [ ] **`LossType` helper naming mixes styles** --- acronyms (`sse`, `rmse`) vs
-      spelled-out (`sum_absolute`, `diag_error`) in `crates/eunoia/src/loss.rs`.
-      Minor.
+- [x] **`LossType` helper naming mixes styles** --- the acronym helpers
+      `sse`/`rmse` were the only ones not following the snake_case-of-variant
+      convention (and clashed with the spelled-out TS/wasm surface). Added
+      canonical `sum_squared`/`root_mean_squared`, marked `sse`/`rmse`
+      `#[deprecated]` aliases pointing to them, and migrated internal callers.
 
 - [ ] **`venn()` vs `euler()` option asymmetry + missing JSDoc**. `venn()` omits
       `seed`/`optimizer`/`loss`/`tolerance` (intentional --- fixed layout) but

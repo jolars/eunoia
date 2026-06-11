@@ -412,7 +412,14 @@ mod tests {
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse(), None);
+        let layout = Layout::new(
+            shapes,
+            set_to_shape,
+            &spec,
+            0,
+            LossType::sum_squared(),
+            None,
+        );
 
         assert_eq!(layout.shapes().len(), 1);
         assert!(layout.loss() < 0.001); // Should be very close to π
@@ -428,7 +435,14 @@ mod tests {
         let mut set_to_shape = HashMap::new();
         set_to_shape.insert("A".to_string(), 0);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse(), None);
+        let layout = Layout::new(
+            shapes,
+            set_to_shape,
+            &spec,
+            0,
+            LossType::sum_squared(),
+            None,
+        );
 
         let circle = layout.shape_for_set("A").unwrap();
         assert_eq!(circle.radius(), 3.0);
@@ -464,7 +478,14 @@ mod tests {
         set_to_shape.insert("B".to_string(), 1);
         set_to_shape.insert("C".to_string(), 2);
 
-        let layout = Layout::new(shapes, set_to_shape, &spec, 0, LossType::sse(), None);
+        let layout = Layout::new(
+            shapes,
+            set_to_shape,
+            &spec,
+            0,
+            LossType::sum_squared(),
+            None,
+        );
 
         // Check fitted areas - there should be NO intersection areas
         let ab_combo = Combination::new(&["A", "B"]);
@@ -587,17 +608,17 @@ mod tests {
 
         let layout_sse = Fitter::<Circle>::new(&spec)
             .seed(42)
-            .loss_type(LossType::sse())
+            .loss_type(LossType::sum_squared())
             .fit()
             .unwrap();
         let layout_rmse = Fitter::<Circle>::new(&spec)
             .seed(42)
-            .loss_type(LossType::rmse())
+            .loss_type(LossType::root_mean_squared())
             .fit()
             .unwrap();
 
-        assert_eq!(layout_sse.loss_type(), LossType::sse());
-        assert_eq!(layout_rmse.loss_type(), LossType::rmse());
+        assert_eq!(layout_sse.loss_type(), LossType::sum_squared());
+        assert_eq!(layout_rmse.loss_type(), LossType::root_mean_squared());
 
         // Given identical fits, RMSE = sqrt(SSE / n). Since both optimized with the
         // same seed and the region structure is the same, at least the relationship

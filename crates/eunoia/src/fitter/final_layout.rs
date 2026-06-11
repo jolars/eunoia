@@ -1720,7 +1720,7 @@ mod tests {
 
         let config = FinalLayoutConfig {
             optimizer: Optimizer::NelderMead,
-            loss_type: crate::loss::LossType::sse(),
+            loss_type: crate::loss::LossType::sum_squared(),
             max_iterations: 50,
             tolerance: 1e-4,
             seed: 0,
@@ -1754,7 +1754,7 @@ mod tests {
 
         let cost_fn = DiagramCost::<Circle> {
             spec: &preprocessed,
-            loss_type: crate::loss::LossType::sse(),
+            loss_type: crate::loss::LossType::sum_squared(),
             params_per_shape: Circle::n_params(),
             _shape: std::marker::PhantomData,
         };
@@ -1802,7 +1802,7 @@ mod tests {
 
         let config = FinalLayoutConfig {
             optimizer: Optimizer::NelderMead,
-            loss_type: crate::loss::LossType::sse(),
+            loss_type: crate::loss::LossType::sum_squared(),
             max_iterations: 100,
             tolerance: 1e-6,
             seed: 0,
@@ -1851,7 +1851,7 @@ mod tests {
 
         let config = FinalLayoutConfig {
             optimizer: Optimizer::NelderMead,
-            loss_type: crate::loss::LossType::sse(),
+            loss_type: crate::loss::LossType::sum_squared(),
             max_iterations: 200,
             tolerance: 1e-6,
             seed: 0,
@@ -1912,7 +1912,7 @@ mod tests {
 
             let config = FinalLayoutConfig {
                 optimizer: Optimizer::NelderMead,
-                loss_type: crate::loss::LossType::sse(),
+                loss_type: crate::loss::LossType::sum_squared(),
                 max_iterations: 200,
                 tolerance: 1e-6,
                 seed: 0,

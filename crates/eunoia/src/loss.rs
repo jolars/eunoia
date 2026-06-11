@@ -191,12 +191,32 @@ pub enum LossType {
 }
 
 impl LossType {
-    /// Normalised sum of squared errors. Alias for [`LossType::SumSquared`].
+    /// Normalised sum of squared errors. Convenience for
+    /// [`LossType::SumSquared`].
+    pub fn sum_squared() -> Self {
+        Self::SumSquared
+    }
+
+    /// Normalised root-mean-squared error. Convenience for
+    /// [`LossType::RootMeanSquared`].
+    pub fn root_mean_squared() -> Self {
+        Self::RootMeanSquared
+    }
+
+    /// Normalised sum of squared errors.
+    #[deprecated(
+        since = "0.19.0",
+        note = "renamed for naming consistency; use `sum_squared` instead"
+    )]
     pub fn sse() -> Self {
         Self::SumSquared
     }
 
-    /// Root mean squared error
+    /// Root mean squared error.
+    #[deprecated(
+        since = "0.19.0",
+        note = "renamed for naming consistency; use `root_mean_squared` instead"
+    )]
     pub fn rmse() -> Self {
         Self::RootMeanSquared
     }
@@ -857,7 +877,7 @@ mod tests {
 
     #[test]
     fn test_sse() {
-        let loss = LossType::sse();
+        let loss = LossType::sum_squared();
 
         let mut fitted = HashMap::new();
         fitted.insert(0b001, 10.0);
@@ -877,7 +897,7 @@ mod tests {
 
     #[test]
     fn test_rmse() {
-        let loss = LossType::rmse();
+        let loss = LossType::root_mean_squared();
 
         let mut fitted = HashMap::new();
         fitted.insert(0b001, 10.0);
@@ -938,7 +958,7 @@ mod tests {
 
     #[test]
     fn test_empty_target() {
-        let loss = LossType::sse();
+        let loss = LossType::sum_squared();
         let fitted = HashMap::new();
         let target = HashMap::new();
         assert_eq!(loss.compute(&fitted, &target), 0.0);
@@ -946,7 +966,7 @@ mod tests {
 
     #[test]
     fn test_missing_fitted_area() {
-        let loss = LossType::sse();
+        let loss = LossType::sum_squared();
 
         let fitted = HashMap::new(); // Empty - no fitted areas
 
@@ -960,7 +980,7 @@ mod tests {
 
     #[test]
     fn test_extra_fitted_area() {
-        let loss = LossType::sse();
+        let loss = LossType::sum_squared();
 
         let mut fitted = HashMap::new();
         fitted.insert(0b001, 5.0);
@@ -1003,14 +1023,24 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        assert_eq!(LossType::sse(), LossType::SumSquared);
+        assert_eq!(LossType::sum_squared(), LossType::SumSquared);
+        assert_eq!(LossType::root_mean_squared(), LossType::RootMeanSquared);
         assert_eq!(LossType::stress(), LossType::Stress);
-        assert_ne!(LossType::sse(), LossType::rmse());
+        assert_ne!(LossType::sum_squared(), LossType::root_mean_squared());
+    }
+
+    /// The deprecated acronym helpers still resolve to the same variants as
+    /// their spelled-out replacements.
+    #[test]
+    #[allow(deprecated)]
+    fn test_deprecated_acronym_aliases() {
+        assert_eq!(LossType::sse(), LossType::sum_squared());
+        assert_eq!(LossType::rmse(), LossType::root_mean_squared());
     }
 
     #[test]
     fn test_clone() {
-        let loss = LossType::sse();
+        let loss = LossType::sum_squared();
         let cloned = loss;
         assert_eq!(loss, cloned);
     }
