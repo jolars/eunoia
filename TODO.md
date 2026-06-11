@@ -48,10 +48,10 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       `DiagramSpecBuilder::complement` / `Fitter`. Last chance to rename to
       `complementArea`/`complementSize` if desired.
 
-- [ ] **Undocumented panics in builder methods**. `Fitter::optimizer_pool`
-      (`crates/eunoia/src/fitter.rs:477`) and `initial_solver_pool` (`:312`)
-      panic on an empty `Vec` with no `# Panics` doc. Decide: document the
-      panic, or return `Result`.
+- [x] **Undocumented panics in builder methods**. `Fitter::optimizer_pool`
+      and `initial_solver_pool` panicked on an empty `Vec`. Resolved by
+      dropping the asserts and validating in `fit`/`fit_initial_only`, which
+      now return `DiagramError::EmptySolverPool { which }`.
 
 ### P2 --- polish / documentation (not blocking)
 

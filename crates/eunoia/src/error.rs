@@ -35,6 +35,18 @@ pub enum DiagramError {
     /// at [`crate::constants::MAX_SETS_HARD_CAP`]).
     TooManySets { requested: usize, max: usize },
 
+    /// A solver pool configured on the [`crate::Fitter`] was empty. The
+    /// `which` field names the offending builder method
+    /// (`"optimizer_pool"` or `"initial_solver_pool"`). Restart `i` indexes
+    /// the pool as `pool[i % pool.len()]`, so an empty pool has no solver to
+    /// run; the error surfaces from [`crate::Fitter::fit`] /
+    /// [`crate::Fitter::fit_initial_only`] rather than panicking at the
+    /// setter.
+    EmptySolverPool {
+        /// The builder method whose pool was empty.
+        which: &'static str,
+    },
+
     /// A geometric shape was constructed with an out-of-range parameter
     /// (e.g. a non-positive radius). Returned by the `try_new` constructors
     /// on shape types so callers can recover from invalid user input
@@ -76,6 +88,9 @@ impl Display for DiagramError {
                     f,
                     "Too many sets: {requested} requested, but maximum supported is {max}"
                 )
+            }
+            DiagramError::EmptySolverPool { which } => {
+                write!(f, "Solver pool '{which}' must not be empty")
             }
             DiagramError::InvalidShapeParameter {
                 shape,
@@ -163,6 +178,23 @@ mod tests {
         let debug_str = format!("{error:?}");
         assert!(debug_str.contains("UndefinedSet"));
         assert!(debug_str.contains("A"));
+    }
+
+    #[test]
+    fn test_empty_solver_pool_error() {
+        let error = DiagramError::EmptySolverPool {
+            which: "optimizer_pool",
+        };
+        assert_eq!(
+            error,
+            DiagramError::EmptySolverPool {
+                which: "optimizer_pool"
+            }
+        );
+        assert_eq!(
+            format!("{error}"),
+            "Solver pool 'optimizer_pool' must not be empty"
+        );
     }
 
     #[test]

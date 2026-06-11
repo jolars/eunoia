@@ -279,9 +279,12 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// `MdsSolver::Lbfgs` can widen best-of-N basin coverage on
     /// issue #28-class specs.
     ///
-    /// # Panics
+    /// An empty pool is not validated here: [`fit`] / [`fit_initial_only`]
+    /// return [`DiagramError::EmptySolverPool`] when the pool has no solver
+    /// to cycle.
     ///
-    /// Panics if `pool` is empty.
+    /// [`fit`]: Self::fit
+    /// [`fit_initial_only`]: Self::fit_initial_only
     ///
     /// # Examples
     ///
@@ -310,7 +313,6 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// ]);
     /// ```
     pub fn initial_solver_pool(mut self, pool: Vec<MdsSolver>) -> Self {
-        assert!(!pool.is_empty(), "initial_solver_pool must be non-empty");
         self.initial_solvers = pool;
         self
     }
@@ -449,9 +451,12 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///
     /// Calling [`optimizer`] reduces the pool to a single solver.
     ///
-    /// # Panics
+    /// An empty pool is not validated here: [`fit`] / [`fit_initial_only`]
+    /// return [`DiagramError::EmptySolverPool`] when the pool has no solver
+    /// to cycle.
     ///
-    /// Panics if `pool` is empty.
+    /// [`fit`]: Self::fit
+    /// [`fit_initial_only`]: Self::fit_initial_only
     ///
     /// # Examples
     ///
@@ -475,7 +480,6 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     ///
     /// [`optimizer`]: Self::optimizer
     pub fn optimizer_pool(mut self, pool: Vec<Optimizer>) -> Self {
-        assert!(!pool.is_empty(), "optimizer_pool must be non-empty");
         self.optimizer_pool = pool;
         self
     }
@@ -689,6 +693,21 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     }
 
     fn fit_with_optimization(self, optimize: bool) -> Result<Layout<S>, DiagramError> {
+        // Both solver pools are indexed `pool[i % pool.len()]` per restart, so
+        // an empty pool has nothing to select. Each attempt picks its
+        // optimizer eagerly even when `optimize` is false (the initial-only
+        // path discards it), so validate both pools regardless of `optimize`.
+        if self.initial_solvers.is_empty() {
+            return Err(DiagramError::EmptySolverPool {
+                which: "initial_solver_pool",
+            });
+        }
+        if self.optimizer_pool.is_empty() {
+            return Err(DiagramError::EmptySolverPool {
+                which: "optimizer_pool",
+            });
+        }
+
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
 
@@ -2031,6 +2050,56 @@ mod tests {
             "expected InvalidCombination for multi-cluster + complement, got {:?}",
             result.map(|_| "Ok(_layout)")
         );
+    }
+
+    /// An empty solver pool is reported by `fit()` / `fit_initial_only()`
+    /// rather than panicking at the setter. Both pools are indexed per attempt
+    /// on both paths, so an empty pool errors on both, naming the offending
+    /// builder method.
+    #[test]
+    fn empty_solver_pool_errors_on_both_paths() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .intersection(&["A", "B"], 2.0)
+            .build()
+            .unwrap();
+
+        let errors_with = |result: Result<Layout<Circle>, DiagramError>, which: &str| {
+            matches!(
+                result,
+                Err(DiagramError::EmptySolverPool { which: w }) if w == which
+            )
+        };
+
+        assert!(errors_with(
+            Fitter::<Circle>::new(&spec)
+                .optimizer_pool(vec![])
+                .seed(42)
+                .fit(),
+            "optimizer_pool"
+        ));
+        assert!(errors_with(
+            Fitter::<Circle>::new(&spec)
+                .optimizer_pool(vec![])
+                .seed(42)
+                .fit_initial_only(),
+            "optimizer_pool"
+        ));
+        assert!(errors_with(
+            Fitter::<Circle>::new(&spec)
+                .initial_solver_pool(vec![])
+                .seed(42)
+                .fit(),
+            "initial_solver_pool"
+        ));
+        assert!(errors_with(
+            Fitter::<Circle>::new(&spec)
+                .initial_solver_pool(vec![])
+                .seed(42)
+                .fit_initial_only(),
+            "initial_solver_pool"
+        ));
     }
 
     /// End-to-end ellipse + complement (S3): the container area should
