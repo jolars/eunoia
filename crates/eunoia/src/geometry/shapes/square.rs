@@ -20,7 +20,7 @@ use crate::geometry::diagram::{
     IntersectionPoint, RegionMask, discover_regions, mask_to_indices, to_exclusive_areas,
     to_exclusive_areas_and_gradients,
 };
-use crate::geometry::primitives::Point;
+use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::{
     Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, ExclusiveRegionsAndGradient,
@@ -98,17 +98,6 @@ impl Square {
         self.side
     }
 
-    /// Returns `(x_min, x_max, y_min, y_max)` for the square's axis-aligned bounds.
-    pub fn bounds(&self) -> (f64, f64, f64, f64) {
-        let h = self.side * 0.5;
-        (
-            self.center.x() - h,
-            self.center.x() + h,
-            self.center.y() - h,
-            self.center.y() + h,
-        )
-    }
-
     /// View the square as the equivalent [`Rectangle`]. Used internally to
     /// delegate [`Closed`] operations.
     fn as_rectangle(&self) -> Rectangle {
@@ -135,8 +124,14 @@ impl Perimeter for Square {
 }
 
 impl BoundingBox for Square {
-    fn bounding_box(&self) -> Rectangle {
-        self.as_rectangle()
+    fn bounds(&self) -> Bounds {
+        let h = self.side * 0.5;
+        Bounds::new(
+            self.center.x() - h,
+            self.center.x() + h,
+            self.center.y() - h,
+            self.center.y() + h,
+        )
     }
 }
 
@@ -160,8 +155,18 @@ impl Closed for Square {
     }
 
     fn intersection_area(&self, other: &Self) -> f64 {
-        let (ax0, ax1, ay0, ay1) = self.bounds();
-        let (bx0, bx1, by0, by1) = other.bounds();
+        let Bounds {
+            x_min: ax0,
+            x_max: ax1,
+            y_min: ay0,
+            y_max: ay1,
+        } = self.bounds();
+        let Bounds {
+            x_min: bx0,
+            x_max: bx1,
+            y_min: by0,
+            y_max: by1,
+        } = other.bounds();
         let dx = (ax1.min(bx1) - ax0.max(bx0)).max(0.0);
         let dy = (ay1.min(by1) - ay0.max(by0)).max(0.0);
         dx * dy
@@ -174,8 +179,18 @@ impl Closed for Square {
     /// shared boundary; coincident edges produce zero crossings (overlap is
     /// still witnessed by [`Closed::intersection_area`]).
     fn intersection_points(&self, other: &Self) -> Vec<Point> {
-        let (ax0, ax1, ay0, ay1) = self.bounds();
-        let (bx0, bx1, by0, by1) = other.bounds();
+        let Bounds {
+            x_min: ax0,
+            x_max: ax1,
+            y_min: ay0,
+            y_max: ay1,
+        } = self.bounds();
+        let Bounds {
+            x_min: bx0,
+            x_max: bx1,
+            y_min: by0,
+            y_max: by1,
+        } = other.bounds();
         let mut points = Vec::new();
 
         // Horizontal edges of `self` at y = ay0, ay1, x ∈ [ax0, ax1] cross
@@ -284,7 +299,12 @@ fn compute_exclusive_regions_with_gradient_squares(
         let mut y_min = f64::NEG_INFINITY;
         let mut y_max = f64::INFINITY;
         for &i in &indices {
-            let (a, b, c, d) = shapes[i].bounds();
+            let Bounds {
+                x_min: a,
+                x_max: b,
+                y_min: c,
+                y_max: d,
+            } = shapes[i].bounds();
             if a > x_min {
                 x_min = a;
             }
@@ -315,7 +335,12 @@ fn compute_exclusive_regions_with_gradient_squares(
             let mut tied_b: Vec<usize> = Vec::with_capacity(indices.len());
             let mut tied_t: Vec<usize> = Vec::with_capacity(indices.len());
             for &i in &indices {
-                let (a, b, c, d) = shapes[i].bounds();
+                let Bounds {
+                    x_min: a,
+                    x_max: b,
+                    y_min: c,
+                    y_max: d,
+                } = shapes[i].bounds();
                 #[allow(clippy::float_cmp)]
                 {
                     if a == x_min {
@@ -373,7 +398,12 @@ pub(crate) fn compute_exclusive_regions_clipped_squares(
     let intersections = collect_intersections_square(shapes, n_sets);
     let regions = discover_regions(shapes, &intersections, n_sets);
 
-    let (cx_min, cx_max, cy_min, cy_max) = container.bounds();
+    let Bounds {
+        x_min: cx_min,
+        x_max: cx_max,
+        y_min: cy_min,
+        y_max: cy_max,
+    } = container.bounds();
     let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
     overlapping_areas.insert(0, container.area());
 
@@ -384,7 +414,12 @@ pub(crate) fn compute_exclusive_regions_clipped_squares(
         let mut y_min = cy_min;
         let mut y_max = cy_max;
         for &i in &indices {
-            let (a, b, c, d) = shapes[i].bounds();
+            let Bounds {
+                x_min: a,
+                x_max: b,
+                y_min: c,
+                y_max: d,
+            } = shapes[i].bounds();
             if a > x_min {
                 x_min = a;
             }
@@ -432,7 +467,12 @@ pub(crate) fn compute_exclusive_regions_clipped_with_gradient_squares(
     let intersections = collect_intersections_square(shapes, n_sets);
     let regions = discover_regions(shapes, &intersections, n_sets);
 
-    let (cx_min, cx_max, cy_min, cy_max) = container.bounds();
+    let Bounds {
+        x_min: cx_min,
+        x_max: cx_max,
+        y_min: cy_min,
+        y_max: cy_max,
+    } = container.bounds();
     let container_area = container.area();
 
     let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
@@ -451,7 +491,12 @@ pub(crate) fn compute_exclusive_regions_clipped_with_gradient_squares(
         let mut y_min = cy_min;
         let mut y_max = cy_max;
         for &i in &indices {
-            let (a, b, c, d) = shapes[i].bounds();
+            let Bounds {
+                x_min: a,
+                x_max: b,
+                y_min: c,
+                y_max: d,
+            } = shapes[i].bounds();
             if a > x_min {
                 x_min = a;
             }
@@ -479,7 +524,12 @@ pub(crate) fn compute_exclusive_regions_clipped_with_gradient_squares(
             let mut tied_b: Vec<usize> = Vec::with_capacity(indices.len());
             let mut tied_t: Vec<usize> = Vec::with_capacity(indices.len());
             for &i in &indices {
-                let (a, b, c, d) = shapes[i].bounds();
+                let Bounds {
+                    x_min: a,
+                    x_max: b,
+                    y_min: c,
+                    y_max: d,
+                } = shapes[i].bounds();
                 #[allow(clippy::float_cmp)]
                 {
                     if a == x_min {
@@ -585,7 +635,12 @@ impl DiagramShape for Square {
             let mut y_min = f64::NEG_INFINITY;
             let mut y_max = f64::INFINITY;
             for &i in &indices {
-                let (a, b, c, d) = shapes[i].bounds();
+                let Bounds {
+                    x_min: a,
+                    x_max: b,
+                    y_min: c,
+                    y_max: d,
+                } = shapes[i].bounds();
                 if a > x_min {
                     x_min = a;
                 }
@@ -720,7 +775,12 @@ impl Polygonize for Square {
     /// Returns the four corners as a CCW polygon. `n_vertices` is ignored —
     /// a square has exactly four vertices.
     fn polygonize(&self, _n_vertices: usize) -> Polygon {
-        let (x_min, x_max, y_min, y_max) = self.bounds();
+        let Bounds {
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        } = self.bounds();
         Polygon::new(vec![
             Point::new(x_min, y_min),
             Point::new(x_max, y_min),
@@ -786,12 +846,17 @@ mod tests {
     #[test]
     fn test_bounds_and_bounding_box() {
         let s = Square::new(Point::new(2.0, 3.0), 4.0);
-        let (x0, x1, y0, y1) = s.bounds();
+        let Bounds {
+            x_min: x0,
+            x_max: x1,
+            y_min: y0,
+            y_max: y1,
+        } = s.bounds();
         assert!(approx_eq(x0, 0.0));
         assert!(approx_eq(x1, 4.0));
         assert!(approx_eq(y0, 1.0));
         assert!(approx_eq(y1, 5.0));
-        let bb = s.bounding_box();
+        let bb = s.bounds();
         assert!(approx_eq(bb.area(), 16.0));
     }
 

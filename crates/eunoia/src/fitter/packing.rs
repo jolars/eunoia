@@ -98,6 +98,8 @@ pub fn skyline_pack(rectangles: &[Rectangle], padding: f64) -> Vec<Rectangle> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::primitives::Bounds;
+    use crate::geometry::traits::BoundingBox;
 
     #[test]
     fn test_pack_empty() {
@@ -133,8 +135,18 @@ mod tests {
         // Verify they don't overlap
         for i in 0..packed.len() {
             for j in (i + 1)..packed.len() {
-                let (x1_min, x1_max, y1_min, y1_max) = packed[i].bounds();
-                let (x2_min, x2_max, y2_min, y2_max) = packed[j].bounds();
+                let Bounds {
+                    x_min: x1_min,
+                    x_max: x1_max,
+                    y_min: y1_min,
+                    y_max: y1_max,
+                } = packed[i].bounds();
+                let Bounds {
+                    x_min: x2_min,
+                    x_max: x2_max,
+                    y_min: y2_min,
+                    y_max: y2_max,
+                } = packed[j].bounds();
 
                 let overlaps =
                     !(x1_max <= x2_min || x2_max <= x1_min || y1_max <= y2_min || y2_max <= y1_min);
@@ -157,8 +169,18 @@ mod tests {
         assert_eq!(packed[1].width(), 2.0);
 
         // They should not overlap
-        let (x1_min, x1_max, y1_min, y1_max) = packed[0].bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = packed[1].bounds();
+        let Bounds {
+            x_min: x1_min,
+            x_max: x1_max,
+            y_min: y1_min,
+            y_max: y1_max,
+        } = packed[0].bounds();
+        let Bounds {
+            x_min: x2_min,
+            x_max: x2_max,
+            y_min: y2_min,
+            y_max: y2_max,
+        } = packed[1].bounds();
 
         let overlaps =
             !(x1_max <= x2_min || x2_max <= x1_min || y1_max <= y2_min || y2_max <= y1_min);
@@ -180,8 +202,18 @@ mod tests {
         // Verify no overlaps
         for i in 0..packed.len() {
             for j in (i + 1)..packed.len() {
-                let (x1_min, x1_max, y1_min, y1_max) = packed[i].bounds();
-                let (x2_min, x2_max, y2_min, y2_max) = packed[j].bounds();
+                let Bounds {
+                    x_min: x1_min,
+                    x_max: x1_max,
+                    y_min: y1_min,
+                    y_max: y1_max,
+                } = packed[i].bounds();
+                let Bounds {
+                    x_min: x2_min,
+                    x_max: x2_max,
+                    y_min: y2_min,
+                    y_max: y2_max,
+                } = packed[j].bounds();
 
                 let overlaps =
                     !(x1_max <= x2_min || x2_max <= x1_min || y1_max <= y2_min || y2_max <= y1_min);
@@ -207,7 +239,12 @@ mod tests {
         let mut y_max = f64::NEG_INFINITY;
 
         for rect in &packed {
-            let (bx_min, bx_max, by_min, by_max) = rect.bounds();
+            let Bounds {
+                x_min: bx_min,
+                x_max: bx_max,
+                y_min: by_min,
+                y_max: by_max,
+            } = rect.bounds();
             x_min = x_min.min(bx_min);
             x_max = x_max.max(bx_max);
             y_min = y_min.min(by_min);
@@ -240,7 +277,12 @@ mod tests {
         let mut y_max = f64::NEG_INFINITY;
 
         for rect in &packed {
-            let (bx_min, bx_max, by_min, by_max) = rect.bounds();
+            let Bounds {
+                x_min: bx_min,
+                x_max: bx_max,
+                y_min: by_min,
+                y_max: by_max,
+            } = rect.bounds();
             x_min = x_min.min(bx_min);
             x_max = x_max.max(bx_max);
             y_min = y_min.min(by_min);

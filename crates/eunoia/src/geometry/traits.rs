@@ -7,7 +7,7 @@
 //! - Spatial relations between same-type objects: `Distance`, `Closed`
 //! - Diagram-specific operations: `DiagramShape` (composes all of the above)
 
-use crate::geometry::primitives::Point;
+use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::shapes::Rectangle;
 
 /// Trait for objects that have a computable distance to another object of the same type.
@@ -39,10 +39,10 @@ pub trait Perimeter {
     fn perimeter(&self) -> f64;
 }
 
-/// Trait for objects that can be bounded by a rectangle.
+/// Trait for objects that can be bounded by an axis-aligned box.
 pub trait BoundingBox {
-    /// Computes the axis-aligned bounding box as a Rectangle.
-    fn bounding_box(&self) -> Rectangle;
+    /// Computes the axis-aligned bounding box.
+    fn bounds(&self) -> Bounds;
 }
 
 /// Trait for spatial relationships between objects of the same type.
@@ -338,21 +338,18 @@ pub trait Polygonize {
     fn polygonize(&self, n_vertices: usize) -> crate::geometry::shapes::Polygon;
 }
 
-/// Compute the bounding box for a collection of shapes.
-pub fn bounding_box<S: BoundingBox>(shapes: &[S]) -> Rectangle {
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-
+/// Compute the bounding box enclosing a collection of shapes.
+///
+/// An empty slice yields a degenerate box with inverted (infinite) extents.
+pub fn bounds<S: BoundingBox>(shapes: &[S]) -> Bounds {
+    let mut acc = Bounds::new(
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    );
     for shape in shapes {
-        let points = shape.bounding_box().to_points();
-        min_x = min_x.min(points.0.x());
-        min_y = min_y.min(points.0.y());
-        max_x = max_x.max(points.1.x());
-        max_y = max_y.max(points.1.y());
+        acc = acc.union(&shape.bounds());
     }
-
-    Rectangle::from_corners(Point::new(min_x, min_y), Point::new(max_x, max_y))
+    acc
 }

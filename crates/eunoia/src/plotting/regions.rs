@@ -1030,7 +1030,9 @@ fn collect_intersections_generic<S: Closed>(shapes: &[S], n_sets: usize) -> Vec<
 mod tests {
     use super::*;
     use crate::fitter::Fitter;
+    use crate::geometry::primitives::Bounds;
     use crate::geometry::shapes::Circle;
+    use crate::geometry::traits::BoundingBox;
     use crate::spec::{DiagramSpecBuilder, InputType};
 
     #[test]
@@ -1497,7 +1499,12 @@ mod tests {
         let labels = regions.label_points(0.05);
         let anchor = labels.get(&empty).expect("complement label anchor missing");
         // Anchor must lie inside the container.
-        let (xmin, xmax, ymin, ymax) = container.bounds();
+        let Bounds {
+            x_min: xmin,
+            x_max: xmax,
+            y_min: ymin,
+            y_max: ymax,
+        } = container.bounds();
         assert!(anchor.x() >= xmin && anchor.x() <= xmax);
         assert!(anchor.y() >= ymin && anchor.y() <= ymax);
     }

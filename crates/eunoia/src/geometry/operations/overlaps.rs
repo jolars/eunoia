@@ -74,7 +74,7 @@ fn monte_carlo_overlap<S: DiagramShape>(
     // of their bounding boxes.
     let (x_min, x_max, y_min, y_max) = if shapes.len() == 1 {
         // Single shape - use its bounding box
-        let bbox = shapes[0].bounding_box();
+        let bbox = shapes[0].bounds();
         let (min_pt, max_pt) = bbox.to_points();
         (min_pt.x(), max_pt.x(), min_pt.y(), max_pt.y())
     } else {
@@ -85,7 +85,7 @@ fn monte_carlo_overlap<S: DiagramShape>(
         let mut y_max = f64::INFINITY;
 
         for shape in shapes {
-            let bbox = shape.bounding_box();
+            let bbox = shape.bounds();
             let (min_pt, max_pt) = bbox.to_points();
 
             // Intersection of bounding boxes

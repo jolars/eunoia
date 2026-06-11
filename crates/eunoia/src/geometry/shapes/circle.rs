@@ -4,6 +4,7 @@ use std::f64::consts::PI;
 
 use crate::error::DiagramError;
 use crate::geometry::diagram::IntersectionPoint;
+use crate::geometry::primitives::Bounds;
 use crate::geometry::primitives::Point;
 use crate::geometry::primitives::point;
 use crate::geometry::shapes::{Polygon, Rectangle};
@@ -73,11 +74,13 @@ impl Perimeter for Circle {
 }
 
 impl BoundingBox for Circle {
-    fn bounding_box(&self) -> Rectangle {
-        let width = 2.0 * self.radius;
-        let height = 2.0 * self.radius;
-
-        Rectangle::new(self.center, width, height)
+    fn bounds(&self) -> Bounds {
+        Bounds::new(
+            self.center.x() - self.radius,
+            self.center.x() + self.radius,
+            self.center.y() - self.radius,
+            self.center.y() + self.radius,
+        )
     }
 }
 
@@ -1071,7 +1074,12 @@ pub(crate) fn area_from_clipped_arcs(
 ) -> f64 {
     use crate::geometry::diagram::mask_to_indices;
 
-    let (x_min, x_max, y_min, y_max) = container.bounds();
+    let Bounds {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    } = container.bounds();
 
     // Defensive: a degenerate (zero-area) box can only intersect things with
     // measure zero. The arc and edge integrals would produce 0 anyway, but
@@ -1134,7 +1142,12 @@ pub(crate) fn area_and_gradient_from_clipped_arcs(
 ) -> f64 {
     use crate::geometry::diagram::mask_to_indices;
 
-    let (x_min, x_max, y_min, y_max) = container.bounds();
+    let Bounds {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    } = container.bounds();
 
     if x_max <= x_min || y_max <= y_min {
         return 0.0;

@@ -43,7 +43,7 @@ use std::f64::consts::PI;
 use nalgebra::Matrix2;
 
 use crate::geometry::diagram::RegionMask;
-use crate::geometry::primitives::Point;
+use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::projective::Conic;
 use crate::geometry::shapes::{Circle, Polygon, Rectangle};
 use crate::geometry::traits::{
@@ -640,21 +640,24 @@ impl BoundingBox for Ellipse {
     /// use eunoia::geometry::traits::BoundingBox;
     ///
     /// let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
-    /// let bbox = ellipse.bounding_box();
+    /// let bbox = ellipse.bounds();
     /// // For unrotated ellipse, bbox dimensions equal 2*semi-major and 2*semi-minor
     /// ```
-    fn bounding_box(&self) -> Rectangle {
+    fn bounds(&self) -> Bounds {
         let cos_theta = self.rotation.cos();
         let sin_theta = self.rotation.sin();
 
-        let width = 2.0
-            * ((self.semi_major * cos_theta).powi(2) + (self.semi_minor * sin_theta).powi(2))
-                .sqrt();
-        let height = 2.0
-            * ((self.semi_major * sin_theta).powi(2) + (self.semi_minor * cos_theta).powi(2))
-                .sqrt();
+        let half_width =
+            ((self.semi_major * cos_theta).powi(2) + (self.semi_minor * sin_theta).powi(2)).sqrt();
+        let half_height =
+            ((self.semi_major * sin_theta).powi(2) + (self.semi_minor * cos_theta).powi(2)).sqrt();
 
-        Rectangle::new(self.center, width, height)
+        Bounds::new(
+            self.center.x() - half_width,
+            self.center.x() + half_width,
+            self.center.y() - half_height,
+            self.center.y() + half_height,
+        )
     }
 }
 
@@ -1206,7 +1209,12 @@ fn area_from_clipped_arcs_ellipse(
 ) -> f64 {
     use crate::geometry::diagram::mask_to_indices;
 
-    let (x_min, x_max, y_min, y_max) = container.bounds();
+    let Bounds {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    } = container.bounds();
     if x_max <= x_min || y_max <= y_min {
         return 0.0;
     }
@@ -1275,7 +1283,12 @@ fn area_and_gradient_from_clipped_arcs_ellipse(
 ) -> f64 {
     use crate::geometry::diagram::mask_to_indices;
 
-    let (x_min, x_max, y_min, y_max) = container.bounds();
+    let Bounds {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    } = container.bounds();
     if x_max <= x_min || y_max <= y_min {
         return 0.0;
     }
@@ -2599,8 +2612,8 @@ mod tests {
         let mut in_both = 0;
 
         // Bounding box for sampling - intersection of both ellipse bounding boxes
-        let bbox1 = e1.bounding_box();
-        let bbox2 = e2.bounding_box();
+        let bbox1 = e1.bounds();
+        let bbox2 = e2.bounds();
         let (min1, max1) = bbox1.to_points();
         let (min2, max2) = bbox2.to_points();
 
@@ -2927,8 +2940,8 @@ mod tests {
         let mut in_both = 0;
 
         // Bounding box for sampling - intersection of both ellipse bounding boxes
-        let bbox1 = e1.bounding_box();
-        let bbox2 = e2.bounding_box();
+        let bbox1 = e1.bounds();
+        let bbox2 = e2.bounds();
         let (min1, max1) = bbox1.to_points();
         let (min2, max2) = bbox2.to_points();
 
@@ -3076,9 +3089,9 @@ mod tests {
         let mut in_all_three = 0;
 
         // Find bounding box
-        let bbox1 = e1.bounding_box();
-        let bbox2 = e2.bounding_box();
-        let bbox3 = e3.bounding_box();
+        let bbox1 = e1.bounds();
+        let bbox2 = e2.bounds();
+        let bbox3 = e3.bounds();
 
         let (min1, max1) = bbox1.to_points();
         let (min2, max2) = bbox2.to_points();

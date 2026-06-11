@@ -69,10 +69,6 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
       doesn't document why; option defaults and the valid `n` range per shape
       aren't in the JSDoc (`ts/index.ts`).
 
-- [ ] **`Square::bounds()` / `Rectangle::bounds()` return a bare
-      `(f64,f64,f64,f64)` tuple** --- a named struct would be friendlier, but
-      tuples are acceptable.
-
 ## Surfaced fitter issues (regressions to investigate)
 
 The corpus / proptest surfaced these. None were introduced by the harness;

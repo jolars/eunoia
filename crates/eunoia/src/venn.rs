@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use crate::error::DiagramError;
 use crate::fitter::Layout;
-use crate::geometry::primitives::Point;
+use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::shapes::Rectangle;
 use crate::geometry::traits::DiagramShape;
 use crate::loss::LossType;
@@ -181,7 +181,12 @@ impl<S: DiagramShape + Copy + 'static> VennDiagram<S> {
         let mut y_min = f64::INFINITY;
         let mut y_max = f64::NEG_INFINITY;
         for shape in &self.shapes {
-            let (bx_min, bx_max, by_min, by_max) = shape.bounding_box().bounds();
+            let Bounds {
+                x_min: bx_min,
+                x_max: bx_max,
+                y_min: by_min,
+                y_max: by_max,
+            } = shape.bounds();
             x_min = x_min.min(bx_min);
             x_max = x_max.max(bx_max);
             y_min = y_min.min(by_min);
@@ -420,7 +425,12 @@ mod tests {
 
         use crate::geometry::traits::BoundingBox;
         for shape in &shapes {
-            let (sx_min, sx_max, sy_min, sy_max) = shape.bounding_box().bounds();
+            let Bounds {
+                x_min: sx_min,
+                x_max: sx_max,
+                y_min: sy_min,
+                y_max: sy_max,
+            } = shape.bounds();
             assert!(sx_min > cx_min && sx_max < cx_max);
             assert!(sy_min > cy_min && sy_max < cy_max);
         }

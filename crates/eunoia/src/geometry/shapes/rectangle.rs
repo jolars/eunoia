@@ -26,7 +26,7 @@ use crate::geometry::diagram::{
     IntersectionPoint, RegionMask, discover_regions, mask_to_indices, to_exclusive_areas,
     to_exclusive_areas_and_gradients,
 };
-use crate::geometry::primitives::Point;
+use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::shapes::Polygon;
 use crate::geometry::traits::{
     Area, BoundingBox, Centroid, Closed, DiagramShape, Distance, ExclusiveRegionsAndGradient,
@@ -159,27 +159,19 @@ impl Rectangle {
         self.center = center;
     }
 
-    /// Returns the bounds of the rectangle as (x_min, x_max, y_min, y_max).
-    pub fn bounds(&self) -> (f64, f64, f64, f64) {
-        let half_width = self.width / 2.0;
-        let half_height = self.height / 2.0;
-        (
-            self.center.x() - half_width,
-            self.center.x() + half_width,
-            self.center.y() - half_height,
-            self.center.y() + half_height,
-        )
-    }
-
     /// Returns the bottom-left and top-right corner points of the rectangle.
     pub fn to_points(self) -> (Point, Point) {
-        let (x_min, x_max, y_min, y_max) = self.bounds();
-        (Point::new(x_min, y_min), Point::new(x_max, y_max))
+        self.bounds().to_points()
     }
 
     /// Returns the four corner points of the rectangle.
     pub fn corners(&self) -> [Point; 4] {
-        let (x_min, x_max, y_min, y_max) = self.bounds();
+        let Bounds {
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        } = self.bounds();
         [
             Point::new(x_min, y_min),
             Point::new(x_max, y_min),
@@ -203,8 +195,15 @@ impl Perimeter for Rectangle {
 }
 
 impl BoundingBox for Rectangle {
-    fn bounding_box(&self) -> Rectangle {
-        *self
+    fn bounds(&self) -> Bounds {
+        let half_width = self.width / 2.0;
+        let half_height = self.height / 2.0;
+        Bounds::new(
+            self.center.x() - half_width,
+            self.center.x() + half_width,
+            self.center.y() - half_height,
+            self.center.y() + half_height,
+        )
     }
 }
 
@@ -220,8 +219,18 @@ impl Distance for Rectangle {
     ///
     /// Returns 0.0 if the rectangles overlap or touch.
     fn distance(&self, other: &Self) -> f64 {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+        let Bounds {
+            x_min: x1_min,
+            x_max: x1_max,
+            y_min: y1_min,
+            y_max: y1_max,
+        } = self.bounds();
+        let Bounds {
+            x_min: x2_min,
+            x_max: x2_max,
+            y_min: y2_min,
+            y_max: y2_max,
+        } = other.bounds();
 
         let dx = if x1_max < x2_min {
             x2_min - x1_max
@@ -246,21 +255,46 @@ impl Distance for Rectangle {
 #[allow(dead_code)]
 impl Closed for Rectangle {
     fn contains(&self, other: &Self) -> bool {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+        let Bounds {
+            x_min: x1_min,
+            x_max: x1_max,
+            y_min: y1_min,
+            y_max: y1_max,
+        } = self.bounds();
+        let Bounds {
+            x_min: x2_min,
+            x_max: x2_max,
+            y_min: y2_min,
+            y_max: y2_max,
+        } = other.bounds();
 
         x2_min >= x1_min && x2_max <= x1_max && y2_min >= y1_min && y2_max <= y1_max
     }
 
     /// Checks if a point is inside the rectangle (including the boundary).
     fn contains_point(&self, point: &Point) -> bool {
-        let (x_min, x_max, y_min, y_max) = self.bounds();
+        let Bounds {
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        } = self.bounds();
         point.x() >= x_min && point.x() <= x_max && point.y() >= y_min && point.y() <= y_max
     }
 
     fn intersects(&self, other: &Self) -> bool {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+        let Bounds {
+            x_min: x1_min,
+            x_max: x1_max,
+            y_min: y1_min,
+            y_max: y1_max,
+        } = self.bounds();
+        let Bounds {
+            x_min: x2_min,
+            x_max: x2_max,
+            y_min: y2_min,
+            y_max: y2_max,
+        } = other.bounds();
 
         !(x1_max < x2_min || x2_max < x1_min || y1_max < y2_min || y2_max < y1_min)
     }
@@ -269,8 +303,18 @@ impl Closed for Rectangle {
     ///
     /// Returns 0 if rectangles don't overlap.
     fn intersection_area(&self, other: &Self) -> f64 {
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+        let Bounds {
+            x_min: x1_min,
+            x_max: x1_max,
+            y_min: y1_min,
+            y_max: y1_max,
+        } = self.bounds();
+        let Bounds {
+            x_min: x2_min,
+            x_max: x2_max,
+            y_min: y2_min,
+            y_max: y2_max,
+        } = other.bounds();
 
         let x_overlap = (x1_max.min(x2_max) - x1_min.max(x2_min)).max(0.0);
         let y_overlap = (y1_max.min(y2_max) - y1_min.max(y2_min)).max(0.0);
@@ -287,8 +331,18 @@ impl Closed for Rectangle {
             return vec![];
         }
 
-        let (x1_min, x1_max, y1_min, y1_max) = self.bounds();
-        let (x2_min, x2_max, y2_min, y2_max) = other.bounds();
+        let Bounds {
+            x_min: x1_min,
+            x_max: x1_max,
+            y_min: y1_min,
+            y_max: y1_max,
+        } = self.bounds();
+        let Bounds {
+            x_min: x2_min,
+            x_max: x2_max,
+            y_min: y2_min,
+            y_max: y2_max,
+        } = other.bounds();
 
         let x_min = x1_min.max(x2_min);
         let x_max = x1_max.min(x2_max);
@@ -388,7 +442,12 @@ fn compute_exclusive_regions_with_gradient_rectangles(
         let mut y_min = f64::NEG_INFINITY;
         let mut y_max = f64::INFINITY;
         for &i in &indices {
-            let (a, b, c, d) = shapes[i].bounds();
+            let Bounds {
+                x_min: a,
+                x_max: b,
+                y_min: c,
+                y_max: d,
+            } = shapes[i].bounds();
             if a > x_min {
                 x_min = a;
             }
@@ -416,7 +475,12 @@ fn compute_exclusive_regions_with_gradient_rectangles(
             let mut tied_b: Vec<usize> = Vec::with_capacity(indices.len());
             let mut tied_t: Vec<usize> = Vec::with_capacity(indices.len());
             for &i in &indices {
-                let (a, b, c, d) = shapes[i].bounds();
+                let Bounds {
+                    x_min: a,
+                    x_max: b,
+                    y_min: c,
+                    y_max: d,
+                } = shapes[i].bounds();
                 #[allow(clippy::float_cmp)]
                 {
                     if a == x_min {
@@ -492,7 +556,12 @@ pub(crate) fn compute_exclusive_regions_clipped_rectangles(
     let intersections = collect_intersections_rectangle(shapes, n_sets);
     let regions = discover_regions(shapes, &intersections, n_sets);
 
-    let (cx_min, cx_max, cy_min, cy_max) = container.bounds();
+    let Bounds {
+        x_min: cx_min,
+        x_max: cx_max,
+        y_min: cy_min,
+        y_max: cy_max,
+    } = container.bounds();
     let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
     overlapping_areas.insert(0, container.area());
 
@@ -503,7 +572,12 @@ pub(crate) fn compute_exclusive_regions_clipped_rectangles(
         let mut y_min = cy_min;
         let mut y_max = cy_max;
         for &i in &indices {
-            let (a, b, c, d) = shapes[i].bounds();
+            let Bounds {
+                x_min: a,
+                x_max: b,
+                y_min: c,
+                y_max: d,
+            } = shapes[i].bounds();
             if a > x_min {
                 x_min = a;
             }
@@ -569,7 +643,12 @@ pub(crate) fn compute_exclusive_regions_clipped_with_gradient_rectangles(
     let intersections = collect_intersections_rectangle(shapes, n_sets);
     let regions = discover_regions(shapes, &intersections, n_sets);
 
-    let (cx_min, cx_max, cy_min, cy_max) = container.bounds();
+    let Bounds {
+        x_min: cx_min,
+        x_max: cx_max,
+        y_min: cy_min,
+        y_max: cy_max,
+    } = container.bounds();
     let container_area = container.area();
 
     let mut overlapping_areas: HashMap<RegionMask, f64> = HashMap::new();
@@ -589,7 +668,12 @@ pub(crate) fn compute_exclusive_regions_clipped_with_gradient_rectangles(
         let mut y_min = cy_min;
         let mut y_max = cy_max;
         for &i in &indices {
-            let (a, b, c, d) = shapes[i].bounds();
+            let Bounds {
+                x_min: a,
+                x_max: b,
+                y_min: c,
+                y_max: d,
+            } = shapes[i].bounds();
             if a > x_min {
                 x_min = a;
             }
@@ -617,7 +701,12 @@ pub(crate) fn compute_exclusive_regions_clipped_with_gradient_rectangles(
             let mut tied_b: Vec<usize> = Vec::with_capacity(indices.len());
             let mut tied_t: Vec<usize> = Vec::with_capacity(indices.len());
             for &i in &indices {
-                let (a, b, c, d) = shapes[i].bounds();
+                let Bounds {
+                    x_min: a,
+                    x_max: b,
+                    y_min: c,
+                    y_max: d,
+                } = shapes[i].bounds();
                 #[allow(clippy::float_cmp)]
                 {
                     if a == x_min {
@@ -720,7 +809,12 @@ impl Polygonize for Rectangle {
     /// Returns the four corners as a CCW polygon. `n_vertices` is ignored —
     /// a rectangle has exactly four vertices.
     fn polygonize(&self, _n_vertices: usize) -> Polygon {
-        let (x_min, x_max, y_min, y_max) = self.bounds();
+        let Bounds {
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        } = self.bounds();
         Polygon::new(vec![
             Point::new(x_min, y_min),
             Point::new(x_max, y_min),
@@ -746,7 +840,12 @@ impl DiagramShape for Rectangle {
             let mut y_min = f64::NEG_INFINITY;
             let mut y_max = f64::INFINITY;
             for &i in &indices {
-                let (a, b, c, d) = shapes[i].bounds();
+                let Bounds {
+                    x_min: a,
+                    x_max: b,
+                    y_min: c,
+                    y_max: d,
+                } = shapes[i].bounds();
                 if a > x_min {
                     x_min = a;
                 }
@@ -940,7 +1039,12 @@ mod tests {
     #[test]
     fn test_rectangle_bounds() {
         let rect = Rectangle::new(Point::new(2.0, 3.0), 4.0, 6.0);
-        let (x_min, x_max, y_min, y_max) = rect.bounds();
+        let Bounds {
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        } = rect.bounds();
         assert!(approx_eq(x_min, 0.0));
         assert!(approx_eq(x_max, 4.0));
         assert!(approx_eq(y_min, 0.0));

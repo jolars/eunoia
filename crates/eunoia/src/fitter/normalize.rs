@@ -8,7 +8,7 @@
 use crate::fitter::clustering::{find_clusters, find_clusters_from_exclusive_regions};
 use crate::fitter::packing::skyline_pack;
 use crate::geometry::diagram::RegionMask;
-use crate::geometry::primitives::Point;
+use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::shapes::Rectangle;
 use crate::geometry::traits::DiagramShape;
 use std::collections::HashMap;
@@ -315,8 +315,12 @@ where
         let mut y_max = f64::NEG_INFINITY;
 
         for &idx in cluster {
-            let bbox = shapes[idx].bounding_box();
-            let (bx_min, bx_max, by_min, by_max) = bbox.bounds();
+            let Bounds {
+                x_min: bx_min,
+                x_max: bx_max,
+                y_min: by_min,
+                y_max: by_max,
+            } = shapes[idx].bounds();
             x_min = x_min.min(bx_min);
             x_max = x_max.max(bx_max);
             y_min = y_min.min(by_min);
@@ -397,8 +401,12 @@ where
     let mut y_max = f64::NEG_INFINITY;
 
     for shape in shapes.iter() {
-        let bbox = shape.bounding_box();
-        let (bx_min, bx_max, by_min, by_max) = bbox.bounds();
+        let Bounds {
+            x_min: bx_min,
+            x_max: bx_max,
+            y_min: by_min,
+            y_max: by_max,
+        } = shape.bounds();
         x_min = x_min.min(bx_min);
         x_max = x_max.max(bx_max);
         y_min = y_min.min(by_min);
@@ -556,8 +564,12 @@ mod tests {
         let mut bb_y_max = f64::NEG_INFINITY;
 
         for shape in &shapes {
-            let bbox = shape.bounding_box();
-            let (bx_min, bx_max, by_min, by_max) = bbox.bounds();
+            let Bounds {
+                x_min: bx_min,
+                x_max: bx_max,
+                y_min: by_min,
+                y_max: by_max,
+            } = shape.bounds();
             bb_x_min = bb_x_min.min(bx_min);
             bb_x_max = bb_x_max.max(bx_max);
             bb_y_min = bb_y_min.min(by_min);

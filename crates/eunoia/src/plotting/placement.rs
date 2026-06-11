@@ -22,8 +22,9 @@
 
 use std::collections::HashMap;
 
-use crate::geometry::primitives::Point;
+use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::shapes::{Polygon, Rectangle};
+use crate::geometry::traits::BoundingBox;
 use crate::plotting::clip::polygon_union_many;
 use crate::plotting::inscribed::{fit_label_in_region, principal_axis};
 use crate::plotting::regions::{
@@ -740,7 +741,11 @@ fn place_elbow_labels(
     let Some(bbox) = diagram_bbox else {
         return out;
     };
-    let (xmin, xmax, _, _) = bbox.bounds();
+    let Bounds {
+        x_min: xmin,
+        x_max: xmax,
+        ..
+    } = bbox.bounds();
 
     // Interior labels are obstacles: an exterior leader's horizontal leg,
     // routed at its row height, must not cross them. Treat their combined
@@ -923,6 +928,8 @@ fn place_elbow_labels(
 /// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
 /// use eunoia::geometry::shapes::Circle;
 /// use eunoia::plotting::{place_labels, placements_bbox, PlacementStrategy};
+/// use eunoia::geometry::primitives::Bounds;
+/// use eunoia::geometry::traits::BoundingBox;
 ///
 /// let spec = DiagramSpecBuilder::new()
 ///     .set("A", 5.0)
@@ -948,7 +955,12 @@ fn place_elbow_labels(
 /// // The bbox encloses every placed label box.
 /// for (key, p) in &placements {
 ///     let (w, h) = sizes[key];
-///     let (xmin, xmax, ymin, ymax) = bbox.bounds();
+///     let Bounds {
+///         x_min: xmin,
+///         x_max: xmax,
+///         y_min: ymin,
+///         y_max: ymax,
+///     } = bbox.bounds();
 ///     assert!(p.anchor.x() - w / 2.0 >= xmin - 1e-9);
 ///     assert!(p.anchor.x() + w / 2.0 <= xmax + 1e-9);
 ///     assert!(p.anchor.y() - h / 2.0 >= ymin - 1e-9);
@@ -1093,15 +1105,30 @@ fn canvas_bbox(
     };
 
     if let Some(r) = union_bbox(regions) {
-        let (xmin, xmax, ymin, ymax) = r.bounds();
+        let Bounds {
+            x_min: xmin,
+            x_max: xmax,
+            y_min: ymin,
+            y_max: ymax,
+        } = r.bounds();
         consume(xmin, xmax, ymin, ymax);
     }
     if let Some(c) = container {
-        let (xmin, xmax, ymin, ymax) = c.bounds();
+        let Bounds {
+            x_min: xmin,
+            x_max: xmax,
+            y_min: ymin,
+            y_max: ymax,
+        } = c.bounds();
         consume(xmin, xmax, ymin, ymax);
     }
     if let Some(b) = placements_bbox(placements, sizes) {
-        let (xmin, xmax, ymin, ymax) = b.bounds();
+        let Bounds {
+            x_min: xmin,
+            x_max: xmax,
+            y_min: ymin,
+            y_max: ymax,
+        } = b.bounds();
         consume(xmin, xmax, ymin, ymax);
     }
 
@@ -1498,7 +1525,12 @@ fn bbox_push_along(
     margin: f64,
     dir: (f64, f64),
 ) -> (f64, f64) {
-    let (xmin, xmax, ymin, ymax) = bbox.bounds();
+    let Bounds {
+        x_min: xmin,
+        x_max: xmax,
+        y_min: ymin,
+        y_max: ymax,
+    } = bbox.bounds();
     let xmin = xmin - margin - half_w;
     let xmax = xmax + margin + half_w;
     let ymin = ymin - margin - half_h;
