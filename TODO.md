@@ -15,39 +15,38 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 ### P0 --- decide before 1.0 (un-fixable later without a major bump)
 
 - [~] **No public enum is `#[non_exhaustive]`** --- verified: the attribute
-      appeared nowhere in the crate, so adding any variant post-1.0 is breaking.
-      Add it to the selector/output enums that are an open set:
-      - [x] `LossType` (`crates/eunoia/src/loss.rs`) --- 14 variants, clearly
-        open. Done 2026-06-10.
-      - [x] `Optimizer` (`crates/eunoia/src/fitter/final_layout.rs`) --- new
-        solvers are the roadmap. Done 2026-06-10.
-      - [x] `MdsSolver` (`crates/eunoia/src/fitter/initial_layout.rs`).
+  appeared nowhere in the crate, so adding any variant post-1.0 is breaking. Add
+  it to the selector/output enums that are an open set:
+  - [x] `LossType` (`crates/eunoia/src/loss.rs`) --- 14 variants, clearly open.
         Done 2026-06-10.
-      - [x] `InitialSampler` (`crates/eunoia/src/fitter/initial_layout.rs`).
-        Done 2026-06-10.
-      - [x] `DiagramError` (`crates/eunoia/src/error.rs`) --- new failure modes
-        are inevitable. Done 2026-06-10.
-      - [ ] `Line` (`crates/eunoia/src/geometry/primitives/line.rs`) --- only if
-        `Point`/`Line` stay public (deferred; depends on the module-sealing
-        item below). `InputType` (2 variants, conceptually closed) is a judgment
-        call; lower priority, left as-is for now.
-      Note: these are pick-a-variant enums, so `#[non_exhaustive]` only blocks
-      external exhaustive `match` (the desired effect, same as
-      `std::io::ErrorKind`) --- construction of existing variants still works.
-      Adding it forced one wildcard arm in the `corpus`-gated
-      `examples/quality_report.rs` `LossType` match (compiled as an external
-      crate) --- exactly the intended guard firing.
+  - [x] `Optimizer` (`crates/eunoia/src/fitter/final_layout.rs`) --- new solvers
+        are the roadmap. Done 2026-06-10.
+  - [x] `MdsSolver` (`crates/eunoia/src/fitter/initial_layout.rs`). Done
+        2026-06-10.
+  - [x] `InitialSampler` (`crates/eunoia/src/fitter/initial_layout.rs`). Done
+        2026-06-10.
+  - [x] `DiagramError` (`crates/eunoia/src/error.rs`) --- new failure modes are
+        inevitable. Done 2026-06-10.
+  - [ ] `Line` (`crates/eunoia/src/geometry/primitives/line.rs`) --- only if
+        `Point`/`Line` stay public (deferred; depends on the module-sealing item
+        below). `InputType` (2 variants, conceptually closed) is a judgment
+        call; lower priority, left as-is for now. Note: these are pick-a-variant
+        enums, so `#[non_exhaustive]` only blocks external exhaustive `match`
+        (the desired effect, same as `std::io::ErrorKind`) --- construction of
+        existing variants still works. Adding it forced one wildcard arm in the
+        `corpus`-gated `examples/quality_report.rs` `LossType` match (compiled
+        as an external crate) --- exactly the intended guard firing.
 
 - [x] **`LossType::SumAbsoute` was misspelled** → renamed to `SumAbsolute`
-      (`crates/eunoia/src/loss.rs:112` + all matches/doc-links, the
-      `examples/` references, and the `WasmLossType → LossType` mapping in
-      `crates/eunoia-wasm/src/lib.rs`). The wasm variant `WasmLossType::SumAbsolute`
-      was already correct and now maps to the correctly-spelled core variant.
-      Done 2026-06-10.
+      (`crates/eunoia/src/loss.rs:112` + all matches/doc-links, the `examples/`
+      references, and the `WasmLossType → LossType` mapping in
+      `crates/eunoia-wasm/src/lib.rs`). The wasm variant
+      `WasmLossType::SumAbsolute` was already correct and now maps to the
+      correctly-spelled core variant. Done 2026-06-10.
 
 - [x] **Internal math is leaking as public API --- seal before 1.0**
-      (un-publishing after 1.0 is breaking). All were `pub` and reachable.
-      Done 2026-06-10:
+      (un-publishing after 1.0 is breaking). All were `pub` and reachable. Done
+      2026-06-10:
       - `math` module → `pub(crate)` (module, submodules, `zap_small`,
         `zap_small_with`, `solve_cubic`, `extract_real_roots`, `Matrix3Ext`,
         `Vector3Ext`). `extract_real_pairs` was dead and was removed. Doctests
@@ -62,17 +61,17 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
         oracle); `compute_overlaps` / `OverlapMethod` had zero callers and were
         removed, and the module is now `#[cfg(test)]`.
       - `geometry::diagram` internals → `pub(crate)`: `IntersectionPoint`,
-        `compute_exclusive_regions`, `collect_intersections`, `discover_regions`,
-        `adopters_to_mask`, `mask_to_indices`, `to_exclusive_areas`, and the
-        deprecated `compute_region_area` (+ the two deprecated
-        `circle::multiple_overlap_areas*` helpers it exposed). Kept
-        `compute_exclusive_areas_from_layout` / `…_generic` **public** — the
-        `eunoia-wasm` debug path consumes the former ("public for WASM").
+        `compute_exclusive_regions`, `collect_intersections`,
+        `discover_regions`, `adopters_to_mask`, `mask_to_indices`,
+        `to_exclusive_areas`, and the deprecated `compute_region_area` (+ the
+        two deprecated `circle::multiple_overlap_areas*` helpers it exposed).
+        Kept `compute_exclusive_areas_from_layout` / `…_generic` **public** ---
+        the `eunoia-wasm` debug path consumes the former ("public for WASM").
       - Optimizer-encoding methods → `#[doc(hidden)]`: the `DiagramShape` trait
         methods `to_optimizer_params` / `from_optimizer_params` /
-        `optimizer_params_from_circle` (must stay public for impls; hidden +
-        "no stability guarantee"), and `Ellipse::from_radius_ratio` (the
-        TODO's "from_log_aspect"; radius/log-aspect optimizer encoding).
+        `optimizer_params_from_circle` (must stay public for impls; hidden + "no
+        stability guarantee"), and `Ellipse::from_radius_ratio` (the TODO's
+        "from_log_aspect"; radius/log-aspect optimizer encoding).
 
 - [ ] **User-facing structs with all-public fields → `#[non_exhaustive]`**
       (adding a field later is breaking). These are returned to users:
@@ -91,28 +90,28 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 
 ### P1 --- strongly recommended (cross-layer naming consistency)
 
-- [x] **`./raw` export stability stance**. Resolved 2026-06-10 by **dropping
-      the `/raw` export** entirely (rather than versioning or labelling it
+- [x] **`./raw` export stability stance**. Resolved 2026-06-10 by **dropping the
+      `/raw` export** entirely (rather than versioning or labelling it
       unstable). The wasm-bindgen surface (`WasmCircle.label_x`, numeric
       `WasmOptimizer` / `WasmLossType`, 25+ `generate_*` fns) still ships as the
       runtime backing `index.js`, but the `exports` map no longer lists it, so
-      Node encapsulates it — there is no public `@jolars/eunoia/raw` entry. Only
-      the high-level `.` and `./svg` entries are public, so `Wasm*` renames are
-      no longer breaking changes for npm consumers. Updated `ts/package.json`,
-      `npm/package.json`, `README.md`, and `AGENTS.md`.
+      Node encapsulates it --- there is no public `@jolars/eunoia/raw` entry.
+      Only the high-level `.` and `./svg` entries are public, so `Wasm*` renames
+      are no longer breaking changes for npm consumers. Updated
+      `ts/package.json`, `npm/package.json`, `README.md`, and `AGENTS.md`.
 
 - [x] **Optimizer surface mismatch (core vs TS)**. Resolved 2026-06-10. The TS
       `Optimizer` union (`ts/index.ts`) now lists all six core variants
-      (`cmaEsTrf`, `cmaEsLm`, `levenbergMarquardt`, `trf`, `lbfgs`, `nelderMead`)
-      and `OPTIMIZER_MAP` maps each to its `WasmOptimizer`. The wrapper no longer
-      hard-codes a TS-side default of `"cmaEsLm"`: when `optimizer` is omitted it
-      passes `undefined` to wasm so the **core** default (`CmaEsTrf`) applies ---
-      same pattern as `loss`, so the TS surface can never silently drift from the
-      core default again. (Behaviour change: callers who relied on the implicit
-      `cmaEsLm` now get `CmaEsTrf`, which the core docs note is strictly
-      non-regressing vs `CmaEsLm`.) The `web/` playground's dropdown allow-list
-      (`web/src/lib/fit.ts`) still offers only the original four --- a UI choice,
-      left as-is.
+      (`cmaEsTrf`, `cmaEsLm`, `levenbergMarquardt`, `trf`, `lbfgs`,
+      `nelderMead`) and `OPTIMIZER_MAP` maps each to its `WasmOptimizer`. The
+      wrapper no longer hard-codes a TS-side default of `"cmaEsLm"`: when
+      `optimizer` is omitted it passes `undefined` to wasm so the **core**
+      default (`CmaEsTrf`) applies --- same pattern as `loss`, so the TS surface
+      can never silently drift from the core default again. (Behaviour change:
+      callers who relied on the implicit `cmaEsLm` now get `CmaEsTrf`, which the
+      core docs note is strictly non-regressing vs `CmaEsLm`.) The `web/`
+      playground's dropdown allow-list (`web/src/lib/fit.ts`) still offers only
+      the original four --- a UI choice, left as-is.
 
 - [ ] **`complement` naming**. It's an area/size, not a boolean, but reads like
       a flag in `EulerOptions`/`VennOptions` (`ts/index.ts`) and on
@@ -154,20 +153,6 @@ release), **P1** (strongly recommended; cross-layer consistency), and **P2**
 - [ ] **`Square::bounds()` / `Rectangle::bounds()` return a bare
       `(f64,f64,f64,f64)` tuple** --- a named struct would be friendlier, but
       tuples are acceptable.
-
-## Test corpus follow-ups
-
-These are deferred items from the fit-quality harness landed alongside this
-file. The corpus lives at `crates/eunoia/src/test_utils/corpus.rs`; the
-default-suite tests are in `crates/eunoia/src/fitter/corpus_quality.rs` and
-`crates/eunoia/src/fitter/synthetic_groundtruth.rs`.
-
-- [x] **Bench dedupe**: `benches/initial_layout.rs` now imports specs via
-      `corpus::get(...)`. The two issue-#28 helpers reuse the existing
-      `wilkinson_6_set` / `three_inside_fourth` entries; the two unique probes
-      were promoted to corpus entries `three_set_small_overlaps` and
-      `three_set_triple_only`. The bench is now gated on
-      `required-features = ["corpus"]`.
 
 ## Surfaced fitter issues (regressions to investigate)
 
@@ -251,23 +236,6 @@ they're pre-existing behaviour the harness now exposes.
       Circles fit fine (stress consistently `~2e-3`). Worth re-checking after
       any MDS or global-stage redesign.
 
-## Spec representation follow-ups
-
-- [x] **Make `DiagramSpec::inclusive_areas` lazy or drop it**. Done (option 2):
-      `DiagramSpec` now stores only `exclusive_areas`. Build no longer walks the
-      `2^|combo|` subset tree per input combination --- a 30-way intersection
-      that previously expanded to 2³⁰ subsets now builds in microseconds
-      (regression test in
-      `spec/spec_builder.rs::test_build_scales_with_large_kway_intersection`).
-      Public API: `inclusive_areas()` returns `HashMap<...>` by value (was
-      `&HashMap<...>` --- minor breaking change), and `get_inclusive` sums
-      contributing exclusive entries on demand. `preprocess()` computes
-      singleton inclusive areas and pairwise overlaps directly from
-      `exclusive_areas` in `O(Σ |c|²)` total --- the eager full-inclusive map is
-      gone, and `PreprocessedSpec.inclusive_areas` was dropped since nothing
-      outside `spec.rs` consumed it. WASM bindings and the web app use
-      `exclusive_areas()` only and were unaffected.
-
 ## MDS architecture follow-ups
 
 - [ ] **Ellipse MDS still warm-starts as a circle**.
@@ -293,67 +261,6 @@ they're pre-existing behaviour the harness now exposes.
       fits miss because of a wrong rotational basin out of MDS, or (b) we're
       doing the shape-aware-MDS refactor anyway for triangles or another shape
       that can't reasonably warm-start as a circle.
-
-- [x] **Square Venn warm-start** --- see "Square shape follow-ups" below.
-
-## Square shape follow-ups
-
-Deferred from the axis-aligned `Square` PR
-(`crates/eunoia/src/geometry/shapes/square.rs`).
-
-- [x] **Analytical final-stage gradient for `Square`**. Done:
-      `compute_exclusive_regions_with_gradient` overridden in
-      `crates/eunoia/src/geometry/shapes/square.rs`. For each region the n-way
-      intersection rectangle's `dx · dy` decomposes via four binding extrema
-      (`x_min, x_max, y_min, y_max`); each side's contribution goes to the
-      binding shape, with equal split among ties on coincident edges (matches
-      the central-FD subgradient at non-smooth points). Chained through
-      `geometry::diagram::to_exclusive_areas_and_gradients` for IE.
-      Gradient-vs-FD tests cover 1-, 2-, 3-square overlap, disjoint, nested, and
-      a generic no-ties config (tight 1e-7 tolerance).
-
-- [x] **Add `Square` to the corpus and `examples/quality_report`**. Done:
-      `CorpusEntry` carries `fittable_square: Fittable` and
-      `max_diag_error_square: Option<f64>` with a `ceiling_square()` accessor;
-      all 27 entries are populated. Per-spec ceilings were tightened/loosened
-      against observed default-fitter quality (see inline comments).
-      `corpus_quality.rs` adds `corpus_squares_diag_error`.
-      `examples/quality_report` runs the same config sweep across `Square` as a
-      third shape pass and emits it in both the markdown and JSON outputs.
-
-- [x] **WASM bindings for `Square`**. `crates/eunoia-wasm/src/lib.rs` exposes
-      `WasmSquare`, `SquareResult`, `generate_from_spec_square`,
-      `generate_squares_as_polygons`, and `generate_region_polygons_squares`
-      (parallel to the circle/ellipse paths). `PolygonResult` carries an
-      additional `squares` field. The web app surfaces a third "Square" option
-      in `SpecEditor.svelte`; `fit.ts` dispatches to the square-specific WASM
-      entry points and `DiagramSvg.svelte` renders `<rect>` outlines and labels.
-
-- [ ] **Rotated squares / general axis-aligned rectangles**. Axis-aligned
-      `Square` keeps n-way intersections trivially axis-aligned. Rotation breaks
-      that (the n-way intersection becomes a convex polygon), so a rotated
-      variant would lean on `i_overlay` for polygon clipping. Needs a design
-      pass before implementation. Same reasoning applies to general axis-aligned
-      `Rectangle` (currently a bounding-box primitive only, not a
-      `DiagramShape`); promoting it to `DiagramShape` is a separate smaller
-      change.
-
-- [x] **Venn warm-start for `Square`**. Done: `venn_warm_start_params` in
-      `fitter.rs` now dispatches via `TypeId` to a dedicated Square branch that
-      pulls from `VennDiagram::<Square>::new(n)` for n ∈ {2, 3} and scales by
-      the spec's mean side length (`mean(sqrt(area_i))`) so the seed lands at
-      the right area magnitude. n ≥ 4 returns `None` and stays on the random MDS
-      path (no axis-aligned-square Venn exists). `VENN_SEED_MAX_SETS_SQUARE = 3`
-      is the new cap. With the warm-start slot 0 is now seed-independent for
-      Square fits where it applies.
-
-- [x] **Generate Venn diagrams with squares** (broader than the warm-start
-      above). Done: `VennDiagram` is now generic over `S: DiagramShape`
-      (`VennDiagram::<Square>::new(n)` for n ∈ {1, 2, 3}, returning
-      `UnsupportedSetCount` for n ≥ 4). Canonical layouts moved onto each shape
-      via `DiagramShape::canonical_venn_layout`, with the existing ellipse
-      N1..N5 constants colocated in `geometry/shapes/ellipse.rs`. The accessor
-      on `VennDiagram` was renamed `ellipses() → shapes()`.
 
 ## Complement / container follow-ups
 
@@ -447,129 +354,3 @@ didn't require but would tighten the surface.
 - [ ] **Julia bindings**. The core is platform-independent and designed for
       multiple language bindings; Julia is a planned target alongside the
       existing WASM/TS surface. Moved from `AGENTS.md` "Open work" 2026-05-22.
-
-## Documentation
-
-- [x] **Add `/docs/` routes to the existing Svelte site** (alongside rustdoc /
-      tsdoc / `AGENTS.md`). Rustdoc + tsdoc are reference docs; `AGENTS.md` is
-      contributor-internal. There's no narrative that serves end users (R/Python
-      wrappers) or binding authors wiring up downstream packages.
-
-      **Why expand the existing site rather than ship a separate
-      mdbook**: eunoia.bz already has the brand, Tailwind styling,
-      `LandingPage.svelte`, the embedded `/app/`, the `/cite/` page,
-      and one deploy pipeline. A separate mdbook subdomain would
-      duplicate all of that with a different theme. The real win of
-      keeping it in Svelte is **embedded live `<DiagramViewer>`
-      examples** — "here's force-directed vs raycast on the same
-      n=4 spec, drag the label-size slider yourself" — which a
-      static mdbook can't do.
-
-      Stack: render markdown chapters with
-      [`mdsvex`](https://mdsvex.pngwn.io/) (Svelte-native, supports
-      Svelte components inside markdown so live demos drop straight
-      in). Nav generated from a small `web/src/lib/docs/SUMMARY.ts`
-      that mirrors mdbook's `SUMMARY.md` convention.
-
-      Suggested initial route structure (~8 starter pages, most
-      stubbed):
-
-      ```
-      web/src/lib/docs/
-        SUMMARY.ts                   # nav definition
-        introduction.md              # what is eunoia, who is this for
-        quickstart/
-          rust.md
-          javascript.md
-        concepts/
-          fitter-pipeline.md         # MDS init → final stage → normalize → pack
-          shapes.md                  # circle/ellipse/square/rectangle, generic design
-          label-placement.md         # full guide — see below
-          complement.md              # universe / container
-        bindings/
-          wasm-contract.md           # JSON shapes, RegionPolygons::from_map
-          resize-loops.md            # the size→place→measure pattern, in R/JS/Py
-        reference.md                 # links to rustdoc, npm types, AGENTS.md
-      ```
-
-      Routing: a single `/docs/[...slug]/+page.svelte` (or whatever
-      the project's Svelte router uses) that resolves the slug
-      against the markdown tree. Sidebar component reads `SUMMARY.ts`
-      so adding a chapter only touches one nav file. Cross-link from
-      `LandingPage.svelte` ("Docs" button next to the existing
-      "Try it in the browser" / "Source code"). Doc pages can deep-
-      link into `/app/` with URL-param-encoded specs and strategy
-      knobs; the app's existing controls become the interactive
-      sandbox the docs reference.
-
-      Write the **label placement** chapter end-to-end as the first
-      real content — it's the gap downstream consumers (eulerr R
-      bindings, future Python/Julia wrappers) will hit immediately
-      and the API just landed (`place_labels`, `placements_bbox`,
-      `place_labels_to_fixed_point`, polygon-aware `ForceDirected`).
-      Other chapters can stay as one-line "TODO: cover X" stubs until
-      a downstream consumer hits the gap. Cover in the label-placement
-      chapter:
-
-      1. Mental model — predicate (`fit_labels_in_regions`) vs
-         strategy-driven (`place_labels`); raycast vs force-directed.
-      2. Size measurement contract — caller measures in user coords,
-         eunoia has no font/text knowledge; what `(w, h)` means.
-      3. The resize loop — sketched in R, JS, and Python (six lines
-         each), with `placements_bbox` as the canvas-extent helper.
-         Note that native Rust callers can shortcut to
-         `place_labels_to_fixed_point`; FFI callers iterate in their
-         host language.
-      4. Strategy decision tree — when to pick raycast vs
-         force-directed; which params matter (`margin`, `iterations`).
-         **Embed a live `<DiagramViewer>`** showing the same spec
-         under both strategies side-by-side.
-      5. Rendering recipe — `PlacementKind` switch, leader-line
-         drawing for exterior placements (kind ∈
-         {`ExteriorRaycast`, `ExteriorForceDirected`}), complement-
-         region keying (`""`).
-
-      Hosting: same deploy pipeline as the rest of the Svelte site
-      (no new workflow). README should keep its quickstart and add a
-      one-line link to `eunoia.bz/docs/`.
-
-## npm rendering surface
-
-- [x] **Renderer-agnostic SVG *string* serializer for the npm/TS surface**.
-      Done: `ts/svg.ts` → `@jolars/eunoia/svg` (`toSvg`/`svgBody`/`viewBox`/
-      `boundingBox` + `regionPath`/`polygonPath`/`leaderPath`/`mixColors` +
-      palettes), pure & wasm-free (`import type` only, not in `sideEffects`).
-      The web app dog-foods it: `DiagramSvg.svelte` renders via
-      `viewBox()`+`svgBody()` into its own bound `<svg>` (keeps the export
-      toolbar's live-DOM grab), `FitResult` now carries a normalized `Layout`,
-      and `$lib/colors`/`$lib/leader` collapse to the package. Tested via
-      `task test-ts` (`node --test`). Framework components still deferred.
-      `@jolars/eunoia` stops one step short of pixels: `euler`/`venn` return
-      shapes/polygons/regions and `placeLabelsForRegions` returns anchors +
-      bezier leader control points, but every consumer (incl. our own `web/`
-      app) hand-rolls the same glue --- bbox→`viewBox`, polygon-with-holes →
-      path `d` + fill-rule, colour mapping, the label measure loop, leader
-      bezier drawing. Add a pure `toSvg(layout, opts): string` plus path-builder
-      helpers (`regionPath`, `boundingBox`, a default palette).
-
-      ```
-        Constraints that make this the *right* layer (vs. bundling a renderer):
-        - No DOM, no framework, no runtime deps; tree-shakeable so users who
-          only want geometry pay nothing. A **string** (not a DOM/Canvas
-          component) also runs server-side — SSR, static export, resvg/satori
-          → PDF/PNG — which a component can't.
-        - Keep the core fit/geometry package renderer-neutral. This is the
-          eulerr-`plot()` analogue done the JS way; the R `plot()` model
-          (one universal graphics substrate, no bundle cost) doesn't transfer
-          to JS's fragmented SVG/Canvas/WebGL + React/Svelte/Vue landscape.
-        - Defer framework components (`@jolars/eunoia-react` / `-svelte`, …) to
-          separate optional packages, seeded by extracting the agnostic bits
-          already in `web/` (`$lib/colors`, `$lib/leader::leaderPath`, the
-          `polygonPath`/`piecePath` builders in `DiagramSvg.svelte`).
-
-        Prior art in the same domain backs the split: venn.js/d3-venn bundled
-        rendering and aged poorly (locked to D3 versions); UpSet.js separates
-        `@upsetjs/model` from `@upsetjs/react`. Highest-leverage DX win for
-        adoption, and cheap. Surfaced 2026-05-22 while fleshing out the JS
-        quickstart.
-      ```
