@@ -1,9 +1,25 @@
 # Eunoia.jl roadmap
 
-Status: **MVP** (transport-only). This document plans the path to a
-registerable, plotting-capable package on par with the
-[`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and the
+Status: **Phases 1 & 2 complete; Phase 3 (Makie extension) is next.** This
+document plans the path to a registerable, plotting-capable package on par with
+the [`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and the
 eventual split into its own repo (`jolars/Eunoia.jl`).
+
+Progress:
+
+- **Phase 1 — done.** Typed result model (`EulerFit{S}`/`VennFit{S}` under
+  `AbstractEulerFit{S}`, the four shape structs, `Point`, `Container`) in
+  `src/types.jl`; `Base.show` residual table; input parity in `src/parse.jl`
+  (membership-list input, inclusive→fitted reconstruction, `venn` Int/vector/
+  mapping inputs).
+- **Phase 2 — done.** `eunoia-capi` now emits per-region `region_error` and the
+  full `plot_data` bundle (region pieces with outer+holes, region/set anchors,
+  region areas, shape outlines) as `[x, y]` pairs. `EulerFit`/`VennFit` carry
+  `region_error` and a `plot_data::JSON3.Object` field; the `show` table has its
+  `regionError` column. 45 Julia tests + 5 capi tests green.
+- **Phase 3 — next.** The Makie extension reads the `plot_data` field already on
+  every fit; see the Phase 3 section below. `eunoia-py`'s `python/eunoia/_plot.py`
+  is the styling reference.
 
 The Python package is the reference for "full scope." This roadmap closes the
 gap to it, adapted to Julia idioms (typed structs, `Base.show`, a Makie
