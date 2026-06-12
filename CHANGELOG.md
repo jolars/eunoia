@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+This is the first stable release for Eunoia and it includes a number of
+breaking changes (see below). Eunoia uses semantic versioning, so this 1.0.0
+release indicates that the API is now considered stable and future releases
+will follow the semantic versioning rules for backward compatibility. Unless
+there is a major version bump, all changes will be backward compatible with
+this release.
+
 ## [0.18.0](https://github.com/jolars/eunoia/compare/v0.17.0...v0.18.0) (2026-06-03)
 
 ### Features
