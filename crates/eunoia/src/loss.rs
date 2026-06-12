@@ -140,6 +140,23 @@ pub enum LossType {
     ///
     /// [`SmoothDiagError`]: Self::SmoothDiagError
     DiagError,
+    /// Logarithmic sum of absolute errors:
+    /// `Σ|log(1 + fitted) - log(1 + target)| / Σ|log(1 + target)|`.
+    ///
+    /// This is [`SumAbsolute`] applied to `log1p`-transformed areas. The log
+    /// transform compresses dynamic range, so large regions don't dominate
+    /// the fit the way they do under raw `SumSquared`/`SumAbsolute` — useful
+    /// for specs spanning orders of magnitude in size. Matches the default
+    /// objective of `matplotlib-venn`'s `venn3` and
+    /// `matplotlib-set-diagrams`' `"logarithmic"` cost, so eunoia can enter
+    /// a head-to-head benchmark against them on their own loss.
+    ///
+    /// Non-smooth (the `|·|`) — see [`SmoothLogSumAbsolute`] for the
+    /// gradient-friendly surrogate.
+    ///
+    /// [`SumAbsolute`]: Self::SumAbsolute
+    /// [`SmoothLogSumAbsolute`]: Self::SmoothLogSumAbsolute
+    LogSumAbsolute,
     /// Smooth surrogate of [`SumAbsolute`]:
     /// `Σ smooth_abs(f - t, ε) / Σ|target|`.
     ///
@@ -186,6 +203,16 @@ pub enum LossType {
     SmoothDiagError {
         /// Huber/logsumexp smoothing parameter; converges to true
         /// `DiagError` as `eps → 0`.
+        eps: f64,
+    },
+    /// Smooth surrogate of [`LogSumAbsolute`]:
+    /// `Σ smooth_abs(log(1 + f) - log(1 + t), ε) / Σ|log(1 + t)|`.
+    ///
+    /// [`LogSumAbsolute`]: Self::LogSumAbsolute
+    SmoothLogSumAbsolute {
+        /// Huber smoothing parameter; converges to true `LogSumAbsolute` as
+        /// `eps → 0`. The residuals are differences of `log1p` areas, so
+        /// pick `eps` ~1% of typical `log1p`-residual magnitude.
         eps: f64,
     },
 }
@@ -256,6 +283,12 @@ impl LossType {
         Self::DiagError
     }
 
+    /// Logarithmic sum of absolute errors. Convenience for
+    /// [`LossType::LogSumAbsolute`].
+    pub fn log_sum_absolute() -> Self {
+        Self::LogSumAbsolute
+    }
+
     /// Smooth surrogate of [`SumAbsolute`]. Converges to it as `eps → 0`.
     ///
     /// [`SumAbsolute`]: Self::SumAbsolute
@@ -290,6 +323,13 @@ impl LossType {
     /// [`DiagError`]: Self::DiagError
     pub fn smooth_diag_error(eps: f64) -> Self {
         Self::SmoothDiagError { eps }
+    }
+
+    /// Smooth surrogate of [`LogSumAbsolute`]. Converges to it as `eps → 0`.
+    ///
+    /// [`LogSumAbsolute`]: Self::LogSumAbsolute
+    pub fn smooth_log_sum_absolute(eps: f64) -> Self {
+        Self::SmoothLogSumAbsolute { eps }
     }
 
     /// Whether this loss is smooth (continuously differentiable) in the
@@ -330,12 +370,14 @@ impl LossType {
             | LossType::SmoothSumAbsoluteRegionError { .. }
             | LossType::SmoothMaxAbsolute { .. }
             | LossType::SmoothMaxSquared { .. }
-            | LossType::SmoothDiagError { .. } => true,
+            | LossType::SmoothDiagError { .. }
+            | LossType::SmoothLogSumAbsolute { .. } => true,
             LossType::SumAbsolute
             | LossType::SumAbsoluteRegionError
             | LossType::MaxAbsolute
             | LossType::MaxSquared
-            | LossType::DiagError => false,
+            | LossType::DiagError
+            | LossType::LogSumAbsolute => false,
         }
     }
 
@@ -593,6 +635,39 @@ impl LossType {
                     })
                     .collect();
                 smooth_max(&smoothed_abs, eps)
+            }
+            LossType::LogSumAbsolute => {
+                // SumAbsolute on log1p-transformed areas:
+                // Σ|log(1+f) − log(1+t)| / Σ|log(1+t)|.
+                let sum_abs_lt: f64 = target.values().map(|v| v.ln_1p().abs()).sum();
+                if sum_abs_lt < 1e-20 {
+                    return 0.0;
+                }
+                let sum_abs: f64 = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        (f.ln_1p() - t.ln_1p()).abs()
+                    })
+                    .sum();
+                sum_abs / sum_abs_lt
+            }
+            LossType::SmoothLogSumAbsolute { eps } => {
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let sum_abs_lt: f64 = target.values().map(|v| v.ln_1p().abs()).sum();
+                if sum_abs_lt < 1e-20 {
+                    return 0.0;
+                }
+                let sum_abs: f64 = all_masks
+                    .iter()
+                    .map(|&mask| {
+                        let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                        let t = target.get(&mask).copied().unwrap_or(0.0);
+                        smooth_abs(f.ln_1p() - t.ln_1p(), eps)
+                    })
+                    .sum();
+                sum_abs / sum_abs_lt
             }
         }
     }
@@ -860,9 +935,31 @@ impl LossType {
                 }
                 Some((loss, grad))
             }
+            LossType::SmoothLogSumAbsolute { eps } => {
+                // L = Σ smooth_abs(uₘ, ε) / Σ|log(1+t)|, uₘ = log(1+fₘ) − log(1+tₘ).
+                // ∂L/∂fₘ = [uₘ / √(uₘ² + ε²)] · 1/(1+fₘ) / Σ|log(1+t)|;
+                // the 1/(1+fₘ) is the chain-rule factor d log(1+fₘ)/dfₘ.
+                let eps = eps.max(f64::MIN_POSITIVE);
+                let sum_abs_lt: f64 = target.values().map(|v| v.ln_1p().abs()).sum();
+                if sum_abs_lt < 1e-20 {
+                    return Some((0.0, HashMap::new()));
+                }
+                let mut loss = 0.0;
+                let mut grad: HashMap<RegionMask, f64> = HashMap::with_capacity(all_masks.len());
+                for &mask in &all_masks {
+                    let f = fitted.get(&mask).copied().unwrap_or(0.0);
+                    let t = target.get(&mask).copied().unwrap_or(0.0);
+                    let u = f.ln_1p() - t.ln_1p();
+                    let denom = (u * u + eps * eps).sqrt();
+                    loss += denom - eps;
+                    grad.insert(mask, u / (denom * (1.0 + f) * sum_abs_lt));
+                }
+                Some((loss / sum_abs_lt, grad))
+            }
             // Non-smooth variants (`SumAbsolute`, `SumAbsoluteRegionError`,
-            // `MaxAbsolute`, `MaxSquared`, `DiagError`) deliberately fall
-            // back to FD here. Their gradients are zero almost everywhere
+            // `MaxAbsolute`, `MaxSquared`, `DiagError`, `LogSumAbsolute`)
+            // deliberately fall back to FD here. Their gradients are zero
+            // almost everywhere
             // or discontinuous at every zero crossing, so a subgradient
             // would mislead L-BFGS more than help it. Use the matching
             // `Smooth*` variant if you want the analytic path.
@@ -1057,6 +1154,8 @@ mod tests {
         assert!(!LossType::MaxAbsolute.is_smooth());
         assert!(!LossType::MaxSquared.is_smooth());
         assert!(!LossType::DiagError.is_smooth());
+        assert!(!LossType::LogSumAbsolute.is_smooth());
+        assert!(LossType::smooth_log_sum_absolute(1e-3).is_smooth());
     }
 
     #[test]
@@ -1109,6 +1208,10 @@ mod tests {
                 LossType::smooth_sum_absolute_region_error(1e-9),
             ),
             (LossType::DiagError, LossType::smooth_diag_error(1e-9)),
+            (
+                LossType::LogSumAbsolute,
+                LossType::smooth_log_sum_absolute(1e-9),
+            ),
         ];
 
         for &(true_loss, smooth_loss) in pairs {
@@ -1128,6 +1231,95 @@ mod tests {
         assert!(LossType::smooth_max_absolute(1e-3).is_smooth());
         assert!(LossType::smooth_max_squared(1e-3).is_smooth());
         assert!(LossType::smooth_diag_error(1e-3).is_smooth());
+        assert!(LossType::smooth_log_sum_absolute(1e-3).is_smooth());
+    }
+
+    #[test]
+    fn test_log_sum_absolute() {
+        let loss = LossType::log_sum_absolute();
+
+        let mut fitted = HashMap::new();
+        fitted.insert(0b001, 10.0);
+        fitted.insert(0b010, 20.0);
+        fitted.insert(0b100, 30.0);
+
+        let mut target = HashMap::new();
+        target.insert(0b001, 8.0);
+        target.insert(0b010, 25.0);
+        target.insert(0b100, 28.0);
+
+        // Σ|ln(1+f) − ln(1+t)| / Σ ln(1+t).
+        let l1p = |x: f64| x.ln_1p();
+        let num = (l1p(10.0) - l1p(8.0)).abs()
+            + (l1p(20.0) - l1p(25.0)).abs()
+            + (l1p(30.0) - l1p(28.0)).abs();
+        let den = l1p(8.0) + l1p(25.0) + l1p(28.0);
+        assert!((loss.compute(&fitted, &target) - num / den).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_log_sum_absolute_zero_at_match() {
+        // f == t everywhere ⇒ loss is exactly 0 (both raw and smooth).
+        let mut areas = HashMap::new();
+        areas.insert(0b001, 10.0);
+        areas.insert(0b010, 25.0);
+        areas.insert(0b100, 3.0);
+
+        assert_eq!(LossType::log_sum_absolute().compute(&areas, &areas), 0.0);
+        // smooth_abs(0, ε) = 0, so the surrogate also vanishes at the match.
+        assert_eq!(
+            LossType::smooth_log_sum_absolute(1e-3).compute(&areas, &areas),
+            0.0
+        );
+    }
+
+    #[test]
+    fn test_log_sum_absolute_monotone_in_residual() {
+        // Larger deviation from target ⇒ larger loss.
+        let loss = LossType::log_sum_absolute();
+        let mut target = HashMap::new();
+        target.insert(0b001, 10.0);
+        target.insert(0b010, 20.0);
+
+        let mut near = HashMap::new();
+        near.insert(0b001, 12.0);
+        near.insert(0b010, 20.0);
+
+        let mut far = HashMap::new();
+        far.insert(0b001, 40.0);
+        far.insert(0b010, 20.0);
+
+        assert!(loss.compute(&near, &target) < loss.compute(&far, &target));
+    }
+
+    #[test]
+    fn test_log_sum_absolute_compresses_dynamic_range() {
+        // The log transform downweights a large-region miss relative to raw
+        // SumAbsolute: a fixed absolute error on a big region costs less under
+        // the log loss than the same error on a small region, unlike
+        // SumAbsolute which is blind to the region's magnitude.
+        let mut target = HashMap::new();
+        target.insert(0b001, 5.0); // small region
+        target.insert(0b010, 1000.0); // large region
+
+        // Miss the small region by 5.
+        let mut miss_small = target.clone();
+        miss_small.insert(0b001, 10.0);
+        // Miss the large region by the same absolute amount.
+        let mut miss_large = target.clone();
+        miss_large.insert(0b010, 1005.0);
+
+        let log = LossType::log_sum_absolute();
+        let abs = LossType::sum_absolute();
+
+        // SumAbsolute: identical absolute error ⇒ identical numerator; the two
+        // misses differ only through the (shared) per-spec normaliser, so the
+        // losses are equal.
+        assert!(
+            (abs.compute(&miss_small, &target) - abs.compute(&miss_large, &target)).abs() < 1e-12
+        );
+        // LogSumAbsolute: the large-region miss costs strictly less.
+        assert!(log.compute(&miss_large, &target) < log.compute(&miss_small, &target));
     }
 
     /// Build the synthetic 4-region (f, t) input used by every analytic-vs-FD
@@ -1238,6 +1430,13 @@ mod tests {
     }
 
     #[test]
+    fn test_grad_smooth_log_sum_absolute_matches_fd() {
+        // Residuals are differences of log1p areas (~O(0.1) on the fixture),
+        // so ε ≈ 1% of that keeps the surrogate in the smooth regime.
+        assert_loss_grad_matches_fd(LossType::smooth_log_sum_absolute(1e-3), 1e-6, 1e-4);
+    }
+
+    #[test]
     fn test_grad_degenerate_inputs() {
         // Empty target: every smooth loss reports (0.0, empty) — gradient is
         // either undefined or a stationary subgradient at 0.
@@ -1256,6 +1455,7 @@ mod tests {
             LossType::smooth_max_absolute(1e-3),
             LossType::smooth_max_squared(1e-3),
             LossType::smooth_diag_error(1e-3),
+            LossType::smooth_log_sum_absolute(1e-3),
         ];
         for loss in smooth_losses {
             let (l, g) = loss
@@ -1272,6 +1472,7 @@ mod tests {
             LossType::MaxAbsolute,
             LossType::MaxSquared,
             LossType::DiagError,
+            LossType::LogSumAbsolute,
         ];
         for loss in non_smooth {
             assert!(

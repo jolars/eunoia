@@ -425,6 +425,8 @@ mod quality_report {
             LossType::SmoothMaxAbsolute { .. } => "SmoothMaxAbsolute",
             LossType::SmoothMaxSquared { .. } => "SmoothMaxSquared",
             LossType::SmoothDiagError { .. } => "SmoothDiagError",
+            LossType::LogSumAbsolute => "LogSumAbsolute",
+            LossType::SmoothLogSumAbsolute { .. } => "SmoothLogSumAbsolute",
             _ => "Unknown",
         }
     }
