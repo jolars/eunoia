@@ -155,32 +155,50 @@ function _build_container(resp)
                      Float64(c.width), Float64(c.height))
 end
 
-"""Shared field assembly for both fit kinds: shapes (narrowed to a concrete
-`Vector{S}`), the three area dicts, and the scalar metrics. Returns the shape
-type `S` and a tuple of constructor arguments."""
-function _fit_fields(resp)
+"""Build the fitted shapes, narrowed to a concrete `Vector{S}` (falling back to
+`AbstractShape` when there are none). Returns the shape type `S` and the vector."""
+function _build_shapes(resp)
     raw = [_build_shape(s) for s in resp.shapes]
     S = isempty(raw) ? AbstractShape : typeof(raw[1])
     shapes = S === AbstractShape ? raw : Vector{S}(raw)
-    m = resp.metrics
-    original = _area_dict(m.target_areas)
-    fitted = _area_dict(m.fitted_areas)
+    return S, shapes
+end
+
+"""Assemble an [`EulerFit`](@ref) from a native response and the user's input.
+
+`original_values` are kept in the user's scale (exclusive *or* inclusive). The
+fitted areas from the native library are always exclusive, so for inclusive
+input they are reconstructed via [`to_inclusive`](@ref) before computing
+residuals — mirroring `eunoia-py`'s `_finish`."""
+function _finish_euler(resp, original_values::Dict{String,Float64},
+                       canonical_keys::Vector{String}, input_type::AbstractString)
+    S, shapes = _build_shapes(resp)
+    fitted_exclusive = _area_dict(resp.metrics.fitted_areas)
+    fitted_values = if input_type == "inclusive"
+        to_inclusive(fitted_exclusive, canonical_keys)
+    else
+        Dict{String,Float64}(
+            ck => get(fitted_exclusive, ck, 0.0) for ck in canonical_keys)
+    end
     residuals = Dict{String,Float64}(
-        k => original[k] - get(fitted, k, 0.0) for k in keys(original))
-    args = (shapes, original, fitted, residuals,
-            Float64(m.diag_error), Float64(m.stress), Float64(m.loss),
-            Int(m.iterations), _build_container(resp))
-    return S, args
+        ck => original_values[ck] - get(fitted_values, ck, 0.0)
+        for ck in canonical_keys)
+    m = resp.metrics
+    return EulerFit{S}(shapes, original_values, fitted_values, residuals,
+                       Float64(m.diag_error), Float64(m.stress), Float64(m.loss),
+                       Int(m.iterations), _build_container(resp))
 end
 
-function _build_eulerfit(resp)
-    S, args = _fit_fields(resp)
-    return EulerFit{S}(args...)
-end
-
+"""Assemble a [`VennFit`](@ref). The layout is topological, so `fitted_values`
+holds each region's geometric area and `original_values`/`residuals` are empty."""
 function _build_vennfit(resp)
-    S, args = _fit_fields(resp)
-    return VennFit{S}(args...)
+    S, shapes = _build_shapes(resp)
+    fitted = _area_dict(resp.metrics.fitted_areas)
+    m = resp.metrics
+    return VennFit{S}(shapes, Dict{String,Float64}(), fitted,
+                      Dict{String,Float64}(),
+                      Float64(m.diag_error), Float64(m.stress), Float64(m.loss),
+                      Int(m.iterations), _build_container(resp))
 end
 
 # ---------------------------------------------------------------------------

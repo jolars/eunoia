@@ -51,6 +51,47 @@ using Eunoia
         @test fit.shapes[1] isa Ellipse
     end
 
+    @testset "membership-list input" begin
+        # x→{A}, y→{A,B}, z→{A,B}, w→{B}
+        fit = euler(Dict("A" => ["x", "y", "z"], "B" => ["y", "z", "w"]); seed=1)
+        @test fit isa EulerFit
+        @test length(fit.shapes) == 2
+        @test fit.original_values["A"] == 1.0
+        @test fit.original_values["B"] == 1.0
+        @test fit.original_values["A&B"] == 2.0
+    end
+
+    @testset "inclusive input reconstruction" begin
+        fit = euler(Dict("A" => 13.0, "B" => 8.0, "A&B" => 3.0);
+                    input_type="inclusive", seed=1)
+        # original_values stay in the user's (inclusive) scale
+        @test fit.original_values["A"] == 13.0
+        @test fit.original_values["A&B"] == 3.0
+        # a 2-set circle case fits exactly, so fitted ≈ original in that scale
+        @test isapprox(fit.fitted_values["A"], 13.0; atol=1e-6)
+        @test isapprox(fit.fitted_values["B"], 8.0; atol=1e-6)
+        @test isapprox(fit.fitted_values["A&B"], 3.0; atol=1e-6)
+    end
+
+    @testset "venn input forms" begin
+        by_int = venn(3; shape="ellipse")
+        @test [s.set for s in by_int.shapes] == ["A", "B", "C"]
+
+        by_map = venn(Dict("A&B" => 1.0, "C" => 1.0); shape="ellipse")
+        @test Set(s.set for s in by_map.shapes) == Set(["A", "B", "C"])
+    end
+
+    @testset "input errors" begin
+        # membership + inclusive is contradictory
+        @test_throws ErrorException euler(
+            Dict("A" => ["x"], "B" => ["y"]); input_type="inclusive")
+        # mixed membership/area values are ambiguous
+        @test_throws ErrorException euler(Dict("A" => ["x"], "B" => 2.0))
+        # venn rejects a bare string and a Bool
+        @test_throws ArgumentError venn("ABC")
+        @test_throws ArgumentError venn(true)
+    end
+
     @testset "show" begin
         fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
         str = sprint(show, MIME("text/plain"), fit)
