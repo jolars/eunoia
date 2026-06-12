@@ -92,14 +92,24 @@ using Eunoia
         @test_throws ArgumentError venn(true)
     end
 
+    @testset "region_error and plot_data" begin
+        fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
+        @test haskey(fit.region_error, "A&B")
+        @test fit.region_error["A&B"] >= 0
+        # plot_data carries renderable geometry for plotting
+        @test haskey(fit.plot_data, :region_pieces)
+        @test haskey(fit.plot_data.region_pieces, Symbol("A&B"))
+        @test haskey(fit.plot_data, :shape_outlines)
+        @test haskey(fit.plot_data, :set_anchors)
+    end
+
     @testset "show" begin
         fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
         str = sprint(show, MIME("text/plain"), fit)
         @test occursin("EulerFit", str)
         @test occursin("original", str)
         @test occursin("fitted", str)
-        # regionError column is omitted until the native lib emits it
-        @test !occursin("regionError", str)
+        @test occursin("regionError", str)
 
         vstr = sprint(show, MIME("text/plain"), venn(["A", "B", "C"]))
         @test occursin("VennFit", vstr)

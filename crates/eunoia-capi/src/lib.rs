@@ -31,8 +31,11 @@
 //!
 //! # Response envelope
 //!
-//! Success: `{"ok": true, "shape": ..., "shapes": [...], "metrics": {...}}`.
-//! Failure: `{"ok": false, "error": "<message>"}`. Callers branch on `ok`.
+//! Success: `{"ok": true, "shape": ..., "shapes": [...], "metrics": {...},
+//! "plot_data": {...}}`. The `plot_data` bundle (region pieces, region/set
+//! anchors, region areas, shape outlines) mirrors the PyO3 binding so the Julia
+//! side can render diagrams. Failure: `{"ok": false, "error": "<message>"}`.
+//! Callers branch on `ok`.
 
 // Mirrors the WASM crate: the shape constructors panic on bad input, so the
 // `disallowed-methods` clippy.toml forbids them here. `try_new` is the FFI-safe
@@ -46,9 +49,9 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use eunoia::geometry::primitives::Point;
-use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
+use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, Square};
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
-use eunoia::plotting::PlotOptions;
+use eunoia::plotting::{PlotData, PlotOptions};
 use eunoia::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
 use eunoia::{Fitter, Layout, VennDiagram};
 
@@ -161,8 +164,30 @@ struct Metrics {
     stress: f64,
     diag_error: f64,
     iterations: usize,
+    /// Per-region error keyed by combination string (always exclusive form).
+    region_error: BTreeMap<String, f64>,
     target_areas: BTreeMap<String, f64>,
     fitted_areas: BTreeMap<String, f64>,
+}
+
+/// One connected component of a region: a CCW outer ring and any CW hole rings.
+/// Vertices are `[x, y]` pairs. Mirrors [`eunoia::plotting::RegionPiece`].
+#[derive(Serialize)]
+struct RegionPieceOut {
+    outer: Vec<[f64; 2]>,
+    holes: Vec<Vec<[f64; 2]>>,
+}
+
+/// Renderable geometry for a fitted layout, mirroring the PyO3 binding's
+/// `plot_data` bundle. All coordinates are `[x, y]` pairs. Region keys are
+/// canonical combination strings; set keys are set names.
+#[derive(Serialize)]
+struct PlotDataOut {
+    region_pieces: BTreeMap<String, Vec<RegionPieceOut>>,
+    region_anchors: BTreeMap<String, [f64; 2]>,
+    region_areas: BTreeMap<String, f64>,
+    set_anchors: BTreeMap<String, [f64; 2]>,
+    shape_outlines: BTreeMap<String, Vec<[f64; 2]>>,
 }
 
 #[derive(Serialize)]
@@ -170,6 +195,7 @@ struct LayoutOut {
     shape: String,
     shapes: Vec<ShapeOut>,
     metrics: Metrics,
+    plot_data: PlotDataOut,
     #[serde(skip_serializing_if = "Option::is_none")]
     container: Option<ContainerOut>,
 }
@@ -251,15 +277,63 @@ impl ToShapeOut for Rectangle {
 // Core extraction (generic over shape)
 // ============================================================================
 
-/// Pull the fitted shapes, label anchors, metrics, and optional container out
-/// of a `Layout` into the serializable `LayoutOut`. Shared by `euler` and
-/// `venn`.
+fn poly_to_vec(poly: &Polygon) -> Vec<[f64; 2]> {
+    poly.vertices().iter().map(|v| [v.x(), v.y()]).collect()
+}
+
+/// Serialize the renderable geometry of a `PlotData` into `PlotDataOut`. Sorted
+/// containers (`iter_sorted`, `BTreeMap`) give deterministic JSON.
+fn build_plot_data(plot: &PlotData) -> PlotDataOut {
+    let region_pieces = plot
+        .regions
+        .iter_sorted()
+        .map(|(combo, pieces)| {
+            let out = pieces
+                .iter()
+                .map(|p| RegionPieceOut {
+                    outer: poly_to_vec(&p.outer),
+                    holes: p.holes.iter().map(poly_to_vec).collect(),
+                })
+                .collect();
+            (combo.to_string(), out)
+        })
+        .collect();
+
+    PlotDataOut {
+        region_pieces,
+        region_anchors: plot
+            .region_anchors
+            .iter()
+            .map(|(k, p)| (k.clone(), [p.x(), p.y()]))
+            .collect(),
+        region_areas: plot
+            .region_areas
+            .iter()
+            .map(|(k, &a)| (k.clone(), a))
+            .collect(),
+        set_anchors: plot
+            .set_anchors
+            .iter()
+            .map(|(k, p)| (k.clone(), [p.x(), p.y()]))
+            .collect(),
+        shape_outlines: plot
+            .shape_outlines
+            .iter()
+            .map(|(k, poly)| (k.clone(), poly_to_vec(poly)))
+            .collect(),
+    }
+}
+
+/// Pull the fitted shapes, label anchors, metrics, plot data, and optional
+/// container out of a `Layout` into the serializable `LayoutOut`. Shared by
+/// `euler` and `venn`.
 fn extract<S>(layout: &Layout<S>, spec: &DiagramSpec, shape: &str) -> LayoutOut
 where
     S: DiagramShape + Polygonize + ToShapeOut + Copy + 'static,
 {
     // Per-set label anchors (pole of inaccessibility of `shape \ ⋃ others`).
     let plot = layout.plot_data(spec, PlotOptions::default());
+    let plot_data = build_plot_data(&plot);
     let anchors: HashMap<String, Point> = plot.set_anchors.into_iter().collect();
 
     let shapes = spec
@@ -283,6 +357,11 @@ where
         .iter()
         .map(|(combo, &area)| (combo.to_string(), area))
         .collect();
+    let region_error = layout
+        .region_error()
+        .into_iter()
+        .map(|(combo, error)| (combo.to_string(), error))
+        .collect();
 
     let container = layout.container().map(|r| {
         let c = r.center();
@@ -302,9 +381,11 @@ where
             stress: layout.stress(),
             diag_error: layout.diag_error(),
             iterations: layout.iterations(),
+            region_error,
             target_areas,
             fitted_areas,
         },
+        plot_data,
         container,
     }
 }
@@ -528,6 +609,20 @@ mod tests {
         assert_eq!(v["shapes"].as_array().unwrap().len(), 2);
         assert_eq!(v["shapes"][0]["type"], "circle");
         assert!(v["metrics"]["loss"].as_f64().unwrap() >= 0.0);
+
+        // Per-region error is keyed by combination string.
+        assert!(v["metrics"]["region_error"]["A&B"].is_number());
+
+        // plot_data carries renderable geometry, all `[x, y]` pairs.
+        let plot = &v["plot_data"];
+        assert!(plot["region_pieces"]["A&B"].is_array());
+        let outer = &plot["region_pieces"]["A&B"][0]["outer"];
+        assert!(outer.is_array() && !outer.as_array().unwrap().is_empty());
+        assert_eq!(outer[0].as_array().unwrap().len(), 2);
+        assert!(plot["region_anchors"]["A&B"].is_array());
+        assert!(plot["region_areas"]["A&B"].is_number());
+        assert_eq!(plot["set_anchors"]["A"].as_array().unwrap().len(), 2);
+        assert!(plot["shape_outlines"]["A"].is_array());
     }
 
     #[test]

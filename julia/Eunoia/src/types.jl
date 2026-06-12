@@ -73,6 +73,7 @@ Fields:
   combination string, e.g. `"A&B"`).
 - `fitted_values`: the fitted exclusive area per region.
 - `residuals`: `original_values − fitted_values` per region.
+- `region_error`: per-region error (always in exclusive form).
 - `diag_error`: eulerAPE-style worst-case region error.
 - `stress`: venneuler-style stress metric.
 - `loss`: final value of the optimizer's objective.
@@ -80,19 +81,21 @@ Fields:
 - `container`: the fitted universe box when fit with a `complement`, else
   `nothing`.
 
-Per-region `region_error` is not yet surfaced (it awaits a native-side
-addition); only the scalar `diag_error` is available.
+The `plot_data` field holds the native renderable geometry (region polygons and
+label anchors); it backs plotting and is not part of the stable public API.
 """
 struct EulerFit{S} <: AbstractEulerFit{S}
     shapes::Vector{S}
     original_values::Dict{String,Float64}
     fitted_values::Dict{String,Float64}
     residuals::Dict{String,Float64}
+    region_error::Dict{String,Float64}
     diag_error::Float64
     stress::Float64
     loss::Float64
     iterations::Int
     container::Union{Container,Nothing}
+    plot_data::JSON3.Object
 end
 
 """
@@ -109,11 +112,13 @@ struct VennFit{S} <: AbstractEulerFit{S}
     original_values::Dict{String,Float64}
     fitted_values::Dict{String,Float64}
     residuals::Dict{String,Float64}
+    region_error::Dict{String,Float64}
     diag_error::Float64
     stress::Float64
     loss::Float64
     iterations::Int
     container::Union{Container,Nothing}
+    plot_data::JSON3.Object
 end
 
 # ---------------------------------------------------------------------------
@@ -185,8 +190,9 @@ function _finish_euler(resp, original_values::Dict{String,Float64},
         for ck in canonical_keys)
     m = resp.metrics
     return EulerFit{S}(shapes, original_values, fitted_values, residuals,
+                       _area_dict(m.region_error),
                        Float64(m.diag_error), Float64(m.stress), Float64(m.loss),
-                       Int(m.iterations), _build_container(resp))
+                       Int(m.iterations), _build_container(resp), resp.plot_data)
 end
 
 """Assemble a [`VennFit`](@ref). The layout is topological, so `fitted_values`
@@ -195,10 +201,10 @@ function _build_vennfit(resp)
     S, shapes = _build_shapes(resp)
     fitted = _area_dict(resp.metrics.fitted_areas)
     m = resp.metrics
-    return VennFit{S}(shapes, Dict{String,Float64}(), fitted,
-                      Dict{String,Float64}(),
+    empty = Dict{String,Float64}()
+    return VennFit{S}(shapes, empty, fitted, empty, empty,
                       Float64(m.diag_error), Float64(m.stress), Float64(m.loss),
-                      Int(m.iterations), _build_container(resp))
+                      Int(m.iterations), _build_container(resp), resp.plot_data)
 end
 
 # ---------------------------------------------------------------------------
@@ -218,10 +224,8 @@ function Base.show(io::IO, ::MIME"text/plain", fit::EulerFit{S}) where {S}
 
     label_w = maximum(length, labels)
     col_w = 12
-    # `region_error` column omitted: the native library does not yet emit a
-    # per-region error map (only the scalar `diag_error`).
     print(io, "\n  ", " "^label_w)
-    for c in ("original", "fitted", "residual")
+    for c in ("original", "fitted", "residual", "regionError")
         print(io, lpad(c, col_w))
     end
     for k in labels
@@ -229,6 +233,7 @@ function Base.show(io::IO, ::MIME"text/plain", fit::EulerFit{S}) where {S}
         print(io, lpad(@sprintf("%.4g", fit.original_values[k]), col_w))
         print(io, lpad(@sprintf("%.4g", fit.fitted_values[k]), col_w))
         print(io, lpad(@sprintf("%.4g", fit.residuals[k]), col_w))
+        print(io, lpad(@sprintf("%.4g", get(fit.region_error, k, 0.0)), col_w))
     end
 end
 
