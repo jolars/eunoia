@@ -29,8 +29,12 @@ import Artifacts
 import Libdl
 import Pkg
 using JSON3
+using Printf
 
 export euler, venn, version
+export EulerFit, VennFit, Circle, Ellipse, Square, Rectangle, Point, Container
+
+include("types.jl")
 
 # Resolved symbol pointers, filled in `__init__`.
 const _HANDLE = Ref{Ptr{Cvoid}}(C_NULL)
@@ -126,8 +130,10 @@ Keyword arguments:
   fitting); `nothing` to disable.
 - `seed`: RNG seed for reproducible restarts; `nothing` for default.
 
-Returns the parsed JSON layout (a `JSON3.Object`) with fields `shape`,
-`shapes`, `metrics`, and—if a `complement` was given—`container`.
+Returns an [`EulerFit`](@ref) carrying the fitted `shapes`, the
+`original_values`/`fitted_values`/`residuals` per region, the scalar fit
+metrics, and—if a `complement` was given—a `container`. Per-region
+`region_error` is not yet surfaced (only the scalar `diag_error`).
 """
 function euler(sets::AbstractDict; shape::AbstractString="circle",
                input_type::AbstractString="exclusive",
@@ -141,7 +147,7 @@ function euler(sets::AbstractDict; shape::AbstractString="circle",
     )
     complement === nothing || (payload["complement"] = float(complement))
     seed === nothing || (payload["seed"] = UInt64(seed))
-    return _run(_euler[], payload)
+    return _build_eulerfit(_run(_euler[], payload))
 end
 
 """
@@ -155,11 +161,13 @@ selects the arrangement; `shape` is `"circle"` (n ≤ 3), `"ellipse"` (n ≤ 5),
 venn(["A", "B", "C"]; shape="ellipse")
 ```
 
-Returns the parsed JSON layout (a `JSON3.Object`).
+Returns a [`VennFit`](@ref): the same structure as [`EulerFit`](@ref), but the
+layout is topological, so `fitted_values` holds each region's geometric area and
+`original_values` is empty.
 """
 function venn(names::AbstractVector; shape::AbstractString="circle")
     payload = Dict("names" => collect(String, names), "shape" => shape)
-    return _run(_venn[], payload)
+    return _build_vennfit(_run(_venn[], payload))
 end
 
 """

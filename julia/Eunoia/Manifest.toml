@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "2eaa1d9f6047827593e63fb0e8c55e038d14e0d2"
+project_hash = "054a21080b619d6980ef13afff1d4fc1c3bcc6eb"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -32,7 +32,7 @@ uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 version = "1.7.0"
 
 [[deps.Eunoia]]
-deps = ["Artifacts", "JSON3", "Libdl", "Pkg"]
+deps = ["Artifacts", "JSON3", "Libdl", "Pkg", "Printf"]
 path = "."
 uuid = "7d9f3c1e-5a2b-4c6d-9e8f-1a2b3c4d5e6f"
 version = "0.18.0"

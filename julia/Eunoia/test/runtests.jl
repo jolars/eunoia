@@ -21,28 +21,47 @@ using Eunoia
     end
 
     @testset "euler circles" begin
-        layout = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
-        @test layout.shape == "circle"
-        @test length(layout.shapes) == 2
-        @test layout.shapes[1].type == "circle"
-        @test layout.shapes[1].radius > 0
-        @test layout.metrics.loss >= 0
+        fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
+        @test fit isa EulerFit
+        @test length(fit.shapes) == 2
+        @test fit.shapes[1] isa Circle
+        @test fit.shapes[1].radius > 0
+        @test fit.loss >= 0
         # every shape carries a label anchor for label placement
-        @test haskey(layout.shapes[1], :label_anchor)
+        @test fit.shapes[1].label_anchor isa Point
+        @test haskey(fit.original_values, "A")
+        @test haskey(fit.fitted_values, "A")
+        @test fit.residuals["A&B"] ≈
+              fit.original_values["A&B"] - fit.fitted_values["A&B"]
+        @test fit.container === nothing
     end
 
     @testset "euler ellipses with complement" begin
-        layout = euler(Dict("A" => 4.0, "B" => 2.0, "A&B" => 1.0);
-                       shape="ellipse", complement=3.0, seed=2)
-        @test layout.shape == "ellipse"
-        @test layout.shapes[1].type == "ellipse"
-        @test haskey(layout, :container)
+        fit = euler(Dict("A" => 4.0, "B" => 2.0, "A&B" => 1.0);
+                    shape="ellipse", complement=3.0, seed=2)
+        @test fit.shapes[1] isa Ellipse
+        @test fit.container isa Container
+        @test fit.container.width > 0
     end
 
     @testset "venn ellipses" begin
-        layout = venn(["A", "B", "C"]; shape="ellipse")
-        @test length(layout.shapes) == 3
-        @test layout.shapes[1].type == "ellipse"
+        fit = venn(["A", "B", "C"]; shape="ellipse")
+        @test fit isa VennFit
+        @test length(fit.shapes) == 3
+        @test fit.shapes[1] isa Ellipse
+    end
+
+    @testset "show" begin
+        fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
+        str = sprint(show, MIME("text/plain"), fit)
+        @test occursin("EulerFit", str)
+        @test occursin("original", str)
+        @test occursin("fitted", str)
+        # regionError column is omitted until the native lib emits it
+        @test !occursin("regionError", str)
+
+        vstr = sprint(show, MIME("text/plain"), venn(["A", "B", "C"]))
+        @test occursin("VennFit", vstr)
     end
 
     @testset "errors surface, don't crash" begin
