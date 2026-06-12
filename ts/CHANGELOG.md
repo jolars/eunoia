@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.18.0...eunoia-npm-v1.0.0) (2026-06-12)
+
+### Breaking changes
+- replace default optimizer and add all variants ([`f0dcf77`](https://github.com/jolars/eunoia/commit/f0dcf77f8617bf4ffd41cd98f5b307d1cc42ff24))
+- **ts:** drop support for raw wasm bindings ([`9022f22`](https://github.com/jolars/eunoia/commit/9022f22835380c667f8df6e72e637fe972d4d6f8))
+
+### Features
+- add `restarts` as option ([`2764dad`](https://github.com/jolars/eunoia/commit/2764dad04015525ac542002dbba4e3cfa459fe99))
+- **ts:** thread set_anchor_regions through the wasm/ts path ([`cee98b8`](https://github.com/jolars/eunoia/commit/cee98b86acf3c1ae3e0585afe47d43adf2dd4f4b)), refs [#88](https://github.com/jolars/eunoia/issues/88)
+- replace default optimizer and add all variants ([`f0dcf77`](https://github.com/jolars/eunoia/commit/f0dcf77f8617bf4ffd41cd98f5b307d1cc42ff24))
+- **ts:** drop support for raw wasm bindings ([`9022f22`](https://github.com/jolars/eunoia/commit/9022f22835380c667f8df6e72e637fe972d4d6f8))
+
+### Dependencies
+- updated eunoia to v1.0.0
+
 ## [0.18.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v0.17.0...eunoia-npm-v0.18.0) (2026-06-03)
 
 ### Features
