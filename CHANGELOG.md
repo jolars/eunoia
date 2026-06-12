@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.0](https://github.com/jolars/eunoia/compare/v1.0.0...v1.1.0) (2026-06-12)
+
+### Features
+- **loss:** add LogSumAbsolute and SmoothLogSumAbsolute ([`2682050`](https://github.com/jolars/eunoia/commit/2682050bb6e1f2625f43852adf6bdec224493ad9)), closes [#96](https://github.com/jolars/eunoia/issues/96)
+- **julia:** add Makie plotting extension (Phase 3) ([`1477969`](https://github.com/jolars/eunoia/commit/1477969909882bf49954a34808e1db8a51e56040))
+- **capi:** emit region_error and plot_data; surface in Eunoia.jl ([`f20b420`](https://github.com/jolars/eunoia/commit/f20b420921b4b8f761740384b899d5c667d56832))
+- **julia:** membership input, inclusive reconstruction, venn input forms ([`9757e45`](https://github.com/jolars/eunoia/commit/9757e45f547eccac70ebc9e32a6110522b8dc930))
+- **julia:** typed result model and show for Eunoia.jl ([`dbaa746`](https://github.com/jolars/eunoia/commit/dbaa74615ca1d87fa0a0e26be32c928fcd355205))
+
 ## [1.0.0](https://github.com/jolars/eunoia/compare/v0.18.0...v1.0.0) (2026-06-12)
 
 This is the first stable release for Eunoia and it includes a number of
