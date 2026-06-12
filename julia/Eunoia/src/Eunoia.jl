@@ -31,7 +31,7 @@ import Pkg
 using JSON3
 using Printf
 
-export euler, venn, version
+export euler, venn, version, eunoiaplot, eunoiaplot!
 export EulerFit, VennFit, Circle, Ellipse, Square, Rectangle, Point, Container
 
 include("parse.jl")
@@ -226,5 +226,51 @@ function version()
         ccall(_free[], Cvoid, (Ptr{Cchar},), out)
     end
 end
+
+# ---------------------------------------------------------------------------
+# Plotting — implemented in the Makie package extension (`ext/EunoiaMakieExt.jl`)
+# ---------------------------------------------------------------------------
+
+"""
+    eunoiaplot(fit; colors, fills, edges, labels, quantities, legend, complement,
+               figure=(;), axis=(;))
+
+Render a fitted [`EulerFit`](@ref)/[`VennFit`](@ref) as a publication-ready Makie
+figure (equal aspect, no axis decorations), returning a `Makie.FigureAxisPlot`.
+
+This requires a Makie backend to be loaded — the implementation lives in a
+package extension that activates on `using CairoMakie` (or `GLMakie`/`WGLMakie`).
+The bare Makie `plot(fit)`/`plot!(ax, fit)` recipe forms also work once a backend
+is loaded.
+
+Styling keywords mirror the `eunoia-py` `plot()` API:
+
+- `colors`: per-set colors — a vector (shape order) or a `Dict(name => color)`;
+  omitted uses a built-in categorical palette. Region fills blend the member
+  colors perceptually (OKLab).
+- `fills`: `Dict(combo => style)` per-region fill overrides.
+- `edges`: set-outline style — a uniform style, a per-set `Dict`, or a vector.
+- `labels`: `false`/`true`/`nothing`, a per-set `Dict`, or a uniform style.
+- `quantities`: `false`/`true`, `"original"`/`"fitted"`, `"counts"`/`"percent"`,
+  or a `Dict`.
+- `legend`: `false`/`true` or a `Dict` of `Legend` keywords.
+- `complement`: container-box style `Dict` (drawn only when the fit has one).
+"""
+function eunoiaplot end
+
+"""
+    eunoiaplot!(ax, fit; kwargs...)
+
+Draw a fitted diagram into an existing Makie axis `ax`. Same styling keywords as
+[`eunoiaplot`](@ref); does not alter the axis aspect or decorations.
+"""
+function eunoiaplot! end
+
+# Friendly error until a Makie backend triggers the extension; shadowed by the
+# extension's more-specific methods once Makie is loaded.
+eunoiaplot(::AbstractEulerFit, args...; kwargs...) = error(
+    "eunoiaplot requires a Makie backend; run `using CairoMakie` (or GLMakie) first.")
+eunoiaplot!(::Any, ::AbstractEulerFit, args...; kwargs...) = error(
+    "eunoiaplot! requires a Makie backend; run `using CairoMakie` (or GLMakie) first.")
 
 end # module

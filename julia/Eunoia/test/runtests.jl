@@ -118,4 +118,117 @@ using Eunoia
     @testset "errors surface, don't crash" begin
         @test_throws ErrorException euler(Dict("A" => 1.0); shape="hexagon")
     end
+
+    @testset "plotting stubs error without a backend" begin
+        fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
+        # Until a Makie backend triggers the extension, the stubs explain how to
+        # enable plotting instead of throwing a MethodError.
+        if Base.get_extension(Eunoia, :EunoiaMakieExt) === nothing
+            @test_throws ErrorException eunoiaplot(fit)
+        end
+    end
+end
+
+# ---------------------------------------------------------------------------
+# Makie extension — opt-in (heavy precompile). Runs only under
+# EUNOIA_TEST_MAKIE=true in the dedicated test/makie environment.
+# ---------------------------------------------------------------------------
+if get(ENV, "EUNOIA_TEST_MAKIE", "false") in ("true", "1")
+    import Pkg
+    Pkg.activate(joinpath(@__DIR__, "makie"))
+    Pkg.develop(path=normpath(joinpath(@__DIR__, "..")))
+    Pkg.instantiate()
+    using CairoMakie
+    const MK = CairoMakie.Makie
+
+    # Direct children of the recipe plot are exactly the primitives we draw
+    # (one poly!/lines!/text! call each); their own internal sub-plots live
+    # deeper, so we count at depth 1.
+    npoly(p) = count(x -> x isa MK.Poly, p.plots)
+    nlines(p) = count(x -> x isa MK.Lines, p.plots)
+    # A single-position text!(...) stores its string as a 1-element vector, so
+    # flatten each Text plot's `text` observable into the running list.
+    function texts(p)
+        out = String[]
+        for x in p.plots
+            x isa MK.Text || continue
+            v = x.text[]
+            v isa AbstractString && (push!(out, v); continue)
+            v isa AbstractVector && append!(out, (s for s in v if s isa AbstractString))
+        end
+        return out
+    end
+
+    @testset "Makie extension" begin
+        @test Base.get_extension(Eunoia, :EunoiaMakieExt) !== nothing
+
+        fit = euler(Dict("A" => 10.0, "B" => 5.0, "A&B" => 3.0); seed=1)
+
+        @testset "figure + primitives" begin
+            fap = eunoiaplot(fit)
+            @test fap.figure isa Figure
+            @test fap.axis isa Axis
+            @test fap.axis.aspect[] isa DataAspect
+            @test fap.axis.xticksvisible[] == false
+            @test fap.axis.bottomspinevisible[] == false
+            p = fap.plot
+            @test npoly(p) >= 3            # A-only, B-only, A&B region fills
+            @test nlines(p) >= 2           # one outline per set
+            @test "A" in texts(p) && "B" in texts(p)
+            @test (MK.colorbuffer(fap.figure); true)   # headless render smoke test
+        end
+
+        @testset "labels off" begin
+            t = texts(eunoiaplot(fit; labels=false).plot)
+            @test !("A" in t) && !("B" in t)
+        end
+
+        @testset "labels per-set replacement" begin
+            t = texts(eunoiaplot(fit; labels=Dict("A" => "Group A")).plot)
+            @test "Group A" in t
+            @test "B" in t
+            @test !("A" in t)              # A replaced
+        end
+
+        @testset "quantities" begin
+            t = texts(eunoiaplot(fit; quantities=true).plot)
+            @test any(s -> occursin("10", s), t)        # original count of A
+            tp = texts(eunoiaplot(fit; quantities="percent").plot)
+            @test any(s -> endswith(s, "%"), tp)
+        end
+
+        @testset "legend hides inline labels + adds a Legend block" begin
+            fap = eunoiaplot(fit; legend=true)
+            @test any(c -> c isa Legend, fap.figure.content)
+            @test isempty(texts(fap.plot))              # inline labels default off
+        end
+
+        @testset "complement draws a container box" begin
+            plain = eunoiaplot(fit).plot
+            withc = eunoiaplot(euler(Dict("A" => 4.0, "B" => 2.0, "A&B" => 1.0);
+                                     complement=3.0, seed=2)).plot
+            @test npoly(withc) == npoly(plain) + 1
+        end
+
+        @testset "compose into an existing axis" begin
+            fig = Figure()
+            ax = Axis(fig[1, 1])
+            p = eunoiaplot!(ax, fit)
+            @test npoly(p) >= 3
+        end
+
+        @testset "ellipse / square / rectangle render" begin
+            for shp in ("ellipse", "square", "rectangle")
+                p = eunoiaplot(euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0);
+                                     shape=shp, seed=1)).plot
+                @test npoly(p) >= 3
+            end
+        end
+
+        @testset "venn renders" begin
+            p = eunoiaplot(venn(["A", "B", "C"]; shape="ellipse")).plot
+            @test npoly(p) >= 1
+            @test (MK.colorbuffer(eunoiaplot(venn(3)).figure); true)
+        end
+    end
 end

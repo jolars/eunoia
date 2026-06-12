@@ -1,9 +1,9 @@
 # Eunoia.jl roadmap
 
-Status: **Phases 1 & 2 complete; Phase 3 (Makie extension) is next.** This
-document plans the path to a registerable, plotting-capable package on par with
-the [`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and the
-eventual split into its own repo (`jolars/Eunoia.jl`).
+Status: **Phases 1–3 complete; Phase 4 (release polish & split-out) is next.**
+This document plans the path to a registerable, plotting-capable package on par
+with the [`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and
+the eventual split into its own repo (`jolars/Eunoia.jl`).
 
 Progress:
 
@@ -17,9 +17,20 @@ Progress:
   region areas, shape outlines) as `[x, y]` pairs. `EulerFit`/`VennFit` carry
   `region_error` and a `plot_data::JSON3.Object` field; the `show` table has its
   `regionError` column. 45 Julia tests + 5 capi tests green.
-- **Phase 3 — next.** The Makie extension reads the `plot_data` field already on
-  every fit; see the Phase 3 section below. `eunoia-py`'s `python/eunoia/_plot.py`
-  is the styling reference.
+- **Phase 3 — done.** Makie rendering ships as a package extension
+  (`ext/EunoiaMakieExt.jl`, triggered by `Makie` + `GeometryBasics`). Primary
+  entry `eunoiaplot(fit)` returns a publication-ready figure (equal aspect, no
+  decorations, optional legend); `eunoiaplot!(ax, fit)` composes, and an
+  `EunoiaDiagram` recipe makes bare `plot(fit)`/`plot!(ax, fit)` work. Region
+  fills are drawn as polygons-with-holes with perceptual OKLab color blending;
+  styling kwargs (`colors`, `fills`, `edges`, `labels`, `quantities`, `legend`,
+  `complement`) mirror `eunoia-py`'s `plot()`. The global `options()` system is
+  deferred (per-call kwargs only). Plotting tests live in the dedicated
+  `test/makie/` env and run only under `EUNOIA_TEST_MAKIE=true` so the default
+  `]test` stays light. Compat: `Makie = "0.24"`, `GeometryBasics = "0.5"`,
+  `CairoMakie = "0.15"`.
+- **Phase 4 — next.** Docs site, CI matrix, versioning decision, registration,
+  and the split to `jolars/Eunoia.jl`; see the Phase 4 section below.
 
 The Python package is the reference for "full scope." This roadmap closes the
 gap to it, adapted to Julia idioms (typed structs, `Base.show`, a Makie
@@ -44,10 +55,10 @@ gap to it, adapted to Julia idioms (typed structs, `Base.show`, a Makie
   | `euler` membership-list input                       | ✅              | ❌                                        |
   | `input` inclusive/exclusive + fitted reconstruction | ✅              | ⚠️ passed through, no reconstruction      |
   | `venn` int / name-list / mapping inputs             | ✅              | ⚠️ name-list only                         |
-  | Metrics: residuals, region_error                    | ✅              | ❌ (capi lacks per-region `region_error`) |
-  | Pretty `repr` / `show` (residual table)             | ✅              | ❌                                        |
-  | Plotting + styling                                  | ✅ matplotlib   | ❌                                        |
-  | Region polygons / anchors over the FFI              | ✅ (PyO3)       | ❌ (**capi does not emit plot_data**)     |
+  | Metrics: residuals, region_error                    | ✅              | ✅                                        |
+  | Pretty `repr` / `show` (residual table)             | ✅              | ✅                                        |
+  | Plotting + styling                                  | ✅ matplotlib   | ✅ Makie extension                        |
+  | Region polygons / anchors over the FFI              | ✅ (PyO3)       | ✅ (capi emits `plot_data`)               |
   | Docs + gallery                                      | ✅ Sphinx       | ⚠️ README only                            |
   | Typed/strict checking                               | ✅ mypy/pyright | n/a                                       |
 
@@ -129,30 +140,37 @@ anchors; Julia parses them into the `EulerFit.plot_data`; capi tests green.
 > only (Python reaches plot_data through PyO3 directly), but the additive design
 > keeps the capi a clean, language-agnostic contract.
 
-## Phase 3 --- Makie extension
+## Phase 3 --- Makie extension (done)
 
-Rendering via a **package extension** (Julia ≥1.9 weak deps), so the core
+Rendering ships as a **package extension** (`ext/EunoiaMakieExt.jl`), so the core
 package stays plot-free and Makie loads only when the user has it.
 
-- `Project.toml`: add `Makie` (and likely `MakieCore`/`GeometryBasics`) under
-  `[weakdeps]` + `[extensions] EunoiaMakieExt = "Makie"`.
+- `Project.toml`: `Makie` + `GeometryBasics` under `[weakdeps]` with
+  `[extensions] EunoiaMakieExt = ["Makie", "GeometryBasics"]`. (GeometryBasics is
+  listed explicitly so the ext can reference `Polygon`/`Point2f` directly; it is
+  a transitive Makie dep so co-triggering is free. `MakieCore`/`Colors` are not
+  separate weakdeps — Makie re-exports what's needed.)
 - `ext/EunoiaMakieExt.jl`:
-  - A recipe --- `@recipe(EunoiaPlot)` or `Makie.plot!(::EunoiaPlot)` --- so
-    `plot(fit)` / `eunoiaplot(fit)` and `plot!(ax, fit)` work.
-  - Draw filled region pieces (outer + holes) as polygons, set outlines,
-    set-name labels at `set_anchors`, optional per-region quantities at
-    `region_anchors`, and the container box.
-  - Styling attributes mirroring eunoia-py `plot()`: `colors` (vector or
-    set→color dict; default a categorical palette), `fills`, `edges`, `labels`
-    (bool / per-set / uniform), `quantities` (`:original`/`:fitted`), `legend`,
-    `complement` box styling.
-  - Equal aspect, no axis decorations by default.
-- Tests: a `Makie`-loaded testset (CairoMakie headless) asserting a figure is
-  produced and key primitives exist; keep it behind an optional test dep so the
-  core test run stays light.
+  - An `EunoiaDiagram` recipe (`@recipe` + `Makie.plot!`) plus
+    `Makie.plottype(::AbstractEulerFit)` so bare `plot(fit)`/`plot!(ax, fit)`
+    dispatch to it. The figure-level concerns a recipe can't own (equal aspect,
+    hidden decorations, legend) live in the `eunoiaplot(fit)` wrapper, which
+    returns a `Makie.FigureAxisPlot`; `eunoiaplot!(ax, fit)` composes.
+  - Filled region pieces (outer + holes) as `GeometryBasics.Polygon`s, set
+    outlines, set-name labels at `set_anchors`, optional per-region quantities at
+    `region_anchors`, and the container box. Region fill color is a perceptual
+    **OKLab** blend of the member sets (ported from `eunoia-py`).
+  - Styling kwargs mirroring eunoia-py `plot()`: `colors`, `fills`, `edges`,
+    `labels`, `quantities`, `legend`, `complement` — using Makie-native attribute
+    names. The global `options()` defaults system is **deferred**.
+- Tests: a CairoMakie-headless `@testset "Makie extension"` in `test/runtests.jl`,
+  gated on `EUNOIA_TEST_MAKIE=true` and run in the dedicated `test/makie/`
+  environment, so the default `]test` stays light. Phase 4 wires this into CI
+  (needs the env var + a CairoMakie precompile step).
 
-**Exit criteria:** `using CairoMakie; plot(euler(...))` renders an Euler/Venn
-diagram with labels, quantities, legend, and complement support.
+**Exit criteria (met):** `using CairoMakie; eunoiaplot(euler(...))` (and the bare
+`plot(euler(...))`) renders an Euler/Venn diagram with labels, quantities,
+legend, and complement support.
 
 ## Phase 4 --- Release polish & split-out
 
@@ -185,9 +203,11 @@ live, binaries fetched lazily, development continues in its own repo.
    Rust crate (`0.18.0` today). Recommendation: independent, start at `0.1.0`.
 2. **Return-type break** --- Phase 1 changes `euler`/`venn` from `JSON3.Object`
    to typed structs. Acceptable pre-1.0; call it out in the changelog.
-3. **Recipe ergonomics** --- `plot(fit)` (overload `Makie.plot`) vs. a named
-   `eunoiaplot` recipe. Lean `@recipe` so both `plot`/`plot!` and an `ax`-first
-   form work.
+3. **Recipe ergonomics** --- *resolved (Phase 3):* `eunoiaplot(fit)` is the
+   primary figure-builder (equal aspect, decorations off, optional legend) since
+   a recipe's `plot!` can't own those; an `EunoiaDiagram` recipe + `plottype`
+   keeps bare `plot(fit)`/`plot!(ax, fit)` working, and `eunoiaplot!(ax, fit)`
+   composes.
 4. **capi as shared contract** --- Phase 2 grows the capi for Julia's benefit
    only. Keep it additive and language-neutral so a future C/C++/other binding
    reuses it.
@@ -195,10 +215,11 @@ live, binaries fetched lazily, development continues in its own repo.
 ## Sequencing summary
 
 ```
-Phase 1  typed model + input parity + show     (Julia only)         ← start here
-Phase 2  capi emits plot_data + region_error   (Rust, additive)     ← unblocks plotting
-Phase 3  Makie extension (recipe + styling)    (Julia, weakdep)
-Phase 4  docs, CI, register, split repo
+Phase 1  typed model + input parity + show     (Julia only)         ✓ done
+Phase 2  capi emits plot_data + region_error   (Rust, additive)     ✓ done
+Phase 3  Makie extension (recipe + styling)    (Julia, weakdep)     ✓ done
+Phase 4  docs, CI, register, split repo                             ← next
 ```
 
-Phases 1 and 2 are independent and can proceed in parallel; Phase 3 needs both.
+Phases 1 and 2 were independent; Phase 3 needed both. Phase 4 is the remaining
+release work.

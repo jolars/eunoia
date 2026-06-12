@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "054a21080b619d6980ef13afff1d4fc1c3bcc6eb"
+project_hash = "5ec78250a46fc1d4b876978d6cf3846bc47749bb"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -36,6 +36,13 @@ deps = ["Artifacts", "JSON3", "Libdl", "Pkg", "Printf"]
 path = "."
 uuid = "7d9f3c1e-5a2b-4c6d-9e8f-1a2b3c4d5e6f"
 version = "0.18.0"
+
+    [deps.Eunoia.extensions]
+    EunoiaMakieExt = ["Makie", "GeometryBasics"]
+
+    [deps.Eunoia.weakdeps]
+    GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
+    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"

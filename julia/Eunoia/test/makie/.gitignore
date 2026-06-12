@@ -1,0 +1,3 @@
+# Resolved fresh per machine/CI; pulls the full CairoMakie tree and dev's the
+# local Eunoia, so it is not worth committing.
+Manifest.toml

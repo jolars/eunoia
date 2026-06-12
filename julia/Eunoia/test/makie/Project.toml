@@ -1,0 +1,11 @@
+# Opt-in environment for the Makie-extension tests. Kept separate from the
+# default test env so the core `]test` run stays light (no Makie precompile).
+# Activated by test/runtests.jl only when ENV["EUNOIA_TEST_MAKIE"] is set.
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Eunoia = "7d9f3c1e-5a2b-4c6d-9e8f-1a2b3c4d5e6f"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+CairoMakie = "0.15"
+julia = "1.10"
