@@ -1,9 +1,17 @@
 # Eunoia.jl roadmap
 
-Status: **Phases 1–3 complete; Phase 4 (release polish & split-out) is next.**
-This document plans the path to a registerable, plotting-capable package on par
-with the [`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and
-the eventual split into its own repo (`jolars/Eunoia.jl`).
+Status: **Phases 1–3 complete; Phase 4 (extend the C ABI control surface) is
+next, then Phase 5 (release polish & split-out).** This document plans the path
+to a registerable, plotting-capable package on par with the
+[`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and the
+eventual split into its own repo (`jolars/Eunoia.jl`).
+
+The capi work (Phase 4) deliberately comes **before** the split: while the capi
+and the Julia wrapper live in one repo, changing the C ABI and the binding that
+consumes it is a single atomic change. Once Julia is split out, every capi change
+becomes a two-repo dance (tag capi → build artifacts → regenerate
+`Artifacts.toml` → bump Julia), so it is much cheaper to get the control surface
+right first.
 
 Progress:
 
@@ -29,8 +37,12 @@ Progress:
   `test/makie/` env and run only under `EUNOIA_TEST_MAKIE=true` so the default
   `]test` stays light. Compat: `Makie = "0.24"`, `GeometryBasics = "0.5"`,
   `CairoMakie = "0.15"`.
-- **Phase 4 — next.** Docs site, CI matrix, versioning decision, registration,
-  and the split to `jolars/Eunoia.jl`; see the Phase 4 section below.
+- **Phase 4 — next.** Extend the capi control surface (fitting knobs: loss +
+  solver; plot tuning: `PlotOptions`; label placement/repulsion + leaders) and
+  surface it in the Julia API — all additive JSON fields. Done before the split
+  so capi changes stay a one-repo change. See the Phase 4 section below.
+- **Phase 5 — after.** Docs site, CI matrix, versioning decision, registration,
+  and the split to `jolars/Eunoia.jl`; see the Phase 5 section below.
 
 The Python package is the reference for "full scope." This roadmap closes the
 gap to it, adapted to Julia idioms (typed structs, `Base.show`, a Makie
@@ -165,14 +177,61 @@ package stays plot-free and Makie loads only when the user has it.
     names. The global `options()` defaults system is **deferred**.
 - Tests: a CairoMakie-headless `@testset "Makie extension"` in `test/runtests.jl`,
   gated on `EUNOIA_TEST_MAKIE=true` and run in the dedicated `test/makie/`
-  environment, so the default `]test` stays light. Phase 4 wires this into CI
+  environment, so the default `]test` stays light. Phase 5 wires this into CI
   (needs the env var + a CairoMakie precompile step).
 
 **Exit criteria (met):** `using CairoMakie; eunoiaplot(euler(...))` (and the bare
 `plot(euler(...))`) renders an Euler/Venn diagram with labels, quantities,
 legend, and complement support.
 
-## Phase 4 --- Release polish & split-out
+## Phase 4 --- Extend the C ABI control surface
+
+The capi is intentionally minimal today: `EulerInput`/`VennInput` expose only
+`shape`, `complement`, `input_type`, and `seed`. Everything else the core
+supports is locked to defaults, so the Julia (and any future C) binding cannot
+reach it. Like Phase 2, these are **additive JSON input fields** → backward
+compatible, and they benefit Julia (Python reaches the core directly through
+PyO3). Land this before release so the registered package isn't missing knobs.
+
+Three independent slices, smallest first. **Agreed starting point: slice (a)**
+(fitting knobs) in a later session — establish the optional-field + capi-test +
+Julia-kwarg pattern there, then carry it to (b) and (c).
+
+- **(a) Fitting knobs** --- forward optional `EulerInput` fields to the existing
+  `Fitter` builder methods: `loss` (`LossType` — 13 variants, currently locked to
+  `SumSquared`), `n_restarts` (default 10), `optimizer`/optimizer pool (default
+  `CmaEsTrf`), `mds_solver`, `initial_sampler`, `cmaes_fallback_threshold`,
+  `max_iterations`, `tolerance`/`xtol`/`ftol`/`gtol`, `jobs`. All already exist as
+  `Fitter::…` setters — the capi just doesn't call them. Each is a small,
+  string/number-validated field. Mirror the validation style of the existing
+  `shape`/`input_type` matches.
+- **(b) Plot tuning** --- thread `PlotOptions` (`n_vertices` 200,
+  `label_precision` 0.01, `sliver_threshold` 1e-3) from JSON into the
+  `extract`/`layout.plot_data(spec, …)` call (currently hardcoded
+  `PlotOptions::default()`).
+- **(c) Label placement / repulsion** *(larger)* --- surface the core's
+  `PlacementStrategy`/`ExteriorPolicy` (poles-of-inaccessibility is the default;
+  `ForceDirected` adds spring/repulsion, plus leader-line `LeaderStrategy`/elbows
+  and tethers). Emit the **resolved** label positions (and any leader-line
+  geometry) in `plot_data` so bindings render placed, non-overlapping labels
+  instead of raw POI anchors. Today the Julia/Python plotters drop labels at the
+  raw anchors with only a "stack if identical anchor" tweak — no collision
+  avoidance — so crowded diagrams overlap.
+
+For each slice: extend the capi `#[test]`s (assert the new field is honored / the
+new geometry is present), then surface the knob in the Julia `euler`/`venn`
+keyword args and the Makie extension (e.g. a `placement`/leader option). The core
+already does the work; this is wiring + serialization.
+
+**Exit criteria:** a caller can select the loss and key solver knobs, tune
+`PlotOptions`, and opt into force-directed label placement (with leaders) entirely
+through the capi JSON; Julia surfaces them as keyword args; capi + Julia tests
+green.
+
+> Note: like Phase 2, this is the only release-blocking work that touches shared
+> monorepo code. Keep every field optional and language-neutral.
+
+## Phase 5 --- Release polish & split-out
 
 - **Docs**: Documenter.jl site (API + a gallery mirroring eunoia-py's). Host on
   GitHub Pages.
@@ -190,7 +249,9 @@ legend, and complement support.
   already point at the `jolars/eunoia` release assets, so the split package
   keeps pulling binaries from this repo's releases --- the capi stays here, the
   Julia wrapper lives in its own repo. Document this two-repo release dance (tag
-  capi → build artifacts → bump + register Julia).
+  capi → build artifacts → bump + register Julia). This dance is exactly why the
+  capi control surface (Phase 4) is settled first: after the split, every capi
+  change pays this cost.
 
 **Exit criteria:** registered `Eunoia.jl` installable via `add Eunoia`, docs
 live, binaries fetched lazily, development continues in its own repo.
@@ -218,8 +279,12 @@ live, binaries fetched lazily, development continues in its own repo.
 Phase 1  typed model + input parity + show     (Julia only)         ✓ done
 Phase 2  capi emits plot_data + region_error   (Rust, additive)     ✓ done
 Phase 3  Makie extension (recipe + styling)    (Julia, weakdep)     ✓ done
-Phase 4  docs, CI, register, split repo                             ← next
+Phase 4  capi control surface (loss/solver/    (Rust + Julia,       ← next
+         plot/label knobs) + Julia surfacing    additive)
+Phase 5  docs, CI, register, split repo                             ← after
 ```
 
-Phases 1 and 2 were independent; Phase 3 needed both. Phase 4 is the remaining
-release work.
+Phases 1 and 2 were independent; Phase 3 needed both. Phase 4 grows the capi a
+second time (after Phase 2) and must land **before** Phase 5 — the split makes
+every later capi change a two-repo release dance, so the control surface should
+be settled while it is still one atomic change.
