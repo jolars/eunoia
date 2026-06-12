@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0](https://github.com/jolars/eunoia/compare/v0.18.0...v1.0.0) (2026-06-12)
 
 This is the first stable release for Eunoia and it includes a number of
 breaking changes (see below). Eunoia uses semantic versioning, so this 1.0.0
@@ -8,6 +8,30 @@ release indicates that the API is now considered stable and future releases
 will follow the semantic versioning rules for backward compatibility. Unless
 there is a major version bump, all changes will be backward compatible with
 this release.
+
+### Breaking changes
+- **geometry:** unify BoundingBox and bounds implementations ([`b0ef190`](https://github.com/jolars/eunoia/commit/b0ef19004322763c895e3c1c3f4ed1307f469902))
+- make input/config enums #[non_exhaustive] ([`79d7d5f`](https://github.com/jolars/eunoia/commit/79d7d5f7e95157feefe974d9e91c18a36e43888d))
+- **plotting:** non_exhaustive + fluent setters on config structs ([`f3e648e`](https://github.com/jolars/eunoia/commit/f3e648efcdfb538b43c8699055a0be1d9dc8683d))
+- make some output-types `#[non_exhaustive]` ([`4d5f045`](https://github.com/jolars/eunoia/commit/4d5f0453a4bb7a1ec835ec3eec25c4c009fe8027))
+- **api:** seal internal math/geometry plumbing before 1.0 ([`5067e89`](https://github.com/jolars/eunoia/commit/5067e89b2d19cddbb27e296e08537afb34dc8be6))
+- **api:** harden public enums and naming for 1.0 ([`604dad3`](https://github.com/jolars/eunoia/commit/604dad37e480505c1eac2323d3dea929d6a92c18))
+- replace default optimizer and add all variants ([`f0dcf77`](https://github.com/jolars/eunoia/commit/f0dcf77f8617bf4ffd41cd98f5b307d1cc42ff24))
+- **ts:** drop support for raw wasm bindings ([`9022f22`](https://github.com/jolars/eunoia/commit/9022f22835380c667f8df6e72e637fe972d4d6f8))
+
+### Features
+- add WIP julia package and C ABI bindings ([`7e29b0f`](https://github.com/jolars/eunoia/commit/7e29b0ff4e9a4d7cc9abca007ba2dfed9378e409))
+- add `restarts` as option ([`2764dad`](https://github.com/jolars/eunoia/commit/2764dad04015525ac542002dbba4e3cfa459fe99))
+- **geometry:** unify BoundingBox and bounds implementations ([`b0ef190`](https://github.com/jolars/eunoia/commit/b0ef19004322763c895e3c1c3f4ed1307f469902))
+- deprecate `sse`/`rmse` in favor of `sum_squared` etc ([`c930288`](https://github.com/jolars/eunoia/commit/c930288470eaa6b4335efb040e679b2821ac1b47))
+- make input/config enums #[non_exhaustive] ([`79d7d5f`](https://github.com/jolars/eunoia/commit/79d7d5f7e95157feefe974d9e91c18a36e43888d))
+- **plotting:** non_exhaustive + fluent setters on config structs ([`f3e648e`](https://github.com/jolars/eunoia/commit/f3e648efcdfb538b43c8699055a0be1d9dc8683d))
+- make some output-types `#[non_exhaustive]` ([`4d5f045`](https://github.com/jolars/eunoia/commit/4d5f0453a4bb7a1ec835ec3eec25c4c009fe8027))
+- **ts:** thread set_anchor_regions through the wasm/ts path ([`cee98b8`](https://github.com/jolars/eunoia/commit/cee98b86acf3c1ae3e0585afe47d43adf2dd4f4b)), refs [#88](https://github.com/jolars/eunoia/issues/88)
+- **plotting:** expose set_anchor_regions on PlotData ([`8795f04`](https://github.com/jolars/eunoia/commit/8795f04b8876ff944022e2ea6c908b586b023fcb)), closes [#88](https://github.com/jolars/eunoia/issues/88)
+- **fitter:** add internal EscapeSolver knob to benchmark memetic escapes ([`498f1a0`](https://github.com/jolars/eunoia/commit/498f1a0c1e4a9511301c193051f8d9518e977a66))
+- replace default optimizer and add all variants ([`f0dcf77`](https://github.com/jolars/eunoia/commit/f0dcf77f8617bf4ffd41cd98f5b307d1cc42ff24))
+- **ts:** drop support for raw wasm bindings ([`9022f22`](https://github.com/jolars/eunoia/commit/9022f22835380c667f8df6e72e637fe972d4d6f8))
 
 ## [0.18.0](https://github.com/jolars/eunoia/compare/v0.17.0...v0.18.0) (2026-06-03)
 
