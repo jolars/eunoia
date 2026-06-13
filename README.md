@@ -119,4 +119,6 @@ bundler (Vite, Webpack, Rollup, esbuild) and Node 20+.
 
 ## License
 
-Eunoia is distributed under the terms of the [MIT license](LICENSE).
+Eunoia is distributed under the terms of either the
+[MIT license](LICENSE-MIT) or the [Apache License 2.0](LICENSE-APACHE), at your
+option.

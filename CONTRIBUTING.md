@@ -283,8 +283,12 @@ shape-generic, so no fitter changes are needed.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the
-same license as the project (see LICENSE file).
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as below, without any additional terms or conditions.
+
+Eunoia is distributed under the terms of both the MIT license and the Apache
+License 2.0, at your option (see the `LICENSE-MIT` and `LICENSE-APACHE` files).
 
 ## Thank You!
 
