@@ -113,7 +113,7 @@ end
 
 """
     euler(values; shape="circle", input_type="exclusive",
-          complement=nothing, seed=nothing)
+          complement=nothing, seed=nothing, loss=nothing, …)
 
 Fit an area-proportional Euler diagram. `values` is one of:
 
@@ -144,15 +144,55 @@ Keyword arguments:
   fitting); `nothing` to disable.
 - `seed`: RNG seed for reproducible restarts; `nothing` for default.
 
+Fitting knobs (all optional; `nothing` keeps the core default). Invalid string
+tokens are rejected by the native core and surface as an error:
+
+- `loss`: objective function. One of `"sum_squared"` (default), `"sum_absolute"`,
+  `"sum_absolute_region_error"`, `"sum_squared_region_error"`, `"max_absolute"`,
+  `"max_squared"`, `"root_mean_squared"`, `"stress"`, `"diag_error"`,
+  `"log_sum_absolute"`, or a C¹-smooth surrogate `"smooth_sum_absolute"`,
+  `"smooth_sum_absolute_region_error"`, `"smooth_max_absolute"`,
+  `"smooth_max_squared"`, `"smooth_diag_error"`, `"smooth_log_sum_absolute"`.
+- `loss_eps`: smoothing parameter for the six `smooth_*` losses (default `1e-3`);
+  ignored by the non-smooth losses.
+- `n_restarts`: number of randomly seeded restarts (default `10`).
+- `optimizer`: final-layout solver. One of `"levenberg_marquardt"`, `"lbfgs"`,
+  `"nelder_mead"`, `"trf"`, `"cmaes_lm"`, or `"cmaes_trf"` (default).
+- `mds_solver`: initial-layout (MDS) solver, `"levenberg_marquardt"` (default) or
+  `"lbfgs"`.
+- `initial_sampler`: restart-position sampler, `"uniform"` (default) or
+  `"latin_hypercube"`.
+- `cmaes_fallback_threshold`: loss above which the `cmaes_*` optimizers fire their
+  global escape stage (default `1e-3`).
+- `max_iterations`: per-optimizer iteration cap (default `200`).
+- `tolerance`: unified convergence tolerance (default `1e-3`).
+- `xtol`, `ftol`, `gtol`: fine-grained Levenberg-Marquardt tolerances overriding
+  the defaults derived from `tolerance`.
+- `jobs`: thread count for the restart loop; a pure wall-time knob, the chosen
+  layout is identical regardless of value.
+
 Returns an [`EulerFit`](@ref) carrying the fitted `shapes`, the
-`original_values`/`fitted_values`/`residuals` per region, the scalar fit
-metrics, and—if a `complement` was given—a `container`. Per-region
-`region_error` is not yet surfaced (only the scalar `diag_error`).
+`original_values`/`fitted_values`/`residuals` per region, the per-region
+`region_error`, the scalar fit metrics, and—if a `complement` was given—a
+`container`.
 """
 function euler(values::AbstractDict; shape::AbstractString="circle",
                input_type::AbstractString="exclusive",
                complement::Union{Nothing,Real}=nothing,
-               seed::Union{Nothing,Integer}=nothing)
+               seed::Union{Nothing,Integer}=nothing,
+               loss::Union{Nothing,AbstractString}=nothing,
+               loss_eps::Union{Nothing,Real}=nothing,
+               n_restarts::Union{Nothing,Integer}=nothing,
+               optimizer::Union{Nothing,AbstractString}=nothing,
+               mds_solver::Union{Nothing,AbstractString}=nothing,
+               initial_sampler::Union{Nothing,AbstractString}=nothing,
+               cmaes_fallback_threshold::Union{Nothing,Real}=nothing,
+               max_iterations::Union{Nothing,Integer}=nothing,
+               tolerance::Union{Nothing,Real}=nothing,
+               xtol::Union{Nothing,Real}=nothing,
+               ftol::Union{Nothing,Real}=nothing,
+               gtol::Union{Nothing,Real}=nothing,
+               jobs::Union{Nothing,Integer}=nothing)
     if is_membership_input(values)
         input_type == "exclusive" || error(
             "invalid_input: membership-list input is always exclusive; " *
@@ -179,6 +219,24 @@ function euler(values::AbstractDict; shape::AbstractString="circle",
     )
     complement === nothing || (payload["complement"] = float(complement))
     seed === nothing || (payload["seed"] = UInt64(seed))
+
+    # Phase 4(a) fitting knobs: forward only the ones the caller set, so omitted
+    # kwargs leave the native `Fitter` defaults untouched. JSON field names match
+    # the kwarg names one-to-one.
+    loss === nothing || (payload["loss"] = loss)
+    loss_eps === nothing || (payload["loss_eps"] = float(loss_eps))
+    n_restarts === nothing || (payload["n_restarts"] = Int(n_restarts))
+    optimizer === nothing || (payload["optimizer"] = optimizer)
+    mds_solver === nothing || (payload["mds_solver"] = mds_solver)
+    initial_sampler === nothing || (payload["initial_sampler"] = initial_sampler)
+    cmaes_fallback_threshold === nothing ||
+        (payload["cmaes_fallback_threshold"] = float(cmaes_fallback_threshold))
+    max_iterations === nothing || (payload["max_iterations"] = Int(max_iterations))
+    tolerance === nothing || (payload["tolerance"] = float(tolerance))
+    xtol === nothing || (payload["xtol"] = float(xtol))
+    ftol === nothing || (payload["ftol"] = float(ftol))
+    gtol === nothing || (payload["gtol"] = float(gtol))
+    jobs === nothing || (payload["jobs"] = Int(jobs))
 
     resp = _run(_euler[], payload)
     return _finish_euler(resp, original_values, canonical_keys, input_type)

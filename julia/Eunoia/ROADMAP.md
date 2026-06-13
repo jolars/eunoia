@@ -1,7 +1,8 @@
 # Eunoia.jl roadmap
 
-Status: **Phases 1–3 complete; Phase 4 (extend the C ABI control surface) is
-next, then Phase 5 (release polish & split-out).** This document plans the path
+Status: **Phases 1–3 complete; Phase 4 slice (a) (fitting knobs) done — slices
+(b) plot tuning and (c) label placement next, then Phase 5 (release polish &
+split-out).** This document plans the path
 to a registerable, plotting-capable package on par with the
 [`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and the
 eventual split into its own repo (`jolars/Eunoia.jl`).
@@ -37,10 +38,16 @@ Progress:
   `test/makie/` env and run only under `EUNOIA_TEST_MAKIE=true` so the default
   `]test` stays light. Compat: `Makie = "0.24"`, `GeometryBasics = "0.5"`,
   `CairoMakie = "0.15"`.
-- **Phase 4 — next.** Extend the capi control surface (fitting knobs: loss +
-  solver; plot tuning: `PlotOptions`; label placement/repulsion + leaders) and
-  surface it in the Julia API — all additive JSON fields. Done before the split
-  so capi changes stay a one-repo change. See the Phase 4 section below.
+- **Phase 4 — in progress.** Extend the capi control surface (fitting knobs:
+  loss + solver; plot tuning: `PlotOptions`; label placement/repulsion +
+  leaders) and surface it in the Julia API — all additive JSON fields. Done
+  before the split so capi changes stay a one-repo change. **Slice (a) (fitting
+  knobs) is done**: `EulerInput` forwards optional `loss`/`loss_eps`/
+  `n_restarts`/`optimizer`/`mds_solver`/`initial_sampler`/
+  `cmaes_fallback_threshold`/`max_iterations`/`tolerance`/`xtol`/`ftol`/`gtol`/
+  `jobs` (snake_case enum tokens validated capi-side) to the `Fitter` setters,
+  surfaced as `euler` keyword args; 55 Julia tests + 10 capi tests green. Slices
+  (b) and (c) remain. See the Phase 4 section below.
 - **Phase 5 — after.** Docs site, CI matrix, versioning decision, registration,
   and the split to `jolars/Eunoia.jl`; see the Phase 5 section below.
 
@@ -193,18 +200,21 @@ reach it. Like Phase 2, these are **additive JSON input fields** → backward
 compatible, and they benefit Julia (Python reaches the core directly through
 PyO3). Land this before release so the registered package isn't missing knobs.
 
-Three independent slices, smallest first. **Agreed starting point: slice (a)**
-(fitting knobs) in a later session — establish the optional-field + capi-test +
-Julia-kwarg pattern there, then carry it to (b) and (c).
+Three independent slices, smallest first. Slice (a) (fitting knobs) was the
+agreed starting point — it established the optional-field + capi-test +
+Julia-kwarg pattern that (b) and (c) reuse.
 
-- **(a) Fitting knobs** --- forward optional `EulerInput` fields to the existing
-  `Fitter` builder methods: `loss` (`LossType` — 13 variants, currently locked to
-  `SumSquared`), `n_restarts` (default 10), `optimizer`/optimizer pool (default
-  `CmaEsTrf`), `mds_solver`, `initial_sampler`, `cmaes_fallback_threshold`,
-  `max_iterations`, `tolerance`/`xtol`/`ftol`/`gtol`, `jobs`. All already exist as
-  `Fitter::…` setters — the capi just doesn't call them. Each is a small,
-  string/number-validated field. Mirror the validation style of the existing
-  `shape`/`input_type` matches.
+- **(a) Fitting knobs — done.** Optional `EulerInput` fields forward to the
+  existing `Fitter` builder methods: `loss` (`LossType`, 16 snake_case tokens
+  incl. the six `smooth_*` surrogates) + `loss_eps`, `n_restarts`, `optimizer`
+  (6 tokens), `mds_solver`, `initial_sampler`, `cmaes_fallback_threshold`,
+  `max_iterations`, `tolerance`/`xtol`/`ftol`/`gtol`, `jobs`. Enum strings are
+  validated capi-side by `parse_*` helpers (mirroring the `shape`/`input_type`
+  match style) and resolved once into a `FitConfig` before the shape match, so a
+  bad token errors regardless of shape. The Julia `euler` surfaces each as a
+  keyword arg (no client-side validation — the core is the contract). Deferred:
+  the cycling-`optimizer_pool`/`initial_solver_pool` array forms (single values
+  only for now).
 - **(b) Plot tuning** --- thread `PlotOptions` (`n_vertices` 200,
   `label_precision` 0.01, `sliver_threshold` 1e-3) from JSON into the
   `extract`/`layout.plot_data(spec, …)` call (currently hardcoded
@@ -279,8 +289,8 @@ live, binaries fetched lazily, development continues in its own repo.
 Phase 1  typed model + input parity + show     (Julia only)         ✓ done
 Phase 2  capi emits plot_data + region_error   (Rust, additive)     ✓ done
 Phase 3  Makie extension (recipe + styling)    (Julia, weakdep)     ✓ done
-Phase 4  capi control surface (loss/solver/    (Rust + Julia,       ← next
-         plot/label knobs) + Julia surfacing    additive)
+Phase 4  capi control surface (loss/solver/    (Rust + Julia,       ← (a) done,
+         plot/label knobs) + Julia surfacing    additive)             (b)(c) next
 Phase 5  docs, CI, register, split repo                             ← after
 ```
 

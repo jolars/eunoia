@@ -103,6 +103,26 @@ using Eunoia
         @test haskey(fit.plot_data, :set_anchors)
     end
 
+    @testset "fitting knobs" begin
+        base = Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0)
+
+        # Loss + numeric knobs are accepted and produce a populated fit.
+        fit = euler(base; seed=1, loss="sum_absolute", n_restarts=3,
+                    max_iterations=50, tolerance=1e-4, jobs=1)
+        @test fit isa EulerFit
+        @test length(fit.shapes) == 2
+        @test fit.loss >= 0
+
+        # Smooth loss with an explicit eps.
+        @test euler(base; seed=1, loss="smooth_diag_error", loss_eps=0.01) isa
+              EulerFit
+
+        # Solver / sampler knobs.
+        @test euler(base; seed=1, optimizer="levenberg_marquardt",
+                    mds_solver="lbfgs", initial_sampler="latin_hypercube") isa
+              EulerFit
+    end
+
     @testset "show" begin
         fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
         str = sprint(show, MIME("text/plain"), fit)
@@ -117,6 +137,11 @@ using Eunoia
 
     @testset "errors surface, don't crash" begin
         @test_throws ErrorException euler(Dict("A" => 1.0); shape="hexagon")
+        # Invalid enum knobs are rejected by the native core.
+        @test_throws ErrorException euler(Dict("A" => 1.0); loss="frobnicate")
+        @test_throws ErrorException euler(Dict("A" => 1.0); optimizer="genetic")
+        @test_throws ErrorException euler(Dict("A" => 1.0); mds_solver="gauss")
+        @test_throws ErrorException euler(Dict("A" => 1.0); initial_sampler="sobol")
     end
 
     @testset "plotting stubs error without a backend" begin

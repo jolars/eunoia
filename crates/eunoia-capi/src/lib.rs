@@ -51,9 +51,10 @@ use serde::de::DeserializeOwned;
 use eunoia::geometry::primitives::Point;
 use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, Square};
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
+use eunoia::loss::LossType;
 use eunoia::plotting::{PlotData, PlotOptions};
 use eunoia::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
-use eunoia::{Fitter, Layout, VennDiagram};
+use eunoia::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer, VennDiagram};
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -80,6 +81,45 @@ struct EulerInput {
     complement: Option<f64>,
     #[serde(default)]
     seed: Option<u64>,
+
+    // --- Phase 4(a) fitting knobs ---
+    //
+    // All optional; omitting a field leaves the corresponding `Fitter` default
+    // untouched. Enum-valued knobs (`loss`/`optimizer`/`mds_solver`/
+    // `initial_sampler`) are snake_case strings validated and mapped to core
+    // enums by the `parse_*` helpers below — the core enums carry no serde
+    // derives, so the capi is the string↔enum contract.
+    /// `LossType` variant (snake_case, e.g. `"sum_absolute"`).
+    #[serde(default)]
+    loss: Option<String>,
+    /// Smoothing `eps` for the six `smooth_*` losses; ignored otherwise.
+    #[serde(default)]
+    loss_eps: Option<f64>,
+    #[serde(default)]
+    n_restarts: Option<usize>,
+    /// `Optimizer` variant (snake_case, e.g. `"cmaes_trf"`).
+    #[serde(default)]
+    optimizer: Option<String>,
+    /// `MdsSolver` variant for the initial layout (snake_case).
+    #[serde(default)]
+    mds_solver: Option<String>,
+    /// `InitialSampler` variant (snake_case).
+    #[serde(default)]
+    initial_sampler: Option<String>,
+    #[serde(default)]
+    cmaes_fallback_threshold: Option<f64>,
+    #[serde(default)]
+    max_iterations: Option<usize>,
+    #[serde(default)]
+    tolerance: Option<f64>,
+    #[serde(default)]
+    xtol: Option<f64>,
+    #[serde(default)]
+    ftol: Option<f64>,
+    #[serde(default)]
+    gtol: Option<f64>,
+    #[serde(default)]
+    jobs: Option<usize>,
 }
 
 #[derive(serde::Deserialize)]
@@ -428,13 +468,183 @@ fn build_spec(input: &EulerInput) -> Result<DiagramSpec, String> {
         .map_err(|e| format!("failed to build spec: {e}"))
 }
 
-fn fit<S>(spec: &DiagramSpec, seed: Option<u64>) -> Result<Layout<S>, String>
+/// Default smoothing `eps` for the `smooth_*` losses when the caller omits
+/// `loss_eps`. Matches the core's "~1% of typical residual magnitude" guidance
+/// and the value its own tests/benches use (`smooth_*(1e-3)`).
+const DEFAULT_LOSS_EPS: f64 = 1e-3;
+
+/// Map a snake_case loss name to a [`LossType`]. The six `smooth_*` variants use
+/// `eps` (falling back to [`DEFAULT_LOSS_EPS`]); the rest ignore it.
+fn parse_loss(name: &str, eps: Option<f64>) -> Result<LossType, String> {
+    let e = eps.unwrap_or(DEFAULT_LOSS_EPS);
+    let loss = match name {
+        "sum_squared" => LossType::SumSquared,
+        "sum_absolute" => LossType::SumAbsolute,
+        "sum_absolute_region_error" => LossType::SumAbsoluteRegionError,
+        "sum_squared_region_error" => LossType::SumSquaredRegionError,
+        "max_absolute" => LossType::MaxAbsolute,
+        "max_squared" => LossType::MaxSquared,
+        "root_mean_squared" => LossType::RootMeanSquared,
+        "stress" => LossType::Stress,
+        "diag_error" => LossType::DiagError,
+        "log_sum_absolute" => LossType::LogSumAbsolute,
+        "smooth_sum_absolute" => LossType::smooth_sum_absolute(e),
+        "smooth_sum_absolute_region_error" => LossType::smooth_sum_absolute_region_error(e),
+        "smooth_max_absolute" => LossType::smooth_max_absolute(e),
+        "smooth_max_squared" => LossType::smooth_max_squared(e),
+        "smooth_diag_error" => LossType::smooth_diag_error(e),
+        "smooth_log_sum_absolute" => LossType::smooth_log_sum_absolute(e),
+        other => {
+            return Err(format!(
+                "invalid loss '{other}' (want sum_squared|sum_absolute|\
+                 sum_absolute_region_error|sum_squared_region_error|max_absolute|\
+                 max_squared|root_mean_squared|stress|diag_error|log_sum_absolute|\
+                 smooth_sum_absolute|smooth_sum_absolute_region_error|\
+                 smooth_max_absolute|smooth_max_squared|smooth_diag_error|\
+                 smooth_log_sum_absolute)"
+            ));
+        }
+    };
+    Ok(loss)
+}
+
+/// Map a snake_case optimizer name to an [`Optimizer`].
+fn parse_optimizer(name: &str) -> Result<Optimizer, String> {
+    match name {
+        "levenberg_marquardt" => Ok(Optimizer::LevenbergMarquardt),
+        "lbfgs" => Ok(Optimizer::Lbfgs),
+        "nelder_mead" => Ok(Optimizer::NelderMead),
+        "trf" => Ok(Optimizer::Trf),
+        "cmaes_lm" => Ok(Optimizer::CmaEsLm),
+        "cmaes_trf" => Ok(Optimizer::CmaEsTrf),
+        other => Err(format!(
+            "invalid optimizer '{other}' (want levenberg_marquardt|lbfgs|\
+             nelder_mead|trf|cmaes_lm|cmaes_trf)"
+        )),
+    }
+}
+
+/// Map a snake_case MDS-solver name to an [`MdsSolver`].
+fn parse_mds_solver(name: &str) -> Result<MdsSolver, String> {
+    match name {
+        "lbfgs" => Ok(MdsSolver::Lbfgs),
+        "levenberg_marquardt" => Ok(MdsSolver::LevenbergMarquardt),
+        other => Err(format!(
+            "invalid mds_solver '{other}' (want lbfgs|levenberg_marquardt)"
+        )),
+    }
+}
+
+/// Map a snake_case initial-sampler name to an [`InitialSampler`].
+fn parse_initial_sampler(name: &str) -> Result<InitialSampler, String> {
+    match name {
+        "uniform" => Ok(InitialSampler::Uniform),
+        "latin_hypercube" => Ok(InitialSampler::LatinHypercube),
+        other => Err(format!(
+            "invalid initial_sampler '{other}' (want uniform|latin_hypercube)"
+        )),
+    }
+}
+
+/// Resolved, validated fitting knobs (capi-side; not a core type). Built once in
+/// `euler_impl` and applied to a freshly constructed `Fitter` in [`fit`].
+struct FitConfig {
+    seed: Option<u64>,
+    loss: Option<LossType>,
+    n_restarts: Option<usize>,
+    optimizer: Option<Optimizer>,
+    mds_solver: Option<MdsSolver>,
+    initial_sampler: Option<InitialSampler>,
+    cmaes_fallback_threshold: Option<f64>,
+    max_iterations: Option<usize>,
+    tolerance: Option<f64>,
+    xtol: Option<f64>,
+    ftol: Option<f64>,
+    gtol: Option<f64>,
+    jobs: Option<usize>,
+}
+
+impl FitConfig {
+    /// Parse and validate every enum string up front so a bad value surfaces
+    /// regardless of the requested shape and each string is parsed exactly once.
+    fn from_input(input: &EulerInput) -> Result<Self, String> {
+        Ok(Self {
+            seed: input.seed,
+            loss: input
+                .loss
+                .as_deref()
+                .map(|s| parse_loss(s, input.loss_eps))
+                .transpose()?,
+            n_restarts: input.n_restarts,
+            optimizer: input
+                .optimizer
+                .as_deref()
+                .map(parse_optimizer)
+                .transpose()?,
+            mds_solver: input
+                .mds_solver
+                .as_deref()
+                .map(parse_mds_solver)
+                .transpose()?,
+            initial_sampler: input
+                .initial_sampler
+                .as_deref()
+                .map(parse_initial_sampler)
+                .transpose()?,
+            cmaes_fallback_threshold: input.cmaes_fallback_threshold,
+            max_iterations: input.max_iterations,
+            tolerance: input.tolerance,
+            xtol: input.xtol,
+            ftol: input.ftol,
+            gtol: input.gtol,
+            jobs: input.jobs,
+        })
+    }
+}
+
+fn fit<S>(spec: &DiagramSpec, cfg: &FitConfig) -> Result<Layout<S>, String>
 where
     S: DiagramShape + Copy + 'static,
 {
     let mut fitter = Fitter::<S>::new(spec);
-    if let Some(s) = seed {
+    if let Some(s) = cfg.seed {
         fitter = fitter.seed(s);
+    }
+    if let Some(l) = cfg.loss {
+        fitter = fitter.loss_type(l);
+    }
+    if let Some(n) = cfg.n_restarts {
+        fitter = fitter.n_restarts(n);
+    }
+    if let Some(o) = cfg.optimizer {
+        fitter = fitter.optimizer(o);
+    }
+    if let Some(m) = cfg.mds_solver {
+        fitter = fitter.initial_solver(m);
+    }
+    if let Some(s) = cfg.initial_sampler {
+        fitter = fitter.initial_sampler(s);
+    }
+    if let Some(t) = cfg.cmaes_fallback_threshold {
+        fitter = fitter.cmaes_fallback_threshold(t);
+    }
+    if let Some(i) = cfg.max_iterations {
+        fitter = fitter.max_iterations(i);
+    }
+    if let Some(t) = cfg.tolerance {
+        fitter = fitter.tolerance(t);
+    }
+    if let Some(x) = cfg.xtol {
+        fitter = fitter.xtol(x);
+    }
+    if let Some(f) = cfg.ftol {
+        fitter = fitter.ftol(f);
+    }
+    if let Some(g) = cfg.gtol {
+        fitter = fitter.gtol(g);
+    }
+    if let Some(j) = cfg.jobs {
+        fitter = fitter.jobs(j);
     }
     fitter
         .fit()
@@ -443,20 +653,13 @@ where
 
 fn euler_impl(input: EulerInput) -> Result<LayoutOut, String> {
     let spec = build_spec(&input)?;
+    let cfg = FitConfig::from_input(&input)?;
     let shape = input.shape.as_deref().unwrap_or("circle");
     match shape {
-        "circle" => Ok(extract(&fit::<Circle>(&spec, input.seed)?, &spec, "circle")),
-        "ellipse" => Ok(extract(
-            &fit::<Ellipse>(&spec, input.seed)?,
-            &spec,
-            "ellipse",
-        )),
-        "square" => Ok(extract(&fit::<Square>(&spec, input.seed)?, &spec, "square")),
-        "rectangle" => Ok(extract(
-            &fit::<Rectangle>(&spec, input.seed)?,
-            &spec,
-            "rectangle",
-        )),
+        "circle" => Ok(extract(&fit::<Circle>(&spec, &cfg)?, &spec, "circle")),
+        "ellipse" => Ok(extract(&fit::<Ellipse>(&spec, &cfg)?, &spec, "ellipse")),
+        "square" => Ok(extract(&fit::<Square>(&spec, &cfg)?, &spec, "square")),
+        "rectangle" => Ok(extract(&fit::<Rectangle>(&spec, &cfg)?, &spec, "rectangle")),
         other => Err(format!(
             "invalid shape '{other}' (want circle|ellipse|square|rectangle)"
         )),
@@ -658,5 +861,87 @@ mod tests {
         let s = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
         unsafe { eunoia_free(ptr) };
         assert!(!s.is_empty());
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 4(a) fitting knobs
+    // ------------------------------------------------------------------------
+
+    /// A two-set spec with a fixed seed reused across the knob tests.
+    fn two_set(extra: &str) -> String {
+        format!(
+            r#"{{"sets":[{{"combination":"A","size":5}},{{"combination":"B","size":3}},
+                {{"combination":"A&B","size":1}}],"seed":1{extra}}}"#
+        )
+    }
+
+    #[test]
+    fn euler_loss_type_is_honored() {
+        // A plain non-default loss and a smooth loss with explicit eps both fit.
+        for extra in [
+            r#","loss":"sum_absolute""#,
+            r#","loss":"smooth_max_absolute","loss_eps":0.01"#,
+        ] {
+            let out = call(eunoia_euler, &two_set(extra));
+            let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(v["ok"], true, "input was {extra}");
+            assert!(v["metrics"]["loss"].as_f64().unwrap() >= 0.0);
+        }
+    }
+
+    #[test]
+    fn euler_numeric_knobs_accepted() {
+        let out = call(
+            eunoia_euler,
+            &two_set(
+                r#","n_restarts":3,"max_iterations":50,"tolerance":1e-4,
+                   "xtol":1e-7,"ftol":1e-7,"gtol":1e-7,
+                   "cmaes_fallback_threshold":1e-2,"jobs":1"#,
+            ),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["shapes"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn euler_solver_and_sampler_knobs_accepted() {
+        let out = call(
+            eunoia_euler,
+            &two_set(
+                r#","optimizer":"levenberg_marquardt","mds_solver":"lbfgs",
+                   "initial_sampler":"latin_hypercube""#,
+            ),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+    }
+
+    #[test]
+    fn euler_bad_enum_values_are_reported() {
+        for (extra, bad) in [
+            (r#","loss":"frobnicate""#, "frobnicate"),
+            (r#","optimizer":"genetic""#, "genetic"),
+            (r#","mds_solver":"gauss""#, "gauss"),
+            (r#","initial_sampler":"sobol""#, "sobol"),
+        ] {
+            let out = call(eunoia_euler, &two_set(extra));
+            let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(v["ok"], false, "input was {extra}");
+            assert!(v["error"].as_str().unwrap().contains(bad));
+        }
+    }
+
+    #[test]
+    fn euler_enum_error_surfaces_regardless_of_shape() {
+        // A bad loss together with a non-circle shape must still error, proving
+        // the knobs are validated before the shape match.
+        let out = call(
+            eunoia_euler,
+            &two_set(r#","shape":"ellipse","loss":"frobnicate""#),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], false);
+        assert!(v["error"].as_str().unwrap().contains("frobnicate"));
     }
 }
