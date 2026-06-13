@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@jolars/eunoia": "link:../npm",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.1",
     "jspdf": "^4.2.1",
     "svg2pdf.js": "^2.7.0"
   }
