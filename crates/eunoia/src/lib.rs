@@ -3,7 +3,7 @@
 //! A Rust library for creating area-proportional Euler and Venn diagrams.
 //!
 //! Eunoia generates optimal layouts for set visualizations using various geometric shapes
-//! (circles, ellipses, rectangles, triangles). The library uses a two-phase optimization
+//! (circles, ellipses, rectangles, squares). The library uses a two-phase optimization
 //! approach:
 //!
 //! 1. **Initial layout**: Multi-dimensional scaling (MDS) to place fixed-size shapes
