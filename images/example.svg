@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6.042946878661155 -6.028873770769782 12.085893757322308 12.057747541539564" preserveAspectRatio="xMidYMid meet" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+<ellipse cx="-1.7945781928843112" cy="-1.4911443591302525" rx="2.89408106180557" ry="3.6295549501684867" transform="rotate(213.35010755418222 -1.7945781928843112 -1.4911443591302525)" fill="#56b4e9" fill-opacity="0.5" stroke="none" />
+<ellipse cx="1.9292092142697412" cy="-1.4911443591302525" rx="3.145097563276454" ry="2.6314150433403394" transform="rotate(213.24393868569965 1.9292092142697412 -1.4911443591302525)" fill="#e69f00" fill-opacity="0.5" stroke="none" />
+<ellipse cx="0.3365485563064746" cy="1.901653240566895" rx="3.1068941056024393" ry="2.9711301336870264" transform="rotate(213.6483971925388 0.3365485563064746 1.901653240566895)" fill="#009e73" fill-opacity="0.5" stroke="none" />
+<ellipse cx="-1.7945781928843112" cy="-1.4911443591302525" rx="2.89408106180557" ry="3.6295549501684867" transform="rotate(213.35010755418222 -1.7945781928843112 -1.4911443591302525)" fill="none" stroke="black" stroke-width="0.04176589655592735" />
+<ellipse cx="1.9292092142697412" cy="-1.4911443591302525" rx="3.145097563276454" ry="2.6314150433403394" transform="rotate(213.24393868569965 1.9292092142697412 -1.4911443591302525)" fill="none" stroke="black" stroke-width="0.04176589655592735" />
+<ellipse cx="0.3365485563064746" cy="1.901653240566895" rx="3.1068941056024393" ry="2.9711301336870264" transform="rotate(213.6483971925388 0.3365485563064746 1.901653240566895)" fill="none" stroke="black" stroke-width="0.04176589655592735" />
+<text x="-2.8757085203102575" y="-1.79943218509524" text-anchor="middle" dominant-baseline="central" font-size="0.6264884483389103" font-weight="400" font-style="normal" fill="black">Adventure</text>
+<text x="2.9719243431805564" y="-1.8749869532660375" text-anchor="middle" dominant-baseline="central" font-size="0.6264884483389103" font-weight="400" font-style="normal" fill="black">Comedy</text>
+<text x="0.5529636561846516" y="2.93756274872369" text-anchor="middle" dominant-baseline="central" font-size="0.6264884483389103" font-weight="400" font-style="normal" fill="black">Drama</text>
+</svg>
