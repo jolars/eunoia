@@ -25,10 +25,20 @@ This is a **Cargo workspace** plus two JS sub-projects. Four distinct artifacts:
 How the JS layers fit together: `eunoia-wasm` is compiled by `wasm-pack` into
 `npm/`, then `ts/prepare-package.mjs` compiles `ts/index.ts` on top and writes
 `npm/package.json` from `ts/package.json`. The npm package exposes only the
-high-level API: `@jolars/eunoia` (default entry) and `@jolars/eunoia/svg`. The
-wasm-bindgen surface still ships (it is the runtime backing `index.js`) but is
-intentionally *not* exported — the `exports` map encapsulates it, so there is no
-public `/raw` entry point.
+high-level API: `@jolars/eunoia` (default entry), `@jolars/eunoia/svg`, and
+`@jolars/eunoia/web`. The wasm-bindgen surface still ships (it is the runtime
+backing `index.js`) but is intentionally *not* exported — the `exports` map
+encapsulates it, so there is no public `/raw` entry point.
+
+The default `.` entry is the `--target bundler` build: it `import`s the `.wasm`
+module directly, so it needs a bundler (this is what `web/` relies on via vite).
+The `./web` entry exists for bundler-less consumers (a plain `<script
+type="module">`, Observable, raw-file CDNs): `ts/build-web.mjs` runs a separate
+`wasm-pack --target web` build and esbuild-inlines the wasm (base64) into a
+single self-contained `npm/web.js`, exposing an explicit async `init()` that
+must be awaited once before `euler()`/`venn()`. It is built by `task build-web`
+(and in `publish-npm.yml`), kept off the `build-wasm` hot path since the web app
+uses the `.` entry. `./svg` is pure JS (no wasm) and works from a CDN as-is.
 
 Edition 2024, MSRV pinned to **1.88.0** (in `rust-toolchain.toml` and `devenv.nix`).
 Code uses the `module.rs` + `module/` layout — never `module/mod.rs`.

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Eunoia — Euler diagram (no bundler)</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 40rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      #diagram {
+        width: 100%;
+        height: auto;
+      }
+      #metrics {
+        color: #555;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Eunoia Euler diagram</h1>
+    <p>
+      Loaded straight from a CDN — no build step. The
+      <code>@jolars/eunoia/web</code> entry is a single ESM file with the
+      WebAssembly module inlined.
+    </p>
+
+    <svg id="diagram" viewBox="0 0 520 520" font-family="system-ui, sans-serif"></svg>
+    <p id="metrics">Fitting…</p>
+
+    <script type="module">
+      import { euler, init } from "https://cdn.jsdelivr.net/npm/@jolars/eunoia/web.js";
+
+      // Instantiate the embedded WebAssembly module once before fitting.
+      await init();
+
+      const layout = euler({
+        sets: {
+          A: 8, B: 6, C: 5,
+          "A&B": 3, "A&C": 2, "B&C": 2,
+          "A&B&C": 1,
+        },
+        shape: "ellipse",       // "circle" | "ellipse" | "square" | "rectangle"
+        output: "polygons",     // one outline polygon per set + shape label anchors
+        inputType: "exclusive", // sizes are exclusive subset sizes
+        seed: 42,               // pin the layout for reproducible output
+      });
+
+      const polys = layout.polygons; // set outlines
+      const shapes = layout.ellipses; // fitted shapes (carry labelAnchor)
+
+      // world bounds → viewBox transform (SVG y points down, so flip it)
+      const xs = polys.flatMap((p) => p.vertices.map((v) => v.x));
+      const ys = polys.flatMap((p) => p.vertices.map((v) => v.y));
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const span = Math.max(maxX - minX, maxY - minY);
+      const pad = 0.06 * span;
+      const W = 520, H = 520;
+      const s = Math.min(W / (maxX - minX + 2 * pad), H / (maxY - minY + 2 * pad));
+      const tx = (x) => (x - minX + pad) * s;
+      const ty = (y) => H - (y - minY + pad) * s;
+
+      const palette = ["#4e79a7", "#f28e2b", "#59a14f", "#e15759", "#76b7b2"];
+      const toPath = (p) =>
+        "M" + p.vertices.map((v) => `${tx(v.x)},${ty(v.y)}`).join("L") + "Z";
+
+      const escape = (str) =>
+        String(str).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]);
+
+      const fills = polys
+        .map(
+          (p, i) =>
+            `<path d="${toPath(p)}" fill="${palette[i % palette.length]}" ` +
+            `fill-opacity="0.45" stroke="${palette[i % palette.length]}" stroke-width="1.5"/>`,
+        )
+        .join("");
+
+      const labels = shapes
+        .map(
+          (e) =>
+            `<text x="${tx(e.labelAnchor.x)}" y="${ty(e.labelAnchor.y)}" ` +
+            `text-anchor="middle" dominant-baseline="central" ` +
+            `font-weight="700" font-size="16">${escape(e.label)}</text>`,
+        )
+        .join("");
+
+      document.getElementById("diagram").innerHTML = fills + labels;
+      document.getElementById("metrics").textContent =
+        `Loss: ${layout.metrics.loss.toFixed(5)} · diagError: ${layout.metrics.diagError.toFixed(5)}`;
+    </script>
+  </body>
+</html>

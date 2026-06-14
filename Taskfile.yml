@@ -100,6 +100,15 @@ tasks:
       - wasm-pack build crates/eunoia-wasm --target bundler --out-dir ../../npm
       - node ts/prepare-package.mjs
 
+  build-web:
+    desc: Build the self-contained browser bundle (@jolars/eunoia/web)
+    # Separate from `build-wasm`: this runs its own `wasm-pack --target web`
+    # build and esbuild-inlines the result into a single `npm/web.js`. Kept off
+    # the `build-wasm` hot path (the web app's dev loop uses the `.` entry, not
+    # `/web`), so it only runs for releases — see publish-npm.yml — or on demand.
+    cmds:
+      - node ts/build-web.mjs
+
   pack-npm:
     desc: Alias for build-wasm (kept for back-compat with publish workflows)
     cmds:

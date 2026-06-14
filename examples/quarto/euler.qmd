@@ -1,0 +1,79 @@
+---
+title: "Area-proportional Euler diagrams with Eunoia"
+format: html
+---
+
+Eunoia ships a self-contained browser build (`@jolars/eunoia/web`): a single
+ESM file with the WebAssembly module inlined, so it loads from a CDN with no
+bundler. Quarto renders `{ojs}` cells with the Observable runtime, so it drops
+right in.
+
+```{ojs}
+//| code-fold: true
+//| code-summary: "Load Eunoia (WebAssembly)"
+eunoia = {
+  const mod = await import("https://cdn.jsdelivr.net/npm/@jolars/eunoia/web.js");
+  await mod.init(); // instantiate the embedded WebAssembly module (once)
+  return mod;
+}
+```
+
+```{ojs}
+// Fit the diagram from set sizes. Keys are set names; "A&B" is an intersection.
+layout = eunoia.euler({
+  sets: {
+    A: 8, B: 6, C: 5,
+    "A&B": 3, "A&C": 2, "B&C": 2,
+    "A&B&C": 1
+  },
+  shape: "ellipse",       // "circle" | "ellipse" | "square" | "rectangle"
+  output: "polygons",     // one outline polygon per set + shape label anchors
+  inputType: "exclusive", // sizes are exclusive subset sizes
+  seed: 42                // pin the layout for reproducible output
+})
+```
+
+```{ojs}
+//| label: fig-euler
+//| fig-cap: "Euler diagram fitted by Eunoia."
+diagram = {
+  const polys = layout.polygons; // set outlines
+  const shapes = layout.ellipses; // fitted shapes (carry labelAnchor)
+
+  // world bounds → viewBox transform (SVG y points down, so flip it)
+  const xs = polys.flatMap((p) => p.vertices.map((v) => v.x));
+  const ys = polys.flatMap((p) => p.vertices.map((v) => v.y));
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const span = Math.max(maxX - minX, maxY - minY);
+  const pad = 0.06 * span;
+  const W = 520, H = 520;
+  const s = Math.min(W / (maxX - minX + 2 * pad), H / (maxY - minY + 2 * pad));
+  const tx = (x) => (x - minX + pad) * s;
+  const ty = (y) => H - (y - minY + pad) * s;
+
+  const palette = ["#4e79a7", "#f28e2b", "#59a14f", "#e15759", "#76b7b2"];
+  const toPath = (p) =>
+    "M" + p.vertices.map((v) => `${tx(v.x)},${ty(v.y)}`).join("L") + "Z";
+
+  return svg`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"
+                  font-family="system-ui, sans-serif">
+    ${polys.map((p, i) => svg`<path d="${toPath(p)}"
+        fill="${palette[i % palette.length]}" fill-opacity="0.45"
+        stroke="${palette[i % palette.length]}" stroke-width="1.5"/>`)}
+    ${shapes.map((e) => svg`<text x="${tx(e.labelAnchor.x)}" y="${ty(e.labelAnchor.y)}"
+        text-anchor="middle" dominant-baseline="central"
+        font-weight="700" font-size="16">${e.label}</text>`)}
+  </svg>`;
+}
+```
+
+```{ojs}
+// Fit quality — closer to 0 is better.
+md`**Loss:** ${layout.metrics.loss.toFixed(5)} &nbsp;·&nbsp;
+   **diagError:** ${layout.metrics.diagError.toFixed(5)}`
+```
+
+`svg` and `md` are Observable built-ins, so no import is needed. If your Quarto
+version doesn't expose `svg`, add `htl = import("https://esm.sh/htl")` and use
+`htl.svg` instead.

@@ -33,6 +33,10 @@
     "./svg": {
       "types": "./svg.d.ts",
       "default": "./svg.js"
+    },
+    "./web": {
+      "types": "./web.d.ts",
+      "default": "./web.js"
     }
   },
   "files": [
@@ -40,6 +44,8 @@
     "index.d.ts",
     "svg.js",
     "svg.d.ts",
+    "web.js",
+    "web.d.ts",
     "eunoia_wasm.js",
     "eunoia_wasm.d.ts",
     "eunoia_wasm_bg.js",
@@ -55,6 +61,7 @@
   },
   "packageManager": "pnpm@10.33.2",
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "typescript": "~6.0.3"
   }
 }

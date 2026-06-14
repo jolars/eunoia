@@ -195,5 +195,6 @@ dist
 # TS source build state
 /ts/node_modules/
 /ts/eunoia_wasm.d.ts
+/ts/.web-build/
 /ts/package-lock.json
 /.claude/scheduled_tasks.lock

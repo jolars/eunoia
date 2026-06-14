@@ -73,13 +73,14 @@ fn main() {
 The pure-Rust core powers bindings in several languages, all backed by the same
 fitting engine:
 
-  | Language       | Package                                                                                    | Install                       |
-  | -------------- | ------------------------------------------------------------------------------------------ | ----------------------------- |
-  | **Rust**       | [`eunoia`](https://crates.io/crates/eunoia)                                                | `cargo add eunoia`            |
-  | **JavaScript** | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)                           | `npm install @jolars/eunoia`  |
-  | **Python**     | [`eunoia`](https://pypi.org/project/eunoia/) ([repo](https://github.com/jolars/eunoia-py)) | `pip install eunoia`          |
-  | **Julia**      | [`Eunoia.jl`](https://github.com/jolars/eunoia/tree/main/julia/Eunoia)                     | (see the package README)      |
-  | **Web app**    | [eunoia.bz](https://eunoia.bz)                                                             | build diagrams in the browser |
+  | Language       | Package                                                                                          | Install                       |
+  | -------------- | ------------------------------------------------------------------------------------------------ | ----------------------------- |
+  | **Rust**       | [`eunoia`](https://crates.io/crates/eunoia)                                                      | `cargo add eunoia`            |
+  | **R**          | [`eulerr`](https://CRAN.R-project.org/package=eulerr) ([repo](https://github.com/jolars/eulerr)) | `install.packages("eulerr")`  |
+  | **Python**     | [`eunoia`](https://pypi.org/project/eunoia/) ([repo](https://github.com/jolars/eunoia-py))       | `pip install eunoia`          |
+  | **Julia**      | [`Eunoia.jl`](https://github.com/jolars/eunoia/tree/main/julia/Eunoia)                           | (see the package README)      |
+  | **JavaScript** | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)                                 | `npm install @jolars/eunoia`  |
+  | **Web app**    | [eunoia.bz](https://eunoia.bz)                                                                   | build diagrams in the browser |
 
 ### JavaScript / TypeScript
 
@@ -109,8 +110,41 @@ const v = venn({ n: 3, output: "regions" });
 ```
 
 A renderer-agnostic SVG serializer is available at `@jolars/eunoia/svg`. The
-package is built with `wasm-pack --target bundler`, so it works with any modern
-bundler (Vite, Webpack, Rollup, esbuild) and Node 20+.
+default entry is built with `wasm-pack --target bundler`, so it works with any
+modern bundler (Vite, Webpack, Rollup, esbuild) and Node 20+.
+
+### Browser / Observable (no bundler)
+
+The default entry imports the `.wasm` module directly, which only a bundler can
+resolve. For a plain HTML page, an [Observable](https://observablehq.com)
+notebook, or any environment without a build step, use the `@jolars/eunoia/web`
+entry instead: a single self-contained ESM file with the WebAssembly module
+inlined. Call `init()` once before fitting:
+
+```html
+<script type="module">
+  import { euler, init } from "https://esm.sh/@jolars/eunoia/web";
+
+  await init(); // instantiate the embedded WebAssembly module (once)
+
+  const layout = euler({ sets: { A: 5, B: 2, "A&B": 1 } });
+  console.log(layout.circles);
+</script>
+```
+
+In Observable:
+
+```js
+eunoia = import("https://esm.sh/@jolars/eunoia/web")
+await eunoia.init()
+layout = eunoia.euler({ sets: { A: 5, B: 2, "A&B": 1 } })
+```
+
+`@jolars/eunoia/svg` is pure JavaScript (no WebAssembly), so it already works
+directly from a CDN with no `init()`.
+
+Full runnable examples (a Quarto document and a standalone HTML page) are in
+[`examples/`](examples/).
 
 ## Documentation
 
@@ -119,6 +153,5 @@ bundler (Vite, Webpack, Rollup, esbuild) and Node 20+.
 
 ## License
 
-Eunoia is distributed under the terms of either the
-[MIT license](LICENSE-MIT) or the [Apache License 2.0](LICENSE-APACHE), at your
-option.
+Eunoia is distributed under the terms of either the [MIT license](LICENSE-MIT)
+or the [Apache License 2.0](LICENSE-APACHE), at your option.
