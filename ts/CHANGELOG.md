@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.1.0...eunoia-npm-v1.2.0) (2026-06-14)
+
+### Features
+- add self-contained browser bundle ([`770ad10`](https://github.com/jolars/eunoia/commit/770ad103072052ee87b7462ee93de351c4ad0998))
+
+### Dependencies
+- updated eunoia to v1.2.0
+
 ## [1.1.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.0.0...eunoia-npm-v1.1.0) (2026-06-12)
 
 ### Dependencies
