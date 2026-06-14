@@ -120,6 +120,22 @@ struct EulerInput {
     gtol: Option<f64>,
     #[serde(default)]
     jobs: Option<usize>,
+
+    // --- Phase 4(b) plot knobs ---
+    //
+    // All optional; omitting a field leaves the corresponding `PlotOptions`
+    // default untouched. These are numeric (no enum tokens), so unlike the
+    // 4(a) knobs they need no `parse_*` validation — they are forwarded
+    // straight to the `PlotOptions` builder before `layout.plot_data`.
+    /// Vertices per polygonized shape/region (`PlotOptions::n_vertices`, 200).
+    #[serde(default)]
+    n_vertices: Option<usize>,
+    /// Polylabel anchor precision (`PlotOptions::label_precision`, 0.01).
+    #[serde(default)]
+    label_precision: Option<f64>,
+    /// Sliver-rejection fraction (`PlotOptions::sliver_threshold`, 1e-3).
+    #[serde(default)]
+    sliver_threshold: Option<f64>,
 }
 
 #[derive(serde::Deserialize)]
@@ -367,12 +383,17 @@ fn build_plot_data(plot: &PlotData) -> PlotDataOut {
 /// Pull the fitted shapes, label anchors, metrics, plot data, and optional
 /// container out of a `Layout` into the serializable `LayoutOut`. Shared by
 /// `euler` and `venn`.
-fn extract<S>(layout: &Layout<S>, spec: &DiagramSpec, shape: &str) -> LayoutOut
+fn extract<S>(
+    layout: &Layout<S>,
+    spec: &DiagramSpec,
+    shape: &str,
+    plot_opts: PlotOptions,
+) -> LayoutOut
 where
     S: DiagramShape + Polygonize + ToShapeOut + Copy + 'static,
 {
     // Per-set label anchors (pole of inaccessibility of `shape \ ⋃ others`).
-    let plot = layout.plot_data(spec, PlotOptions::default());
+    let plot = layout.plot_data(spec, plot_opts);
     let plot_data = build_plot_data(&plot);
     let anchors: HashMap<String, Point> = plot.set_anchors.into_iter().collect();
 
@@ -651,15 +672,53 @@ where
         .map_err(|e| format!("failed to fit diagram: {e}"))
 }
 
+/// Build the `PlotOptions` for `layout.plot_data`, applying only the knobs the
+/// caller set (mirroring `fit`'s `if let Some(..)` shape) so omitted fields keep
+/// the `PlotOptions::default()` values.
+fn plot_options_from_input(input: &EulerInput) -> PlotOptions {
+    let mut opts = PlotOptions::default();
+    if let Some(n) = input.n_vertices {
+        opts = opts.n_vertices(n);
+    }
+    if let Some(p) = input.label_precision {
+        opts = opts.label_precision(p);
+    }
+    if let Some(t) = input.sliver_threshold {
+        opts = opts.sliver_threshold(t);
+    }
+    opts
+}
+
 fn euler_impl(input: EulerInput) -> Result<LayoutOut, String> {
     let spec = build_spec(&input)?;
     let cfg = FitConfig::from_input(&input)?;
+    let plot_opts = plot_options_from_input(&input);
     let shape = input.shape.as_deref().unwrap_or("circle");
     match shape {
-        "circle" => Ok(extract(&fit::<Circle>(&spec, &cfg)?, &spec, "circle")),
-        "ellipse" => Ok(extract(&fit::<Ellipse>(&spec, &cfg)?, &spec, "ellipse")),
-        "square" => Ok(extract(&fit::<Square>(&spec, &cfg)?, &spec, "square")),
-        "rectangle" => Ok(extract(&fit::<Rectangle>(&spec, &cfg)?, &spec, "rectangle")),
+        "circle" => Ok(extract(
+            &fit::<Circle>(&spec, &cfg)?,
+            &spec,
+            "circle",
+            plot_opts,
+        )),
+        "ellipse" => Ok(extract(
+            &fit::<Ellipse>(&spec, &cfg)?,
+            &spec,
+            "ellipse",
+            plot_opts,
+        )),
+        "square" => Ok(extract(
+            &fit::<Square>(&spec, &cfg)?,
+            &spec,
+            "square",
+            plot_opts,
+        )),
+        "rectangle" => Ok(extract(
+            &fit::<Rectangle>(&spec, &cfg)?,
+            &spec,
+            "rectangle",
+            plot_opts,
+        )),
         other => Err(format!(
             "invalid shape '{other}' (want circle|ellipse|square|rectangle)"
         )),
@@ -680,7 +739,9 @@ fn venn_impl(input: VennInput) -> Result<LayoutOut, String> {
                 .map_err(|e| format!("no {}-set Venn for {}: {e}", n, $name))?
                 .with_names(&refs)
                 .into_layout_and_spec();
-            Ok(extract(&layout, &spec, $name))
+            // Venn plot-tuning knobs are out of scope (slice (a)/(b) are
+            // euler-only); the shared `extract` just gets the defaults.
+            Ok(extract(&layout, &spec, $name, PlotOptions::default()))
         }};
     }
 
@@ -943,5 +1004,52 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["ok"], false);
         assert!(v["error"].as_str().unwrap().contains("frobnicate"));
+    }
+
+    // --- Phase 4(b) plot knobs ---
+
+    fn outline_len(v: &serde_json::Value, set: &str) -> usize {
+        v["plot_data"]["shape_outlines"][set]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing shape_outlines[{set}]"))
+            .len()
+    }
+
+    #[test]
+    fn euler_plot_knobs_are_honored() {
+        // `n_vertices` controls how densely each set's outline is polygonized,
+        // so it is directly observable in `plot_data.shape_outlines`. A low
+        // value yields a far coarser outline than the 200-vertex default.
+        let coarse = call(eunoia_euler, &two_set(r#","n_vertices":40"#));
+        let coarse: serde_json::Value = serde_json::from_str(&coarse).unwrap();
+        assert_eq!(coarse["ok"], true);
+        let coarse_len = outline_len(&coarse, "A");
+        assert!(
+            (30..=60).contains(&coarse_len),
+            "n_vertices=40 outline had {coarse_len} points"
+        );
+
+        let default = call(eunoia_euler, &two_set(""));
+        let default: serde_json::Value = serde_json::from_str(&default).unwrap();
+        let default_len = outline_len(&default, "A");
+        assert!(
+            (150..=250).contains(&default_len),
+            "default outline had {default_len} points"
+        );
+        assert!(coarse_len < default_len);
+    }
+
+    #[test]
+    fn euler_plot_knobs_accepted() {
+        // `label_precision` + `sliver_threshold` have no easily-asserted scalar
+        // effect; check they are accepted and leave `plot_data` well-formed.
+        let out = call(
+            eunoia_euler,
+            &two_set(r#","label_precision":0.05,"sliver_threshold":1e-2"#),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert!(v["plot_data"]["region_pieces"].is_object());
+        assert!(outline_len(&v, "A") > 0);
     }
 }

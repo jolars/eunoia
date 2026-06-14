@@ -171,6 +171,17 @@ tokens are rejected by the native core and surface as an error:
 - `jobs`: thread count for the restart loop; a pure wall-time knob, the chosen
   layout is identical regardless of value.
 
+Plot-tuning knobs (all optional; `nothing` keeps the core default). These shape
+the `plot_data` geometry used for rendering, not the fit:
+
+- `n_vertices`: vertices per polygonized shape/region outline (default `200`).
+  Lower values give coarser outlines; higher values, smoother ones.
+- `label_precision`: pole-of-inaccessibility search precision for label anchors,
+  in coordinate units (default `0.01`).
+- `sliver_threshold`: minimum region-piece area, as a fraction of the largest
+  piece, below which a piece is rejected as a polygonization artifact (default
+  `1e-3`); `0.0` disables the filter.
+
 Returns an [`EulerFit`](@ref) carrying the fitted `shapes`, the
 `original_values`/`fitted_values`/`residuals` per region, the per-region
 `region_error`, the scalar fit metrics, and—if a `complement` was given—a
@@ -192,7 +203,10 @@ function euler(values::AbstractDict; shape::AbstractString="circle",
                xtol::Union{Nothing,Real}=nothing,
                ftol::Union{Nothing,Real}=nothing,
                gtol::Union{Nothing,Real}=nothing,
-               jobs::Union{Nothing,Integer}=nothing)
+               jobs::Union{Nothing,Integer}=nothing,
+               n_vertices::Union{Nothing,Integer}=nothing,
+               label_precision::Union{Nothing,Real}=nothing,
+               sliver_threshold::Union{Nothing,Real}=nothing)
     if is_membership_input(values)
         input_type == "exclusive" || error(
             "invalid_input: membership-list input is always exclusive; " *
@@ -237,6 +251,12 @@ function euler(values::AbstractDict; shape::AbstractString="circle",
     ftol === nothing || (payload["ftol"] = float(ftol))
     gtol === nothing || (payload["gtol"] = float(gtol))
     jobs === nothing || (payload["jobs"] = Int(jobs))
+
+    # Phase 4(b) plot-tuning knobs: same forward-only-when-set idiom, threaded
+    # into the native `PlotOptions` before `plot_data` is extracted.
+    n_vertices === nothing || (payload["n_vertices"] = Int(n_vertices))
+    label_precision === nothing || (payload["label_precision"] = float(label_precision))
+    sliver_threshold === nothing || (payload["sliver_threshold"] = float(sliver_threshold))
 
     resp = _run(_euler[], payload)
     return _finish_euler(resp, original_values, canonical_keys, input_type)

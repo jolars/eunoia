@@ -1,7 +1,7 @@
 # Eunoia.jl roadmap
 
-Status: **Phases 1–3 complete; Phase 4 slice (a) (fitting knobs) done — slices
-(b) plot tuning and (c) label placement next, then Phase 5 (release polish &
+Status: **Phases 1–3 complete; Phase 4 slices (a) (fitting knobs) and (b) (plot
+tuning) done — slice (c) label placement next, then Phase 5 (release polish &
 split-out).** This document plans the path
 to a registerable, plotting-capable package on par with the
 [`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and the
@@ -46,8 +46,11 @@ Progress:
   `n_restarts`/`optimizer`/`mds_solver`/`initial_sampler`/
   `cmaes_fallback_threshold`/`max_iterations`/`tolerance`/`xtol`/`ftol`/`gtol`/
   `jobs` (snake_case enum tokens validated capi-side) to the `Fitter` setters,
-  surfaced as `euler` keyword args; 55 Julia tests + 10 capi tests green. Slices
-  (b) and (c) remain. See the Phase 4 section below.
+  surfaced as `euler` keyword args. **Slice (b) (plot tuning) is also done**:
+  `EulerInput` forwards optional `n_vertices`/`label_precision`/
+  `sliver_threshold` into the `PlotOptions` that backs `plot_data` (previously
+  hardcoded to `PlotOptions::default()`), surfaced as `euler` keyword args; 12
+  capi tests green. Slice (c) remains. See the Phase 4 section below.
 - **Phase 5 — after.** Docs site, CI matrix, versioning decision, registration,
   and the split to `jolars/Eunoia.jl`; see the Phase 5 section below.
 
@@ -215,10 +218,15 @@ Julia-kwarg pattern that (b) and (c) reuse.
   keyword arg (no client-side validation — the core is the contract). Deferred:
   the cycling-`optimizer_pool`/`initial_solver_pool` array forms (single values
   only for now).
-- **(b) Plot tuning** --- thread `PlotOptions` (`n_vertices` 200,
-  `label_precision` 0.01, `sliver_threshold` 1e-3) from JSON into the
-  `extract`/`layout.plot_data(spec, …)` call (currently hardcoded
-  `PlotOptions::default()`).
+- **(b) Plot tuning — done.** Optional `EulerInput` fields `n_vertices` (200),
+  `label_precision` (0.01), and `sliver_threshold` (1e-3) are resolved into a
+  `PlotOptions` by `plot_options_from_input` (mirroring `fit`'s `if let Some(..)`
+  shape) and threaded through `extract`'s new `plot_opts` parameter into
+  `layout.plot_data(spec, …)` (previously hardcoded `PlotOptions::default()`).
+  No `parse_*` validation — the knobs are numeric, forwarded as-is. `venn` keeps
+  the defaults. Surfaced as `euler` keyword args; the capi test asserts
+  `n_vertices` is honored (the set-outline vertex count tracks it) and the Julia
+  test mirrors that across the FFI.
 - **(c) Label placement / repulsion** *(larger)* --- surface the core's
   `PlacementStrategy`/`ExteriorPolicy` (poles-of-inaccessibility is the default;
   `ForceDirected` adds spring/repulsion, plus leader-line `LeaderStrategy`/elbows
@@ -289,8 +297,8 @@ live, binaries fetched lazily, development continues in its own repo.
 Phase 1  typed model + input parity + show     (Julia only)         ✓ done
 Phase 2  capi emits plot_data + region_error   (Rust, additive)     ✓ done
 Phase 3  Makie extension (recipe + styling)    (Julia, weakdep)     ✓ done
-Phase 4  capi control surface (loss/solver/    (Rust + Julia,       ← (a) done,
-         plot/label knobs) + Julia surfacing    additive)             (b)(c) next
+Phase 4  capi control surface (loss/solver/    (Rust + Julia,       ← (a)(b) done,
+         plot/label knobs) + Julia surfacing    additive)             (c) next
 Phase 5  docs, CI, register, split repo                             ← after
 ```
 

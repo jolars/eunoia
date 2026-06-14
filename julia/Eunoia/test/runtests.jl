@@ -123,6 +123,20 @@ using Eunoia
               EulerFit
     end
 
+    @testset "plot knobs" begin
+        base = Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0)
+
+        # `n_vertices` is observable end-to-end: it sets how densely each set's
+        # outline is polygonized in `plot_data.shape_outlines`.
+        coarse = euler(base; seed=1, n_vertices=40, label_precision=0.05,
+                       sliver_threshold=1e-2)
+        @test coarse isa EulerFit
+        default = euler(base; seed=1)
+        @test length(coarse.plot_data.shape_outlines.A) <
+              length(default.plot_data.shape_outlines.A)
+        @test 30 <= length(coarse.plot_data.shape_outlines.A) <= 60
+    end
+
     @testset "show" begin
         fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
         str = sprint(show, MIME("text/plain"), fit)
