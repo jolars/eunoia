@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.0](https://github.com/jolars/eunoia/compare/v1.1.0...v1.2.0) (2026-06-14)
+
+### Features
+- add self-contained browser bundle ([`770ad10`](https://github.com/jolars/eunoia/commit/770ad103072052ee87b7462ee93de351c4ad0998))
+- **capi:** forward fitting knobs; surface as euler kwargs in Eunoia.jl ([`a3329e0`](https://github.com/jolars/eunoia/commit/a3329e0e529802c4c278088fd64e507532f17565))
+
 ## [1.1.0](https://github.com/jolars/eunoia/compare/v1.0.0...v1.1.0) (2026-06-12)
 
 ### Features
