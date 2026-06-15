@@ -146,6 +146,10 @@ Keyword arguments:
 - `complement`: target "universe" area outside every set (opts into container
   fitting); `nothing` to disable.
 - `seed`: RNG seed for reproducible restarts; `nothing` for default.
+- `max_sets`: raise the set-count ceiling above the core default (`32`); clamped
+  core-side to the hard cap (`63`). `nothing` keeps the default. Note that a
+  fully-overlapping `n`-set diagram has `2^n - 1` regions, so large dense inputs
+  remain intractable regardless.
 
 Fitting knobs (all optional; `nothing` keeps the core default). Invalid string
 tokens are rejected by the native core and surface as an error:
@@ -194,6 +198,7 @@ function euler(values::AbstractDict; shape::AbstractString="circle",
                input_type::AbstractString="exclusive",
                complement::Union{Nothing,Real}=nothing,
                seed::Union{Nothing,Integer}=nothing,
+               max_sets::Union{Nothing,Integer}=nothing,
                loss::Union{Nothing,AbstractString}=nothing,
                loss_eps::Union{Nothing,Real}=nothing,
                n_restarts::Union{Nothing,Integer}=nothing,
@@ -236,6 +241,7 @@ function euler(values::AbstractDict; shape::AbstractString="circle",
     )
     complement === nothing || (payload["complement"] = float(complement))
     seed === nothing || (payload["seed"] = UInt64(seed))
+    max_sets === nothing || (payload["max_sets"] = Int(max_sets))
 
     # Phase 4(a) fitting knobs: forward only the ones the caller set, so omitted
     # kwargs leave the native `Fitter` defaults untouched. JSON field names match

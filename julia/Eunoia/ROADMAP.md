@@ -221,9 +221,19 @@ Julia-kwarg pattern that (b) and (c) reuse.
   validated capi-side by `parse_*` helpers (mirroring the `shape`/`input_type`
   match style) and resolved once into a `FitConfig` before the shape match, so a
   bad token errors regardless of shape. The Julia `euler` surfaces each as a
-  keyword arg (no client-side validation — the core is the contract). Deferred:
-  the cycling-`optimizer_pool`/`initial_solver_pool` array forms (single values
-  only for now).
+  keyword arg (no client-side validation — the core is the contract). A later
+  parity audit against the eulerr R bindings (`fit_euler_diagram`) surfaced one
+  remaining knob the capi didn't forward — the spec's set-count ceiling — so
+  `max_sets` was added as an optional `EulerInput` field threaded into
+  `DiagramSpecBuilder::max_sets` in `build_spec` (clamped core-side to
+  `MAX_SETS_HARD_CAP`), surfaced as the `euler` `max_sets` kwarg; 17 capi + 78
+  Julia tests green. The audit confirmed the rest of eulerr's surface needs no
+  capi addition for the planned Julia scope: `polygon_clip_rust` is an R
+  grid-graphics workaround for hatch fills (Makie draws region pieces natively),
+  and the `max_sets_default`/`max_sets_hard_cap` constants exist only for
+  eulerr's client-side validation, which Julia forgoes by design. Deferred: the
+  cycling-`optimizer_pool`/`initial_solver_pool` array forms (single values only
+  for now).
 - **(b) Plot tuning — done.** Optional `EulerInput` fields `n_vertices` (200),
   `label_precision` (0.01), and `sliver_threshold` (1e-3) are resolved into a
   `PlotOptions` by `plot_options_from_input` (mirroring `fit`'s `if let Some(..)`

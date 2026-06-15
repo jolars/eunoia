@@ -121,6 +121,11 @@ using Eunoia
         @test euler(base; seed=1, optimizer="levenberg_marquardt",
                     mds_solver="lbfgs", initial_sampler="latin_hypercube") isa
               EulerFit
+
+        # `max_sets` reaches the spec builder: lowering it below the set count
+        # makes the native fit fail; the default cap fits.
+        @test_throws ErrorException euler(base; seed=1, max_sets=1)
+        @test euler(base; seed=1, max_sets=32) isa EulerFit
     end
 
     @testset "plot knobs" begin
