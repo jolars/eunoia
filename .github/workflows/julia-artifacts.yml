@@ -1,13 +1,20 @@
 # Option A: roll-your-own JLL. Cross-compile the `eunoia-capi` cdylib for every
 # Julia-supported platform from a single Ubuntu host using cargo-zigbuild, then
-# attach the per-platform tarballs to a `julia-v*` GitHub release. No
-# BinaryBuilder, no Yggdrasil. `julia/Eunoia/gen/generate_artifacts.jl` turns
-# the release assets into `Artifacts.toml`.
+# attach the per-platform tarballs to the GitHub release. No BinaryBuilder, no
+# Yggdrasil. `julia/Eunoia/gen/generate_artifacts.jl` turns the release assets
+# into `Artifacts.toml`.
+#
+# Primary trigger is the crate's `v*` release (cut by versionary): the capi
+# binaries ride along on the same release, so the normal release flow needs no
+# extra step. `julia-v*` stays as an optional manual trigger for an off-cycle
+# capi-only binary rebuild.
 name: Julia artifacts
 
 on:
   push:
-    tags: ["julia-v*"]
+    tags:
+      - "v*"
+      - "julia-v*"
   workflow_dispatch:
 
 permissions:
