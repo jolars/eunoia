@@ -4,18 +4,23 @@
 # Yggdrasil. `julia/Eunoia/gen/generate_artifacts.jl` turns the release assets
 # into `Artifacts.toml`.
 #
-# Primary trigger is the crate's `v*` release (cut by versionary): the capi
-# binaries ride along on the same release, so the normal release flow needs no
-# extra step. `julia-v*` stays as an optional manual trigger for an off-cycle
-# capi-only binary rebuild.
+# Triggered by the crate's `v*` release (cut by versionary): the capi binaries
+# ride along on the same release, so the normal release flow needs no extra
+# step. To (re)build and attach binaries to an existing release out of band
+# (e.g. after adding a platform), run the workflow manually with the
+# `release_tag` input set to that release's tag.
 name: Julia artifacts
 
 on:
   push:
     tags:
       - "v*"
-      - "julia-v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to (re)build and attach binaries to (e.g. v1.3.0). Leave blank to build only."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -85,7 +90,9 @@ jobs:
   release:
     name: Attach to release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    # On a `v*` tag push, attach to that release. On a manual run, attach only
+    # when a target release tag was given (otherwise it is a build-only check).
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -99,4 +106,8 @@ jobs:
       - name: Publish to GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: dist/*.tar.gz
+          # Append to / refresh assets on an existing release without erroring
+          # on the ones already there.
+          overwrite_files: true
