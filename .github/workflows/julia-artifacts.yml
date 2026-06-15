@@ -30,9 +30,13 @@ jobs:
         include:
           # rust = rustup target; julia = Julia/BinaryPlatforms triplet;
           # glibc = optional cargo-zigbuild glibc floor; dir/lib = tarball layout.
-          - { rust: x86_64-unknown-linux-gnu,  julia: x86_64-linux-gnu,     glibc: ".2.17", dir: lib, lib: libeunoia_capi.so }
-          - { rust: aarch64-unknown-linux-gnu, julia: aarch64-linux-gnu,    glibc: ".2.17", dir: lib, lib: libeunoia_capi.so }
-          - { rust: x86_64-apple-darwin,       julia: x86_64-apple-darwin,  glibc: "",      dir: lib, lib: libeunoia_capi.dylib }
+          - { rust: x86_64-unknown-linux-gnu,   julia: x86_64-linux-gnu,     glibc: ".2.17", dir: lib, lib: libeunoia_capi.so }
+          - { rust: aarch64-unknown-linux-gnu,  julia: aarch64-linux-gnu,    glibc: ".2.17", dir: lib, lib: libeunoia_capi.so }
+          # musl (Alpine etc.) — Julia tags these distinctly from glibc, and zig
+          # bundles the musl libc, so no musl-tools needed. No glibc floor.
+          - { rust: x86_64-unknown-linux-musl,  julia: x86_64-linux-musl,    glibc: "",      dir: lib, lib: libeunoia_capi.so }
+          - { rust: aarch64-unknown-linux-musl, julia: aarch64-linux-musl,   glibc: "",      dir: lib, lib: libeunoia_capi.so }
+          - { rust: x86_64-apple-darwin,        julia: x86_64-apple-darwin,  glibc: "",      dir: lib, lib: libeunoia_capi.dylib }
           - { rust: aarch64-apple-darwin,      julia: aarch64-apple-darwin, glibc: "",      dir: lib, lib: libeunoia_capi.dylib }
           - { rust: x86_64-pc-windows-gnu,     julia: x86_64-w64-mingw32,   glibc: "",      dir: bin, lib: eunoia_capi.dll }
     steps:
