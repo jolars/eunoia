@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/jolars/eunoia/compare/v1.2.0...v1.3.0) (2026-06-15)
+
+### Features
+- **julia:** surface max_sets as an euler kwarg ([`835968d`](https://github.com/jolars/eunoia/commit/835968d16b169376a4ecb144fc3616894b8d6b48))
+- **capi:** forward max_sets into DiagramSpecBuilder ([`d292a25`](https://github.com/jolars/eunoia/commit/d292a250d64fadc3cf7b4c3cbd8e8f08101dc2ee))
+- **julia:** collision-aware Makie labels with leaders ([`105e08c`](https://github.com/jolars/eunoia/commit/105e08cf8f5f9be4f9bd07c8418be83935e6520b))
+- **capi:** add eunoia_place_labels entry point; surface as Eunoia.place_labels ([`d84fc14`](https://github.com/jolars/eunoia/commit/d84fc142e40d31ca18b960408a483445e792b48e))
+- **capi:** forward plot-tuning knobs; surface as euler kwargs in Eunoia.jl ([`563fd77`](https://github.com/jolars/eunoia/commit/563fd77ea0fc311a99a6a991d4100f2179a421c4))
+
+### Bug Fixes
+- **ci:** repair Julia artifact build (zig naming + pinned-toolchain target) ([`7771ed8`](https://github.com/jolars/eunoia/commit/7771ed8cf7d8f932198028b6a3688a06ff3bd0e1))
+
 ## [1.2.0](https://github.com/jolars/eunoia/compare/v1.1.0...v1.2.0) (2026-06-14)
 
 ### Features

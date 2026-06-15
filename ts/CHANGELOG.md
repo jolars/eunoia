@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.2.0...eunoia-npm-v1.3.0) (2026-06-15)
+
+### Dependencies
+- updated eunoia to v1.3.0
+
 ## [1.2.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.1.0...eunoia-npm-v1.2.0) (2026-06-14)
 
 ### Features
