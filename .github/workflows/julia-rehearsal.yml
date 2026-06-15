@@ -41,6 +41,11 @@ jobs:
 
       - name: Install Zig
         uses: mlugg/setup-zig@v1
+        with:
+          # Pin a known-good stable Zig — `latest` resolved to 0.16.0, whose
+          # tarball 404s on every mirror and ziglang.org. cargo-zigbuild is
+          # happy on 0.14.x.
+          version: 0.14.1
 
       - name: Install cargo-zigbuild
         run: cargo install --locked cargo-zigbuild
