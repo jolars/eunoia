@@ -25,3 +25,12 @@ rustflags = ["-C", "force-frame-pointers=yes"]
 
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "force-frame-pointers=yes"]
+
+# musl targets default to `crt-static`, which is incompatible with a `cdylib`
+# (Rust silently drops the crate type and emits no `.so`). Disable it so the
+# `eunoia-capi` shared library is built for the Julia musl artifacts.
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
