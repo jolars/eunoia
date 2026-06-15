@@ -14,6 +14,9 @@
 //!
 //! - `eunoia_euler(*const c_char) -> *mut c_char` — fit a diagram.
 //! - `eunoia_venn(*const c_char) -> *mut c_char` — canonical Venn layout.
+//! - `eunoia_place_labels(*const c_char) -> *mut c_char` — resolve
+//!   collision-aware label positions (and leader-line geometry) for region
+//!   polygons, given caller-measured label box sizes.
 //! - `eunoia_version() -> *mut c_char` — crate version string.
 //! - `eunoia_free(*mut c_char)` — free any string returned by the above.
 //!
@@ -34,7 +37,8 @@
 //! Success: `{"ok": true, "shape": ..., "shapes": [...], "metrics": {...},
 //! "plot_data": {...}}`. The `plot_data` bundle (region pieces, region/set
 //! anchors, region areas, shape outlines) mirrors the PyO3 binding so the Julia
-//! side can render diagrams. Failure: `{"ok": false, "error": "<message>"}`.
+//! side can render diagrams. `eunoia_place_labels` instead returns `{"ok": true,
+//! "placements": {...}}`. Failure: `{"ok": false, "error": "<message>"}`.
 //! Callers branch on `ok`.
 
 // Mirrors the WASM crate: the shape constructors panic on bad input, so the
@@ -52,8 +56,11 @@ use eunoia::geometry::primitives::Point;
 use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, Square};
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
 use eunoia::loss::LossType;
-use eunoia::plotting::{PlotData, PlotOptions};
-use eunoia::spec::{DiagramSpec, DiagramSpecBuilder, InputType};
+use eunoia::plotting::{
+    ElbowOptions, ExteriorPolicy, LeaderStrategy, PlacementKind, PlacementStrategy, PlotData,
+    PlotOptions, RegionPiece, RegionPolygons, TetherSource, classify_into_pieces, place_labels,
+};
+use eunoia::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
 use eunoia::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer, VennDiagram};
 
 use std::collections::{BTreeMap, HashMap};
@@ -256,12 +263,14 @@ struct LayoutOut {
     container: Option<ContainerOut>,
 }
 
-/// Success envelope: `ok: true` flattened over the layout fields.
+/// Success envelope: `ok: true` flattened over the payload fields (a
+/// [`LayoutOut`] for `eunoia_euler`/`eunoia_venn`, a [`PlaceLabelsOut`] for
+/// `eunoia_place_labels`).
 #[derive(Serialize)]
-struct OkResponse {
+struct OkResponse<T> {
     ok: bool,
     #[serde(flatten)]
-    layout: LayoutOut,
+    payload: T,
 }
 
 // ============================================================================
@@ -757,13 +766,231 @@ fn venn_impl(input: VennInput) -> Result<LayoutOut, String> {
 }
 
 // ============================================================================
+// Label placement — JSON contract + impl
+// ============================================================================
+//
+// A separate entry point (`eunoia_place_labels`) rather than a `plot_data`
+// field, because collision-aware placement needs the rendered label box sizes
+// (font metrics) the core can't know at fit time. Mirrors the WASM
+// `place_region_labels` surface, adapted to capi conventions: snake_case enum
+// tokens validated up front (like the fitting knobs in `parse_*`/`FitConfig`).
+
+/// One connected component of a region as supplied by the caller: an outer ring
+/// plus any hole rings, each a list of `[x, y]` pairs. Re-paired into a
+/// [`RegionPiece`] via [`classify_into_pieces`] (which is `#[non_exhaustive]`
+/// and must not be hand-built).
+#[derive(serde::Deserialize)]
+struct PieceIn {
+    outer: Vec<[f64; 2]>,
+    #[serde(default)]
+    holes: Vec<Vec<[f64; 2]>>,
+}
+
+/// Fitted complement container, in the same coordinate space as the regions.
+#[derive(serde::Deserialize)]
+struct ContainerIn {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+/// Leader strategy: the edge type plus the placement algorithm for it. All
+/// fields optional. `r#type` is `"straight"` (default) or `"elbow"`;
+/// `placement` selects the straight-edge exterior solver (`"raycast"` default,
+/// or `"force_directed"`) and is ignored for `"elbow"`. `margin` applies to
+/// both edge types; `iterations` only to `force_directed`; `min_gap` only to
+/// `elbow`.
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct LeaderIn {
+    r#type: Option<String>,
+    placement: Option<String>,
+    margin: Option<f64>,
+    iterations: Option<usize>,
+    min_gap: Option<f64>,
+}
+
+/// Placement strategy. All fields optional; omitted fields keep the core
+/// defaults (straight leaders, raycast placement, POI tether).
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct StrategyIn {
+    leader: Option<LeaderIn>,
+    precision: Option<f64>,
+    tether: Option<String>,
+    leader_gap: Option<f64>,
+}
+
+/// Input to [`eunoia_place_labels`]. `regions` and `sizes` are keyed by
+/// canonical combination strings; only regions present in both get a placement.
+#[derive(serde::Deserialize)]
+struct PlaceLabelsInput {
+    regions: BTreeMap<String, Vec<PieceIn>>,
+    sizes: BTreeMap<String, [f64; 2]>,
+    #[serde(default)]
+    container: Option<ContainerIn>,
+    #[serde(default)]
+    strategy: Option<StrategyIn>,
+}
+
+/// One resolved placement. `kind` is `interior` | `exterior_raycast` |
+/// `exterior_force_directed` | `exterior_elbow` (| `unknown` for any future
+/// variant). `tether`/`leader_end`/`leader_waypoints` are only set for exterior
+/// placements that need a leader line.
+#[derive(Serialize)]
+struct PlacementOut {
+    anchor: [f64; 2],
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tether: Option<[f64; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leader_end: Option<[f64; 2]>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    leader_waypoints: Vec<[f64; 2]>,
+}
+
+/// Success payload for [`eunoia_place_labels`]: `combo -> PlacementOut`.
+#[derive(Serialize)]
+struct PlaceLabelsOut {
+    placements: BTreeMap<String, PlacementOut>,
+}
+
+/// Map a snake_case tether name to a [`TetherSource`].
+fn parse_tether(name: &str) -> Result<TetherSource, String> {
+    match name {
+        "poi" => Ok(TetherSource::Poi),
+        "boundary" => Ok(TetherSource::Boundary),
+        other => Err(format!("invalid tether '{other}' (want poi|boundary)")),
+    }
+}
+
+/// Resolve an optional [`StrategyIn`] into a core [`PlacementStrategy`],
+/// validating every enum token up front so a bad value errors regardless of the
+/// rest of the input (mirroring `FitConfig::from_input`).
+fn strategy_from_input(strategy: Option<StrategyIn>) -> Result<PlacementStrategy, String> {
+    let strategy = strategy.unwrap_or_default();
+    let leader_in = strategy.leader.unwrap_or_default();
+    let leader = match leader_in.r#type.as_deref() {
+        None | Some("straight") => {
+            let exterior = match leader_in.placement.as_deref() {
+                None | Some("raycast") => ExteriorPolicy::Raycast {
+                    margin: leader_in.margin,
+                },
+                Some("force_directed") => ExteriorPolicy::ForceDirected {
+                    margin: leader_in.margin,
+                    iterations: leader_in.iterations,
+                },
+                Some(other) => {
+                    return Err(format!(
+                        "invalid placement '{other}' (want raycast|force_directed)"
+                    ));
+                }
+            };
+            LeaderStrategy::Straight(exterior)
+        }
+        Some("elbow") => LeaderStrategy::Elbow(
+            ElbowOptions::default()
+                .margin(leader_in.margin)
+                .min_gap(leader_in.min_gap),
+        ),
+        Some(other) => {
+            return Err(format!(
+                "invalid leader type '{other}' (want straight|elbow)"
+            ));
+        }
+    };
+    let tether = match strategy.tether.as_deref() {
+        None => TetherSource::Poi,
+        Some(name) => parse_tether(name)?,
+    };
+    Ok(PlacementStrategy::default()
+        .leader(leader)
+        .precision(strategy.precision.unwrap_or(0.01))
+        .tether(tether)
+        .leader_gap(strategy.leader_gap.unwrap_or(0.0)))
+}
+
+fn place_labels_impl(input: PlaceLabelsInput) -> Result<PlaceLabelsOut, String> {
+    let strategy = strategy_from_input(input.strategy)?;
+
+    let container = input
+        .container
+        .map(|c| Rectangle::try_new(Point::new(c.x, c.y), c.width, c.height))
+        .transpose()
+        .map_err(|e| format!("invalid container: {e}"))?;
+
+    let sizes: HashMap<String, (f64, f64)> = input
+        .sizes
+        .into_iter()
+        .map(|(k, [w, h])| (k, (w, h)))
+        .collect();
+
+    // Rebuild each region's pieces through the public classifier: `RegionPiece`
+    // is `#[non_exhaustive]`, so the outer/holes pairing must be re-derived from
+    // a flat ring list rather than hand-built. Unparseable combo keys are
+    // skipped (the caller simply sees no placement for them).
+    let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
+        Polygon::new(pts.into_iter().map(|p| Point::new(p[0], p[1])).collect())
+    };
+    let mut region_map: HashMap<Combination, Vec<RegionPiece>> =
+        HashMap::with_capacity(input.regions.len());
+    for (key, pieces_in) in input.regions {
+        // `Combination`'s `FromStr` is `Infallible`, so the match is exhaustive
+        // with just the `Ok` arm (the `Err` variant is uninhabited).
+        let Ok(combo) = key.parse::<Combination>();
+        let pieces: Vec<RegionPiece> = pieces_in
+            .into_iter()
+            .flat_map(|p| {
+                let mut rings = vec![to_polygon(p.outer)];
+                rings.extend(p.holes.into_iter().map(to_polygon));
+                classify_into_pieces(rings)
+            })
+            .collect();
+        region_map.insert(combo, pieces);
+    }
+    let regions = RegionPolygons::from_map(region_map);
+
+    let placements = place_labels(&regions, &sizes, container.as_ref(), &strategy);
+
+    let placements = placements
+        .into_iter()
+        .map(|(key, p)| {
+            let kind = match p.kind {
+                PlacementKind::Interior => "interior",
+                PlacementKind::ExteriorRaycast => "exterior_raycast",
+                PlacementKind::ExteriorForceDirected => "exterior_force_directed",
+                PlacementKind::ExteriorElbow => "exterior_elbow",
+                // `PlacementKind` is `#[non_exhaustive]`; surface unknown future
+                // kinds rather than failing to compile when one is added.
+                _ => "unknown",
+            };
+            (
+                key,
+                PlacementOut {
+                    anchor: [p.anchor.x(), p.anchor.y()],
+                    kind,
+                    tether: p.tether.map(|t| [t.x(), t.y()]),
+                    leader_end: p.leader_end.map(|t| [t.x(), t.y()]),
+                    leader_waypoints: p.leader_waypoints.iter().map(|t| [t.x(), t.y()]).collect(),
+                },
+            )
+        })
+        .collect();
+
+    Ok(PlaceLabelsOut { placements })
+}
+
+// ============================================================================
 // FFI boundary
 // ============================================================================
 
-/// Render a `Result<LayoutOut, String>` to the JSON envelope string.
-fn to_json(result: Result<LayoutOut, String>) -> String {
+/// Render a `Result<T, String>` to the JSON envelope string. On `Ok`, the
+/// payload fields are flattened next to `ok: true`; on `Err`, the message
+/// becomes `{"ok": false, "error": ...}`.
+fn to_json<T: Serialize>(result: Result<T, String>) -> String {
     match result {
-        Ok(layout) => serde_json::to_string(&OkResponse { ok: true, layout })
+        Ok(payload) => serde_json::to_string(&OkResponse { ok: true, payload })
             .unwrap_or_else(|e| error_json(&format!("serialization failed: {e}"))),
         Err(error) => error_json(&error),
     }
@@ -777,10 +1004,11 @@ fn error_json(message: &str) -> String {
 
 /// Shared entry-point body: read the C string, parse JSON, run `f`, and return
 /// a freshly allocated JSON C string. Panics are caught and reported as errors.
-fn run<I, F>(input: *const c_char, f: F) -> *mut c_char
+fn run<I, O, F>(input: *const c_char, f: F) -> *mut c_char
 where
     I: DeserializeOwned,
-    F: FnOnce(I) -> Result<LayoutOut, String>,
+    O: Serialize,
+    F: FnOnce(I) -> Result<O, String>,
 {
     let json = catch_unwind(AssertUnwindSafe(|| {
         let parsed = parse_input::<I>(input)?;
@@ -819,6 +1047,15 @@ pub extern "C" fn eunoia_euler(input: *const c_char) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn eunoia_venn(input: *const c_char) -> *mut c_char {
     run(input, venn_impl)
+}
+
+/// Resolve collision-aware label positions for a set of region polygons.
+/// `input` is a JSON `PlaceLabelsInput` (region pieces + caller-measured label
+/// sizes + an optional placement strategy); the success envelope carries a
+/// `placements` map. Free the result with [`eunoia_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn eunoia_place_labels(input: *const c_char) -> *mut c_char {
+    run(input, place_labels_impl)
 }
 
 /// Return the crate version as a NUL-terminated C string. Free with
@@ -1051,5 +1288,121 @@ mod tests {
         assert_eq!(v["ok"], true);
         assert!(v["plot_data"]["region_pieces"].is_object());
         assert!(outline_len(&v, "A") > 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 4(c) label placement
+    // ------------------------------------------------------------------------
+
+    /// Region pieces from a default two-set fit — exactly the `{combo:
+    /// [{outer, holes}]}` shape `eunoia_place_labels` expects for `regions`.
+    fn region_pieces() -> serde_json::Value {
+        let out = call(eunoia_euler, &two_set(""));
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        v["plot_data"]["region_pieces"].clone()
+    }
+
+    /// Build a `place_labels` input from `sizes` + an optional `strategy`.
+    fn place_input(sizes: serde_json::Value, strategy: Option<serde_json::Value>) -> String {
+        let mut input = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": sizes,
+        });
+        if let Some(s) = strategy {
+            input["strategy"] = s;
+        }
+        input.to_string()
+    }
+
+    #[test]
+    fn place_labels_interior_when_small() {
+        // Labels much smaller than every region fit inside: interior placement,
+        // no leader geometry.
+        let sizes = serde_json::json!({ "A": [0.1, 0.1], "B": [0.1, 0.1], "A&B": [0.05, 0.05] });
+        let out = call(eunoia_place_labels, &place_input(sizes, None));
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        let p = &v["placements"];
+        for combo in ["A", "B", "A&B"] {
+            assert_eq!(p[combo]["kind"], "interior", "combo {combo}");
+            assert_eq!(p[combo]["anchor"].as_array().unwrap().len(), 2);
+            assert!(p[combo].get("tether").is_none(), "interior has no tether");
+        }
+    }
+
+    #[test]
+    fn place_labels_exterior_when_oversized() {
+        // A label far larger than its region cannot fit inside, so it is pushed
+        // outside with a leader line back to a tether point.
+        let sizes = serde_json::json!({ "A&B": [10.0, 10.0] });
+        let out = call(eunoia_place_labels, &place_input(sizes, None));
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        let placement = &v["placements"]["A&B"];
+        let kind = placement["kind"].as_str().unwrap();
+        assert!(kind.starts_with("exterior_"), "kind was {kind}");
+        assert_eq!(placement["tether"].as_array().unwrap().len(), 2);
+        assert_eq!(placement["leader_end"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn place_labels_force_directed_and_elbow_accepted() {
+        let sizes = serde_json::json!({ "A": [10.0, 10.0], "B": [10.0, 10.0] });
+
+        // Force-directed straight leaders.
+        let strat =
+            serde_json::json!({ "leader": { "placement": "force_directed", "iterations": 50 } });
+        let out = call(
+            eunoia_place_labels,
+            &place_input(sizes.clone(), Some(strat)),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert!(
+            v["placements"]["A"]["kind"]
+                .as_str()
+                .unwrap()
+                .starts_with("exterior_")
+        );
+
+        // Elbow leaders route through a waypoint (the knee).
+        let strat = serde_json::json!({ "leader": { "type": "elbow" } });
+        let out = call(eunoia_place_labels, &place_input(sizes, Some(strat)));
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        let waypoints = v["placements"]["A"]["leader_waypoints"].as_array();
+        assert!(
+            waypoints.is_some_and(|w| !w.is_empty()),
+            "elbow leader should carry waypoints, got {:?}",
+            v["placements"]["A"]
+        );
+    }
+
+    #[test]
+    fn place_labels_bad_tokens_are_reported() {
+        let sizes = serde_json::json!({ "A": [0.1, 0.1] });
+        for (strat, bad) in [
+            (
+                serde_json::json!({ "leader": { "placement": "bogus" } }),
+                "bogus",
+            ),
+            (
+                serde_json::json!({ "leader": { "type": "zigzag" } }),
+                "zigzag",
+            ),
+            (serde_json::json!({ "tether": "middle" }), "middle"),
+        ] {
+            let out = call(
+                eunoia_place_labels,
+                &place_input(sizes.clone(), Some(strat)),
+            );
+            let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(v["ok"], false);
+            assert!(
+                v["error"].as_str().unwrap().contains(bad),
+                "error should mention '{bad}', got {}",
+                v["error"]
+            );
+        }
     }
 }

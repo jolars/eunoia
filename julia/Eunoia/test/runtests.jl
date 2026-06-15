@@ -137,6 +137,36 @@ using Eunoia
         @test 30 <= length(coarse.plot_data.shape_outlines.A) <= 60
     end
 
+    @testset "label placement" begin
+        base = Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0)
+        fit = euler(base; seed=1)
+
+        # Tiny labels fit inside every region: interior placement, no leader.
+        small = place_labels(fit, Dict("A" => (0.1, 0.1), "B" => (0.1, 0.1),
+                                       "A&B" => (0.05, 0.05)))
+        @test small isa Dict{String,LabelPlacement}
+        for combo in ("A", "B", "A&B")
+            @test haskey(small, combo)
+            @test small[combo].kind === :interior
+            @test small[combo].tether === nothing
+            @test small[combo].anchor isa Eunoia.Point
+        end
+
+        # An oversized label can't fit, so it is pushed outside with a leader.
+        big = place_labels(fit, Dict("A&B" => (10.0, 10.0));
+                           placement="force_directed")
+        p = big["A&B"]
+        @test startswith(String(p.kind), "exterior_")
+        @test p.tether isa Eunoia.Point
+        @test p.leader_end isa Eunoia.Point
+
+        # Bad enum tokens are rejected by the native core.
+        @test_throws ErrorException place_labels(fit, Dict("A" => (0.1, 0.1));
+                                                 placement="bogus")
+        @test_throws ErrorException place_labels(fit, Dict("A" => (0.1, 0.1));
+                                                 tether="middle")
+    end
+
     @testset "show" begin
         fit = euler(Dict("A" => 5.0, "B" => 3.0, "A&B" => 1.0); seed=1)
         str = sprint(show, MIME("text/plain"), fit)

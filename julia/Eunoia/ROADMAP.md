@@ -1,8 +1,9 @@
 # Eunoia.jl roadmap
 
-Status: **Phases 1–3 complete; Phase 4 slices (a) (fitting knobs) and (b) (plot
-tuning) done — slice (c) label placement next, then Phase 5 (release polish &
-split-out).** This document plans the path
+Status: **Phases 1–3 complete; Phase 4 slices (a) (fitting knobs), (b) (plot
+tuning), and (c) label placement (capi entry point + Julia binding) done — only
+the Makie auto-placement rendering remains in slice (c), then Phase 5 (release
+polish & split-out).** This document plans the path
 to a registerable, plotting-capable package on par with the
 [`eunoia-py`](https://github.com/jolars/eunoia-py) sister binding, and the
 eventual split into its own repo (`jolars/Eunoia.jl`).
@@ -50,7 +51,12 @@ Progress:
   `EulerInput` forwards optional `n_vertices`/`label_precision`/
   `sliver_threshold` into the `PlotOptions` that backs `plot_data` (previously
   hardcoded to `PlotOptions::default()`), surfaced as `euler` keyword args; 12
-  capi tests green. Slice (c) remains. See the Phase 4 section below.
+  capi tests green. **Slice (c) (label placement) capi + Julia binding is done**:
+  a separate `eunoia_place_labels` entry point (region polygons + caller-measured
+  label sizes + a `PlacementStrategy` JSON → resolved placements with leader
+  geometry), surfaced as `Eunoia.place_labels(fit, sizes; …)` returning typed
+  `LabelPlacement`s; 16 capi + 76 Julia tests green. Only the Makie ext rendering
+  of placed labels + leaders remains. See the Phase 4 section below.
 - **Phase 5 — after.** Docs site, CI matrix, versioning decision, registration,
   and the split to `jolars/Eunoia.jl`; see the Phase 5 section below.
 
@@ -227,19 +233,41 @@ Julia-kwarg pattern that (b) and (c) reuse.
   the defaults. Surfaced as `euler` keyword args; the capi test asserts
   `n_vertices` is honored (the set-outline vertex count tracks it) and the Julia
   test mirrors that across the FFI.
-- **(c) Label placement / repulsion** *(larger)* --- surface the core's
+- **(c) Label placement / repulsion** *(larger)* — surface the core's
   `PlacementStrategy`/`ExteriorPolicy` (poles-of-inaccessibility is the default;
   `ForceDirected` adds spring/repulsion, plus leader-line `LeaderStrategy`/elbows
-  and tethers). Emit the **resolved** label positions (and any leader-line
-  geometry) in `plot_data` so bindings render placed, non-overlapping labels
-  instead of raw POI anchors. Today the Julia/Python plotters drop labels at the
-  raw anchors with only a "stack if identical anchor" tweak — no collision
-  avoidance — so crowded diagrams overlap.
+  and tethers).
 
-For each slice: extend the capi `#[test]`s (assert the new field is honored / the
-new geometry is present), then surface the knob in the Julia `euler`/`venn`
-keyword args and the Makie extension (e.g. a `placement`/leader option). The core
-already does the work; this is wiring + serialization.
+  **Design correction:** the original "emit resolved positions in `plot_data`"
+  wording is infeasible. `place_labels()` needs caller-supplied label **box
+  sizes** (font metrics the core can't know at fit time), so resolved positions
+  can't be baked into `plot_data`. Instead, a **separate `eunoia_place_labels`
+  capi entry point** takes region polygons + measured sizes + a strategy and
+  returns the resolved placements (`anchor`/`kind`/`tether`/`leader_end`/
+  `leader_waypoints`), mirroring the web app's wasm `place_region_labels` and TS
+  `placeLabelsForRegions`. **Done (capi + Julia binding):**
+  - capi: `eunoia_place_labels` with `PlaceLabelsInput` (regions/sizes/container/
+    strategy), snake_case strategy tokens validated by `parse_tether`/
+    `strategy_from_input` (mirroring slice (a)'s `parse_*`/`FitConfig`), region
+    pieces rebuilt via `classify_into_pieces` + `RegionPolygons::from_map`, and a
+    generic `run`/`OkResponse<T>`/`to_json` so the entry point can return a
+    `placements` envelope. 4 new capi `#[test]`s (interior/exterior/
+    force-directed+elbow/bad-token).
+  - Julia: `place_labels(fit, sizes; placement, leader, margin, iterations,
+    precision, tether, leader_gap, min_gap)` forwards only-when-set, reading
+    `fit.plot_data.region_pieces` + `fit.container`; returns
+    `Dict{String,LabelPlacement}` (new typed struct). Exported, docstringed, and
+    covered by a `@testset "label placement"`.
+
+  **Remaining:** the Makie extension still drops labels at the raw anchors with
+  only a "stack if identical anchor" tweak — no collision avoidance. Wiring it to
+  measure label sizes (Makie text metrics), run the fixed-point scale loop, call
+  `place_labels`, and render placed labels + leader polylines (`tether →
+  leader_waypoints… → leader_end`) is the follow-up.
+
+For each remaining piece: surface the knob in the Makie extension (e.g. a
+`placement`/leader option). The core already does the work; this is wiring +
+serialization.
 
 **Exit criteria:** a caller can select the loss and key solver knobs, tune
 `PlotOptions`, and opt into force-directed label placement (with leaders) entirely
@@ -298,7 +326,9 @@ Phase 1  typed model + input parity + show     (Julia only)         ✓ done
 Phase 2  capi emits plot_data + region_error   (Rust, additive)     ✓ done
 Phase 3  Makie extension (recipe + styling)    (Julia, weakdep)     ✓ done
 Phase 4  capi control surface (loss/solver/    (Rust + Julia,       ← (a)(b) done,
-         plot/label knobs) + Julia surfacing    additive)             (c) next
+         plot/label knobs) + Julia surfacing    additive)             (c) capi+Julia
+                                                                       done; Makie
+                                                                       render left
 Phase 5  docs, CI, register, split repo                             ← after
 ```
 

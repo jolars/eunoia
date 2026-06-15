@@ -57,6 +57,26 @@ struct Container
     height::Float64
 end
 
+"""
+    LabelPlacement
+
+A resolved label position returned by [`place_labels`](@ref). `anchor` is the
+centre of the label box. `kind` is one of `:interior`, `:exterior_raycast`,
+`:exterior_force_directed`, or `:exterior_elbow` (`:unknown` for a future native
+variant). For exterior placements that need a leader line, `tether` is the
+inside-region point the leader starts from, `leader_end` is where it meets the
+label box, and `leader_waypoints` are the intermediate polyline vertices (empty
+for straight leaders, populated for elbow leaders); all three are `nothing`/
+empty for interior placements.
+"""
+struct LabelPlacement
+    anchor::Point
+    kind::Symbol
+    tether::Union{Point,Nothing}
+    leader_end::Union{Point,Nothing}
+    leader_waypoints::Vector{Point}
+end
+
 """Supertype of [`EulerFit`](@ref) and [`VennFit`](@ref), parametrized by the
 shape type `S`."""
 abstract type AbstractEulerFit{S<:AbstractShape} end
@@ -126,6 +146,25 @@ end
 # ---------------------------------------------------------------------------
 
 _point(o) = Point(Float64(o.x), Float64(o.y))
+
+"""Parse the `placements` map from an `eunoia_place_labels` response into a
+`Dict{String,LabelPlacement}`. Optional leader fields are absent (not null) for
+interior placements."""
+function _build_placements(resp)
+    out = Dict{String,LabelPlacement}()
+    for (k, p) in pairs(resp.placements)
+        tether = haskey(p, :tether) ? _xy(p.tether) : nothing
+        leader_end = haskey(p, :leader_end) ? _xy(p.leader_end) : nothing
+        waypoints = haskey(p, :leader_waypoints) ?
+                    [_xy(w) for w in p.leader_waypoints] : Point[]
+        out[String(k)] = LabelPlacement(_xy(p.anchor), Symbol(String(p.kind)),
+                                        tether, leader_end, waypoints)
+    end
+    return out
+end
+
+"""Build a [`Point`](@ref) from a JSON `[x, y]` pair."""
+_xy(a) = Point(Float64(a[1]), Float64(a[2]))
 
 """Map one tagged shape object from the JSON `shapes` array to its struct."""
 function _build_shape(s)

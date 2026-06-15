@@ -31,8 +31,9 @@ import Pkg
 using JSON3
 using Printf
 
-export euler, venn, version, eunoiaplot, eunoiaplot!
+export euler, venn, version, eunoiaplot, eunoiaplot!, place_labels
 export EulerFit, VennFit, Circle, Ellipse, Square, Rectangle, Point, Container
+export LabelPlacement
 
 include("parse.jl")
 include("types.jl")
@@ -41,6 +42,7 @@ include("types.jl")
 const _HANDLE = Ref{Ptr{Cvoid}}(C_NULL)
 const _euler = Ref{Ptr{Cvoid}}(C_NULL)
 const _venn = Ref{Ptr{Cvoid}}(C_NULL)
+const _place_labels = Ref{Ptr{Cvoid}}(C_NULL)
 const _version = Ref{Ptr{Cvoid}}(C_NULL)
 const _free = Ref{Ptr{Cvoid}}(C_NULL)
 
@@ -88,6 +90,7 @@ function __init__()
     _HANDLE[] = Libdl.dlopen(path)
     _euler[] = Libdl.dlsym(_HANDLE[], :eunoia_euler)
     _venn[] = Libdl.dlsym(_HANDLE[], :eunoia_venn)
+    _place_labels[] = Libdl.dlsym(_HANDLE[], :eunoia_place_labels)
     _version[] = Libdl.dlsym(_HANDLE[], :eunoia_version)
     _free[] = Libdl.dlsym(_HANDLE[], :eunoia_free)
     return nothing
@@ -288,6 +291,92 @@ function venn(sets; shape::AbstractString="circle")
     names = _resolve_names(sets)
     payload = Dict("names" => names, "shape" => shape)
     return _build_vennfit(_run(_venn[], payload))
+end
+
+"""
+    place_labels(fit, sizes; placement=nothing, leader=nothing, margin=nothing,
+                 iterations=nothing, precision=nothing, tether=nothing,
+                 leader_gap=nothing, min_gap=nothing)
+
+Resolve collision-aware label positions for the regions of a fitted
+[`EulerFit`](@ref)/[`VennFit`](@ref), given the rendered label box sizes.
+
+The core can't place labels without their on-screen sizes (font metrics it never
+sees at fit time), so this is a separate call from [`euler`](@ref): measure each
+label, then ask for placements. `sizes` is a mapping from region/combination
+strings (`"A"`, `"A&B"`, …) to a `(width, height)` tuple in the same coordinate
+units as the fitted `shapes`. Only regions present in both `sizes` and the fit's
+geometry get a placement; degenerate inputs are silently skipped.
+
+Each placement tries to sit inside its region; one that can't fit is pushed
+outside with a leader line. Returns a `Dict{String,LabelPlacement}` (see
+[`LabelPlacement`](@ref)).
+
+Strategy knobs (all optional; `nothing` keeps the core default). Invalid string
+tokens are rejected by the native core and surface as an error:
+
+- `leader`: leader edge type, `"straight"` (default) or `"elbow"` (d3-pie style
+  orthogonal leaders with column-based placement).
+- `placement`: exterior solver for straight leaders, `"raycast"` (default) or
+  `"force_directed"` (spring/repulsion relaxation for crowded diagrams); ignored
+  for `"elbow"`.
+- `margin`: gap between the diagram and exterior labels (both edge types); the
+  per-region proportional default applies when omitted.
+- `iterations`: iteration cap for `"force_directed"` (default `200`); ignored
+  otherwise.
+- `precision`: pole-of-inaccessibility search precision (default `0.01`).
+- `tether`: where an exterior leader attaches to its region, `"poi"` (default,
+  the pole of inaccessibility) or `"boundary"` (the region's outer ring).
+- `leader_gap`: visible gap between the leader tip and the label box (default
+  `0.0`).
+- `min_gap`: minimum vertical spacing between stacked `"elbow"` labels; ignored
+  otherwise.
+
+```julia
+fit = euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5))
+placements = place_labels(fit, Dict("A" => (0.6, 0.3), "B" => (0.6, 0.3));
+                          placement="force_directed")
+```
+"""
+function place_labels(fit::AbstractEulerFit, sizes::AbstractDict;
+                      placement::Union{Nothing,AbstractString}=nothing,
+                      leader::Union{Nothing,AbstractString}=nothing,
+                      margin::Union{Nothing,Real}=nothing,
+                      iterations::Union{Nothing,Integer}=nothing,
+                      precision::Union{Nothing,Real}=nothing,
+                      tether::Union{Nothing,AbstractString}=nothing,
+                      leader_gap::Union{Nothing,Real}=nothing,
+                      min_gap::Union{Nothing,Real}=nothing)
+    payload = Dict{String,Any}(
+        "regions" => fit.plot_data.region_pieces,
+        "sizes" => Dict{String,Any}(
+            string(k) => Float64[float(v[1]), float(v[2])] for (k, v) in sizes),
+    )
+    if fit.container !== nothing
+        c = fit.container
+        payload["container"] = Dict("x" => c.center.x, "y" => c.center.y,
+                                    "width" => c.width, "height" => c.height)
+    end
+
+    # Strategy knobs, forwarded only when set so omitted ones keep the native
+    # defaults (the slice (a)/(b) `=== nothing ||` idiom). JSON field names match
+    # the kwarg names one-to-one (snake_case enum tokens validated capi-side).
+    lead = Dict{String,Any}()
+    leader === nothing || (lead["type"] = leader)
+    placement === nothing || (lead["placement"] = placement)
+    margin === nothing || (lead["margin"] = float(margin))
+    iterations === nothing || (lead["iterations"] = Int(iterations))
+    min_gap === nothing || (lead["min_gap"] = float(min_gap))
+
+    strategy = Dict{String,Any}()
+    isempty(lead) || (strategy["leader"] = lead)
+    precision === nothing || (strategy["precision"] = float(precision))
+    tether === nothing || (strategy["tether"] = tether)
+    leader_gap === nothing || (strategy["leader_gap"] = float(leader_gap))
+
+    isempty(strategy) || (payload["strategy"] = strategy)
+
+    return _build_placements(_run(_place_labels[], payload))
 end
 
 """
