@@ -88,6 +88,11 @@ struct EulerInput {
     complement: Option<f64>,
     #[serde(default)]
     seed: Option<u64>,
+    /// Raise the set-count ceiling (`DiagramSpecBuilder::max_sets`, default
+    /// [`eunoia::constants::MAX_SETS`]); clamped core-side to
+    /// `MAX_SETS_HARD_CAP`. Omitting it leaves the core default in place.
+    #[serde(default)]
+    max_sets: Option<usize>,
 
     // --- Phase 4(a) fitting knobs ---
     //
@@ -490,6 +495,9 @@ fn build_spec(input: &EulerInput) -> Result<DiagramSpec, String> {
     }
     if let Some(c) = input.complement {
         builder = builder.complement(c);
+    }
+    if let Some(m) = input.max_sets {
+        builder = builder.max_sets(m);
     }
 
     builder
@@ -1124,6 +1132,29 @@ mod tests {
         assert!(plot["region_areas"]["A&B"].is_number());
         assert_eq!(plot["set_anchors"]["A"].as_array().unwrap().len(), 2);
         assert!(plot["shape_outlines"]["A"].is_array());
+    }
+
+    #[test]
+    fn euler_max_sets_is_forwarded() {
+        // Lowering the cap below the set count makes the spec build fail,
+        // proving `max_sets` reaches `DiagramSpecBuilder::max_sets`.
+        let out = call(
+            eunoia_euler,
+            r#"{"sets":[{"combination":"A","size":5},{"combination":"B","size":3},
+                {"combination":"A&B","size":1}],"seed":1,"max_sets":1}"#,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], false);
+
+        // The same spec at the default cap fits cleanly.
+        let out = call(
+            eunoia_euler,
+            r#"{"sets":[{"combination":"A","size":5},{"combination":"B","size":3},
+                {"combination":"A&B","size":1}],"seed":1,"max_sets":32}"#,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["shapes"].as_array().unwrap().len(), 2);
     }
 
     #[test]
