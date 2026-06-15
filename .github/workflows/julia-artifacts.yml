@@ -36,8 +36,18 @@ jobs:
         with:
           targets: ${{ matrix.rust }}
 
+      # rust-toolchain.toml pins this repo to 1.88.0, so dtolnay's `targets:`
+      # adds rust-std to `stable` while the build runs under 1.88.0. Add the
+      # cross target to the pinned toolchain explicitly (inside the checkout).
+      - name: Add cross target to the pinned toolchain
+        run: rustup target add ${{ matrix.rust }}
+
       - name: Install Zig
-        uses: mlugg/setup-zig@v1
+        # v2+ knows the post-0.14 tarball naming (`zig-<arch>-<os>-<ver>`); v1
+        # builds the old `<os>-<arch>` URL, which 404s for any 0.14+ release.
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
 
       - name: Install cargo-zigbuild
         run: cargo install --locked cargo-zigbuild
