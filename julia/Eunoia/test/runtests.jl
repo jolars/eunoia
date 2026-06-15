@@ -299,5 +299,47 @@ if get(ENV, "EUNOIA_TEST_MAKIE", "false") in ("true", "1")
             @test npoly(p) >= 1
             @test (MK.colorbuffer(eunoiaplot(venn(3)).figure); true)
         end
+
+        @testset "collision-aware placement" begin
+            # Interior placement: set names + counts combine into one box per
+            # region; nothing is drawn twice (recipe defers to the wrapper).
+            fap = eunoiaplot(fit; placement=true, quantities=true)
+            t = texts(fap.plot)
+            @test "A" in t && "B" in t          # set names placed
+            @test count(==("A"), t) == 1        # not double-drawn
+            @test any(s -> occursin("10", s), t)  # A's count
+            @test (MK.colorbuffer(fap.figure); true)
+
+            # Tiny intersections + a large font push the small-region labels
+            # outside, drawing leader lines beyond the per-set outlines.
+            crowded = euler(Dict("Apple" => 6.0, "Banana" => 6.0, "Cherry" => 6.0,
+                                 "Apple&Banana" => 0.6, "Banana&Cherry" => 0.6,
+                                 "Apple&Cherry" => 0.6, "Apple&Banana&Cherry" => 0.2);
+                            seed=4)
+            for strat in (true, (; placement="force_directed"), (; leader="elbow"))
+                fp = eunoiaplot(crowded; placement=strat, quantities=true,
+                                fontsize=26, figure=(; size=(620, 540)))
+                @test nlines(fp.plot) > 3       # 3 outlines + ≥1 leader
+                @test (MK.colorbuffer(fp.figure); true)
+            end
+
+            # Leader styling is forwarded to the leader lines.
+            fs = eunoiaplot(crowded; placement=true, quantities=true, fontsize=26,
+                            figure=(; size=(620, 540)),
+                            leader_style=(; color=:red, linewidth=2.0))
+            @test any(x -> x isa MK.Lines && x.color[] == MK.to_color(:red), fs.plot.plots)
+
+            # A label larger than the viewport would diverge the scale loop; the
+            # guard keeps the view bounded and the render finite.
+            big = euler(Dict("LongNameAlpha" => 4.0, "LongNameBeta" => 4.0,
+                             "LongNameAlpha&LongNameBeta" => 3.5); seed=1)
+            fb = eunoiaplot(big; placement=true, fontsize=40, figure=(; size=(120, 100)))
+            @test all(isfinite, MK.widths(fb.axis.finallimits[]))
+            @test maximum(MK.widths(fb.axis.finallimits[])) < 1e4
+            @test (MK.colorbuffer(fb.figure); true)
+
+            # `placement=false` (default) leaves the raw-anchor path untouched.
+            @test "A" in texts(eunoiaplot(fit; placement=false).plot)
+        end
     end
 end

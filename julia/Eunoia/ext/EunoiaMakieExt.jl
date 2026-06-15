@@ -44,6 +44,12 @@ import Eunoia: AbstractEulerFit, eunoiaplot, eunoiaplot!
     complement = Makie.automatic
     "Default region-fill transparency."
     alpha = 0.5
+    "Base label font size (points). Set names use this; region quantities use a
+    slightly smaller size."
+    fontsize = 14
+    "Internal: when `true` the recipe skips drawing labels/quantities so the
+    `eunoiaplot` wrapper can place them collision-aware. Not a public knob."
+    defer_labels = false
 end
 
 Makie.plottype(::AbstractEulerFit) = EunoiaDiagram
@@ -60,6 +66,11 @@ function Makie.plot!(p::EunoiaDiagram)
     draw_region_fills!(p, pd, base, p.fills[], p.alpha[])
     draw_outlines!(p, pd, names, base, p.edges[])
 
+    # The `eunoiaplot` wrapper handles labels itself when collision-aware
+    # placement is requested (it owns the axis, which the loop needs); skip the
+    # raw-anchor pass so labels aren't drawn twice.
+    p.defer_labels[] && return p
+
     show_labels = resolve_label_visibility(p.labels[], p.legend[])
     specs = show_labels ? label_specs(p.labels[], names) :
             Dict{String,Any}(n => nothing for n in names)
@@ -71,8 +82,9 @@ function Makie.plot!(p::EunoiaDiagram)
     label_points = collect_label_points(pd, names, specs, show_labels)
     quantity_points = collect_quantity_points(pd, fit, qinfo)
 
-    show_labels && draw_set_labels!(p, pd, names, specs, quantity_points)
-    qinfo === nothing || draw_quantities!(p, pd, fit, qinfo, label_points)
+    fs = Float64(p.fontsize[])
+    show_labels && draw_set_labels!(p, pd, names, specs, quantity_points, fs)
+    qinfo === nothing || draw_quantities!(p, pd, fit, qinfo, label_points, fs)
     return p
 end
 
@@ -86,12 +98,31 @@ function eunoiaplot(fit::AbstractEulerFit; figure = (;), axis = (;),
     ax = Axis(f[1, 1]; aspect = DataAspect(), axis...)
     hidedecorations!(ax)
     hidespines!(ax)
-    p = eunoiadiagram!(ax, fit; legend = legend, kwargs...)
+    p = eunoiaplot!(ax, fit; legend = legend, kwargs...)
     add_legend_if_requested!(f, fit, p, legend)
     return Makie.FigureAxisPlot(f, ax, p)
 end
 
-eunoiaplot!(ax, fit::AbstractEulerFit; kwargs...) = eunoiadiagram!(ax, fit; kwargs...)
+"""
+    eunoiaplot!(ax, fit; placement=false, leader_style=(;), kwargs...)
+
+Draw a fit into an existing axis. With `placement=false` (default) labels sit at
+their raw anchors. A truthy `placement` turns on collision-aware placement (see
+[`Eunoia.eunoiaplot`](@ref) for the value forms); the resolved label boxes and
+any exterior leader polylines are drawn into `ax`. `leader_style` is a collection
+of `lines!` keywords for the leader lines.
+"""
+function eunoiaplot!(ax, fit::AbstractEulerFit; placement = false,
+                     leader_style = (;), kwargs...)
+    if placement === false
+        return eunoiadiagram!(ax, fit; kwargs...)
+    end
+    # The recipe draws geometry only; we own the axis, so we run the
+    # measure → place → render loop and draw the labels + leaders ourselves.
+    p = eunoiadiagram!(ax, fit; defer_labels = true, kwargs...)
+    place_and_draw_labels!(ax, p, fit, placement, leader_style)
+    return p
+end
 
 function add_legend_if_requested!(f, fit, p, legend)
     legend === false && return
@@ -248,6 +279,10 @@ end
 
 # ---- labels ----------------------------------------------------------------
 
+# Region quantities render at this fraction of the set-label font size (matches
+# the web app's `labelSize * 0.75`).
+const QUANTITY_FONT_FACTOR = 0.75
+
 function resolve_label_visibility(labels, legend)
     labels === false && return false
     labels isa AbstractDict && return true
@@ -295,7 +330,7 @@ function collect_label_points(pd, names, specs, show_labels)
     return pts
 end
 
-function draw_set_labels!(p, pd, names, specs, quantity_points)
+function draw_set_labels!(p, pd, names, specs, quantity_points, fontsize)
     haskey(pd, :set_anchors) || return
     for n in names
         spec = specs[n]
@@ -304,7 +339,7 @@ function draw_set_labels!(p, pd, names, specs, quantity_points)
         a = pd.set_anchors[Symbol(n)]
         text, style = spec
         valign = (Float64(a[1]), Float64(a[2])) in quantity_points ? :bottom : :center
-        attrs = merge((align = (:center, valign), fontsize = 14), _kw(style))
+        attrs = merge((align = (:center, valign), fontsize = fontsize), _kw(style))
         text!(p, Point2f(a[1], a[2]); text = text, attrs...)
     end
     return
@@ -362,7 +397,241 @@ function format_quantity(v, total, types)
     return join(parts, "\n")
 end
 
-function draw_quantities!(p, pd, fit, qinfo, label_points)
+# ---------------------------------------------------------------------------
+# Collision-aware placement (the `placement=` path of `eunoiaplot`)
+#
+# `place_labels` (the native core) needs each region's label box in *layout*
+# units, but Makie text metrics come back in pixels and the data↔pixel scale is
+# only known once the axis is laid out — and it shifts as exterior labels push
+# the limits out. So we iterate: measure (px) → convert with the current scale →
+# place → grow the limits to fit → recompute the scale, until it converges.
+# ---------------------------------------------------------------------------
+
+const MAX_PLACE_ITERS = 8
+const PLACE_EXTENT_TOL = 0.02   # converged when the view extent moves < 2%
+# Divergence guard: a label larger than the viewport makes the fixed point
+# expand without bound (each zoom-out enlarges the fixed-px box in data units).
+# Cap the view at this multiple of the geometry and keep the last sane layout.
+const MAX_BBOX_FACTOR = 25.0
+
+# Reverse `PlotData::set_anchor_regions` without a dedicated capi field: a set's
+# anchor is, by construction, exactly its host region's anchor, so the JSON
+# floats are byte-identical and match under `==`.
+function set_host_regions(pd)
+    hosts = Dict{String,String}()
+    (haskey(pd, :set_anchors) && haskey(pd, :region_anchors)) || return hosts
+    for (s, sa) in pairs(pd.set_anchors)
+        sx, sy = Float64(sa[1]), Float64(sa[2])
+        for (r, ra) in pairs(pd.region_anchors)
+            if Float64(ra[1]) == sx && Float64(ra[2]) == sy
+                hosts[String(s)] = String(r)
+                break
+            end
+        end
+    end
+    return hosts
+end
+
+# Per-region label content as ordered `(text, fontsize, style)` lines: hosted set
+# names first (mirroring the web's `nestedSets`/`regionTitleLines`), then the
+# quantity. Regions with no content are absent from the result.
+function region_label_lines(pd, fit, names, specs, show_labels, qinfo, fontsize)
+    out = Dict{String,Vector{Tuple{String,Float64,Any}}}()
+    region_keys = haskey(pd, :region_anchors) ?
+                  Set(String(k) for k in keys(pd.region_anchors)) : Set{String}()
+
+    if show_labels
+        hosts = set_host_regions(pd)
+        nested = Dict{String,Vector{String}}()
+        for s in names
+            h = get(hosts, s, nothing)
+            (h === nothing || !occursin('&', h)) && continue
+            push!(get!(nested, h, String[]), s)
+        end
+        for combo in region_keys
+            isempty(combo) && continue
+            titlesets = occursin('&', combo) ? get(nested, combo, String[]) : [combo]
+            for s in titlesets
+                sp = get(specs, s, nothing)
+                sp === nothing && continue
+                txt, style = sp
+                push!(get!(out, combo, Tuple{String,Float64,Any}[]), (txt, fontsize, style))
+            end
+        end
+    end
+
+    if qinfo !== nothing
+        source, types, style = qinfo
+        vals = source == "fitted" ? fit.fitted_values : fit.original_values
+        total = sum(values(vals); init = 0.0)
+        cstyle = merge((color = RGBf(0.41, 0.41, 0.41),), _kw(style))
+        for combo in region_keys
+            (isempty(combo) || !haskey(vals, combo)) && continue
+            txt = format_quantity(vals[combo], total, types)
+            push!(get!(out, combo, Tuple{String,Float64,Any}[]),
+                  (txt, fontsize * QUANTITY_FONT_FACTOR, cstyle))
+        end
+    end
+    return out
+end
+
+# The font `text!` will render with — best-effort from the scene theme, falling
+# back to Makie's default (metrics only feed placement, which tolerates slack).
+function _label_font(ax)
+    try
+        return Makie.to_font(to_value(get(ax.scene.theme, :font, "TeX Gyre Heros Makie")))
+    catch
+        return Makie.to_font("TeX Gyre Heros Makie")
+    end
+end
+
+_line_dims(text, fs, font) = Tuple(Makie.widths(Makie.text_bb(text, font, Float32(fs)))[1:2])
+
+# Stacked-box dimensions in pixels: widest line × summed heights + inter-line gaps.
+function measure_box(lines, font, gap)
+    isempty(lines) && return (0.0, 0.0)
+    dims = [_line_dims(t, fs, font) for (t, fs, _) in lines]
+    w = maximum(d -> d[1], dims)
+    h = sum(d -> d[2], dims) + gap * (length(lines) - 1)
+    return (Float64(w), Float64(h))
+end
+
+# data-units-per-pixel of the axis, separately per axis (≈ equal under DataAspect).
+function axis_scale(ax)
+    fl = ax.finallimits[]
+    vp = ax.scene.viewport[]
+    wd = Makie.widths(fl)
+    wp = Makie.widths(vp)
+    sx = wp[1] > 0 ? wd[1] / wp[1] : 1.0
+    sy = wp[2] > 0 ? wd[2] / wp[2] : 1.0
+    return (Float64(sx), Float64(sy))
+end
+
+# Geometry-only bounding box (region pieces + container), in layout units.
+function geom_bbox(fit)
+    pd = fit.plot_data
+    xmin = ymin = Inf
+    xmax = ymax = -Inf
+    if haskey(pd, :region_pieces)
+        for (_, pieces) in pairs(pd.region_pieces), piece in pieces
+            for pt in piece.outer
+                xmin = min(xmin, pt[1]); xmax = max(xmax, pt[1])
+                ymin = min(ymin, pt[2]); ymax = max(ymax, pt[2])
+            end
+        end
+    end
+    if fit.container !== nothing
+        c = fit.container
+        xmin = min(xmin, c.center.x - c.width / 2); xmax = max(xmax, c.center.x + c.width / 2)
+        ymin = min(ymin, c.center.y - c.height / 2); ymax = max(ymax, c.center.y + c.height / 2)
+    end
+    return (xmin, xmax, ymin, ymax)
+end
+
+# Extend `geom` to cover every placed label box and leader vertex.
+function placement_bbox(geom, placements, sizes_data)
+    xmin, xmax, ymin, ymax = geom
+    consume(x, y) = (xmin = min(xmin, x); xmax = max(xmax, x);
+                     ymin = min(ymin, y); ymax = max(ymax, y))
+    for (combo, pl) in placements
+        haskey(sizes_data, combo) || continue
+        w, h = sizes_data[combo]
+        consume(pl.anchor.x - w / 2, pl.anchor.y - h / 2)
+        consume(pl.anchor.x + w / 2, pl.anchor.y + h / 2)
+        pl.tether === nothing || consume(pl.tether.x, pl.tether.y)
+        pl.leader_end === nothing || consume(pl.leader_end.x, pl.leader_end.y)
+        for pt in pl.leader_waypoints
+            consume(pt.x, pt.y)
+        end
+    end
+    return (xmin, xmax, ymin, ymax)
+end
+
+function place_and_draw_labels!(ax, p, fit, placement, leader_style)
+    pd = fit.plot_data
+    names = String[s.set for s in fit.shapes]
+    base = resolve_colors(p.colors[], names)
+    fontsize = Float64(p.fontsize[])
+    show_labels = resolve_label_visibility(p.labels[], p.legend[])
+    specs = show_labels ? label_specs(p.labels[], names) :
+            Dict{String,Any}(n => nothing for n in names)
+    qinfo = p.quantities[] === false ? nothing : resolve_quantities(p.quantities[])
+
+    lines_by_region = region_label_lines(pd, fit, names, specs, show_labels, qinfo, fontsize)
+    isempty(lines_by_region) && return
+
+    font = _label_font(ax)
+    gap = 0.15 * fontsize
+    boxes_px = Dict(combo => measure_box(lines, font, gap)
+                    for (combo, lines) in lines_by_region)
+    strat = placement isa Union{NamedTuple,AbstractDict} ? _kw(placement) : (;)
+    geom = geom_bbox(fit)
+
+    geom_extent = max(geom[2] - geom[1], geom[4] - geom[3])
+    max_extent = MAX_BBOX_FACTOR * geom_extent
+
+    # Fixed-point loop: place at the current scale, grow the limits to fit, and
+    # repeat until the view extent settles. The kept `placements`/`sizes_data`
+    # always match the currently pinned limits, so the render is self-consistent.
+    Makie.reset_limits!(ax)
+    placements = Dict{String,Eunoia.LabelPlacement}()
+    sizes_data = Dict{String,Tuple{Float64,Float64}}()
+    prev_extent = nothing
+    for _ in 1:MAX_PLACE_ITERS
+        sx, sy = axis_scale(ax)
+        cand_sizes = Dict(combo => (w * sx, h * sy) for (combo, (w, h)) in boxes_px)
+        cand = Eunoia.place_labels(fit, cand_sizes; strat...)
+        xmin, xmax, ymin, ymax = placement_bbox(geom, cand, cand_sizes)
+        extent = max(xmax - xmin, ymax - ymin)
+        # Diverging (label > viewport): drop this runaway step, keep the last
+        # sane layout and its pinned limits.
+        !isempty(placements) && extent > max_extent && break
+        placements, sizes_data = cand, cand_sizes
+        prev_extent !== nothing &&
+            abs(extent - prev_extent) <= PLACE_EXTENT_TOL * prev_extent && break
+        prev_extent = extent
+        pad = 0.03 * extent
+        Makie.limits!(ax, xmin - pad, xmax + pad, ymin - pad, ymax + pad)
+        Makie.reset_limits!(ax)
+    end
+
+    draw_placed_labels!(p, lines_by_region, placements, font, gap, leader_style)
+    return
+end
+
+function draw_placed_labels!(p, lines_by_region, placements, font, gap, leader_style)
+    lattrs = merge((color = RGBf(0.45, 0.45, 0.45), linewidth = 1.0), _kw(leader_style))
+    for (combo, lines) in lines_by_region
+        haskey(placements, combo) || continue
+        pl = placements[combo]
+        anchor = Point2f(pl.anchor.x, pl.anchor.y)
+
+        if pl.tether !== nothing && pl.leader_end !== nothing
+            pts = Point2f[Point2f(pl.tether.x, pl.tether.y)]
+            for w in pl.leader_waypoints
+                push!(pts, Point2f(w.x, w.y))
+            end
+            push!(pts, Point2f(pl.leader_end.x, pl.leader_end.y))
+            lines!(p, pts; lattrs...)
+        end
+
+        # Stack the lines top-to-bottom, centered on the anchor. `offset` is in
+        # pixels (text's default `markerspace = :pixel`), matching the metrics.
+        _, h_px = measure_box(lines, font, gap)
+        cursor = h_px / 2
+        for (text, fs, style) in lines
+            lh = _line_dims(text, fs, font)[2]
+            cy = cursor - lh / 2
+            cursor -= lh + gap
+            attrs = merge((align = (:center, :center), fontsize = fs,
+                           offset = (0.0f0, Float32(cy)), markerspace = :pixel), _kw(style))
+            text!(p, anchor; text = text, attrs...)
+        end
+    end
+    return
+end
+
+function draw_quantities!(p, pd, fit, qinfo, label_points, fontsize)
     haskey(pd, :region_anchors) || return
     source, types, style = qinfo
     vals = source == "fitted" ? fit.fitted_values : fit.original_values
@@ -371,7 +640,7 @@ function draw_quantities!(p, pd, fit, qinfo, label_points)
         combo = String(key)
         (isempty(combo) || !haskey(vals, combo)) && continue
         valign = (Float64(anchor[1]), Float64(anchor[2])) in label_points ? :top : :center
-        attrs = merge((align = (:center, valign), fontsize = 11,
+        attrs = merge((align = (:center, valign), fontsize = fontsize * QUANTITY_FONT_FACTOR,
                        color = RGBf(0.41, 0.41, 0.41)), _kw(style))
         text!(p, Point2f(anchor[1], anchor[2]); text = format_quantity(vals[combo], total, types),
               attrs...)

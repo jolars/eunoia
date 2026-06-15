@@ -400,7 +400,7 @@ end
 
 """
     eunoiaplot(fit; colors, fills, edges, labels, quantities, legend, complement,
-               figure=(;), axis=(;))
+               fontsize=14, placement=false, leader_style=(;), figure=(;), axis=(;))
 
 Render a fitted [`EulerFit`](@ref)/[`VennFit`](@ref) as a publication-ready Makie
 figure (equal aspect, no axis decorations), returning a `Makie.FigureAxisPlot`.
@@ -422,14 +422,33 @@ Styling keywords mirror the `eunoia-py` `plot()` API:
   or a `Dict`.
 - `legend`: `false`/`true` or a `Dict` of `Legend` keywords.
 - `complement`: container-box style `Dict` (drawn only when the fit has one).
+- `fontsize`: base label font size in points (quantities render smaller).
+
+Collision-aware labels:
+
+- `placement`: `false` (default) draws labels at their raw anchors. A truthy
+  value turns on collision-aware placement via [`place_labels`](@ref): each
+  region's label is measured (Makie text metrics), positioned inside its region
+  when it fits, else pushed outside with a leader line. Set names and quantities
+  are combined into one box per region. Pass `true` for defaults, or a
+  `NamedTuple`/`Dict` of [`place_labels`](@ref) strategy knobs (`placement`,
+  `leader`, `tether`, `margin`, `iterations`, `precision`, `leader_gap`,
+  `min_gap`) for control, e.g. `placement = (; placement = "force_directed")` or
+  `placement = (; leader = "elbow", tether = "boundary")`.
+- `leader_style`: collection of `lines!` keywords styling the leader lines.
+
+Collision-aware placement needs the axis (to convert pixel text metrics to
+layout units), so it is available through `eunoiaplot`/`eunoiaplot!` only; the
+bare `plot(fit)` recipe form ignores `placement`.
 """
 function eunoiaplot end
 
 """
-    eunoiaplot!(ax, fit; kwargs...)
+    eunoiaplot!(ax, fit; placement=false, leader_style=(;), kwargs...)
 
 Draw a fitted diagram into an existing Makie axis `ax`. Same styling keywords as
-[`eunoiaplot`](@ref); does not alter the axis aspect or decorations.
+[`eunoiaplot`](@ref) (including `placement`/`leader_style` for collision-aware
+labels); does not alter the axis aspect or decorations.
 """
 function eunoiaplot! end
 

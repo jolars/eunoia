@@ -259,15 +259,25 @@ Julia-kwarg pattern that (b) and (c) reuse.
     `Dict{String,LabelPlacement}` (new typed struct). Exported, docstringed, and
     covered by a `@testset "label placement"`.
 
-  **Remaining:** the Makie extension still drops labels at the raw anchors with
-  only a "stack if identical anchor" tweak — no collision avoidance. Wiring it to
-  measure label sizes (Makie text metrics), run the fixed-point scale loop, call
-  `place_labels`, and render placed labels + leader polylines (`tether →
-  leader_waypoints… → leader_end`) is the follow-up.
+  **Makie wiring — done.** `eunoiaplot`/`eunoiaplot!` take a `placement` keyword
+  (`false` default; `true` or a `NamedTuple`/`Dict` of `place_labels` strategy
+  knobs) plus `leader_style`. The wrapper owns the axis, so it runs the loop the
+  recipe can't: it builds one combined name+count box per region (mirroring the
+  web's `nestedSets`/`regionTitleLines`, with set→host-region recovered by
+  matching `set_anchors` to `region_anchors` rather than a new capi field),
+  measures each box with `Makie.text_bb` (pixels), and iterates measure →
+  convert-with-current-`finallimits`/`viewport`-scale → `place_labels` →
+  grow-limits until the view extent settles (with a divergence guard for labels
+  larger than the viewport). It then renders the stacked lines at the resolved
+  anchors and any leader polylines (`tether → leader_waypoints… → leader_end`),
+  straight or elbow. The recipe gains a `defer_labels` flag so the bare
+  `plot(fit)` path keeps the raw-anchor fallback without double-drawing.
+  Collision-aware placement is `eunoiaplot`-only (it needs the axis projection);
+  `plot(fit)` ignores `placement`. Covered by the `collision-aware placement`
+  Makie testset.
 
-For each remaining piece: surface the knob in the Makie extension (e.g. a
-`placement`/leader option). The core already does the work; this is wiring +
-serialization.
+This was wiring + serialization only (Julia extension); the core already does
+the work and no shared capi change was required.
 
 **Exit criteria:** a caller can select the loss and key solver knobs, tune
 `PlotOptions`, and opt into force-directed label placement (with leaders) entirely
