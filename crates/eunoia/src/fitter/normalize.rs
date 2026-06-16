@@ -42,24 +42,94 @@ where
 /// container represents. Multi-cluster + complement is rejected upfront
 /// (`spec_is_multi_cluster`), so packing is moot.
 ///
-/// What we *do* want: translate the shapes and container together so the
-/// container's center sits at the origin. That puts the diagram in a
-/// predictable coordinate frame for downstream consumers (renderers,
-/// bindings) without disturbing the optimiser-chosen relationship between
-/// shapes and container.
+/// What we *do* want, in two pure-translation steps:
+///
+/// 1. Move the whole scene (shapes + container) so the container's center sits
+///    at the origin. This is always loss-preserving — it translates everything
+///    together — and puts the diagram in a predictable coordinate frame for
+///    downstream consumers (renderers, bindings).
+/// 2. Center the diagram *within* the container: slide the shapes so the center
+///    of their joint bounding box coincides with the container center. The
+///    optimiser is free to leave the union parked off-center inside the frame
+///    (only the clipped region areas enter the loss), which looks lopsided;
+///    this recenters it.
+///
+/// Step 2 is applied **only when every shape already lies fully inside the
+/// container**. Region areas are clipped to the container
+/// ([`DiagramShape::compute_exclusive_regions_clipped`]), so once a shape pokes
+/// past an edge its optimiser-chosen offset is load-bearing — sliding it would
+/// change the clipped complement and silently degrade the fit. In that case we
+/// keep step 1 only.
 pub fn normalize_layout_with_container<S>(shapes: &mut [S], container: &mut Rectangle)
 where
     S: DiagramShape + Clone,
 {
+    // Step 1: park the container at the origin, taking the shapes along.
     let cx = container.center().x();
     let cy = container.center().y();
-    if cx.abs() < 1e-12 && cy.abs() < 1e-12 {
+    if cx.abs() > 1e-12 || cy.abs() > 1e-12 {
+        for shape in shapes.iter_mut() {
+            *shape = translate_shape(shape, -cx, -cy);
+        }
+        *container = Rectangle::new(Point::new(0.0, 0.0), container.width(), container.height());
+    }
+
+    // Step 2: center the diagram within the (now origin-centered) container.
+    center_shapes_in_container(shapes, container);
+}
+
+/// Translate `shapes` so the center of their joint bounding box coincides with
+/// the container center, but only when the whole diagram already fits inside
+/// the container so the move cannot change any container-clipped region area.
+///
+/// Assumes `container` is centered at the origin (the caller's step 1).
+fn center_shapes_in_container<S>(shapes: &mut [S], container: &Rectangle)
+where
+    S: DiagramShape + Clone,
+{
+    if shapes.is_empty() {
+        return;
+    }
+
+    let mut x_min = f64::INFINITY;
+    let mut x_max = f64::NEG_INFINITY;
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    for shape in shapes.iter() {
+        let Bounds {
+            x_min: bx0,
+            x_max: bx1,
+            y_min: by0,
+            y_max: by1,
+        } = shape.bounds();
+        x_min = x_min.min(bx0);
+        x_max = x_max.max(bx1);
+        y_min = y_min.min(by0);
+        y_max = y_max.max(by1);
+    }
+
+    // Bail out if any shape extends past the container: recentering would alter
+    // the clipped complement. A small tolerance keeps edge-touching fits (where
+    // clipping is inactive) on the centering path.
+    let half_w = container.width() / 2.0;
+    let half_h = container.height() / 2.0;
+    let tol = 1e-9 * half_w.max(half_h).max(1.0);
+    if x_min < -half_w - tol
+        || x_max > half_w + tol
+        || y_min < -half_h - tol
+        || y_max > half_h + tol
+    {
+        return;
+    }
+
+    let dx = (x_min + x_max) / 2.0;
+    let dy = (y_min + y_max) / 2.0;
+    if dx.abs() < 1e-12 && dy.abs() < 1e-12 {
         return;
     }
     for shape in shapes.iter_mut() {
-        *shape = translate_shape(shape, -cx, -cy);
+        *shape = translate_shape(shape, -dx, -dy);
     }
-    *container = Rectangle::new(Point::new(0.0, 0.0), container.width(), container.height());
 }
 
 /// Variant of [`normalize_layout`] that uses the caller-supplied
@@ -605,30 +675,68 @@ mod tests {
         assert!(approx_eq(container.width(), 6.0));
         assert!(approx_eq(container.height(), 4.0));
 
-        // Shapes translated by exactly (-12, -5).
+        // The diagram (bounding box of the two circles) is centred in the
+        // container: its bbox center lands at the origin. Both circles fit
+        // inside the container, so centering is loss-preserving here.
+        let bb_cx = (shapes[0].centroid().x() + shapes[1].centroid().x()) / 2.0;
+        let bb_cy = shapes[0].centroid().y(); // both circles share a y, r equal
+        assert!(approx_eq(bb_cx, 0.0), "diagram not x-centred: {bb_cx}");
+        assert!(approx_eq(bb_cy, 0.0), "diagram not y-centred: {bb_cy}");
+        // Horizontal separation is preserved (pure translation).
         assert!(approx_eq(shapes[0].centroid().x(), -1.0));
-        assert!(approx_eq(shapes[0].centroid().y(), 1.0));
         assert!(approx_eq(shapes[1].centroid().x(), 1.0));
-        assert!(approx_eq(shapes[1].centroid().y(), 1.0));
+    }
+
+    #[test]
+    fn test_normalize_with_container_centres_offset_diagram() {
+        // Diagram parked in the lower-left corner of the container; both
+        // circles fit inside, so it should be slid to the container center.
+        let mut shapes = vec![Circle::new(Point::new(-2.0, -2.0), 1.0)];
+        let mut container = Rectangle::new(Point::new(0.0, 0.0), 10.0, 10.0);
+
+        normalize_layout_with_container(&mut shapes, &mut container);
+
+        assert!(approx_eq(shapes[0].centroid().x(), 0.0));
+        assert!(approx_eq(shapes[0].centroid().y(), 0.0));
+        assert!(approx_eq(container.center().x(), 0.0));
+        assert!(approx_eq(container.center().y(), 0.0));
+    }
+
+    #[test]
+    fn test_normalize_with_container_keeps_offset_when_shape_pokes_out() {
+        // The circle (radius 2) extends past the right edge of the 4-wide
+        // container, so its clipped area depends on position. Centering must be
+        // skipped — only the container is parked at the origin.
+        let mut shapes = vec![Circle::new(Point::new(3.0, 0.0), 2.0)];
+        let mut container = Rectangle::new(Point::new(2.0, 0.0), 4.0, 4.0);
+
+        normalize_layout_with_container(&mut shapes, &mut container);
+
+        // Step 1 translated everything by (-2, 0); step 2 was skipped, so the
+        // circle keeps its optimiser-chosen offset relative to the container.
+        assert!(approx_eq(shapes[0].centroid().x(), 1.0));
+        assert!(approx_eq(shapes[0].centroid().y(), 0.0));
+        assert!(approx_eq(container.center().x(), 0.0));
+        assert!(approx_eq(container.center().y(), 0.0));
     }
 
     #[test]
     fn test_normalize_with_container_idempotent() {
-        let mut shapes = vec![Circle::new(Point::new(0.5, 0.0), 1.0)];
+        // Container at origin, single circle already centred in it — a fixed
+        // point of normalisation: re-running must not move anything.
+        let mut shapes = vec![Circle::new(Point::new(0.0, 0.0), 1.0)];
         let mut container = Rectangle::new(Point::new(0.0, 0.0), 4.0, 3.0);
 
-        let cx_before = shapes[0].centroid().x();
-        let cy_before = shapes[0].centroid().y();
-        let w_before = container.width();
-        let h_before = container.height();
-
         normalize_layout_with_container(&mut shapes, &mut container);
+        assert!(approx_eq(shapes[0].centroid().x(), 0.0));
+        assert!(approx_eq(shapes[0].centroid().y(), 0.0));
 
-        // Already centred — nothing should move.
-        assert!(approx_eq(shapes[0].centroid().x(), cx_before));
-        assert!(approx_eq(shapes[0].centroid().y(), cy_before));
-        assert!(approx_eq(container.width(), w_before));
-        assert!(approx_eq(container.height(), h_before));
+        // Second pass is a no-op.
+        normalize_layout_with_container(&mut shapes, &mut container);
+        assert!(approx_eq(shapes[0].centroid().x(), 0.0));
+        assert!(approx_eq(shapes[0].centroid().y(), 0.0));
+        assert!(approx_eq(container.width(), 4.0));
+        assert!(approx_eq(container.height(), 3.0));
         assert!(approx_eq(container.center().x(), 0.0));
         assert!(approx_eq(container.center().y(), 0.0));
     }
