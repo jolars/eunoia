@@ -45,7 +45,7 @@ jobs:
           - { rust: aarch64-apple-darwin,      julia: aarch64-apple-darwin, glibc: "",      dir: lib, lib: libeunoia_capi.dylib }
           - { rust: x86_64-pc-windows-gnu,     julia: x86_64-w64-mingw32,   glibc: "",      dir: bin, lib: eunoia_capi.dll }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -81,7 +81,7 @@ jobs:
           echo "Built $out:"; tar -tzf "$out"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.julia }}
           path: libeunoia_capi-*.tar.gz
@@ -98,13 +98,13 @@ jobs:
       contents: write
     steps:
       - name: Download all tarballs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
       - name: Publish to GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: dist/*.tar.gz
