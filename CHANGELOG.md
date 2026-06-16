@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/jolars/eunoia/compare/v1.3.0...v1.4.0) (2026-06-16)
+
+### Features
+- **plotting:** normalize placement of sets-within-sets ([`2d3de4d`](https://github.com/jolars/eunoia/commit/2d3de4d8ad11ce2f95003347c0f7aa99c914d85f))
+- **plotting:** center plot layout within complement container ([`07e3338`](https://github.com/jolars/eunoia/commit/07e3338eb7215185cb5a1d4828b4b19ac0962229))
+- **capi:** expose set_anchor_regions in plot_data ([`d810d58`](https://github.com/jolars/eunoia/commit/d810d58d51d08098a89c64ead943f3433e70ea75))
+- remove julia bindings from this repo ([`50ad043`](https://github.com/jolars/eunoia/commit/50ad04381592cc31663cafbc751b7dcef25d93e0))
+
 ## [1.3.0](https://github.com/jolars/eunoia/compare/v1.2.0...v1.3.0) (2026-06-15)
 
 ### Features
