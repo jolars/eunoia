@@ -36,8 +36,9 @@
 //!
 //! Success: `{"ok": true, "shape": ..., "shapes": [...], "metrics": {...},
 //! "plot_data": {...}}`. The `plot_data` bundle (region pieces, region/set
-//! anchors, region areas, shape outlines) mirrors the PyO3 binding so the Julia
-//! side can render diagrams. `eunoia_place_labels` instead returns `{"ok": true,
+//! anchors, set-anchor regions, region areas, shape outlines) mirrors the PyO3
+//! binding so the Julia side can render diagrams. `eunoia_place_labels` instead
+//! returns `{"ok": true,
 //! "placements": {...}}`. Failure: `{"ok": false, "error": "<message>"}`.
 //! Callers branch on `ok`.
 
@@ -255,6 +256,12 @@ struct PlotDataOut {
     region_anchors: BTreeMap<String, [f64; 2]>,
     region_areas: BTreeMap<String, f64>,
     set_anchors: BTreeMap<String, [f64; 2]>,
+    /// For each set whose label anchored to a region, the canonical combination
+    /// string of that region (a key into `region_anchors`). Lets renderers pair
+    /// a set label with a region quantity by key instead of comparing anchor
+    /// points by float equality. Omits sets that fell back to the whole-shape
+    /// POI. Mirrors [`eunoia::plotting::PlotData::set_anchor_regions`].
+    set_anchor_regions: BTreeMap<String, String>,
     shape_outlines: BTreeMap<String, Vec<[f64; 2]>>,
 }
 
@@ -385,6 +392,11 @@ fn build_plot_data(plot: &PlotData) -> PlotDataOut {
             .set_anchors
             .iter()
             .map(|(k, p)| (k.clone(), [p.x(), p.y()]))
+            .collect(),
+        set_anchor_regions: plot
+            .set_anchor_regions
+            .iter()
+            .map(|(k, combo)| (k.clone(), combo.clone()))
             .collect(),
         shape_outlines: plot
             .shape_outlines
@@ -1132,6 +1144,34 @@ mod tests {
         assert!(plot["region_areas"]["A&B"].is_number());
         assert_eq!(plot["set_anchors"]["A"].as_array().unwrap().len(), 2);
         assert!(plot["shape_outlines"]["A"].is_array());
+    }
+
+    #[test]
+    fn plot_data_exposes_set_anchor_regions() {
+        // Two overlapping sets: both have an exclusive lobe, so each set label
+        // anchors to its own exclusive region (`A` -> "A", `B` -> "B").
+        let out = call(
+            eunoia_euler,
+            r#"{"sets":[{"combination":"A","size":5},{"combination":"B","size":3},
+                {"combination":"A&B","size":1}],"seed":1}"#,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let plot = &v["plot_data"];
+
+        let regions = plot["set_anchor_regions"].as_object().unwrap();
+        assert_eq!(regions["A"], "A");
+        assert_eq!(regions["B"], "B");
+
+        // Documented invariant: set_anchors[s] == region_anchors[regions[s]],
+        // so a binding can pair set labels with region quantities by key alone,
+        // never by comparing anchor points with floating-point tolerance.
+        for (set, combo) in regions {
+            let combo = combo.as_str().unwrap();
+            assert_eq!(
+                plot["set_anchors"][set], plot["region_anchors"][combo],
+                "set {set} should share an anchor with region {combo}"
+            );
+        }
     }
 
     #[test]
