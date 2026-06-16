@@ -14,6 +14,16 @@ use crate::geometry::traits::DiagramShape;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
+/// Fraction of the internal-tangency distance by which a free contained child
+/// is offset from its parent's center.
+///
+/// Strictly between `0` (concentric — a thin uniform annulus, the worst case
+/// for labelling the parent's exclusive lune) and `1` (internally tangent — the
+/// child jammed against the parent's edge). `0.5` leaves a near-side gap of
+/// `0.5·d_max` and opens a far-side lune of `1.5·d_max`: clearly off-center
+/// without touching.
+const CONTAINED_CHILD_OFFSET_FRACTION: f64 = 0.5;
+
 /// Normalize a collection of diagram shapes.
 ///
 /// This function:
@@ -157,6 +167,13 @@ pub fn normalize_layout_with_clusters<S>(
         return;
     }
 
+    // Step 0: give any free contained child a canonical moderate offset from
+    // its parent before the orientation/centering steps run (which then
+    // standardise the overall frame). Loss-preserving — only shapes fully
+    // inside a single parent and clear of everything else are moved, and never
+    // past the parent's edge — so it doesn't disturb cluster detection below.
+    offset_contained_children(shapes, exclusive_areas);
+
     // Step 1: Find disjoint clusters. Prefer the area-based path when the
     // caller provides exclusive-region areas — that's the same exact-conic
     // math the optimizer just minimised, so it's strictly more reliable on
@@ -199,6 +216,265 @@ pub fn normalize_layout_with_clusters<S>(
         pack_clusters(shapes, &clusters, padding_factor);
         center_layout(shapes);
     }
+}
+
+/// Give each *free single contained child* a canonical, moderate offset from
+/// its parent's center.
+///
+/// When a shape sits entirely inside exactly one other shape and touches
+/// nothing else, its position is a loss-invariant free degree of freedom: the
+/// optimiser leaves it parked arbitrarily and non-reproducibly. A concentric
+/// child turns the parent's exclusive region into a thin uniform annulus (poor
+/// for label placement); pushing the child off-center opens a wide lune on the
+/// far side. This nudges each such child to [`CONTAINED_CHILD_OFFSET_FRACTION`]
+/// of the way to internal tangency.
+///
+/// Only the single-child case is handled. A parent containing two or more
+/// disjoint children is a constrained-packing problem and is left untouched —
+/// moving either child could overlap the other and change the loss. Nested
+/// chains (a child with more than one container, e.g. a russian-doll) are
+/// likewise skipped.
+///
+/// Every move is verified to keep the child fully inside the parent and clear
+/// of all other shapes, so the pass is loss-preserving by construction.
+///
+/// Containment is detected from the **exclusive-region areas**, not the
+/// geometric `contains` predicate: the optimiser routinely parks a subset at
+/// exact internal tangency, where `contains` is floating-point false even
+/// though the set is geometrically a subset. The area view is position
+/// independent — a free child of `p` is a set whose solo region is ~0 and which
+/// co-occurs with exactly one other set (`p`). When the caller doesn't supply
+/// the areas (the public `normalize_layout` entry) they are recomputed.
+fn offset_contained_children<S>(
+    shapes: &mut [S],
+    exclusive_areas: Option<&HashMap<RegionMask, f64>>,
+) where
+    S: DiagramShape + Clone,
+{
+    let n = shapes.len();
+    if n < 2 {
+        return;
+    }
+
+    let owned;
+    let areas = match exclusive_areas {
+        Some(a) => a,
+        None => {
+            owned = S::compute_exclusive_regions(shapes);
+            &owned
+        }
+    };
+    let max_region = areas
+        .values()
+        .copied()
+        .fold(0.0_f64, |a, b| a.max(b.abs()))
+        .max(1.0);
+    let tol = 1e-10 * max_region;
+
+    // Total area of each set: the sum of every region it participates in. Used
+    // to require a child be strictly smaller than its parent, which rules out
+    // two coincident equal sets (each then looks like the other's free child,
+    // but neither is contained — pushing them apart would destroy the overlap).
+    let mut set_total = vec![0.0_f64; n];
+    for (&mask, &area) in areas {
+        if area <= 0.0 {
+            continue;
+        }
+        let mut bits = mask;
+        while bits != 0 {
+            let b = bits.trailing_zeros() as usize;
+            if b < n {
+                set_total[b] += area;
+            }
+            bits &= bits - 1;
+        }
+    }
+
+    // Identify every free contained child and its parent, then count children
+    // per parent so we only act on the single-child case (a parent with two or
+    // more free children is the deferred constrained-packing problem).
+    let mut parent_of: Vec<Option<usize>> = vec![None; n];
+    let mut child_count: Vec<usize> = vec![0; n];
+    for (i, slot) in parent_of.iter_mut().enumerate() {
+        if let Some(p) = contained_child_parent(i, n, areas, tol) {
+            // Require the child to be strictly smaller than the parent.
+            if set_total[i] < set_total[p] * (1.0 - 1e-6) {
+                *slot = Some(p);
+                child_count[p] += 1;
+            }
+        }
+    }
+
+    for (i, &maybe_parent) in parent_of.iter().enumerate() {
+        if let Some(p) = maybe_parent {
+            if child_count[p] == 1 {
+                reposition_contained_child(shapes, p, i);
+            }
+        }
+    }
+}
+
+/// From the exclusive-region areas, decide whether set `i` is a *free contained
+/// child* and, if so, return its parent set's index.
+///
+/// `i` qualifies when its solo region (`mask == 1 << i`) is ~0 and every
+/// significant region containing bit `i` also contains exactly one common other
+/// bit `p` — i.e. `i` is entirely inside `p` and shares area with nothing else.
+/// Returns `None` for sets with their own region, sets sharing area with two or
+/// more others (nesting / russian-doll, multi-way overlaps), or empties.
+fn contained_child_parent(
+    i: usize,
+    n: usize,
+    areas: &HashMap<RegionMask, f64>,
+    tol: f64,
+) -> Option<usize> {
+    let bit_i: RegionMask = 1 << i;
+
+    // A non-trivial solo region means `i` is not wholly contained.
+    if areas.get(&bit_i).copied().unwrap_or(0.0) > tol {
+        return None;
+    }
+
+    let mut other_bits: RegionMask = 0;
+    let mut saw_region = false;
+    for (&mask, &area) in areas {
+        if area <= tol || (mask & bit_i) == 0 {
+            continue;
+        }
+        saw_region = true;
+        other_bits |= mask & !bit_i;
+    }
+
+    // Must co-occur with exactly one other set, which is the parent.
+    if !saw_region || other_bits.count_ones() != 1 {
+        return None;
+    }
+    let p = other_bits.trailing_zeros() as usize;
+    if p >= n || p == i {
+        return None;
+    }
+    Some(p)
+}
+
+/// Move free child `i` to [`CONTAINED_CHILD_OFFSET_FRACTION`] of the way to
+/// internal tangency with parent `p`, along a canonical direction. Leaves the
+/// child untouched if the resulting move can't be verified loss-preserving.
+fn reposition_contained_child<S>(shapes: &mut [S], p: usize, i: usize)
+where
+    S: DiagramShape + Clone,
+{
+    let pc = shapes[p].centroid();
+    let cc = shapes[i].centroid();
+
+    // Direction: keep the optimiser's parent→child direction when it carries
+    // signal; fall back to a fixed canonical axis when (near-)concentric (the
+    // direction is then noise, and `rotate_cluster` canonicalises the final
+    // orientation regardless). The threshold scales with the parent so it is
+    // coordinate-scale invariant.
+    let Bounds {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    } = shapes[p].bounds();
+    let parent_scale = ((x_max - x_min).powi(2) + (y_max - y_min).powi(2)).sqrt();
+    let dx = cc.x() - pc.x();
+    let dy = cc.y() - pc.y();
+    let mag = (dx * dx + dy * dy).sqrt();
+    let (ux, uy) = if mag > 1e-9 * parent_scale.max(1.0) {
+        (dx / mag, dy / mag)
+    } else {
+        (1.0, 0.0)
+    };
+
+    let d_max = max_contained_offset(&shapes[p], &shapes[i], ux, uy);
+    if d_max <= 0.0 {
+        return;
+    }
+    let d = CONTAINED_CHILD_OFFSET_FRACTION * d_max;
+
+    // Target center = parent center + u·d; translate from the current center.
+    let target_x = pc.x() + ux * d;
+    let target_y = pc.y() + uy * d;
+    let move_x = target_x - cc.x();
+    let move_y = target_y - cc.y();
+
+    // Already at the canonical offset (within tolerance): nothing to do. Keeps
+    // re-normalisation a stable no-op despite binary-search round-off.
+    if (move_x * move_x + move_y * move_y).sqrt() <= 1e-9 * d_max.max(1.0) {
+        return;
+    }
+    let moved = translate_shape(&shapes[i], move_x, move_y);
+
+    // Loss guard: the move must keep the child inside the parent and clear of
+    // every other shape. Bail out (keep the original) on any FP surprise.
+    if !shapes[p].contains(&moved) {
+        return;
+    }
+    for (k, other) in shapes.iter().enumerate() {
+        if k == i || k == p {
+            continue;
+        }
+        if moved.intersects(other) || moved.contains(other) || other.contains(&moved) {
+            return;
+        }
+    }
+
+    shapes[i] = moved;
+}
+
+/// Binary-search the largest distance `d` such that translating `child` so its
+/// center sits at `parent_center + (ux, uy)·d` keeps it fully inside `parent`.
+///
+/// Shape-agnostic: it only probes [`crate::geometry::traits::Closed::contains`].
+/// For circles this recovers `R − r`. Assumes `d = 0` (child centered on the
+/// parent) is contained, which holds for the library's convex shapes.
+fn max_contained_offset<S>(parent: &S, child: &S, ux: f64, uy: f64) -> f64
+where
+    S: DiagramShape + Clone,
+{
+    let pc = parent.centroid();
+    let cc = child.centroid();
+
+    // Is `child` still inside `parent` once recentred at `parent_center + u·d`?
+    let contains_at = |d: f64| -> bool {
+        let tx = pc.x() + ux * d - cc.x();
+        let ty = pc.y() + uy * d - cc.y();
+        parent.contains(&translate_shape(child, tx, ty))
+    };
+
+    if !contains_at(0.0) {
+        return 0.0;
+    }
+
+    // Upper bound: the parent's bbox diagonal is guaranteed beyond tangency for
+    // a contained child of nonzero size. Expand defensively just in case.
+    let Bounds {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    } = parent.bounds();
+    let mut hi = ((x_max - x_min).powi(2) + (y_max - y_min).powi(2)).sqrt();
+    if hi <= 0.0 {
+        return 0.0;
+    }
+    let mut guard = 0;
+    while contains_at(hi) && guard < 8 {
+        hi *= 2.0;
+        guard += 1;
+    }
+
+    let mut lo = 0.0;
+    for _ in 0..48 {
+        let mid = 0.5 * (lo + hi);
+        if contains_at(mid) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
 }
 
 /// Rotate a cluster to a canonical orientation.
@@ -498,6 +774,7 @@ mod tests {
     use super::*;
     use crate::geometry::shapes::Circle;
     use crate::geometry::traits::Centroid;
+    use crate::geometry::traits::Closed;
     use crate::geometry::traits::DiagramShape;
 
     const EPSILON: f64 = 1e-6;
@@ -739,6 +1016,146 @@ mod tests {
         assert!(approx_eq(container.height(), 3.0));
         assert!(approx_eq(container.center().x(), 0.0));
         assert!(approx_eq(container.center().y(), 0.0));
+    }
+
+    /// Distance between two shape centroids.
+    fn centroid_dist<S: DiagramShape>(a: &S, b: &S) -> f64 {
+        let (ca, cb) = (a.centroid(), b.centroid());
+        ((ca.x() - cb.x()).powi(2) + (ca.y() - cb.y()).powi(2)).sqrt()
+    }
+
+    /// Assert two exclusive-region maps are equal within tolerance.
+    fn assert_regions_eq(before: &HashMap<RegionMask, f64>, after: &HashMap<RegionMask, f64>) {
+        let mut masks: Vec<_> = before.keys().chain(after.keys()).copied().collect();
+        masks.sort_unstable();
+        masks.dedup();
+        for mask in masks {
+            let lhs = before.get(&mask).copied().unwrap_or(0.0);
+            let rhs = after.get(&mask).copied().unwrap_or(0.0);
+            let scale = lhs.abs().max(rhs.abs()).max(1.0);
+            assert!(
+                (lhs - rhs).abs() <= 1e-8_f64.max(1e-6 * scale),
+                "region {mask} changed: {lhs} -> {rhs}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_contained_child_offset_moderate() {
+        // Small circle (r=1) parked off-center inside a big one (R=5). Internal
+        // tangency distance is R-r=4, so it should land at 0.5*4 = 2 from the
+        // parent center, along the existing +x direction: clearly off-center,
+        // comfortably inside (2+1 < 5), never tangent.
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 0.0), 5.0),
+            Circle::new(Point::new(1.0, 0.0), 1.0),
+        ];
+        offset_contained_children(&mut shapes, None);
+
+        assert!(approx_eq(shapes[1].centroid().x(), 2.0));
+        assert!(approx_eq(shapes[1].centroid().y(), 0.0));
+        let d = centroid_dist(&shapes[0], &shapes[1]);
+        assert!(d > 1e-3, "should not be concentric, got {d}");
+        assert!(
+            shapes[0].contains(&shapes[1]),
+            "child must stay inside parent"
+        );
+    }
+
+    #[test]
+    fn test_contained_child_offset_preserves_regions() {
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 0.0), 5.0),
+            Circle::new(Point::new(-1.5, 0.7), 1.0),
+        ];
+        let before = Circle::compute_exclusive_regions(&shapes);
+        offset_contained_children(&mut shapes, None);
+        let after = Circle::compute_exclusive_regions(&shapes);
+        assert_regions_eq(&before, &after);
+        // And it genuinely moved (off-center by 0.5*(R-r)=2).
+        assert!(approx_eq(centroid_dist(&shapes[0], &shapes[1]), 2.0));
+    }
+
+    #[test]
+    fn test_contained_child_near_concentric_fallback() {
+        // Child exactly at the parent center: the parent->child direction is
+        // pure noise, so it's pushed out along the canonical +x fallback.
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 0.0), 5.0),
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+        ];
+        offset_contained_children(&mut shapes, None);
+        assert!(approx_eq(shapes[1].centroid().x(), 2.0));
+        assert!(approx_eq(shapes[1].centroid().y(), 0.0));
+    }
+
+    #[test]
+    fn test_two_disjoint_children_not_moved() {
+        // Parent with two disjoint children: the constrained-packing case we
+        // defer. Neither child is moved (moving one could overlap the other).
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 0.0), 10.0),
+            Circle::new(Point::new(-3.0, 0.0), 1.0),
+            Circle::new(Point::new(3.0, 0.0), 1.0),
+        ];
+        let snapshot = shapes.clone();
+        offset_contained_children(&mut shapes, None);
+        for (a, b) in shapes.iter().zip(&snapshot) {
+            assert!(approx_eq(a.centroid().x(), b.centroid().x()));
+            assert!(approx_eq(a.centroid().y(), b.centroid().y()));
+        }
+    }
+
+    #[test]
+    fn test_nested_child_not_moved() {
+        // Russian-doll: C is inside both B and A (two containers), and B
+        // contains C so B is not a leaf. Neither is repositioned in v1.
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 0.0), 5.0), // A
+            Circle::new(Point::new(0.5, 0.0), 2.5), // B inside A
+            Circle::new(Point::new(0.6, 0.0), 0.5), // C inside B and A
+        ];
+        let snapshot = shapes.clone();
+        offset_contained_children(&mut shapes, None);
+        for (a, b) in shapes.iter().zip(&snapshot) {
+            assert!(approx_eq(a.centroid().x(), b.centroid().x()));
+            assert!(approx_eq(a.centroid().y(), b.centroid().y()));
+        }
+    }
+
+    #[test]
+    fn test_coincident_equal_sets_not_moved() {
+        // Two identical coincident circles (the `two_overlapping_completely`
+        // corpus case: A=0, B=0, A&B=area). Each looks like the other's free
+        // child by the solo-region test, but neither is strictly contained —
+        // pushing them apart would destroy the complete overlap. Both must stay.
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 0.0), 2.0),
+            Circle::new(Point::new(0.0, 0.0), 2.0),
+        ];
+        let before = Circle::compute_exclusive_regions(&shapes);
+        offset_contained_children(&mut shapes, None);
+        let after = Circle::compute_exclusive_regions(&shapes);
+        assert_regions_eq(&before, &after);
+        for s in &shapes {
+            assert!(approx_eq(s.centroid().x(), 0.0));
+            assert!(approx_eq(s.centroid().y(), 0.0));
+        }
+    }
+
+    #[test]
+    fn test_plain_overlap_unaffected() {
+        // Two partially overlapping circles, neither contained: nothing moves.
+        let mut shapes = vec![
+            Circle::new(Point::new(0.0, 0.0), 2.0),
+            Circle::new(Point::new(2.0, 0.0), 2.0),
+        ];
+        let snapshot = shapes.clone();
+        offset_contained_children(&mut shapes, None);
+        for (a, b) in shapes.iter().zip(&snapshot) {
+            assert!(approx_eq(a.centroid().x(), b.centroid().x()));
+            assert!(approx_eq(a.centroid().y(), b.centroid().y()));
+        }
     }
 
     #[test]

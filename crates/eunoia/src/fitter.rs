@@ -2256,6 +2256,52 @@ mod tests {
         assert_eq!(layout.container().copied(), Some(snapshot_container));
         assert_eq!(layout.shapes(), snapshot_shapes.as_slice());
     }
+
+    /// A subset spec (B fully inside A) fits with B given a canonical *moderate*
+    /// offset inside A — not concentric (so the parent's exclusive lune has room
+    /// for a label) and not jammed against A's edge — and re-normalizing is a
+    /// stable no-op.
+    #[test]
+    fn fit_offsets_contained_subset_and_normalize_is_idempotent() {
+        use crate::geometry::traits::{Area, Centroid, Closed};
+
+        // B (area 4) lies entirely within A: B-only = 0, A&B = 4.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 0.0)
+            .intersection(&["A", "B"], 4.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+
+        let mut layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let a = *layout.shape_for_set("A").expect("A present");
+        let b = *layout.shape_for_set("B").expect("B present");
+
+        // A is the parent and fully contains B.
+        assert!(a.area() > b.area());
+        assert!(a.contains(&b), "B should sit inside A");
+
+        // Off-center: B's center is a meaningful fraction of the way out, not
+        // concentric. Internal-tangency distance is r_A - r_B; the offset is
+        // CONTAINED_CHILD_OFFSET_FRACTION (0.5) of that.
+        let dist = {
+            let (ca, cb) = (a.centroid(), b.centroid());
+            ((ca.x() - cb.x()).powi(2) + (ca.y() - cb.y()).powi(2)).sqrt()
+        };
+        let r_a = (a.area() / std::f64::consts::PI).sqrt();
+        let r_b = (b.area() / std::f64::consts::PI).sqrt();
+        let expected = 0.5 * (r_a - r_b);
+        assert!(
+            (dist - expected).abs() < 1e-3 * expected.max(1.0),
+            "B offset {dist} should be ~{expected} (half of internal tangency)",
+        );
+
+        // Re-normalizing is a stable no-op (the fit already normalized).
+        let snapshot = layout.shapes().to_vec();
+        layout.normalize(0.05);
+        assert_eq!(layout.shapes(), snapshot.as_slice());
+    }
 }
 #[test]
 fn test_circles_ac_issue_seed42() {
