@@ -1,6 +1,15 @@
 <script lang="ts">
   import { appState } from "../state.svelte";
   import type { VennSetCount } from "../types/diagram";
+
+  // A complement of `null` (empty input) is the not-yet-entered state, handled
+  // separately. A negative or non-finite number is invalid: `runFit` would
+  // silently drop it, so flag it inline instead of failing soft.
+  const complementInvalid = $derived(
+    appState.advanced.complement !== null &&
+      (!Number.isFinite(appState.advanced.complement) ||
+        (appState.advanced.complement ?? 0) < 0),
+  );
 </script>
 
 <div class="space-y-4">
@@ -170,12 +179,19 @@
           min="0"
           step="1"
           placeholder="enter a count"
-          class="w-32 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          class="w-32 px-2 py-1.5 border rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent {complementInvalid
+            ? 'border-red-500 focus:ring-red-500'
+            : 'border-line'}"
           aria-label="Complement count"
+          aria-invalid={complementInvalid}
         />
         <span class="text-xs text-muted">items outside every set</span>
       </div>
-      {#if appState.advanced.complement === null}
+      {#if complementInvalid}
+        <p class="mt-1 text-xs text-red-600 dark:text-red-400">
+          Enter a number of 0 or greater.
+        </p>
+      {:else if appState.advanced.complement === null}
         <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
           Container will appear once you enter a count.
         </p>

@@ -114,14 +114,6 @@ Loose ends from S6 of the complement roadmap. The feature itself shipped (see
 the complement bullet in `AGENTS.md` Status); these are polish items the roadmap
 didn't require but would tighten the surface.
 
-- [ ] **Web app: validation feedback for the complement input**. The
-  `Complement (universe)` numeric in
-  `web/src/lib/components/SpecEditor.svelte` uses `min="0"` but
-  `<input type="number">` doesn't actually block negative entry --- `runFit`
-  (`web/src/lib/fit.ts`) silently treats anything `< 0` or `NaN` as "not
-  set", which is a confusing fail-soft. Show an inline error (matching the
-  row-input style) when the value is invalid, or clamp on input.
-
 - [ ] **Legend entry for the complement region**. `DiagramSvg.svelte` renders
   the container as a dashed grey frame and (when `style.showCounts`) labels
   the count in the top-right corner. The legend (`StyleControls` →
