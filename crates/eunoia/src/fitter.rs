@@ -6,6 +6,7 @@ mod initial_layout;
 mod layout;
 pub mod normalize;
 mod packing;
+pub mod recording;
 
 #[cfg(test)]
 mod corpus_quality;
@@ -28,7 +29,9 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 #[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Maximum `n_sets` for which the Venn warm-start is attempted under
 /// [`Fitter::<Circle>`]. The canonical Venn is genuinely circular only for
@@ -692,6 +695,156 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self.fit_with_optimization(false)
     }
 
+    /// Record the per-iteration optimizer trajectory of a single deterministic
+    /// fit attempt, for visualization (it backs the `fitter-pipeline` docs
+    /// animation).
+    ///
+    /// Returns a [`recording::FitRecording`] whose frames walk the pipeline:
+    /// one `Init` frame (the random start), the `Mds` initial-layout iterates,
+    /// then the `Final` optimization iterates, each with the shapes already
+    /// decoded. The run is fully determined by [`seed`](Self::seed), so a fresh
+    /// seed re-rolls the random start (what the docs "re-run" control does).
+    ///
+    /// This is a diagnostics path, not the production fit: it forces
+    /// `n_restarts = 1`, pins [`Optimizer::LevenbergMarquardt`] and the
+    /// `SumSquared` loss for both phases (so every iterate is a single point
+    /// that decodes to shapes), and skips the normalization /
+    /// clustering / packing post-processing — the frames are the optimizer's
+    /// own raw coordinates, which is exactly what the animation should show.
+    /// The configurable optimizer pool, sampler, and `n_restarts` are ignored.
+    /// Complement (container) specs are rejected.
+    pub fn fit_recording(self) -> Result<recording::FitRecording<S>, DiagramError> {
+        use recording::{FitRecording, FrameRecorder, RawFrame, RecordedFrame, Stage};
+
+        let spec = self.spec.preprocess()?;
+        let n_sets = spec.n_sets;
+        if n_sets == 0 {
+            return Ok(FitRecording {
+                frames: Vec::new(),
+                set_names: Vec::new(),
+            });
+        }
+
+        // Set names in preprocessed-spec order, so the wasm/JS layer can label
+        // `frame.shapes[i]` with `set_names[i]`.
+        let mut set_names = vec![String::new(); n_sets];
+        for name in self.spec.set_names() {
+            if let Some(&idx) = spec.set_to_idx.get(name) {
+                set_names[idx] = name.clone();
+            }
+        }
+        if spec.complement.is_some() {
+            return Err(DiagramError::InvalidCombination(
+                "trajectory recording does not support complement (container) fitting".to_string(),
+            ));
+        }
+
+        let params_per_shape = S::n_params();
+        let optimal_distances = Self::compute_optimal_distances(&spec)?;
+        let initial_radii: Vec<f64> = spec
+            .set_areas
+            .iter()
+            .map(|area| (area / std::f64::consts::PI).sqrt())
+            .collect();
+
+        // Deterministic random start drawn with the same uniform sampler the
+        // production MDS init uses; a fixed seed makes the whole recording
+        // reproducible.
+        let seed = self.seed.unwrap_or(0);
+        let scale = initial_layout::sampling_scale(&spec.set_areas);
+        let mut rng = StdRng::seed_from_u64(seed);
+        let init = initial_layout::sample_uniform_init(&mut rng, n_sets, scale);
+
+        // Safety cap on the recorded payload. Both phases run at most
+        // `max_iter` (200) iterations, so this is never hit for real specs;
+        // it just bounds a pathological run.
+        const MAX_FRAMES_PER_STAGE: usize = 400;
+
+        // MDS stage. Its `observe_init` frame is the random start, captured
+        // here as the single `Init` frame.
+        let mds_sink = Rc::new(RefCell::new(Vec::<RawFrame>::new()));
+        let mds_out = initial_layout::run_mds_recorded(
+            &optimal_distances,
+            &spec.relationships,
+            n_sets,
+            &init,
+            FrameRecorder::new(Rc::clone(&mds_sink), MAX_FRAMES_PER_STAGE),
+        )?;
+
+        // Final stage. Seed the full optimizer parameter vector from the MDS
+        // centers + fixed circle-equivalent radii (φ = 0 for ellipse-like
+        // shapes), exactly as the production fitter seeds attempt 0.
+        let mut final_initial = Vec::with_capacity(n_sets * params_per_shape);
+        for i in 0..n_sets {
+            let xi = mds_out[i];
+            let yi = mds_out[n_sets + i];
+            final_initial.extend(S::optimizer_params_from_circle(xi, yi, initial_radii[i]));
+        }
+        let final_initial = DVector::from_vec(final_initial);
+
+        let final_config = final_layout::FinalLayoutConfig {
+            max_iterations: self.max_iterations,
+            tolerance: self.tolerance,
+            xtol: self.xtol,
+            ftol: self.ftol,
+            gtol: self.gtol,
+            loss_type: LossType::SumSquared,
+            optimizer: final_layout::Optimizer::LevenbergMarquardt,
+            seed,
+            n_restarts: 1,
+            cmaes_fallback_threshold: self.cmaes_fallback_threshold,
+            escape_solver: self.escape_solver,
+        };
+
+        let final_sink = Rc::new(RefCell::new(Vec::<RawFrame>::new()));
+        final_layout::run_lm_recorded::<S>(
+            &spec,
+            params_per_shape,
+            &final_initial,
+            &final_config,
+            FrameRecorder::new(Rc::clone(&final_sink), MAX_FRAMES_PER_STAGE),
+        )?;
+
+        // Score every frame by the same final region-area loss
+        // (`LossType::SumSquared`) computed from the frame's shapes, so the
+        // displayed criterion falls consistently from the random start through
+        // MDS and the final optimization rather than switching objectives at
+        // the MDS→final boundary (the MDS solver internally minimizes a
+        // different distance-fit objective, but that is not what we surface).
+        let region_loss = |shapes: &[S]| -> f64 {
+            let fitted = S::compute_exclusive_regions(shapes);
+            LossType::SumSquared.compute(&fitted, &spec.exclusive_areas)
+        };
+
+        // Assemble playback frames. The first MDS entry (observe_init) is the
+        // random start → `Init`; the rest are `Mds`. Decode MDS frames from
+        // centers + fixed radii; decode final frames from full optimizer params.
+        let mut frames: Vec<RecordedFrame<S>> = Vec::new();
+        for (k, raw) in mds_sink.borrow().iter().enumerate() {
+            let stage = if k == 0 { Stage::Init } else { Stage::Mds };
+            let shapes = decode_center_frame::<S>(&raw.params, &initial_radii, n_sets);
+            let cost = region_loss(&shapes);
+            frames.push(RecordedFrame {
+                stage,
+                iteration: raw.iteration,
+                cost,
+                shapes,
+            });
+        }
+        for raw in final_sink.borrow().iter() {
+            let shapes = decode_param_frame::<S>(&raw.params, params_per_shape, n_sets);
+            let cost = region_loss(&shapes);
+            frames.push(RecordedFrame {
+                stage: Stage::Final,
+                iteration: raw.iteration,
+                cost,
+                shapes,
+            });
+        }
+
+        Ok(FitRecording { frames, set_names })
+    }
+
     fn fit_with_optimization(self, optimize: bool) -> Result<Layout<S>, DiagramError> {
         // Both solver pools are indexed `pool[i % pool.len()]` per restart, so
         // an empty pool has nothing to select. Each attempt picks its
@@ -1149,6 +1302,35 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 
         Ok(optimal_distances)
     }
+}
+
+/// Decode an MDS center vector `[x0..x_{n-1}, y0..y_{n-1}]` into shapes, using
+/// the fixed circle-equivalent radii (φ = 0 for ellipse-like shapes). Used by
+/// [`Fitter::fit_recording`] for the `Init`/`Mds` frames, where only centers
+/// move and sizes are held fixed.
+fn decode_center_frame<S: DiagramShape>(params: &[f64], radii: &[f64], n_sets: usize) -> Vec<S> {
+    (0..n_sets)
+        .map(|i| {
+            let xi = params[i];
+            let yi = params[n_sets + i];
+            S::from_optimizer_params(&S::optimizer_params_from_circle(xi, yi, radii[i]))
+        })
+        .collect()
+}
+
+/// Decode a full optimizer parameter vector into shapes, one `params_per_shape`
+/// block per set. Used by [`Fitter::fit_recording`] for the `Final` frames.
+fn decode_param_frame<S: DiagramShape>(
+    params: &[f64],
+    params_per_shape: usize,
+    n_sets: usize,
+) -> Vec<S> {
+    (0..n_sets)
+        .map(|i| {
+            let start = i * params_per_shape;
+            S::from_optimizer_params(&params[start..start + params_per_shape])
+        })
+        .collect()
 }
 
 /// Build full shape-parameter vector for the canonical Venn-diagram layout

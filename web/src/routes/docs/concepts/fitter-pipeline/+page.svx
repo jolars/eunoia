@@ -1,17 +1,45 @@
+<script>
+import PipelinePlayer from "$lib/components/PipelinePlayer.svelte";
+
+// An asymmetric three-set spec: the lopsided pairwise overlaps (A&B large,
+// A&C small) can't be matched well by circles, so the ellipse fit has to work
+// for it — the final-layout act visibly stretches and rotates the shapes.
+const THREE_SET_SPEC = {
+  A: 12, B: 11, C: 9,
+  "A&B": 5, "A&C": 1.5, "B&C": 4.5,
+  "A&B&C": 0.8,
+};
+</script>
+
 # Fitter pipeline
 
 Fitting a diagram turns a set of region sizes into concrete shapes —
 circles, ellipses, squares, or rectangles — whose overlaps reproduce
 those sizes as closely as possible. Eunoia runs this in four stages.
 
+The widget below records a real fit of a three-set spec and lets you
+play it back step by step. **Initial layout** runs the MDS stage — the
+shapes start at random positions and spread out so overlapping sets sit
+near each other. **Final layout** then runs the optimizer, refining
+every shape to minimize the loss. Each button plays its stage and stops
+on the result; **Re-run** draws a fresh random start, and you can switch
+between circles and ellipses.
+
+<PipelinePlayer
+  sets={THREE_SET_SPEC}
+  shape="circle"
+  caption="A real recording of the fitter, played back one optimizer step at a time. Run the initial layout, then the final layout. Re-run draws a new random start — a real fit keeps the lowest-loss of several such starts."
+/>
+
 ## 1. Initial layout (MDS)
 
 An initial arrangement is computed with **positional multidimensional
 scaling**. Each shape's size is fixed up front from the requested set
-areas, and only the centre `(x, y)` of every shape is solved for.
-Target pairwise distances come from inverting each shape's own overlap
-formula, so the warm start already places overlapping sets near each
-other and disjoint sets apart.
+areas, and only the centre `(x, y)` of every shape is solved for —
+which is why, in the animation, the shapes glide into place at a fixed
+size during this stage. Target pairwise distances come from inverting
+each shape's own overlap formula, so the warm start already places
+overlapping sets near each other and disjoint sets apart.
 
 ## 2. Optimizer encoding
 
@@ -26,9 +54,16 @@ and angles.
 
 The shape parameters are refined by **minimising a loss** that measures
 the discrepancy between the fitted region areas and the requested ones.
-The optimiser and the loss are both selectable; circles and ellipses
-use analytical gradients where the loss allows, and a global-escape
-stage can kick in when a plain local solve stalls on a hard layout.
+This is the **final** stage in the animation, where the shapes resize
+and shift to tighten the fit. The optimiser and the loss are both
+selectable; circles and ellipses use analytical gradients where the
+loss allows, and a global-escape stage can kick in when a plain local
+solve stalls on a hard layout.
+
+A single fit actually runs this two-phase pipeline several times (ten by
+default) from independent random starts and keeps the lowest-loss
+result — pressing **Re-run** above shows one such start, and you can
+see how different starts converge differently.
 
 ## 4. Normalisation
 
@@ -36,6 +71,8 @@ The fitted layout is post-processed for a stable, consistent
 appearance: disconnected clusters are separated, the diagram is rotated
 to a canonical orientation, centred, and the clusters are packed
 together. The result is a layout you can polygonise, label, and render.
+(The animation shows the optimiser's own raw coordinates, before this
+cosmetic step.)
 
 How faithfully the result reproduces the requested sizes is summarised
 by a few scalar metrics — see [Goodness of fit](/docs/concepts/goodness-of-fit/).

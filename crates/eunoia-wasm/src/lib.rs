@@ -2575,3 +2575,140 @@ pub fn placements_bbox(
         .map(Some)
         .map_err(|e| JsValue::from_str(&format!("{e}")))
 }
+
+// ---------------------------------------------------------------------------
+// Trajectory recording (docs pipeline animation)
+//
+// `record_trajectory` re-runs a single deterministic fit attempt with the core
+// `Fitter::fit_recording` diagnostics path and serializes the per-iteration
+// optimizer trajectory (random init → MDS → final) to JSON for replay. It is
+// intentionally NOT part of the high-level `euler()`/`venn()` API — the TS
+// `@jolars/eunoia/trajectory` wrapper exposes it as an experimental entry
+// point that powers the `fitter-pipeline` docs page.
+// ---------------------------------------------------------------------------
+
+/// Result of [`record_trajectory`]: a JSON string of recorded frames.
+#[wasm_bindgen]
+pub struct TrajectoryResult {
+    frames_json: String,
+}
+
+#[wasm_bindgen]
+impl TrajectoryResult {
+    /// JSON array of frames in playback order. Each frame is
+    /// `{ "stage": "init"|"mds"|"final", "iteration": u, "cost": f, "shapes": [...] }`,
+    /// where each shape is a circle `{ "x", "y", "r", "label" }` or an ellipse
+    /// `{ "x", "y", "a", "b", "phi", "label" }`.
+    #[wasm_bindgen(getter)]
+    pub fn frames_json(&self) -> String {
+        self.frames_json.clone()
+    }
+}
+
+fn trajectory_frames_json_circle(
+    rec: &eunoia::fitter::recording::FitRecording<Circle>,
+) -> serde_json::Value {
+    let frames: Vec<serde_json::Value> = rec
+        .frames
+        .iter()
+        .map(|f| {
+            let shapes: Vec<serde_json::Value> = f
+                .shapes
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    serde_json::json!({
+                        "x": c.center().x(),
+                        "y": c.center().y(),
+                        "r": c.radius(),
+                        "label": rec.set_names.get(i).cloned().unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "stage": f.stage.as_str(),
+                "iteration": f.iteration,
+                "cost": f.cost,
+                "shapes": shapes,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(frames)
+}
+
+fn trajectory_frames_json_ellipse(
+    rec: &eunoia::fitter::recording::FitRecording<Ellipse>,
+) -> serde_json::Value {
+    let frames: Vec<serde_json::Value> = rec
+        .frames
+        .iter()
+        .map(|f| {
+            let shapes: Vec<serde_json::Value> = f
+                .shapes
+                .iter()
+                .enumerate()
+                .map(|(i, e)| {
+                    serde_json::json!({
+                        "x": e.center().x(),
+                        "y": e.center().y(),
+                        "a": e.semi_major(),
+                        "b": e.semi_minor(),
+                        "phi": e.rotation(),
+                        "label": rec.set_names.get(i).cloned().unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "stage": f.stage.as_str(),
+                "iteration": f.iteration,
+                "cost": f.cost,
+                "shapes": shapes,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(frames)
+}
+
+/// Record the per-iteration fitter trajectory (random init → MDS → final) for a
+/// single deterministic attempt, for the docs pipeline animation.
+///
+/// `shape` must be `"circle"` or `"ellipse"`; `seed` makes the run reproducible
+/// (a fresh seed re-rolls the random start). Returns the frames as JSON — see
+/// [`TrajectoryResult::frames_json`].
+#[wasm_bindgen]
+pub fn record_trajectory(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    shape: String,
+    seed: u64,
+) -> Result<TrajectoryResult, JsValue> {
+    use eunoia::fitter::Fitter;
+
+    let diagram_spec = build_diagram_spec(&specs, &input_type, None)?;
+
+    let frames_value = match shape.as_str() {
+        "circle" => {
+            let rec = Fitter::<Circle>::new(&diagram_spec)
+                .seed(seed)
+                .fit_recording()
+                .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+            trajectory_frames_json_circle(&rec)
+        }
+        "ellipse" => {
+            let rec = Fitter::<Ellipse>::new(&diagram_spec)
+                .seed(seed)
+                .fit_recording()
+                .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+            trajectory_frames_json_ellipse(&rec)
+        }
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "Unsupported shape '{other}' for trajectory; use 'circle' or 'ellipse'"
+            )));
+        }
+    };
+
+    let frames_json =
+        serde_json::to_string(&frames_value).map_err(|e| JsValue::from_str(&format!("{e}")))?;
+    Ok(TrajectoryResult { frames_json })
+}

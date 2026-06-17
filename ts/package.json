@@ -37,6 +37,10 @@
     "./web": {
       "types": "./web.d.ts",
       "default": "./web.js"
+    },
+    "./trajectory": {
+      "types": "./trajectory.d.ts",
+      "default": "./trajectory.js"
     }
   },
   "files": [
@@ -46,6 +50,8 @@
     "svg.d.ts",
     "web.js",
     "web.d.ts",
+    "trajectory.js",
+    "trajectory.d.ts",
     "eunoia_wasm.js",
     "eunoia_wasm.d.ts",
     "eunoia_wasm_bg.js",

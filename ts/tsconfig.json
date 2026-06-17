@@ -16,5 +16,5 @@
     "rootDir": ".",
     "outDir": "../npm"
   },
-  "include": ["index.ts", "svg.ts"]
+  "include": ["index.ts", "svg.ts", "trajectory.ts"]
 }

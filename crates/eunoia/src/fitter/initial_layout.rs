@@ -97,7 +97,11 @@ pub(crate) fn latin_hypercube_rows(
 }
 
 /// Sample a single uniform initial position vector in `[0, scale]^(2·n_sets)`.
-fn sample_uniform_init(rng: &mut dyn rand::Rng, n_sets: usize, scale: f64) -> DVector<f64> {
+pub(crate) fn sample_uniform_init(
+    rng: &mut dyn rand::Rng,
+    n_sets: usize,
+    scale: f64,
+) -> DVector<f64> {
     // Derive a fresh per-attempt seed from the supplied rng so the sampling
     // path is identical to the historical behaviour (compute_initial_layout
     // → run_attempt seeded a local StdRng before drawing 2·n_sets uniforms),
@@ -283,6 +287,42 @@ fn run_attempt(
             Ok((result.cost() * 2.0, result.param().as_slice().to_vec()))
         }
     }
+}
+
+/// Run a single Levenberg-Marquardt MDS attempt with a basin observer
+/// attached, recording the per-iteration center trajectory.
+///
+/// Trajectory-recording path only (see [`crate::fitter::recording`]); the
+/// production MDS path is [`run_attempt`] / [`compute_initial_layout_with_solver`]
+/// and is left untouched. We pin LM (not the configurable MDS solver pool) so
+/// the observer always sees a single-iterate `NllsState<DVector<f64>>`. The
+/// solver setup mirrors [`run_attempt`]'s `LevenbergMarquardt` arm so the
+/// recorded process is faithful to the real MDS init.
+pub(crate) fn run_mds_recorded(
+    distances: &Vec<Vec<f64>>,
+    relationships: &PairwiseRelations,
+    n_sets: usize,
+    initial_param: &DVector<f64>,
+    observer: super::recording::FrameRecorder,
+) -> Result<Vec<f64>, DiagramError> {
+    let problem = LmMdsProblem::new(distances, relationships, n_sets);
+    let lm_tol = 1e-10;
+    let solver = basin::LevenbergMarquardt::new()
+        .with_tau(1.0)
+        .with_tol_grad(0.0)
+        .with_tol_grad_rel(lm_tol)
+        .with_tol_cost_rel(lm_tol)
+        .with_tol_step_rel(lm_tol);
+    let result = basin::Executor::new(
+        problem,
+        solver,
+        basin::NllsState::new(initial_param.clone()),
+    )
+    .max_iter(200)
+    .observe_with(observer, basin::ObserverMode::Always)
+    .run()
+    .expect("solver problem is infallible");
+    Ok(result.param().as_slice().to_vec())
 }
 
 /// `Vec<f64>`-param adapter wrapping [`MdsCost`] for basin's gradient-based

@@ -530,6 +530,45 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
     }
 }
 
+/// Run Levenberg-Marquardt once with a basin observer attached, recording the
+/// per-iteration parameter trajectory.
+///
+/// Trajectory-recording path only (see [`crate::fitter::recording`]); the
+/// production final path ([`optimize_from_initial`]) is left untouched. The
+/// solver setup mirrors [`run_lm_or_lbfgs`]'s `LmDiagramProblem` arm so the
+/// recorded process is faithful to a real final-stage LM fit. Requires the
+/// least-squares (`SumSquared`) loss — the recording path always selects it.
+pub(crate) fn run_lm_recorded<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+    observer: super::recording::FrameRecorder,
+) -> Result<(DVector<f64>, f64), DiagramError> {
+    let problem =
+        LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type).map_err(|_| {
+            DiagramError::InvalidCombination(
+                "trajectory recording requires the SumSquared loss".to_string(),
+            )
+        })?;
+    let solver = basin::LevenbergMarquardt::new()
+        .with_tol_grad(0.0)
+        .with_tol_grad_rel(config.gtol.unwrap_or(1e-8))
+        .with_tol_cost_rel(config.ftol.unwrap_or(config.tolerance))
+        .with_tol_step_rel(config.xtol.unwrap_or(1e-6));
+    let result = basin::Executor::new(
+        problem,
+        solver,
+        basin::NllsState::new(initial_param.clone()),
+    )
+    .max_iter(config.max_iterations.max(1) as u64)
+    .observe_with(observer, basin::ObserverMode::Always)
+    .run()
+    .expect("solver problem is infallible");
+    // basin LM's `state.cost()` is ½·Σrᵢ²; the reported loss is Σrᵢ², so ×2.
+    Ok((result.param().clone(), result.cost() * 2.0))
+}
+
 /// Run box-constrained Levenberg-Marquardt (`basin::Trf`,
 /// trust-region-reflective) — the bounded analog of [`run_lm_or_lbfgs`].
 ///
