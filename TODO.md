@@ -114,22 +114,6 @@ Loose ends from S6 of the complement roadmap. The feature itself shipped (see
 the complement bullet in `AGENTS.md` Status); these are polish items the roadmap
 didn't require but would tighten the surface.
 
-- [ ] **Migrate or delete the six legacy WASM entry points**. The S6 WASM pass
-      added a shared `build_diagram_spec(specs, input_type, complement)` helper
-      and routed the modern `generate_*_as_polygons` /
-      `generate_region_polygons_*` / `generate_venn_*` functions through it. The
-      older entry points still inline their `DiagramSpecBuilder` block and don't
-      accept a `complement` argument: `generate_from_spec`,
-      `generate_from_spec_with_debug`, `get_debug_info`,
-      `get_debug_info_simple`, `generate_from_spec_initial`,
-      `get_debug_info_initial` (in `crates/eunoia-wasm/src/lib.rs`). Neither
-      `ts/index.ts` nor the web app calls any of them --- they're legacy / debug
-      paths from before the polygon-mode backend. Either migrate them to the
-      helper (consistency, complement support) or delete them outright (smaller
-      WASM surface). Deletion is probably the right call;
-      `generate_circles_as_polygons` already covers everything
-      `generate_from_spec` did, with strictly more diagnostics.
-
 - [ ] **Web app: validation feedback for the complement input**. The
       `Complement (universe)` numeric in
       `web/src/lib/components/SpecEditor.svelte` uses `min="0"` but
