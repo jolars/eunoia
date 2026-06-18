@@ -1,0 +1,93 @@
+<script>
+import DiagramExample from "$lib/components/DiagramExample.svelte";
+
+const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
+</script>
+
+# Quickstart: R
+
+[`eulerr`](https://cran.r-project.org/package=eulerr) is the R binding — the
+original package, now backed by the eunoia engine. You hand `euler()` a named
+vector of set sizes, it fits an area-proportional diagram, and `plot()` draws it
+with grid graphics.
+
+<DiagramExample
+  sets={TWO_SET_SPEC}
+  shape="circle"
+  caption="The diagram fitted by the first example below."
+/>
+
+## Install
+
+```r
+install.packages("eulerr")
+```
+
+CRAN ships binary builds, so no Rust toolchain is needed. (Installing from source
+does require `rustc` ≥ 1.88 — see the package README.)
+
+## Fit a diagram
+
+```r
+library(eulerr)
+
+fit <- euler(c(A = 5, B = 3, "A&B" = 1.5))
+fit        # prints the residual table and goodness-of-fit metrics
+plot(fit)
+```
+
+The input is a named numeric vector. Names are **combination expressions** — a
+single set (`A`) or sets joined with `&` (`"A&B"`). Values are *disjoint*
+(exclusive) by default: the part of `A` outside `B` is `5`, the overlap is `1.5`.
+Pass `input = "union"` if your numbers are full set sizes instead.
+
+`fit` carries the fitted geometry and fit statistics:
+
+```r
+fit$shapes       # data frame of fitted circle/ellipse parameters
+fit$stress       # goodness-of-fit (venneuler-style)
+fit$diagError    # largest single-region error
+```
+
+## Pick a different shape
+
+```r
+fit <- euler(c(A = 5, B = 3, "A&B" = 1.5), shape = "ellipse")
+plot(fit)
+```
+
+`shape` is one of `"circle"` (default), `"ellipse"`, `"square"`, or
+`"rectangle"`. Ellipses are more flexible and often fit three or more sets
+noticeably better — see [Shapes](/docs/concepts/shapes/).
+
+## Customize the plot
+
+`plot()` takes styling arguments for fills, edges, labels, and quantities:
+
+```r
+plot(
+  fit,
+  quantities = TRUE,
+  fills = c("#e41a1c", "#377eb8"),
+  labels = list(fontsize = 14)
+)
+```
+
+## Venn diagrams
+
+For a fixed, *non*-proportional Venn template (every intersection shown
+regardless of size), use `venn()`:
+
+```r
+plot(venn(c("A", "B", "C")))  # three-set Venn
+plot(venn(3))                 # same, by set count
+```
+
+## Next steps
+
+Read the [introductory
+vignette](https://cran.r-project.org/package=eulerr/vignettes/introduction.html)
+and the full reference on the
+[eulerr website](https://jolars.github.io/eulerr/). For how the fit works across
+all bindings, see the [Fitter pipeline](/docs/concepts/fitter-pipeline/) and
+[Goodness of fit](/docs/concepts/goodness-of-fit/) chapters.

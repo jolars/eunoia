@@ -25,6 +25,9 @@ export const SUMMARY: DocSection[] = [
     chapters: [
       { title: "Rust", slug: "/docs/quickstart/rust/" },
       { title: "JavaScript", slug: "/docs/quickstart/javascript/" },
+      { title: "R", slug: "/docs/quickstart/r/" },
+      { title: "Python", slug: "/docs/quickstart/python/" },
+      { title: "Julia", slug: "/docs/quickstart/julia/" },
     ],
   },
   {

@@ -31,6 +31,37 @@ TypeScript types.
 > `import("@jolars/eunoia")` inside `onMount` / `useEffect`) so the wasm module
 > isn't instantiated during the server render.
 
+## Without a bundler
+
+For a plain `<script type="module">`, an Observable notebook, or a raw-file CDN,
+use the **`@jolars/eunoia/web`** entry instead. It is a single self-contained ES
+module with the WebAssembly inlined, so there is nothing for a bundler to
+resolve — but you must `await init()` once before calling `euler` / `venn`:
+
+```html
+<script type="module">
+  import { euler, init } from "https://esm.sh/@jolars/eunoia/web";
+
+  await init(); // instantiate the embedded wasm once; idempotent
+
+  const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
+  console.log(layout.circles);
+</script>
+```
+
+In an Observable notebook the same thing across two cells:
+
+```js
+eunoia = import("https://esm.sh/@jolars/eunoia/web")
+```
+
+```js
+layout = (await eunoia.init(), eunoia.euler({ sets: { A: 5, B: 3, "A&B": 1.5 } }))
+```
+
+Apart from that one `await init()`, every function below behaves identically on
+the `./web` entry.
+
 ## Fit a diagram
 
 ```js
@@ -120,6 +151,22 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 document.body.innerHTML = renderCircles(layout.circles);
 ```
 
+Or skip the hand-rolling: the **`@jolars/eunoia/svg`** entry is a wasm-free,
+DOM-free serializer that turns a `Layout` straight into SVG. Use `toSvg` for a
+complete document, or `svgBody` + `viewBox` when you want to own the `<svg>`
+element:
+
+```js
+import { euler } from "@jolars/eunoia";
+import { toSvg } from "@jolars/eunoia/svg";
+
+const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 }, output: "regions" });
+document.body.innerHTML = toSvg(layout, { showLabels: true });
+```
+
+Because it never touches WebAssembly or the DOM, `./svg` works in server-side
+rendering and from a CDN as-is.
+
 `ellipses` carry `semiMajor`, `semiMinor`, and a `rotation` (radians);
 `squares` / `rectangles` carry `side` or `width` / `height` centred on `x`, `y`.
 
@@ -169,5 +216,8 @@ to hold its label, eunoia can place it outside with a leader line via
 resize loop, covered in [Label placement](/docs/concepts/label-placement/) and
 [Resize loops](/docs/bindings/resize-loops/).
 
-For the complete option and return-type listing, see the TypeScript definitions
-shipped with the [npm package](https://www.npmjs.com/package/@jolars/eunoia).
+All three entry points ship from the one package: `@jolars/eunoia` (the bundler
+default), `@jolars/eunoia/web` (bundler-less, `init()`), and `@jolars/eunoia/svg`
+(wasm-free SVG). For the complete option and return-type listing, see the
+TypeScript definitions shipped with the
+[npm package](https://www.npmjs.com/package/@jolars/eunoia).
