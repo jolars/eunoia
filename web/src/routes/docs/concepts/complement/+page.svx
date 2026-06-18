@@ -1,8 +1,147 @@
+<script>
+import DiagramExample from "$lib/components/DiagramExample.svelte";
+
+// A small two-set spec with a sizeable universe so the container frame
+// stands well clear of the fitted shapes.
+const TWO_SET_SPEC = {
+  A: 8, B: 6, "A&B": 2,
+};
+</script>
+
 # Complement (universe / container)
 
-> TODO: cover the opt-in complement support — passing `complement: N`
-> to `euler` / `venn` jointly fits an axis-aligned bounding rectangle
-> whose area minus the union of the (clipped) shapes matches the
-> requested complement target. Also covers the `""` (empty string)
-> region key for the complement region, and how to render the
-> container as a frame.
+An Euler or Venn diagram normally shows only the named sets and their
+overlaps. Often, though, the sets are drawn from a larger population, and
+some items belong to *none* of them. That leftover — everything outside
+every set — is the **complement**, or the **universe**. eunoia can draw
+it as a bounding **container**: a rectangle around the diagram whose empty
+margin stands in for the items outside all sets.
+
+Support is opt-in. Pass `complement: N` and eunoia fits a container,
+exposes it on the returned layout, and surfaces the leftover area as its
+own region.
+
+## Opting in
+
+The `complement` option on `euler()` is the area of the region outside
+every set, in the same units as the set sizes. With it set, the fitter
+solves for a bounding rectangle in addition to the shapes:
+
+<DiagramExample
+  sets={TWO_SET_SPEC}
+  shape="circle"
+  complement={10}
+  seed={7}
+  caption="A two-set diagram with a complement: the dashed frame is the container, and the shaded margin around the circles is the universe."
+/>
+
+```js
+import { euler } from "@jolars/eunoia";
+
+const layout = euler({
+  sets: { A: 8, B: 6, "A&B": 2 },
+  complement: 10,
+});
+
+layout.container; // -> { x, y, width, height } (centre + full extents)
+```
+
+`layout.container` is present only when a complement was requested;
+otherwise it is absent.
+
+## How the container is fitted
+
+For an area-proportional Euler diagram the container is part of the fit,
+not an afterthought. The fitter jointly optimizes an axis-aligned
+rectangle alongside the shapes so that
+
+> container area − area of the union of the (clipped) shapes ≈ `N`.
+
+Two things follow. First, the complement pins the diagram's absolute
+scale: without it only *ratios* of areas are determined, but matching a
+concrete leftover area fixes the overall size. Second, any shape that
+would otherwise drift outside the frame is pulled back in, because area
+that spills beyond the container does not count toward the union.
+
+Because the container is a single enclosing universe, **a spec that fits
+as several disjoint clusters is rejected when a complement is set** —
+there is no one rectangle that meaningfully encloses unrelated groups.
+
+## The complement region (`""`)
+
+In `output: "regions"` mode the universe is returned as a region like any
+other, except that its combination key is the **empty string**. Its
+polygon is the container with the union of the shapes punched out as
+holes, so it tiles exactly the shaded margin you see above.
+
+```js
+const layout = euler({ sets, complement: 10, output: "regions" });
+
+// The universe region, keyed by "".
+const universe = layout.regions.find((r) => r.combination === "");
+
+// Everything except the universe.
+const named = layout.regions.filter((r) => r.combination !== "");
+```
+
+## Rendering the container as a frame
+
+The container is a centre `(x, y)` plus a full `width` and `height`, so a
+rectangle spans from `(x − width / 2, y − height / 2)` to
+`(x + width / 2, y + height / 2)`. The bundled SVG renderer
+(`@jolars/eunoia/svg`) draws it for you as a dashed frame, and can print
+the complement count in the corner:
+
+```js
+import { toSvg } from "@jolars/eunoia/svg";
+
+const svg = toSvg(layout, {
+  complement: 10, // shown in the corner when showCounts is on
+  showCounts: true,
+  containerStroke: "#9ca3af", // dashed frame color
+  complementColor: "#6b7280", // complement-count text color
+});
+```
+
+## Venn diagrams
+
+`venn()` accepts a `complement` too, but it behaves differently. A Venn
+diagram is **topological, not area-proportional**: its canonical layout
+is fixed, so the complement value is not fitted. Instead the container is
+a purely visual frame, a fixed padding around the diagram's bounding box,
+and `layout.container` is therefore *not* proportional to the requested
+complement — it just gives you somewhere to write the count.
+
+```js
+import { venn } from "@jolars/eunoia";
+
+const layout = venn({ n: 3, complement: 12 });
+layout.container; // a visual frame, not an area-matched rectangle
+```
+
+## In Rust
+
+In the core library the complement is opted into on the spec builder with
+`.complement(area)`; negative values are rejected. When set, the fitted
+`Layout` carries the container rectangle. See the
+[rustdoc](https://docs.rs/eunoia/) for `DiagramSpecBuilder` and `Layout`.
+
+```rust
+use eunoia::DiagramSpecBuilder;
+
+let spec = DiagramSpecBuilder::new()
+    .set("A", 8.0)
+    .set("B", 6.0)
+    .intersection(&["A", "B"], 2.0)
+    .complement(10.0)
+    .build()?;
+```
+
+## See also
+
+- [Shapes](/docs/concepts/shapes/) — the primitives the container is
+  fitted around.
+- [Fitter pipeline](/docs/concepts/fitter-pipeline/) — how a spec becomes
+  fitted geometry, container included.
+- [Label placement](/docs/concepts/label-placement/) — placing labels in
+  and around the diagram.

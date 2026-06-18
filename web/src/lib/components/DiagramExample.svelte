@@ -13,6 +13,12 @@ interface Props {
   inputType?: "exclusive" | "inclusive";
   /** Shape primitive to fit. Default `"ellipse"` since most chapter examples use n>=3. */
   shape?: "circle" | "ellipse" | "square" | "rectangle";
+  /**
+   * Universe complement — the area outside every named set. When set, the
+   * fitter jointly solves for a bounding container, drawn here as a dashed
+   * frame, and the leftover universe surfaces as the `""` region.
+   */
+  complement?: number;
   /** Exterior placement strategy. Default `"raycast"`. */
   strategy?: "raycast" | "forceDirected";
   /** RNG seed (lock examples so the chapter renders the same diagram for every reader). */
@@ -42,6 +48,7 @@ let {
   sets,
   inputType = "exclusive",
   shape = "ellipse",
+  complement,
   strategy = "raycast",
   seed = 42,
   caption,
@@ -56,12 +63,15 @@ type Region = {
   pieces: { outer: { vertices: Point[] }; holes: { vertices: Point[] }[] }[];
   labelAnchor: Point;
 };
+// Container rectangle (centre + full extents), present only with a complement.
+type Container = { x: number; y: number; width: number; height: number };
 
 // Lazy-loaded eunoia module — held here so the measurement effect can call
 // `placeLabelsForRegions` synchronously once regions are in place.
 let eunoia: typeof import("@jolars/eunoia") | null = $state(null);
 
 let regions: Region[] = $state([]);
+let container: Container | null = $state(null);
 let error: string | null = $state(null);
 let measureContainer: SVGGElement | null = $state(null);
 let measuredSizes: Record<string, { w: number; h: number }> = $state({});
@@ -130,7 +140,10 @@ function piecePath(piece: {
   return d;
 }
 
-function normaliseRegions(input: Region[]): Region[] {
+function normalise(
+  input: Region[],
+  containerIn: Container | null,
+): { regions: Region[]; container: Container | null } {
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
@@ -145,14 +158,14 @@ function normaliseRegions(input: Region[]): Region[] {
       }
     }
   }
-  if (!isFinite(minX)) return input;
+  if (!isFinite(minX)) return { regions: input, container: containerIn };
   const span = Math.max(maxX - minX, maxY - minY) || 1;
   const k = 100 / span;
   const np = (p: Point): Point => ({
     x: (p.x - minX) * k,
     y: (p.y - minY) * k,
   });
-  return input.map((r) => ({
+  const regions = input.map((r) => ({
     combination: r.combination,
     labelAnchor: np(r.labelAnchor),
     pieces: r.pieces.map((piece) => ({
@@ -160,6 +173,15 @@ function normaliseRegions(input: Region[]): Region[] {
       holes: piece.holes.map((h) => ({ vertices: h.vertices.map(np) })),
     })),
   }));
+  // Map the container centre with the same affine; extents scale by `k`.
+  const c = containerIn
+    ? {
+        ...np({ x: containerIn.x, y: containerIn.y }),
+        width: containerIn.width * k,
+        height: containerIn.height * k,
+      }
+    : null;
+  return { regions, container: c };
 }
 
 // Fit on mount. After this completes the SVG renders (its `{#if regions}`
@@ -177,11 +199,17 @@ onMount(async () => {
       output: "regions",
       seed,
       polygonVertices: 128,
+      complement,
     });
     if (layout.mode !== "regions") {
       throw new Error(`expected regions mode, got ${layout.mode}`);
     }
-    regions = normaliseRegions(layout.regions as Region[]);
+    const norm = normalise(
+      layout.regions as Region[],
+      (layout.container ?? null) as Container | null,
+    );
+    regions = norm.regions;
+    container = norm.container;
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -322,17 +350,35 @@ const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
           {/each}
         {/each}
         <!-- Borders drawn as a separate pass after all fills so they sit on
-             top of neighbouring regions (mirrors DiagramSvg region mode). -->
+             top of neighbouring regions (mirrors DiagramSvg region mode). The
+             complement region (`""`) is skipped: its outer ring is the
+             container, drawn instead as the dashed frame below. -->
         {#each regions as region}
-          {#each region.pieces as piece}
-            <path
-              d={piecePath(piece)}
-              fill="none"
-              stroke="#374151"
-              stroke-width="0.5"
-            />
-          {/each}
+          {#if region.combination !== ""}
+            {#each region.pieces as piece}
+              <path
+                d={piecePath(piece)}
+                fill="none"
+                stroke="#374151"
+                stroke-width="0.5"
+              />
+            {/each}
+          {/if}
         {/each}
+        <!-- Complement container: dashed frame around the universe, mirroring
+             the @jolars/eunoia/svg renderer. -->
+        {#if container}
+          <rect
+            x={container.x - container.width / 2}
+            y={container.y - container.height / 2}
+            width={container.width}
+            height={container.height}
+            fill="none"
+            stroke="#9ca3af"
+            stroke-width="0.5"
+            stroke-dasharray="2 2"
+          />
+        {/if}
         {#each regions as region}
           {#if region.combination !== ""}
             {@const p = placements[region.combination]}
