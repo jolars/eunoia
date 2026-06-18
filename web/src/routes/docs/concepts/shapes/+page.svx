@@ -1,7 +1,192 @@
+<script>
+import DiagramExample from "$lib/components/DiagramExample.svelte";
+
+// A clean, fairly symmetric three-set spec — circles reproduce it well.
+const THREE_SET_SPEC = {
+  A: 10, B: 10, C: 10,
+  "A&B": 3, "A&C": 3, "B&C": 3,
+  "A&B&C": 1,
+};
+
+// A four-set spec: no four-circle arrangement realises every region, so the
+// extra freedom of ellipses earns its keep here.
+const FOUR_SET_SPEC = {
+  A: 10, B: 10, C: 10, D: 10,
+  "A&B": 4, "A&C": 4, "A&D": 4,
+  "B&C": 4, "B&D": 4, "C&D": 4,
+  "A&B&C": 1.5, "A&B&D": 1.5, "A&C&D": 1.5, "B&C&D": 1.5,
+  "A&B&C&D": 0.5,
+};
+
+// A small two-set spec with unequal sizes — enough to show off the
+// axis-aligned primitives without crowding.
+const TWO_SET_SPEC = {
+  A: 12, B: 7,
+  "A&B": 3,
+};
+</script>
+
 # Shapes
 
-> TODO: cover the four shape primitives currently supported (circles,
-> ellipses, axis-aligned squares, axis-aligned rectangles), the generic
-> `DiagramShape` trait that backs them, and how to choose a shape for a
-> given spec (n=2..3 forgiving with circles; n=4..5 typically needs
-> ellipses; squares/rectangles for layout-board style diagrams).
+A `DiagramSpec` says *what* to draw — the size of each set and of each
+overlap — but carries no geometry. Geometry only appears at **fit
+time**, when you pick a shape primitive and the fitter solves for the
+position and size of one such shape per set so that the overlaps
+reproduce the requested areas as closely as possible. The same spec can
+therefore be drawn with any of four primitives:
+
+- **Circle** — the default, simplest, and fastest.
+- **Ellipse** — the most expressive, and the only primitive that scales
+  to four- and five-set Venn diagrams.
+- **Square** and **Rectangle** — axis-aligned, for a layout-board look
+  and exact, rotation-free regions.
+
+Every primitive is area-true: the fitter never distorts a shape's
+reported area to cheat a fit. What differs between them is how many
+degrees of freedom each shape gives the optimiser, and that is what this
+page is about.
+
+## Circle
+
+A circle is `[x, y, r]` — a centre and a radius, three degrees of
+freedom per set. It has no orientation, so there is nothing to rotate
+and nothing to skew; the fitter only chooses where each disc sits and
+how big it is. That makes circles the quickest shape to fit and the
+easiest to read, and for two or three sets they are usually all you
+need. Circles are the default for `euler()`, and eunoia has canonical
+Venn layouts for them up to three sets.
+
+<DiagramExample
+  sets={THREE_SET_SPEC}
+  shape="circle"
+  seed={7}
+  caption="A symmetric three-set spec fitted with circles."
+/>
+
+## Ellipse
+
+An ellipse is `[x, y, a, b, φ]` — a centre, two semi-axes, and a
+rotation angle: five degrees of freedom per set. The extra two
+parameters let a set stretch and turn, which is what you need when the
+pairwise overlaps are lopsided enough that no arrangement of round discs
+can satisfy them. Ellipses are also the only primitive that reaches
+beyond three sets: eunoia ships canonical four- and five-set Venn
+arrangements (the Wilkinson and Edwards ellipse layouts) for them.
+
+That expressiveness has a cost. More free parameters mean a rougher loss
+surface, so ellipse fits benefit from more restarts and lean more often
+on the optimiser's global-escape stage — see the
+[fitter pipeline](/docs/concepts/fitter-pipeline/) for how that works.
+
+<DiagramExample
+  sets={FOUR_SET_SPEC}
+  shape="ellipse"
+  seed={3}
+  caption="A four-set spec fitted with ellipses — no four-circle diagram realises every region."
+/>
+
+## Square
+
+A square is `[x, y, side]` — a centre and a side length, three degrees
+of freedom, the same count as a circle. Squares are kept **axis-aligned**:
+rotation is not part of the parameter vector, so the diagram keeps a
+tidy, grid-like orientation. Because the intersection of axis-aligned
+squares is itself an axis-aligned rectangle, the overlap areas are
+computed exactly in closed form, with no polygon clipping. Like circles,
+squares support canonical Venn layouts up to three sets; there is no
+axis-aligned-square Venn for four or more sets.
+
+<DiagramExample
+  sets={THREE_SET_SPEC}
+  shape="square"
+  seed={7}
+  caption="The same three-set spec fitted with axis-aligned squares."
+/>
+
+## Rectangle
+
+A rectangle is `[x, y, w, h]` — a centre, a width, and a height: four
+degrees of freedom. It is the aspect-ratio-flexible sibling of the
+square, free to be wide or tall but, like the square, never rotated. It
+keeps the same exact closed-form region areas and the same three-set
+limit on canonical Venn layouts. Reach for rectangles over squares when
+your sets differ enough in size that fixed-aspect squares feel cramped.
+
+<DiagramExample
+  sets={TWO_SET_SPEC}
+  shape="rectangle"
+  seed={5}
+  caption="A two-set spec with unequal sizes fitted with rectangles."
+/>
+
+## Choosing a shape
+
+A few rules of thumb:
+
+- **Two or three sets:** start with circles. They are fast, legible, and
+  usually faithful. Check the [goodness-of-fit
+  metrics](/docs/concepts/goodness-of-fit/) — if a three-set fit is poor,
+  the overlaps are probably too lopsided for circles, and ellipses will
+  do better.
+- **Four or five sets:** use ellipses. They are the only primitive
+  expressive enough to realise these layouts, and the only one with
+  canonical Venn arrangements that far.
+- **A grid or layout-board look, or exact rotation-free regions:** use
+  squares or rectangles. Pick rectangles when the sets vary enough in
+  size that a fixed aspect ratio would look cramped.
+
+The canonical Venn support per primitive sets a hard ceiling on set
+count for true Venn diagrams:
+
+| Shape     | Parameters         | Degrees of freedom | Canonical Venn |
+| --------- | ------------------ | ------------------ | -------------- |
+| Circle    | `[x, y, r]`        | 3                  | up to 3 sets   |
+| Ellipse   | `[x, y, a, b, φ]`  | 5                  | up to 5 sets   |
+| Square    | `[x, y, side]`     | 3                  | up to 3 sets   |
+| Rectangle | `[x, y, w, h]`     | 4                  | up to 3 sets   |
+
+Area-proportional Euler diagrams are not bound by these ceilings — you
+can fit more sets — but the more free parameters a shape has, the harder
+the fit, so expect ellipse fits to take longer and to vary more between
+runs than circle fits.
+
+## Selecting a shape in code
+
+In JavaScript, the shape is the `shape` option on `euler()` and
+`venn()`. It accepts `"circle"`, `"ellipse"`, `"square"`, or
+`"rectangle"`; `euler()` defaults to `"circle"` and `venn()` to
+`"ellipse"` (the only shape that covers `n = 4..5`).
+
+```js
+import { euler } from "@jolars/eunoia";
+
+const layout = euler({
+  sets: { A: 10, B: 10, "A&B": 3 },
+  shape: "ellipse",
+});
+```
+
+In Rust, the shape is a type parameter on the fitter, defaulting to
+`Circle`:
+
+```rust
+use eunoia::{Ellipse, Fitter};
+
+let layout = Fitter::<Ellipse>::new(&spec).fit()?;
+```
+
+A type becomes fittable by implementing the `DiagramShape` trait, which
+also defines each shape's two parameter encodings (a human-friendly
+geometric one and an internal optimiser one). For the trait and the
+encodings in full, see the
+[architecture notes in `AGENTS.md`](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
+and the [rustdoc](https://docs.rs/eunoia/). (`Polygon` is used for output
+and region extraction, not for fitting, so it is not one of these
+primitives.)
+
+## See also
+
+- [Fitter pipeline](/docs/concepts/fitter-pipeline/) — how a spec
+  becomes fitted geometry.
+- [Goodness of fit](/docs/concepts/goodness-of-fit/) — how to tell a
+  faithful diagram from a forced one.
