@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.0](https://github.com/jolars/eunoia/compare/v1.4.0...v1.5.0) (2026-06-20)
+
+### Features
+- **web:** validate complement input with inline error ([`ccea349`](https://github.com/jolars/eunoia/commit/ccea349f1c24fdb7070489fc9f4267ac3f934ca2))
+
+### Bug Fixes
+- **plotting:** make RegionPolygons::iter() deterministic ([`6b7a2c3`](https://github.com/jolars/eunoia/commit/6b7a2c38f921d09557e7f671c7d0b872db60066a))
+
+### Performance Improvements
+- bump basin to v1 ([`515df92`](https://github.com/jolars/eunoia/commit/515df9268214197f957cda7cc7f9c72bf2aba68c))
+
 ## [1.4.0](https://github.com/jolars/eunoia/compare/v1.3.0...v1.4.0) (2026-06-16)
 
 ### Features
