@@ -137,29 +137,31 @@ impl RegionPolygons {
         self.regions.get(combination)
     }
 
-    /// Iterates over every non-empty region and its pieces.
+    /// Iterates over every non-empty region and its pieces in canonical
+    /// `(size, lexicographic)` order: singletons first, then pairs, then
+    /// triples, etc.; ties broken by the lexicographic order of the
+    /// (already-sorted) set names.
     ///
-    /// **You almost certainly want [`Self::iter_in_input_order`]** (when
-    /// you have a spec at hand) or [`Self::iter_sorted`] (when you don't).
-    /// Both yield deterministic output, which is what bindings, snapshot
-    /// tests, and CSV exports want. This method exists only for the rare
-    /// case where unordered traversal is fine and the small sort cost of
-    /// the deterministic helpers is unwelcome — its iteration order is
-    /// unspecified (backed by a `HashMap`) and may change between releases.
+    /// The order is **deterministic** and independent of how the collection
+    /// was built — bindings, snapshot tests, and CSV exports can rely on it.
+    /// (The backing store is a `HashMap`, so the entries are collected and
+    /// sorted on each call; the cost is negligible since the region count is
+    /// at most the populated subset of `2^n`.)
+    ///
+    /// If you want the order to follow a spec's input order instead, use
+    /// [`Self::iter_in_input_order`].
     pub fn iter(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
-        self.regions.iter()
-    }
-
-    /// Iterates in canonical `(size, lexicographic)` order: singletons
-    /// first, then pairs, then triples, etc.; ties broken by the lexicographic
-    /// order of the (already-sorted) set names. Deterministic without needing
-    /// the spec — useful when you want stable output and don't care about
-    /// matching input order.
-    pub fn iter_sorted(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
         let mut entries: Vec<(&Combination, &Vec<RegionPiece>)> = self.regions.iter().collect();
         entries
             .sort_by(|(a, _), (b, _)| a.len().cmp(&b.len()).then_with(|| a.sets().cmp(b.sets())));
         entries.into_iter()
+    }
+
+    /// Iterates in canonical `(size, lexicographic)` order. This is an alias
+    /// for [`Self::iter`], which now yields the same deterministic order;
+    /// retained for discoverability and backwards compatibility.
+    pub fn iter_sorted(&self) -> impl Iterator<Item = (&Combination, &Vec<RegionPiece>)> {
+        self.iter()
     }
 
     /// Iterates in spec input order: combinations are sorted by the
@@ -1363,6 +1365,35 @@ mod tests {
 
         let order: Vec<String> = regions.iter_sorted().map(|(c, _)| c.to_string()).collect();
         assert_eq!(order, vec!["A", "B", "A&B", "A&C", "A&B&C"]);
+    }
+
+    #[test]
+    fn test_iter_is_deterministic_and_matches_iter_sorted() {
+        let mut regions = RegionPolygons::new();
+        let dummy_piece = || RegionPiece {
+            outer: Polygon::new(vec![
+                Point::new(0.0, 0.0),
+                Point::new(1.0, 0.0),
+                Point::new(1.0, 1.0),
+            ]),
+            holes: Vec::new(),
+        };
+        // Insert in scrambled order; iter() must impose the canonical order
+        // regardless of how (or in what hash-seeded order) entries are stored.
+        regions.insert(Combination::new(&["A", "B"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["B"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A", "B", "C"]), vec![dummy_piece()]);
+        regions.insert(Combination::new(&["A", "C"]), vec![dummy_piece()]);
+
+        // Canonical (size, lexicographic) order: singletons first, then pairs,
+        // then triples; ties broken alphabetically.
+        let order: Vec<String> = regions.iter().map(|(c, _)| c.to_string()).collect();
+        assert_eq!(order, vec!["A", "B", "A&B", "A&C", "A&B&C"]);
+
+        // iter() and iter_sorted() are the same order.
+        let sorted: Vec<String> = regions.iter_sorted().map(|(c, _)| c.to_string()).collect();
+        assert_eq!(order, sorted);
     }
 
     #[test]
