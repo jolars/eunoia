@@ -3,8 +3,7 @@
 [![Build and
 Test](https://github.com/jolars/eunoia/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/jolars/eunoia/actions/workflows/build-and-test.yml)
 [![Crates.io](https://img.shields.io/crates/v/eunoia.svg?logo=rust)](https://crates.io/crates/eunoia)
-[![npm
-version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://badge.fury.io/js/@jolars%2Feunoia)
+[![npm version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://badge.fury.io/js/@jolars%2Feunoia)
 [![PyPI
 version](https://badge.fury.io/py/eunoia.svg?icon=si%3Apython)](https://badge.fury.io/py/eunoia)
 [![CRAN
@@ -73,14 +72,14 @@ fn main() {
 The pure-Rust core powers bindings in several languages, all backed by the same
 fitting engine:
 
-  | Language       | Package                                                                                          | Install                       |
-  | -------------- | ------------------------------------------------------------------------------------------------ | ----------------------------- |
-  | **Rust**       | [`eunoia`](https://crates.io/crates/eunoia)                                                      | `cargo add eunoia`            |
-  | **R**          | [`eulerr`](https://CRAN.R-project.org/package=eulerr) ([repo](https://github.com/jolars/eulerr)) | `install.packages("eulerr")`  |
-  | **Python**     | [`eunoia`](https://pypi.org/project/eunoia/) ([repo](https://github.com/jolars/eunoia-py))       | `pip install eunoia`          |
-  | **Julia**      | [`Eunoia.jl`](https://github.com/jolars/Eunoia.jl)                                               | `Pkg.add("Eunoia")`           |
-  | **JavaScript** | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)                                 | `npm install @jolars/eunoia`  |
-  | **Web app**    | [eunoia.bz](https://eunoia.bz)                                                                   | build diagrams in the browser |
+  | Language   | Package                                                                                          | Install                       |
+  | ---------- | ------------------------------------------------------------------------------------------------ | ----------------------------- |
+  | Rust       | [`eunoia`](https://crates.io/crates/eunoia)                                                      | `cargo add eunoia`            |
+  | R          | [`eulerr`](https://CRAN.R-project.org/package=eulerr) ([repo](https://github.com/jolars/eulerr)) | `install.packages("eulerr")`  |
+  | Python     | [`eunoia`](https://pypi.org/project/eunoia/) ([repo](https://github.com/jolars/eunoia-py))       | `pip install eunoia`          |
+  | Julia      | [`Eunoia.jl`](https://github.com/jolars/Eunoia.jl) ([repo](https://github.com/jolars/Eunoia.jl)) | `Pkg.add("Eunoia")`           |
+  | JavaScript | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)                                 | `npm install @jolars/eunoia`  |
+  | Web app    | [eunoia.bz](https://eunoia.bz)                                                                   | build diagrams in the browser |
 
 ### JavaScript / TypeScript
 
