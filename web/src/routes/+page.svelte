@@ -16,6 +16,8 @@ const docsRsUrl = "https://docs.rs/eunoia";
 const npmUrl = "https://www.npmjs.com/package/@jolars/eunoia";
 const pypiUrl = "https://pypi.org/project/eunoia/";
 const pyDocsUrl = "https://jolars.github.io/eunoia-py";
+const juliaRepoUrl = "https://github.com/jolars/Eunoia.jl";
+const juliaDocsUrl = "https://jolars.github.io/Eunoia.jl/stable";
 const eulerrUrl = "https://cran.r-project.org/package=eulerr";
 const eulerrRepoUrl = "https://github.com/jolars/eulerr";
 const eulerrDocsUrl = "https://jolars.github.io/eulerr/";
@@ -121,11 +123,14 @@ const johanUrl = "https://jolars.co";
           </p>
         </div>
         <div class="bg-surface border border-line rounded p-4 space-y-2">
-          <span class="font-medium inline-flex items-center gap-2"><IconJulia class="w-4 h-4" /> Julia</span>
+          <div class="flex items-center justify-between">
+            <span class="font-medium inline-flex items-center gap-2"><IconJulia class="w-4 h-4" /> Julia</span>
+            <a href={juliaRepoUrl} class="text-xs text-accent hover:underline">GitHub</a>
+          </div>
+          <pre class="bg-inset border border-line rounded p-2 font-mono text-xs overflow-x-auto">Pkg.add("Eunoia")</pre>
           <p class="text-xs text-muted">
-            Planned thin wrapper around the Rust core, in its own
-            repository. Track progress on the
-            <a href={repoUrl} class="text-accent hover:underline">main repo</a>.
+            Bindings to the Rust core with Makie plotting; docs at
+            <a href={juliaDocsUrl} class="text-accent hover:underline">jolars.github.io/Eunoia.jl</a>.
           </p>
         </div>
       </div>

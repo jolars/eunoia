@@ -78,7 +78,7 @@ fitting engine:
   | **Rust**       | [`eunoia`](https://crates.io/crates/eunoia)                                                      | `cargo add eunoia`            |
   | **R**          | [`eulerr`](https://CRAN.R-project.org/package=eulerr) ([repo](https://github.com/jolars/eulerr)) | `install.packages("eulerr")`  |
   | **Python**     | [`eunoia`](https://pypi.org/project/eunoia/) ([repo](https://github.com/jolars/eunoia-py))       | `pip install eunoia`          |
-  | **Julia**      | [`Eunoia.jl`](https://github.com/jolars/eunoia/tree/main/julia/Eunoia)                           | (see the package README)      |
+  | **Julia**      | [`Eunoia.jl`](https://github.com/jolars/Eunoia.jl)                                               | `Pkg.add("Eunoia")`           |
   | **JavaScript** | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)                                 | `npm install @jolars/eunoia`  |
   | **Web app**    | [eunoia.bz](https://eunoia.bz)                                                                   | build diagrams in the browser |
 
