@@ -54,7 +54,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use eunoia::geometry::primitives::Point;
-use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, Square};
+use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, RotatedRectangle, Square};
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
 use eunoia::loss::LossType;
 use eunoia::plotting::{
@@ -216,6 +216,16 @@ enum ShapeOut {
         height: f64,
         label_anchor: PointOut,
     },
+    #[serde(rename = "rotated_rectangle")]
+    RotatedRectangle {
+        label: String,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        rotation: f64,
+        label_anchor: PointOut,
+    },
 }
 
 /// Container frame emitted only when the spec carried a `complement`.
@@ -345,6 +355,21 @@ impl ToShapeOut for Rectangle {
             y: c.y(),
             width: self.width(),
             height: self.height(),
+            label_anchor: anchor,
+        }
+    }
+}
+
+impl ToShapeOut for RotatedRectangle {
+    fn to_shape_out(&self, label: String, anchor: PointOut) -> ShapeOut {
+        let c = self.center();
+        ShapeOut::RotatedRectangle {
+            label,
+            x: c.x(),
+            y: c.y(),
+            width: self.width(),
+            height: self.height(),
+            rotation: self.rotation(),
             label_anchor: anchor,
         }
     }
@@ -748,8 +773,14 @@ fn euler_impl(input: EulerInput) -> Result<LayoutOut, String> {
             "rectangle",
             plot_opts,
         )),
+        "rotated_rectangle" => Ok(extract(
+            &fit::<RotatedRectangle>(&spec, &cfg)?,
+            &spec,
+            "rotated_rectangle",
+            plot_opts,
+        )),
         other => Err(format!(
-            "invalid shape '{other}' (want circle|ellipse|square|rectangle)"
+            "invalid shape '{other}' (want circle|ellipse|square|rectangle|rotated_rectangle)"
         )),
     }
 }
@@ -779,8 +810,9 @@ fn venn_impl(input: VennInput) -> Result<LayoutOut, String> {
         "ellipse" => venn_arm!(Ellipse, "ellipse"),
         "square" => venn_arm!(Square, "square"),
         "rectangle" => venn_arm!(Rectangle, "rectangle"),
+        "rotated_rectangle" => venn_arm!(RotatedRectangle, "rotated_rectangle"),
         other => Err(format!(
-            "invalid shape '{other}' (want circle|ellipse|square|rectangle)"
+            "invalid shape '{other}' (want circle|ellipse|square|rectangle|rotated_rectangle)"
         )),
     }
 }
@@ -1204,6 +1236,35 @@ mod tests {
         assert_eq!(v["ok"], true);
         assert_eq!(v["shapes"].as_array().unwrap().len(), 3);
         assert_eq!(v["shapes"][0]["type"], "ellipse");
+    }
+
+    #[test]
+    fn euler_rotated_rectangle_fits_and_carries_rotation() {
+        let out = call(
+            eunoia_euler,
+            r#"{"sets":[{"combination":"A","size":4},{"combination":"B","size":4},
+                {"combination":"A&B","size":2}],"shape":"rotated_rectangle","seed":7}"#,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["shape"], "rotated_rectangle");
+        assert_eq!(v["shapes"].as_array().unwrap().len(), 2);
+        assert_eq!(v["shapes"][0]["type"], "rotated_rectangle");
+        // The rotation field must be present in the tagged output.
+        assert!(v["shapes"][0]["rotation"].is_number());
+        assert!(v["metrics"]["loss"].as_f64().unwrap() >= 0.0);
+    }
+
+    #[test]
+    fn venn_three_set_rotated_rectangle() {
+        let out = call(
+            eunoia_venn,
+            r#"{"names":["A","B","C"],"shape":"rotated_rectangle"}"#,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["shapes"].as_array().unwrap().len(), 3);
+        assert_eq!(v["shapes"][0]["type"], "rotated_rectangle");
     }
 
     #[test]

@@ -23,7 +23,7 @@
 
 use eunoia::Optimizer;
 use eunoia::VennDiagram;
-use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
+use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, RotatedRectangle, Square};
 use eunoia::geometry::traits::Polygonize;
 use eunoia::loss::LossType;
 use wasm_bindgen::prelude::*;
@@ -37,6 +37,7 @@ use console_error_panic_hook;
 pub enum WasmOptimizer {
     CmaEsTrf,
     CmaEsLm,
+    CmaEs,
     LevenbergMarquardt,
     Trf,
     Lbfgs,
@@ -48,6 +49,7 @@ impl From<WasmOptimizer> for Optimizer {
         match opt {
             WasmOptimizer::CmaEsTrf => Optimizer::CmaEsTrf,
             WasmOptimizer::CmaEsLm => Optimizer::CmaEsLm,
+            WasmOptimizer::CmaEs => Optimizer::CmaEs,
             WasmOptimizer::LevenbergMarquardt => Optimizer::LevenbergMarquardt,
             WasmOptimizer::Trf => Optimizer::Trf,
             WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
@@ -363,6 +365,46 @@ impl WasmRectangle {
     }
 }
 
+/// An oriented (rotated) rectangle representation for WASM with label.
+///
+/// The rotation-bearing sibling of [`WasmRectangle`]: same `x`/`y`/`width`/
+/// `height` plus `rotation` (radians, counterclockwise from +x). See
+/// [`WasmCircle`] for `label_x` / `label_y` semantics.
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmRotatedRectangle {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub rotation: f64,
+    pub label_x: f64,
+    pub label_y: f64,
+    label: String,
+}
+
+#[wasm_bindgen]
+impl WasmRotatedRectangle {
+    #[wasm_bindgen(constructor)]
+    pub fn new(x: f64, y: f64, width: f64, height: f64, rotation: f64, label: String) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            rotation,
+            label_x: x,
+            label_y: y,
+            label,
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn label(&self) -> String {
+        self.label.clone()
+    }
+}
+
 /// A point in 2D space
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -599,6 +641,38 @@ impl RectangleResult {
     }
 }
 
+/// Result with rotated rectangles and debug info
+#[wasm_bindgen]
+pub struct RotatedRectangleResult {
+    rotated_rectangles: Vec<WasmRotatedRectangle>,
+    loss: f64,
+    target_areas_json: String,
+    fitted_areas_json: String,
+}
+
+#[wasm_bindgen]
+impl RotatedRectangleResult {
+    #[wasm_bindgen(getter)]
+    pub fn rotated_rectangles(&self) -> Vec<WasmRotatedRectangle> {
+        self.rotated_rectangles.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn loss(&self) -> f64 {
+        self.loss
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target_areas_json(&self) -> String {
+        self.target_areas_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn fitted_areas_json(&self) -> String {
+        self.fitted_areas_json.clone()
+    }
+}
+
 /// Result with polygons and debug info
 #[wasm_bindgen]
 pub struct PolygonResult {
@@ -607,6 +681,7 @@ pub struct PolygonResult {
     ellipses: Vec<WasmEllipse>,
     squares: Vec<WasmSquare>,
     rectangles: Vec<WasmRectangle>,
+    rotated_rectangles: Vec<WasmRotatedRectangle>,
     /// Optional jointly-optimised container rectangle, present when the spec
     /// carried a complement. Renderers should draw this as the diagram's
     /// universe outline.
@@ -646,6 +721,11 @@ impl PolygonResult {
     #[wasm_bindgen(getter)]
     pub fn rectangles(&self) -> Vec<WasmRectangle> {
         self.rectangles.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn rotated_rectangles(&self) -> Vec<WasmRotatedRectangle> {
+        self.rotated_rectangles.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -1084,6 +1164,75 @@ pub fn generate_from_spec_rectangle(
     })
 }
 
+/// Generate oriented-rectangle layout from a diagram specification.
+///
+/// Mirrors [`generate_from_spec_rectangle`] for [`RotatedRectangle`]s. Each
+/// fitted shape is parameterised as `[x, y, width, height, rotation]`. When no
+/// `optimizer` is supplied the shape's capability-driven derivative-free
+/// default pool applies (Nelder-Mead + CMA-ES) — see
+/// `DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`.
+#[wasm_bindgen]
+pub fn generate_from_spec_rotated_rectangle(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+    complement: Option<f64>,
+) -> Result<RotatedRectangleResult, JsValue> {
+    use eunoia::fitter::Fitter;
+
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
+
+    let mut fitter = Fitter::<RotatedRectangle>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+
+    let wasm_rotated_rectangles: Vec<WasmRotatedRectangle> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|shape: &RotatedRectangle| {
+                WasmRotatedRectangle::new(
+                    shape.center().x(),
+                    shape.center().y(),
+                    shape.width(),
+                    shape.height(),
+                    shape.rotation(),
+                    name.to_string(),
+                )
+            })
+        })
+        .collect();
+
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(RotatedRectangleResult {
+        rotated_rectangles: wasm_rotated_rectangles,
+        loss: layout.loss(),
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+    })
+}
+
 /// Generate circle layout and convert to polygons for rendering
 #[wasm_bindgen]
 pub fn generate_circles_as_polygons(
@@ -1181,6 +1330,7 @@ pub fn generate_circles_as_polygons(
         ellipses: vec![],
         squares: vec![],
         rectangles: vec![],
+        rotated_rectangles: vec![],
         container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
@@ -1294,6 +1444,7 @@ pub fn generate_ellipses_as_polygons(
         ellipses: wasm_ellipses,
         squares: vec![],
         rectangles: vec![],
+        rotated_rectangles: vec![],
         container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
@@ -1404,6 +1555,7 @@ pub fn generate_squares_as_polygons(
         ellipses: vec![],
         squares: wasm_squares,
         rectangles: vec![],
+        rotated_rectangles: vec![],
         container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
@@ -1515,6 +1667,123 @@ pub fn generate_rectangles_as_polygons(
         ellipses: vec![],
         squares: vec![],
         rectangles: wasm_rectangles,
+        rotated_rectangles: vec![],
+        container: container_to_wasm(&layout),
+        loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
+    })
+}
+
+/// Generate oriented-rectangle layout and convert to polygons for rendering.
+///
+/// Mirrors [`generate_rectangles_as_polygons`] for [`RotatedRectangle`]s; the
+/// per-set parameters land in `rotated_rectangles`.
+#[wasm_bindgen]
+pub fn generate_rotated_rectangles_as_polygons(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
+    restarts: Option<usize>,
+    complement: Option<f64>,
+) -> Result<PolygonResult, JsValue> {
+    use eunoia::fitter::Fitter;
+
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
+
+    let mut fitter = Fitter::<RotatedRectangle>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+    let diagnostics = extract_diagnostics(&layout)?;
+    let set_anchors = compute_set_label_anchors(&layout, &diagram_spec);
+
+    let wasm_rotated_rectangles: Vec<WasmRotatedRectangle> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|rect: &RotatedRectangle| {
+                let cx = rect.center().x();
+                let cy = rect.center().y();
+                let (label_x, label_y) = set_anchors.get(name).copied().unwrap_or((cx, cy));
+                WasmRotatedRectangle {
+                    x: cx,
+                    y: cy,
+                    width: rect.width(),
+                    height: rect.height(),
+                    rotation: rect.rotation(),
+                    label_x,
+                    label_y,
+                    label: name.to_string(),
+                }
+            })
+        })
+        .collect();
+
+    let wasm_polygons: Vec<WasmPolygon> = diagram_spec
+        .set_names()
+        .iter()
+        .filter_map(|name| {
+            layout.shape_for_set(name).map(|rect: &RotatedRectangle| {
+                let polygon = rect.polygonize(n_vertices);
+                let vertices: Vec<WasmPoint> = polygon
+                    .vertices()
+                    .iter()
+                    .map(|p| WasmPoint::new(p.x(), p.y()))
+                    .collect();
+                WasmPolygon {
+                    vertices,
+                    label: name.to_string(),
+                }
+            })
+        })
+        .collect();
+
+    let target_areas: std::collections::HashMap<String, f64> = diagram_spec
+        .exclusive_areas()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(combo, &area)| (combo.to_string(), area))
+        .collect();
+
+    Ok(PolygonResult {
+        polygons: wasm_polygons,
+        circles: vec![],
+        ellipses: vec![],
+        squares: vec![],
+        rectangles: vec![],
+        rotated_rectangles: wasm_rotated_rectangles,
         container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
@@ -1893,6 +2162,97 @@ pub fn generate_region_polygons_rectangles(
     })
 }
 
+/// Generate region polygons from oriented rectangles (filled visualization).
+///
+/// Mirrors [`generate_region_polygons_rectangles`] for [`RotatedRectangle`]s.
+#[wasm_bindgen]
+pub fn generate_region_polygons_rotated_rectangles(
+    specs: Vec<DiagramSpec>,
+    input_type: String,
+    n_vertices: usize,
+    seed: Option<u64>,
+    optimizer: Option<WasmOptimizer>,
+    loss_type: Option<WasmLossType>,
+    tolerance: Option<f64>,
+    restarts: Option<usize>,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    use eunoia::fitter::Fitter;
+
+    let diagram_spec = build_diagram_spec(&specs, &input_type, complement)?;
+
+    let mut fitter = Fitter::<RotatedRectangle>::new(&diagram_spec);
+    if let Some(s) = seed {
+        fitter = fitter.seed(s);
+    }
+    if let Some(opt) = optimizer {
+        fitter = fitter.optimizer(opt.into());
+    }
+    if let Some(lt) = loss_type {
+        fitter = fitter.loss_type(lt.into());
+    }
+    if let Some(tol) = tolerance {
+        fitter = fitter.tolerance(tol);
+    }
+    if let Some(r) = restarts {
+        fitter = fitter.n_restarts(r);
+    }
+    let layout = fitter
+        .fit()
+        .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+    let diagnostics = extract_diagnostics(&layout)?;
+
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
+        compute_region_label_anchors(&layout, &diagram_spec);
+    let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
+
+    let mut wasm_regions = Vec::new();
+    for (combination, pieces) in region_polygons.iter() {
+        let combo_key = combination.to_string();
+        let wasm_pieces: Vec<WasmRegionPiece> = pieces.iter().map(region_piece_to_wasm).collect();
+        let (label_x, label_y) = region_anchors_map
+            .get(&combo_key)
+            .copied()
+            .unwrap_or((0.0, 0.0));
+        wasm_regions.push(WasmRegion {
+            label_x,
+            label_y,
+            combination: combo_key,
+            pieces: wasm_pieces,
+        });
+    }
+
+    let target_areas: std::collections::HashMap<String, f64> = layout
+        .requested()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+    let fitted_areas: std::collections::HashMap<String, f64> = layout
+        .fitted()
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
+
+    Ok(WasmRegionPolygons {
+        regions: wasm_regions,
+        container: container_to_wasm(&layout),
+        loss: layout.loss(),
+        stress: diagnostics.stress,
+        diag_error: diagnostics.diag_error,
+        iterations: diagnostics.iterations,
+        target_areas_json: serde_json::to_string(&target_areas)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        fitted_areas_json: serde_json::to_string(&fitted_areas)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        region_error_json: diagnostics.region_error_json,
+        residuals_json: diagnostics.residuals_json,
+        set_anchors_json: serde_json::to_string(&set_anchors_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+    })
+}
+
 /// Per-set shape parameter arrays for a Venn [`PolygonResult`]. Exactly one
 /// vector is populated, matching the diagram's shape; the others stay empty.
 #[derive(Default)]
@@ -1901,6 +2261,7 @@ struct VennShapeParams {
     ellipses: Vec<WasmEllipse>,
     squares: Vec<WasmSquare>,
     rectangles: Vec<WasmRectangle>,
+    rotated_rectangles: Vec<WasmRotatedRectangle>,
 }
 
 /// Assemble a polygon-mode [`PolygonResult`] for the canonical Venn layout of
@@ -1974,6 +2335,7 @@ where
         ellipses: params.ellipses,
         squares: params.squares,
         rectangles: params.rectangles,
+        rotated_rectangles: params.rotated_rectangles,
         container: container_to_wasm(&layout),
         loss: layout.loss(),
         stress: diagnostics.stress,
@@ -2135,6 +2497,49 @@ pub fn generate_venn_polygons_rectangles(
     })
 }
 
+/// Canonical n-set oriented-rectangle Venn diagram (`n ∈ {1, 2, 3}`, φ = 0),
+/// per-set outlines as polygons plus the rotated-rectangle parameters. See
+/// `venn_polygon_result` for the metric caveats.
+#[wasm_bindgen]
+pub fn generate_venn_polygons_rotated_rectangles(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<PolygonResult, JsValue> {
+    venn_polygon_result::<RotatedRectangle, _>(
+        n,
+        n_vertices,
+        complement,
+        |layout, spec, anchors| {
+            let rotated_rectangles = spec
+                .set_names()
+                .iter()
+                .filter_map(|name| {
+                    layout.shape_for_set(name).map(|rect: &RotatedRectangle| {
+                        let cx = rect.center().x();
+                        let cy = rect.center().y();
+                        let (label_x, label_y) = anchors.get(name).copied().unwrap_or((cx, cy));
+                        WasmRotatedRectangle {
+                            x: cx,
+                            y: cy,
+                            width: rect.width(),
+                            height: rect.height(),
+                            rotation: rect.rotation(),
+                            label_x,
+                            label_y,
+                            label: name.to_string(),
+                        }
+                    })
+                })
+                .collect();
+            VennShapeParams {
+                rotated_rectangles,
+                ..Default::default()
+            }
+        },
+    )
+}
+
 /// Assemble a region-mode [`WasmRegionPolygons`] for the canonical Venn layout
 /// of shape `S` and `n` sets. Region output carries no shape parameters, so
 /// the body is fully shape-agnostic apart from constructing `VennDiagram::<S>`.
@@ -2248,6 +2653,17 @@ pub fn generate_venn_regions_rectangles(
     complement: Option<f64>,
 ) -> Result<WasmRegionPolygons, JsValue> {
     venn_region_result::<Rectangle>(n, n_vertices, complement)
+}
+
+/// Canonical n-set oriented-rectangle Venn diagram (`n ∈ {1, 2, 3}`, φ = 0),
+/// decomposed into per-region exclusive polygons.
+#[wasm_bindgen]
+pub fn generate_venn_regions_rotated_rectangles(
+    n: usize,
+    n_vertices: usize,
+    complement: Option<f64>,
+) -> Result<WasmRegionPolygons, JsValue> {
+    venn_region_result::<RotatedRectangle>(n, n_vertices, complement)
 }
 
 /// Strategy-driven label placement on already-decomposed region polygons

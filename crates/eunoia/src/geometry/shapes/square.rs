@@ -620,6 +620,8 @@ pub(crate) fn compute_exclusive_regions_clipped_with_gradient_squares(
 }
 
 impl DiagramShape for Square {
+    const SUPPORTS_ANALYTIC_GRADIENT: bool = true;
+
     fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
         let n_sets = shapes.len();
         let intersections = collect_intersections_square(shapes, n_sets);

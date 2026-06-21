@@ -9,6 +9,26 @@ use std::collections::BinaryHeap;
 
 use crate::geometry::primitives::Point;
 
+/// Unsigned area of a simple polygon given by its vertex ring, via the
+/// shoelace formula. Returns `0.0` for degenerate rings (fewer than three
+/// vertices). Shared by [`Polygon::area`] and the convex-clip intersection
+/// used by [`RotatedRectangle`](super::RotatedRectangle).
+pub(crate) fn shoelace_area(vertices: &[Point]) -> f64 {
+    if vertices.len() < 3 {
+        return 0.0;
+    }
+
+    let mut area = 0.0;
+    let n = vertices.len();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += vertices[i].x() * vertices[j].y();
+        area -= vertices[j].x() * vertices[i].y();
+    }
+
+    (area / 2.0).abs()
+}
+
 /// A polygon defined by a sequence of vertices.
 ///
 /// Polygons are primarily used for visualization - converting analytical shapes
@@ -60,20 +80,7 @@ impl Polygon {
 
     /// Computes the area of the polygon using the shoelace formula.
     pub fn area(&self) -> f64 {
-        if self.vertices.len() < 3 {
-            return 0.0;
-        }
-
-        let mut area = 0.0;
-        let n = self.vertices.len();
-
-        for i in 0..n {
-            let j = (i + 1) % n;
-            area += self.vertices[i].x() * self.vertices[j].y();
-            area -= self.vertices[j].x() * self.vertices[i].y();
-        }
-
-        (area / 2.0).abs()
+        shoelace_area(&self.vertices)
     }
 
     /// Computes the centroid of the polygon.

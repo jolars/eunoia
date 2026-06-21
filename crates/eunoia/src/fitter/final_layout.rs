@@ -45,6 +45,19 @@ pub enum Optimizer {
     /// where neither LM nor a meaningful gradient is available; kept mostly
     /// because the harness still uses it as a quality lower-bound sentinel.
     NelderMead,
+    /// Box-constrained CMA-ES (`basin::BoundedCmaEs`) run on its own, with **no**
+    /// gradient polish — purely derivative-free, unlike [`Optimizer::CmaEsLm`] /
+    /// [`Optimizer::CmaEsTrf`], which always finish with an LM/TRF step. It is
+    /// the global-search half of the derivative-free default pool for shapes
+    /// whose exact overlap area is only piecewise-C¹ (see
+    /// [`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]): Nelder-Mead refines
+    /// locally, this escapes wrong basins, and neither ever evaluates a
+    /// gradient that would chatter at the kinks. Bounds and per-coordinate
+    /// initial std come from `optimizer_bounds_for` under
+    /// `BoundsEnvelope::CMAES`, the same global-escape cage `CmaEs*` use.
+    ///
+    /// [`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]: crate::geometry::traits::DiagramShape::SUPPORTS_ANALYTIC_GRADIENT
+    CmaEs,
     /// Threshold-fired CMA-ES global escape followed by an **unbounded**
     /// Levenberg-Marquardt polish. The previous default; [`Optimizer::CmaEsTrf`]
     /// (bounded TRF polish) is now the [`Fitter`] default, but this remains
@@ -413,7 +426,16 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
     // CmaEsLm is also downgraded because `optimizer_bounds_for` doesn't yet split
     // off the trailing container block. Both lifts are S6 polish.
     let optimizer = if spec.complement.is_some() {
-        Optimizer::Lbfgs
+        // Complement specs run derivative-based L-BFGS by default, but a shape
+        // whose clipped overlap area is only piecewise-C¹ (no analytic
+        // gradient) would have L-BFGS chatter against finite differences at the
+        // kinks — route it to derivative-free Nelder-Mead instead, consistent
+        // with the capability-driven default pool.
+        if S::SUPPORTS_ANALYTIC_GRADIENT {
+            Optimizer::Lbfgs
+        } else {
+            Optimizer::NelderMead
+        }
     } else {
         config.optimizer
     };
@@ -423,6 +445,9 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
         Optimizer::NelderMead => {
             run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)?
         }
+        // Pure derivative-free CMA-ES: the bounded global escape run standalone,
+        // returning its best candidate with no gradient polish.
+        Optimizer::CmaEs => run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config),
         Optimizer::Lbfgs => {
             // L-BFGS with numerical gradients. On non-smooth losses
             // (`MaxAbsolute`, `SumAbsolute`, …) gradients are unreliable —
@@ -710,7 +735,7 @@ fn run_cmaes_escape<S: DiagramShape + Copy + 'static>(
     // identical across all three, so the only variable is the escape core.
     let cma_seed = match config.escape_solver {
         EscapeSolver::BoundedCmaEs => {
-            run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config)
+            run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config).0
         }
         EscapeSolver::BoundedCmaInject => {
             run_bounded_cma_inject::<S>(spec, params_per_shape, initial_param, config)
@@ -837,7 +862,7 @@ fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
     params_per_shape: usize,
     initial_param: &DVector<f64>,
     config: &FinalLayoutConfig,
-) -> DVector<f64> {
+) -> (DVector<f64>, f64) {
     let (lower, upper, initial_std) = optimizer_bounds_for(
         initial_param.as_slice(),
         params_per_shape,
@@ -867,7 +892,7 @@ fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
         .max_iter(100)
         .run()
         .expect("solver problem is infallible");
-    result.param().clone()
+    (result.param().clone(), result.cost())
 }
 
 /// Outer-loop generation budget for the memetic escape solvers
@@ -947,7 +972,7 @@ fn run_bounded_cma_inject<S: DiagramShape + Copy + 'static>(
     let Some((inner, lower, upper, initial_std)) =
         bounded_lm_escape_parts::<S>(spec, params_per_shape, initial_param, config)
     else {
-        return run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config);
+        return run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config).0;
     };
     // CMA-ES handles the angle's ±∞ bounds directly (Gaussian sample + penalty).
     let problem = BoundedLmDiagramProblem::<S> {
@@ -984,7 +1009,7 @@ fn run_de_inject<S: DiagramShape + Copy + 'static>(
     let Some((inner, mut lower, mut upper, _initial_std)) =
         bounded_lm_escape_parts::<S>(spec, params_per_shape, initial_param, config)
     else {
-        return run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config);
+        return run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config).0;
     };
     // DE samples its initial population *uniformly inside* `[lower, upper]`, so
     // any non-finite bound (the ellipse angle, left at ±∞ by

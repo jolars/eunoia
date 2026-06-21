@@ -11,10 +11,12 @@ pub mod circle;
 pub mod ellipse;
 pub mod polygon;
 pub mod rectangle;
+pub mod rotated_rectangle;
 pub mod square;
 
 pub use circle::Circle;
 pub use ellipse::Ellipse;
 pub use polygon::Polygon;
 pub use rectangle::Rectangle;
+pub use rotated_rectangle::RotatedRectangle;
 pub use square::Square;

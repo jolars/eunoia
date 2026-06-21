@@ -248,7 +248,7 @@ fn default_name(i: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
+    use crate::geometry::shapes::{Circle, Ellipse, Rectangle, RotatedRectangle, Square};
 
     fn approx_eq(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-10
@@ -634,5 +634,46 @@ mod tests {
     fn test_rectangle_five_sets_unsupported() {
         let err = VennDiagram::<Rectangle>::new(5).unwrap_err();
         assert_eq!(err, DiagramError::UnsupportedSetCount(5));
+    }
+
+    /// RotatedRectangle reuses Rectangle's axis-aligned (φ = 0) footprints, so
+    /// the same `n ∈ {1, 2, 3}` cap and `2ⁿ − 1` region invariant apply.
+    #[test]
+    fn test_topology_is_true_venn_rotated_rectangle() {
+        for n in 1..=3usize {
+            let layout = VennDiagram::<RotatedRectangle>::new(n)
+                .unwrap()
+                .into_layout();
+            let expected = (1usize << n) - 1;
+            let fitted = layout.fitted();
+            assert_eq!(
+                fitted.len(),
+                expected,
+                "rotated_rectangle n={}: expected {} non-empty regions, got {}",
+                n,
+                expected,
+                fitted.len()
+            );
+            for (combo, &area) in fitted {
+                assert!(
+                    area > 1e-9,
+                    "rotated_rectangle n={n}: region {combo} has area {area} (too small)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_rotated_rectangle_default_names() {
+        let venn = VennDiagram::<RotatedRectangle>::new(3).unwrap();
+        assert_eq!(venn.names(), &["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_rotated_rectangle_unsupported_set_counts() {
+        for n in [0usize, 4, 5] {
+            let err = VennDiagram::<RotatedRectangle>::new(n).unwrap_err();
+            assert_eq!(err, DiagramError::UnsupportedSetCount(n));
+        }
     }
 }

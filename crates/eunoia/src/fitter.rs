@@ -206,7 +206,18 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // stopping difference) for net-positive quality elsewhere — see
             // `Optimizer::CmaEsTrf`. Use `Optimizer::CmaEsLm` for the
             // previous unbounded-LM-polish path.
-            optimizer_pool: vec![Optimizer::CmaEsTrf],
+            // Capability-driven default: shapes with analytic region-area
+            // gradients get the gradient-based `CmaEsTrf`; shapes whose exact
+            // overlap area is only piecewise-C¹ (no analytic gradient, e.g.
+            // `RotatedRectangle`) get a genuinely derivative-free pool so a
+            // gradient solver never chatters at the kinks. The default tracks
+            // the shape's real capability and can't drift; explicit
+            // `optimizer` / `optimizer_pool` still override.
+            optimizer_pool: if S::SUPPORTS_ANALYTIC_GRADIENT {
+                vec![Optimizer::CmaEsTrf]
+            } else {
+                vec![Optimizer::NelderMead, Optimizer::CmaEs]
+            },
             // Default loss threshold below which the CMA-ES global stage is
             // skipped. Consulted by `Optimizer::CmaEsTrf` / `Optimizer::CmaEsLm`.
             // See `FinalLayoutConfig::cmaes_fallback_threshold` for the

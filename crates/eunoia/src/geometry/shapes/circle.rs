@@ -171,6 +171,8 @@ impl Closed for Circle {
 }
 
 impl DiagramShape for Circle {
+    const SUPPORTS_ANALYTIC_GRADIENT: bool = true;
+
     fn compute_exclusive_regions(
         shapes: &[Self],
     ) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64> {

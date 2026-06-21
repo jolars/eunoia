@@ -825,6 +825,8 @@ impl Polygonize for Rectangle {
 }
 
 impl DiagramShape for Rectangle {
+    const SUPPORTS_ANALYTIC_GRADIENT: bool = true;
+
     fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
         let n_sets = shapes.len();
         let intersections = collect_intersections_rectangle(shapes, n_sets);

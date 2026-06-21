@@ -105,6 +105,23 @@ pub trait Closed: Sized + Area + BoundingBox + Perimeter + Centroid {
 /// 4. Shapes are constructed from optimized parameters via `from_optimizer_params`
 ///    (or, for external callers, `from_params` after converting to geometric)
 pub trait DiagramShape: Closed {
+    /// Whether this shape supplies analytical exclusive-region gradients
+    /// (i.e. overrides `compute_exclusive_regions_with_gradient` and its
+    /// clipped companion with `Some(..)`).
+    ///
+    /// The fitter consults this to pick a default optimizer pool: shapes with
+    /// smooth, differentiable overlap areas (`true`) default to the
+    /// gradient-based `CmaEsTrf`; shapes whose exact overlap area is only
+    /// piecewise-C¹ (`false`, e.g.
+    /// [`RotatedRectangle`](crate::geometry::shapes::RotatedRectangle)) default
+    /// to a derivative-free pool so a gradient solver never chatters at the
+    /// kinks. Keeping this next to the gradient methods means the default can't
+    /// drift from the shape's actual capability. The explicit
+    /// [`Fitter::optimizer`](crate::fitter::Fitter::optimizer) /
+    /// [`optimizer_pool`](crate::fitter::Fitter::optimizer_pool) builders still
+    /// override it.
+    const SUPPORTS_ANALYTIC_GRADIENT: bool = false;
+
     /// Compute all exclusive regions and their areas from a collection of shapes.
     ///
     /// This method should use exact geometric computation for the shape type.

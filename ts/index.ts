@@ -15,12 +15,18 @@ import * as wasm from "./eunoia_wasm.js";
 // Public types
 // ============================================================================
 
-export type ShapeType = "circle" | "ellipse" | "square" | "rectangle";
+export type ShapeType =
+  | "circle"
+  | "ellipse"
+  | "square"
+  | "rectangle"
+  | "rotatedRectangle";
 export type InputType = "exclusive" | "inclusive";
 export type OutputMode = "shapes" | "polygons" | "regions";
 export type Optimizer =
   | "cmaEsTrf"
   | "cmaEsLm"
+  | "cmaEs"
   | "levenbergMarquardt"
   | "trf"
   | "lbfgs"
@@ -73,6 +79,17 @@ export interface Rectangle {
   y: number;
   width: number;
   height: number;
+  labelAnchor: Point;
+}
+
+export interface RotatedRectangle {
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Rotation in radians, counterclockwise from the +x axis. */
+  rotation: number;
   labelAnchor: Point;
 }
 
@@ -149,6 +166,12 @@ export type Layout = (
       metrics: Metrics;
     }
   | {
+      mode: "shapes";
+      shape: "rotatedRectangle";
+      rotatedRectangles: RotatedRectangle[];
+      metrics: Metrics;
+    }
+  | {
       mode: "polygons";
       shape: "circle";
       polygons: Polygon[];
@@ -174,6 +197,13 @@ export type Layout = (
       shape: "rectangle";
       polygons: Polygon[];
       rectangles: Rectangle[];
+      metrics: Metrics;
+    }
+  | {
+      mode: "polygons";
+      shape: "rotatedRectangle";
+      polygons: Polygon[];
+      rotatedRectangles: RotatedRectangle[];
       metrics: Metrics;
     }
   | {
@@ -440,16 +470,18 @@ export interface PlaceLabelsForRegionsOptions {
 export interface VennOptions {
   /**
    * Number of sets in the Venn diagram. The valid range depends on `shape`:
-   * `"ellipse"` supports `1 ≤ n ≤ 5`, while `"circle"`, `"square"`, and
-   * `"rectangle"` support `1 ≤ n ≤ 3` (equal-sized axis-aligned/round shapes
-   * cannot open all `2ⁿ − 1` regions beyond three sets).
+   * `"ellipse"` supports `1 ≤ n ≤ 5`, while `"circle"`, `"square"`,
+   * `"rectangle"`, and `"rotatedRectangle"` support `1 ≤ n ≤ 3` (equal-sized
+   * axis-aligned/round shapes cannot open all `2ⁿ − 1` regions beyond three
+   * sets).
    */
   n: number;
   /**
    * Shape primitive for the canonical layout. Default `"ellipse"` — the only
    * shape that covers all of `n ∈ 1..=5`. `"circle"` gives the classic one-,
-   * two-, and three-circle diagrams; `"square"` / `"rectangle"` are
-   * axis-aligned. All non-ellipse shapes cap at `n = 3`.
+   * two-, and three-circle diagrams; `"square"` / `"rectangle"` /
+   * `"rotatedRectangle"` are box-based (the rotated variant uses φ = 0
+   * footprints). All non-ellipse shapes cap at `n = 3`.
    */
   shape?: ShapeType;
   /** Output mode: polygon outlines per set, or exclusive regions. Default `"polygons"`. */
@@ -471,6 +503,7 @@ export interface VennOptions {
 const OPTIMIZER_MAP: Record<Optimizer, wasm.WasmOptimizer> = {
   cmaEsTrf: wasm.WasmOptimizer.CmaEsTrf,
   cmaEsLm: wasm.WasmOptimizer.CmaEsLm,
+  cmaEs: wasm.WasmOptimizer.CmaEs,
   levenbergMarquardt: wasm.WasmOptimizer.LevenbergMarquardt,
   trf: wasm.WasmOptimizer.Trf,
   lbfgs: wasm.WasmOptimizer.Lbfgs,
@@ -599,6 +632,18 @@ function rectangleFrom(r: wasm.WasmRectangle): Rectangle {
   };
 }
 
+function rotatedRectangleFrom(r: wasm.WasmRotatedRectangle): RotatedRectangle {
+  return {
+    label: r.label,
+    x: r.x,
+    y: r.y,
+    width: r.width,
+    height: r.height,
+    rotation: r.rotation,
+    labelAnchor: { x: r.label_x, y: r.label_y },
+  };
+}
+
 function containerFrom(
   r: wasm.WasmRectangle | undefined,
 ): Container | undefined {
@@ -714,7 +759,9 @@ export function euler(options: EulerOptions): Layout {
             ? wasm.generate_region_polygons_squares
             : shape === "rectangle"
               ? wasm.generate_region_polygons_rectangles
-              : wasm.generate_region_polygons_ellipses;
+              : shape === "rotatedRectangle"
+                ? wasm.generate_region_polygons_rotated_rectangles
+                : wasm.generate_region_polygons_ellipses;
       const result = fn(
         specs,
         inputType,
@@ -753,7 +800,9 @@ export function euler(options: EulerOptions): Layout {
           ? wasm.generate_squares_as_polygons
           : shape === "rectangle"
             ? wasm.generate_rectangles_as_polygons
-            : wasm.generate_ellipses_as_polygons;
+            : shape === "rotatedRectangle"
+              ? wasm.generate_rotated_rectangles_as_polygons
+              : wasm.generate_ellipses_as_polygons;
     const result = fn(
       specs,
       inputType,
@@ -781,6 +830,7 @@ export function euler(options: EulerOptions): Layout {
           freeAll(result.ellipses);
           freeAll(result.squares);
           freeAll(result.rectangles);
+          freeAll(result.rotated_rectangles);
           return {
             mode: "polygons",
             shape: "circle",
@@ -797,6 +847,7 @@ export function euler(options: EulerOptions): Layout {
           freeAll(result.circles);
           freeAll(result.squares);
           freeAll(result.rectangles);
+          freeAll(result.rotated_rectangles);
           return {
             mode: "polygons",
             shape: "ellipse",
@@ -813,11 +864,29 @@ export function euler(options: EulerOptions): Layout {
           freeAll(result.circles);
           freeAll(result.ellipses);
           freeAll(result.squares);
+          freeAll(result.rotated_rectangles);
           return {
             mode: "polygons",
             shape: "rectangle",
             polygons,
             rectangles,
+            metrics,
+            ...containerField,
+          };
+        }
+        if (shape === "rotatedRectangle") {
+          const arr = result.rotated_rectangles;
+          const rotatedRectangles = arr.map(rotatedRectangleFrom);
+          freeAll(arr);
+          freeAll(result.circles);
+          freeAll(result.ellipses);
+          freeAll(result.squares);
+          freeAll(result.rectangles);
+          return {
+            mode: "polygons",
+            shape: "rotatedRectangle",
+            polygons,
+            rotatedRectangles,
             metrics,
             ...containerField,
           };
@@ -828,6 +897,7 @@ export function euler(options: EulerOptions): Layout {
         freeAll(result.circles);
         freeAll(result.ellipses);
         freeAll(result.rectangles);
+        freeAll(result.rotated_rectangles);
         return {
           mode: "polygons",
           shape: "square",
@@ -846,6 +916,7 @@ export function euler(options: EulerOptions): Layout {
         freeAll(result.ellipses);
         freeAll(result.squares);
         freeAll(result.rectangles);
+        freeAll(result.rotated_rectangles);
         freeAll(result.polygons);
         return {
           mode: "shapes",
@@ -862,6 +933,7 @@ export function euler(options: EulerOptions): Layout {
         freeAll(result.circles);
         freeAll(result.squares);
         freeAll(result.rectangles);
+        freeAll(result.rotated_rectangles);
         freeAll(result.polygons);
         return {
           mode: "shapes",
@@ -878,11 +950,29 @@ export function euler(options: EulerOptions): Layout {
         freeAll(result.circles);
         freeAll(result.ellipses);
         freeAll(result.squares);
+        freeAll(result.rotated_rectangles);
         freeAll(result.polygons);
         return {
           mode: "shapes",
           shape: "rectangle",
           rectangles,
+          metrics,
+          ...containerField,
+        };
+      }
+      if (shape === "rotatedRectangle") {
+        const arr = result.rotated_rectangles;
+        const rotatedRectangles = arr.map(rotatedRectangleFrom);
+        freeAll(arr);
+        freeAll(result.circles);
+        freeAll(result.ellipses);
+        freeAll(result.squares);
+        freeAll(result.rectangles);
+        freeAll(result.polygons);
+        return {
+          mode: "shapes",
+          shape: "rotatedRectangle",
+          rotatedRectangles,
           metrics,
           ...containerField,
         };
@@ -893,6 +983,7 @@ export function euler(options: EulerOptions): Layout {
       freeAll(result.circles);
       freeAll(result.ellipses);
       freeAll(result.rectangles);
+      freeAll(result.rotated_rectangles);
       freeAll(result.polygons);
       return {
         mode: "shapes",
@@ -947,7 +1038,9 @@ export function venn(options: VennOptions): Layout {
           ? wasm.generate_venn_regions_squares
           : shape === "rectangle"
             ? wasm.generate_venn_regions_rectangles
-            : wasm.generate_venn_regions_ellipses;
+            : shape === "rotatedRectangle"
+              ? wasm.generate_venn_regions_rotated_rectangles
+              : wasm.generate_venn_regions_ellipses;
     const result = fn(n, nVerts, complement);
     try {
       const regionsArr = result.regions;
@@ -975,7 +1068,9 @@ export function venn(options: VennOptions): Layout {
         ? wasm.generate_venn_polygons_squares
         : shape === "rectangle"
           ? wasm.generate_venn_polygons_rectangles
-          : wasm.generate_venn_polygons_ellipses;
+          : shape === "rotatedRectangle"
+            ? wasm.generate_venn_polygons_rotated_rectangles
+            : wasm.generate_venn_polygons_ellipses;
   const result = fn(n, nVerts, complement);
   try {
     const polysArr = result.polygons;
@@ -992,6 +1087,7 @@ export function venn(options: VennOptions): Layout {
       freeAll(result.ellipses);
       freeAll(result.squares);
       freeAll(result.rectangles);
+      freeAll(result.rotated_rectangles);
       return {
         mode: "polygons",
         shape: "circle",
@@ -1008,6 +1104,7 @@ export function venn(options: VennOptions): Layout {
       freeAll(result.circles);
       freeAll(result.ellipses);
       freeAll(result.rectangles);
+      freeAll(result.rotated_rectangles);
       return {
         mode: "polygons",
         shape: "square",
@@ -1024,11 +1121,29 @@ export function venn(options: VennOptions): Layout {
       freeAll(result.circles);
       freeAll(result.ellipses);
       freeAll(result.squares);
+      freeAll(result.rotated_rectangles);
       return {
         mode: "polygons",
         shape: "rectangle",
         polygons,
         rectangles,
+        metrics,
+        ...containerField,
+      };
+    }
+    if (shape === "rotatedRectangle") {
+      const arr = result.rotated_rectangles;
+      const rotatedRectangles = arr.map(rotatedRectangleFrom);
+      freeAll(arr);
+      freeAll(result.circles);
+      freeAll(result.ellipses);
+      freeAll(result.squares);
+      freeAll(result.rectangles);
+      return {
+        mode: "polygons",
+        shape: "rotatedRectangle",
+        polygons,
+        rotatedRectangles,
         metrics,
         ...containerField,
       };
@@ -1039,6 +1154,7 @@ export function venn(options: VennOptions): Layout {
     freeAll(result.circles);
     freeAll(result.squares);
     freeAll(result.rectangles);
+    freeAll(result.rotated_rectangles);
     return {
       mode: "polygons",
       shape: "ellipse",
