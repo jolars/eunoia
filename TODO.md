@@ -199,12 +199,6 @@ analytic gradient and the capability-driven default pool routes it to
   `RotatedRectangle` config to `quality_report` and a corpus ceiling before
   relying on the shape's fit quality; treat the numbers as the baseline.
 
-- [ ] **Canonical Venn capped at n ≤ 3**. `RotatedRectangle::canonical_venn_layout`
-  reuses Rectangle's axis-aligned (φ = 0) footprints for `n ∈ {1, 2, 3}` and
-  returns `None` above that. Rotation could in principle open an `n = 4`
-  rectangular Venn (the axis-aligned obstruction is exactly what φ relaxes);
-  deferred — needs a constructed-and-verified vertex arrangement.
-
 - [ ] **Fit quality may motivate corner-rounding**. The shape is fitted
   derivative-free by design (no analytic gradient). If the quality harness
   above shows it underperforming the gradient shapes, the principled upgrade

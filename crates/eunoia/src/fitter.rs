@@ -54,6 +54,11 @@ const VENN_SEED_MAX_SETS_SQUARE: usize = 3;
 /// Venn topology obstruction at n ≥ 4 applies to any axis-aligned shape
 /// regardless of width/height freedom.
 const VENN_SEED_MAX_SETS_RECTANGLE: usize = 3;
+/// Maximum `n_sets` for which the Venn warm-start is attempted under
+/// [`Fitter::<RotatedRectangle>`]. Reaches `n = 4`: rotation lifts the
+/// axis-aligned obstruction, so [`crate::venn`] provides a 4-set rotated
+/// arrangement (`VENN_N4`) that the axis-aligned shapes lack.
+const VENN_SEED_MAX_SETS_ROTATED_RECTANGLE: usize = 4;
 
 /// Fitter for creating diagram layouts from specifications.
 ///
@@ -1351,13 +1356,15 @@ fn decode_param_frame<S: DiagramShape>(
 /// - `n_sets < 2`.
 /// - `n_sets` is outside the per-shape support window
 ///   ([`VENN_SEED_MAX_SETS_CIRCLE`] / [`VENN_SEED_MAX_SETS_ELLIPSE`] /
-///   [`VENN_SEED_MAX_SETS_SQUARE`]).
+///   [`VENN_SEED_MAX_SETS_SQUARE`] / [`VENN_SEED_MAX_SETS_RECTANGLE`] /
+///   [`VENN_SEED_MAX_SETS_ROTATED_RECTANGLE`]).
 /// - The spec has any disjoint pair (Venn topology forces every region
 ///   open; specs with hard-zero overlaps would start in a wrong topology
 ///   the optimizer can't easily escape — see TODO.md).
-/// - `S` is not [`Circle`], [`Ellipse`], or [`Square`] — the per-shape
-///   parameter encoding is hard-coded below, and other shapes that happen
-///   to share an `n_params()` count would silently mis-decode.
+/// - `S` is not [`Circle`], [`Ellipse`], [`Square`], [`Rectangle`], or
+///   [`RotatedRectangle`] — the per-shape parameter encoding is hard-coded
+///   below, and other shapes that happen to share an `n_params()` count
+///   would silently mis-decode.
 /// - The canonical Venn for `n_sets` is non-circular and the shape is a
 ///   circle (i.e. n_sets ∈ {4, 5} under [`Circle`]); we have no
 ///   circular-Venn arrangement for those.
@@ -1379,7 +1386,7 @@ fn decode_param_frame<S: DiagramShape>(
 fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
 ) -> Option<Vec<f64>> {
-    use crate::geometry::shapes::{Ellipse, Rectangle, Square};
+    use crate::geometry::shapes::{Ellipse, Rectangle, RotatedRectangle, Square};
     use std::any::TypeId;
 
     let n_sets = spec.n_sets;
@@ -1440,6 +1447,33 @@ fn venn_warm_start_params<S: DiagramShape + Copy + 'static>(
             let u = (scaled_w * scaled_h).ln();
             let v = (scaled_w / scaled_h).ln();
             params.extend([c.x() * mean_side, c.y() * mean_side, u, v]);
+        }
+        return Some(params);
+    }
+
+    if type_id == TypeId::of::<RotatedRectangle>() {
+        if n_sets > VENN_SEED_MAX_SETS_ROTATED_RECTANGLE {
+            return None;
+        }
+        // Same area-magnitude scaling as `Rectangle`, but the canonical
+        // arrangement carries non-unit aspect ratios and rotations at n = 4,
+        // so encode each shape's actual `(w, h, φ)`. Optimizer params are the
+        // 5-tuple `[x, y, ln(w·h), ln(w/h), φ]` (φ trailing).
+        let mean_side: f64 = if !spec.set_areas.is_empty() {
+            let total: f64 = spec.set_areas.iter().map(|a| a.sqrt()).sum();
+            (total / spec.set_areas.len() as f64).max(1e-6)
+        } else {
+            1.0
+        };
+        let venn = VennDiagram::<RotatedRectangle>::new(n_sets).ok()?;
+        let mut params = Vec::with_capacity(n_sets * pp);
+        for r in venn.shapes() {
+            let c = r.center();
+            let scaled_w = r.width() * mean_side;
+            let scaled_h = r.height() * mean_side;
+            let u = (scaled_w * scaled_h).ln();
+            let v = (scaled_w / scaled_h).ln();
+            params.extend([c.x() * mean_side, c.y() * mean_side, u, v, r.rotation()]);
         }
         return Some(params);
     }
@@ -2084,6 +2118,89 @@ mod tests {
         assert!(
             venn_warm_start_params::<Square>(&preprocessed).is_none(),
             "square + disjoint spec must skip Venn warm-start"
+        );
+    }
+
+    #[test]
+    fn venn_warm_start_returns_some_for_rotated_rectangle_through_n4() {
+        use crate::geometry::shapes::RotatedRectangle;
+
+        // RotatedRectangle reaches n = 4 (rotated arrangement), so the
+        // warm-start must produce 5-param-per-shape seeds for n ∈ {2, 3, 4}.
+        for n in 2..=4usize {
+            let names: Vec<&str> = ["A", "B", "C", "D"][..n].to_vec();
+            let mut builder = DiagramSpecBuilder::new();
+            for &name in &names {
+                builder = builder.set(name, 10.0);
+            }
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    builder = builder.intersection(&[names[i], names[j]], 1.0);
+                }
+            }
+            let spec = builder
+                .input_type(crate::InputType::Inclusive)
+                .build()
+                .unwrap();
+            let preprocessed = spec.preprocess().unwrap();
+            let params = venn_warm_start_params::<RotatedRectangle>(&preprocessed);
+            assert!(
+                params.is_some(),
+                "rotated_rectangle n={n} should produce params"
+            );
+            let params = params.unwrap();
+            // Optimizer encoding is 5 per shape: [x, y, ln(w·h), ln(w/h), φ].
+            assert_eq!(params.len(), n * 5, "rotated_rectangle n={n} param length");
+            assert!(
+                params.iter().all(|v| v.is_finite()),
+                "rotated_rectangle n={n}: all warm-start params must be finite"
+            );
+        }
+    }
+
+    #[test]
+    fn venn_warm_start_rejects_n5_rotated_rectangles() {
+        use crate::geometry::shapes::RotatedRectangle;
+
+        // No 5-set rotated-rectangle Venn exists, so the warm-start must bail
+        // and let slot 0 fall back to MDS.
+        let names = ["A", "B", "C", "D", "E"];
+        let mut builder = DiagramSpecBuilder::new();
+        for &name in &names {
+            builder = builder.set(name, 10.0);
+        }
+        for i in 0..5 {
+            for j in (i + 1)..5 {
+                builder = builder.intersection(&[names[i], names[j]], 1.0);
+            }
+        }
+        let spec = builder
+            .input_type(crate::InputType::Inclusive)
+            .build()
+            .unwrap();
+        let preprocessed = spec.preprocess().unwrap();
+        assert!(
+            venn_warm_start_params::<RotatedRectangle>(&preprocessed).is_none(),
+            "rotated_rectangle n=5 must reject (no 5-set rotated Venn)"
+        );
+    }
+
+    #[test]
+    fn venn_warm_start_skips_rotated_rectangles_for_specs_with_disjoint_pairs() {
+        use crate::geometry::shapes::RotatedRectangle;
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 1.0)
+            .set("B", 1.0)
+            .set("C", 1.0)
+            .input_type(crate::InputType::Exclusive)
+            .build()
+            .unwrap();
+        let preprocessed = spec.preprocess().unwrap();
+        assert!(spec_has_disjoint_pair(&preprocessed));
+        assert!(
+            venn_warm_start_params::<RotatedRectangle>(&preprocessed).is_none(),
+            "rotated_rectangle + disjoint spec must skip Venn warm-start"
         );
     }
 

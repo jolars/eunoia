@@ -8,8 +8,14 @@
 //! Supported set counts depend on the shape:
 //!
 //! - [`Ellipse`](crate::geometry::shapes::Ellipse): `n ∈ {1, …, 5}`.
-//! - [`Square`](crate::geometry::shapes::Square): `n ∈ {1, 2, 3}` —
-//!   axis-aligned squares cannot form a true Venn for `n ≥ 4`.
+//! - [`Circle`](crate::geometry::shapes::Circle),
+//!   [`Square`](crate::geometry::shapes::Square),
+//!   [`Rectangle`]: `n ∈ {1, 2, 3}` —
+//!   axis-aligned (or rotation-free) shapes cannot form a true Venn for
+//!   `n ≥ 4`.
+//! - [`RotatedRectangle`](crate::geometry::shapes::RotatedRectangle):
+//!   `n ∈ {1, 2, 3, 4}` — rotation lifts the axis-aligned obstruction, opening
+//!   a 4-set arrangement the rotation-free shapes lack.
 //!
 //! `n = 0` and any `n` outside a shape's supported range return
 //! [`DiagramError::UnsupportedSetCount`].
@@ -636,11 +642,12 @@ mod tests {
         assert_eq!(err, DiagramError::UnsupportedSetCount(5));
     }
 
-    /// RotatedRectangle reuses Rectangle's axis-aligned (φ = 0) footprints, so
-    /// the same `n ∈ {1, 2, 3}` cap and `2ⁿ − 1` region invariant apply.
+    /// RotatedRectangle reuses Rectangle's axis-aligned (φ = 0) footprints for
+    /// `n ∈ {1, 2, 3}` and adds a rotated `n = 4` arrangement; the `2ⁿ − 1`
+    /// region invariant must hold in every case.
     #[test]
     fn test_topology_is_true_venn_rotated_rectangle() {
-        for n in 1..=3usize {
+        for n in 1..=4usize {
             let layout = VennDiagram::<RotatedRectangle>::new(n)
                 .unwrap()
                 .into_layout();
@@ -663,6 +670,25 @@ mod tests {
         }
     }
 
+    /// The `n = 4` rotated-rectangle Venn is a numerically-derived independent
+    /// family, not a published construction, so guard its robustness: the
+    /// smallest of the 15 regions must clear a comfortable margin (the derived
+    /// arrangement leaves ≈ 0.74, ~0.59× the mean). A regression that thins a
+    /// region toward a sliver should fail here, not merely scrape past `1e-9`.
+    #[test]
+    fn test_rotated_rectangle_n4_regions_robust() {
+        let layout = VennDiagram::<RotatedRectangle>::new(4)
+            .unwrap()
+            .into_layout();
+        let fitted = layout.fitted();
+        assert_eq!(fitted.len(), 15, "n=4 must open all 15 regions");
+        let min_area = fitted.values().copied().fold(f64::INFINITY, f64::min);
+        assert!(
+            min_area > 0.3,
+            "n=4 smallest region area {min_area} below the robustness margin (0.3)"
+        );
+    }
+
     #[test]
     fn test_rotated_rectangle_default_names() {
         let venn = VennDiagram::<RotatedRectangle>::new(3).unwrap();
@@ -671,7 +697,8 @@ mod tests {
 
     #[test]
     fn test_rotated_rectangle_unsupported_set_counts() {
-        for n in [0usize, 4, 5] {
+        // n = 4 is now supported (rotated arrangement); n ≥ 5 and n = 0 are not.
+        for n in [0usize, 5, 6] {
             let err = VennDiagram::<RotatedRectangle>::new(n).unwrap_err();
             assert_eq!(err, DiagramError::UnsupportedSetCount(n));
         }

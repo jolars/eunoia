@@ -465,6 +465,26 @@ pub(crate) fn compute_exclusive_regions_clipped_rotated_rectangles(
     to_exclusive_areas(&overlapping_areas)
 }
 
+/// Canonical 4-set Venn arrangement: four congruent `2.4 × 4.0` rectangles
+/// as `(x, y, w, h, φ)`, the rotated-rectangle analog of the published
+/// 4-ellipse Venn diagram (Venn 1880) — each entry mirrors an ellipse
+/// `(h, k, 2a, 2b, φ)` from `Ellipse`'s `VENN_N4`.
+///
+/// Unlike `n ≤ 3`, no axis-aligned (φ = 0) rectangle arrangement opens all
+/// `2⁴ − 1 = 15` regions; the ±45° rotations are exactly what relax that
+/// obstruction. There is no published *rectangle* construction, so these
+/// coordinates were derived numerically and verified to yield a robust
+/// independent family — the smallest of the 15 regions is ≈ 0.74 (~0.59× the
+/// mean), far above any sliver. (eunoia's Venn property requires every region
+/// *mask* to have positive area, not that each region be connected, so an
+/// independent family suffices; see `compute_exclusive_regions`.)
+const VENN_N4: [(f64, f64, f64, f64, f64); 4] = [
+    (-0.8, 0.0, 2.4, 4.0, PI / 4.0),
+    (0.8, 0.0, 2.4, 4.0, -PI / 4.0),
+    (0.0, 1.0, 2.4, 4.0, PI / 4.0),
+    (0.0, 1.0, 2.4, 4.0, -PI / 4.0),
+];
+
 impl Polygonize for RotatedRectangle {
     /// Returns the four rotated corners as a CCW polygon. `n_vertices` is
     /// ignored — a rectangle has exactly four vertices.
@@ -589,10 +609,15 @@ impl DiagramShape for RotatedRectangle {
     // trait default (`None`): the exact convex-clip area is only piecewise-C¹,
     // so this shape is fitted derivative-free (see module docs).
 
-    /// Canonical Venn arrangements for `n ∈ {1, 2, 3}`, reusing
-    /// [`Rectangle`]'s axis-aligned (φ = 0) square footprints. `n ≥ 4` returns
-    /// `None`: no equal-box arrangement opens all `2ⁿ − 1` regions for `n ≥ 4`.
+    /// Canonical Venn arrangements for `n ∈ {1, 2, 3, 4}`.
+    ///
+    /// For `n ∈ {1, 2, 3}` this reuses [`Rectangle`]'s axis-aligned (φ = 0)
+    /// square footprints. For `n = 4` it returns the rotated `VENN_N4`
+    /// arrangement (±45° rectangles): axis-aligned boxes cannot open all
+    /// `2⁴ − 1` regions, but rotation relaxes that obstruction. `n ≥ 5`
+    /// returns `None`.
     fn canonical_venn_layout(n: usize) -> Option<Vec<Self>> {
+        // Axis-aligned (φ = 0) square footprints, identical to `Rectangle`.
         let centers_and_side: &[((f64, f64), f64)] = match n {
             1 => &[((0.0, 0.0), 2.0)],
             2 => &[((-0.4, 0.0), 1.0), ((0.4, 0.0), 1.0)],
@@ -601,6 +626,16 @@ impl DiagramShape for RotatedRectangle {
                 ((0.42, -0.36), 1.0),
                 ((-0.42, -0.36), 1.0),
             ],
+            4 => {
+                return Some(
+                    VENN_N4
+                        .iter()
+                        .map(|&(x, y, w, h, phi)| {
+                            RotatedRectangle::new(Point::new(x, y), w, h, phi)
+                        })
+                        .collect(),
+                );
+            }
             _ => return None,
         };
         Some(
@@ -812,12 +847,18 @@ mod tests {
 
     #[test]
     fn canonical_venn_layouts() {
+        // n ∈ {1, 2, 3}: axis-aligned square footprints (φ = 0).
         for n in 1..=3 {
             let layout = RotatedRectangle::canonical_venn_layout(n).unwrap();
             assert_eq!(layout.len(), n);
             assert!(layout.iter().all(|r| r.rotation() == 0.0));
         }
-        assert!(RotatedRectangle::canonical_venn_layout(4).is_none());
+        // n = 4: rotated arrangement (the ±45° rectangles carry φ ≠ 0).
+        let layout4 = RotatedRectangle::canonical_venn_layout(4).unwrap();
+        assert_eq!(layout4.len(), 4);
+        assert!(layout4.iter().any(|r| r.rotation() != 0.0));
+        // n ≥ 5: unsupported.
+        assert!(RotatedRectangle::canonical_venn_layout(5).is_none());
     }
 
     #[test]
