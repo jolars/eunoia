@@ -179,14 +179,16 @@ Sutherland–Hodgman convex-clip overlap is only piecewise-C¹, so it carries no
 analytic gradient and the capability-driven default pool routes it to
 `[NelderMead, CmaEs]`). These are the loose ends that PR did not cover.
 
-- [ ] **Web app doesn't expose the shape** (near-term, actionable). The npm
-  package supports `shape: "rotatedRectangle"`, but `web/` carries its own
-  `ShapeType = "circle" | "ellipse" | "square" | "rectangle"`
-  (`web/src/lib/types/diagram.ts:39`) and a shape dispatch in
-  `web/src/lib/fit.ts` (`case "rectangle"` at ~`:249`) that never added the
-  new variant. Wiring it means extending that union, the `fit.ts` dispatch,
-  and the shape picker UI (and deciding how to surface the rotation in any
-  shape-param readout).
+- [x] **Web app doesn't expose the shape** (done). `ShapeType` in
+  `web/src/lib/types/diagram.ts` and the `FitResult.shapeType` field now carry
+  the `"rotatedRectangle"` variant, the `scaleLayout` dispatch in
+  `web/src/lib/fit.ts` has a `rotatedRectangle` case (rotation passes through
+  unscaled, like ellipse), and `SpecEditor.svelte` adds a "Rotated rectangle"
+  radio. Rendering rides the existing polygons path through
+  `@jolars/eunoia/svg`, so no serializer change was needed. No shape-param
+  geometry readout exists in the app, so there was nothing to surface rotation
+  in. The landing-page `HeroWidget` keeps its curated circle/ellipse/square/
+  rectangle subset (live slider re-fits stay fast).
 
 - [ ] **No quality-harness coverage** (near-term, actionable). `quality_report`
   (`crates/eunoia/examples/quality_report.rs`), `corpus_quality`, and

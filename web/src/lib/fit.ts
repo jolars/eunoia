@@ -261,6 +261,24 @@ function scaleLayout(layout: Layout, ctx: NormalizationContext): Layout {
         })),
         ...tail,
       };
+    case "rotatedRectangle":
+      return {
+        mode: "polygons",
+        shape: "rotatedRectangle",
+        polygons,
+        // Rotation is invariant under the uniform scale + translation applied
+        // here, so it passes through unchanged (cf. ellipse rotation).
+        rotatedRectangles: layout.rotatedRectangles.map((r) => ({
+          label: r.label,
+          x: pt(r).x,
+          y: pt(r).y,
+          width: r.width * s,
+          height: r.height * s,
+          rotation: r.rotation,
+          labelAnchor: pt(r.labelAnchor),
+        })),
+        ...tail,
+      };
   }
 }
 

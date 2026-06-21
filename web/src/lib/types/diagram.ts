@@ -23,7 +23,7 @@ export interface FitResult {
    * the app renders through the same surface external consumers use.
    */
   layout: Layout;
-  shapeType: "circle" | "ellipse" | "square" | "rectangle";
+  shapeType: "circle" | "ellipse" | "square" | "rectangle" | "rotatedRectangle";
   /** Complement value carried alongside the spec (items outside every named set). */
   complement?: number;
   /**
@@ -36,7 +36,12 @@ export interface FitResult {
 
 export type Row = { input: string; size: number };
 export type InputType = "exclusive" | "inclusive";
-export type ShapeType = "circle" | "ellipse" | "square" | "rectangle";
+export type ShapeType =
+  | "circle"
+  | "ellipse"
+  | "square"
+  | "rectangle"
+  | "rotatedRectangle";
 export type DiagramType = "euler" | "venn";
 /** Set count for canonical Venn diagrams. Limited to the range supported by `VennDiagram::new` (1..=5). */
 export type VennSetCount = 1 | 2 | 3 | 4 | 5;

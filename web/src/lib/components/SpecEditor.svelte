@@ -122,6 +122,15 @@
           />
           <span class="text-sm">Rectangle</span>
         </label>
+        <label class="flex items-center cursor-pointer">
+          <input
+            type="radio"
+            bind:group={appState.shapeType}
+            value="rotatedRectangle"
+            class="mr-1.5"
+          />
+          <span class="text-sm">Rotated rectangle</span>
+        </label>
       </div>
     </div>
 
