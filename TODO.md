@@ -170,3 +170,56 @@ didn't require but would tighten the surface.
   policies are implemented; `Loose` interior placement and the `None`
   exterior policy currently return `PlacementError::Unimplemented` (see
   `plotting/placement.rs`). Moved from `AGENTS.md` "Open work" 2026-05-22.
+
+## RotatedRectangle follow-ups
+
+The `RotatedRectangle` shape shipped across core/fitter/capi/wasm/ts (commit
+`12b272d`, 2026-06-21): an oriented box fitted derivative-free (exact
+Sutherland–Hodgman convex-clip overlap is only piecewise-C¹, so it carries no
+analytic gradient and the capability-driven default pool routes it to
+`[NelderMead, CmaEs]`). These are the loose ends that PR did not cover.
+
+- [ ] **Web app doesn't expose the shape** (near-term, actionable). The npm
+  package supports `shape: "rotatedRectangle"`, but `web/` carries its own
+  `ShapeType = "circle" | "ellipse" | "square" | "rectangle"`
+  (`web/src/lib/types/diagram.ts:39`) and a shape dispatch in
+  `web/src/lib/fit.ts` (`case "rectangle"` at ~`:249`) that never added the
+  new variant. Wiring it means extending that union, the `fit.ts` dispatch,
+  and the shape picker UI (and deciding how to surface the rotation in any
+  shape-param readout).
+
+- [ ] **No quality-harness coverage** (near-term, actionable). `quality_report`
+  (`crates/eunoia/examples/quality_report.rs`), `corpus_quality`, and
+  `synthetic_groundtruth` run Circle/Ellipse/Square/Rectangle but not
+  `RotatedRectangle` (and `corpus.rs` has no per-shape treatment for it).
+  There is therefore no regression guardrail and no benchmark of the
+  derivative-free fit quality versus the gradient-based shapes. Add a
+  `RotatedRectangle` config to `quality_report` and a corpus ceiling before
+  relying on the shape's fit quality; treat the numbers as the baseline.
+
+- [ ] **Canonical Venn capped at n ≤ 3**. `RotatedRectangle::canonical_venn_layout`
+  reuses Rectangle's axis-aligned (φ = 0) footprints for `n ∈ {1, 2, 3}` and
+  returns `None` above that. Rotation could in principle open an `n = 4`
+  rectangular Venn (the axis-aligned obstruction is exactly what φ relaxes);
+  deferred — needs a constructed-and-verified vertex arrangement.
+
+- [ ] **Fit quality may motivate corner-rounding**. The shape is fitted
+  derivative-free by design (no analytic gradient). If the quality harness
+  above shows it underperforming the gradient shapes, the principled upgrade
+  is a rounded-rectangle / superellipse family: rounding the corners makes
+  the overlap area C¹ again, which restores a usable analytic gradient and
+  re-enables the LM/TRF path (flip `SUPPORTS_ANALYTIC_GRADIENT` to `true`).
+  This is the "smooth the shape" option from the original design discussion;
+  revisit only if derivative-free quality proves insufficient.
+
+- [ ] **TS handle-freeing is wasteful** (minor cleanup). The `euler` / `venn`
+  dispatch in `ts/index.ts` frees the non-active shape arrays per branch by
+  *accessing* each getter (which clones the wasm handles) only to free the
+  clones — `result.free()` already drops the internal vectors, so a branch
+  that never reads a getter leaks nothing. Pre-existing pattern, now extended
+  to `rotated_rectangles`. If that dispatch is ever revisited, drop the
+  create-then-free of unused shape arrays.
+
+- [ ] **Narrative docs**. <https://eunoia.bz/docs/> and the rustdoc/README
+  shape lists don't mention `RotatedRectangle`. Add it once the web UI and
+  quality baseline land.
