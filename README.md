@@ -33,7 +33,7 @@ built to power bindings across many languages.
 - **Many targets**: pure Rust core that ships to JavaScript via WebAssembly and
   to other languages through a small C ABI.
 
-## Quick start (Rust)
+## Quick Start (Rust)
 
 ```sh
 cargo add eunoia
@@ -81,7 +81,7 @@ fitting engine:
   | JavaScript | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)                                 | `npm install @jolars/eunoia`  |
   | Web app    | [eunoia.bz](https://eunoia.bz)                                                                   | build diagrams in the browser |
 
-### JavaScript / TypeScript
+### JavaScript/TypeScript
 
 WebAssembly bindings are published as
 [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia):
@@ -112,7 +112,7 @@ A renderer-agnostic SVG serializer is available at `@jolars/eunoia/svg`. The
 default entry is built with `wasm-pack --target bundler`, so it works with any
 modern bundler (Vite, Webpack, Rollup, esbuild) and Node 20+.
 
-### Browser / Observable (no bundler)
+### Browser/Observable (No Bundler)
 
 The default entry imports the `.wasm` module directly, which only a bundler can
 resolve. For a plain HTML page, an [Observable](https://observablehq.com)
