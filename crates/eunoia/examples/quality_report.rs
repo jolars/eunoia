@@ -84,7 +84,10 @@ mod quality_report {
             // SumSquared loss this is a secondary read: MADS isn't built for
             // smooth fits, so this mainly checks it doesn't regress
             // catastrophically). The non-smooth-loss head-to-head lives in
-            // `examples/nonsmooth_bench`.
+            // `examples/nonsmooth_bench`. `tolerance` (default 1e-6) is wired to
+            // MADS's poll-size convergence floor; the dedicated
+            // `examples/mads_tolerance` probe sweeps that floor to quantify the
+            // speed/quality trade-off without bloating this full-corpus sweep.
             ("mads_only", |f| f.optimizer(Optimizer::Mads)),
             // Mixed MDS pool: alternate L-BFGS with the default
             // Levenberg-Marquardt across restarts, to quantify mixing solvers

@@ -835,10 +835,17 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
 /// make any head-to-head unfair. We instead budget by **cost evaluations**:
 /// `max_iterations · (2·n_params + 1)`, i.e. the per-iteration poll cost of a
 /// maximal positive basis (`2n` poll points plus the incumbent) times the NM
-/// iteration cap. `MeshTolerance` is left at the solver default (poll-size floor
-/// `1e-6`), so on an easy spec MADS converges and stops well under the eval cap;
-/// the cap only bounds the hard, stalling cases — mirroring how NM's simplex
-/// collapse ends easy fits before `max_iterations`.
+/// iteration cap. The cap only bounds the hard, stalling cases — mirroring how
+/// NM's simplex collapse ends easy fits before `max_iterations`.
+///
+/// **Convergence floor.** The poll-size floor (MADS's analog of a convergence
+/// tolerance: it stops once the mesh shrinks below this) is wired to
+/// `config.tolerance` (default `1e-6`). On a smooth landscape MADS would
+/// otherwise refine the mesh all the way to the default `1e-6` floor, consuming
+/// most of the eval budget on a long, low-value fine-mesh tail; a coarser
+/// `tolerance` (e.g. `1e-3`) cuts that tail and is the primary speed lever. On a
+/// non-smooth landscape MADS lands on a plateau and the mesh converges early, so
+/// the floor matters little there.
 fn run_mads<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
     params_per_shape: usize,
@@ -862,7 +869,11 @@ fn run_mads<S: DiagramShape + Copy + 'static>(
         .saturating_mul(2 * n_params + 1)
         .max(1) as u64;
     let state = basin::MadsState::new(initial_param.as_slice().to_vec());
-    let solver = basin::Mads::new();
+    // Poll-size floor must lie in `(0, Δ₀=1)`; `config.tolerance` is the natural
+    // convergence knob and defaults to `1e-6` (= `basin::Mads`'s own default, so
+    // default behaviour is unchanged). Clamp to stay strictly inside the range.
+    let min_poll_size = config.tolerance.clamp(1e-12, 0.5);
+    let solver = basin::Mads::new().with_min_poll_size(min_poll_size);
     let result = basin::Executor::new(cost_function, solver, state)
         .terminate_on(basin::MaxCostEvals(max_evals))
         .run()
