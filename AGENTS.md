@@ -110,7 +110,13 @@ until fit time**:
 2. **`fitter`** — `Fitter<'a, S: DiagramShape = Circle>` picks the shape type via
    its generic parameter at fit time, not in the spec. `fit()` runs a two-phase
    pipeline, repeated `n_restarts` times (default **10**, mirroring eulerr) in
-   parallel (rayon) keeping the lowest-loss result:
+   parallel (rayon) keeping the lowest-loss result. **Small-smooth fast path:**
+   for a smooth loss (`LossType::is_smooth`) on an analytic-gradient shape with
+   `n_sets ≤ 3` and no complement, the restart count is auto-reduced (the Venn
+   warm-start already solves restart 0, so extra restarts add nothing — see the
+   `SMALL_SMOOTH_*` consts and `examples/restart_value`); the CMA-ES escape is
+   kept (self-gating, still rescues adversarial small fits). An explicit
+   `n_restarts(_)` opts out.
    - **Initial layout** (`fitter/initial_layout.rs`): multidimensional scaling
      (MDS) places fixed-size shapes. Solver selectable via `MdsSolver`
      (Levenberg-Marquardt by default). Initial positions drawn per-restart

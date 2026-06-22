@@ -60,6 +60,39 @@ const VENN_SEED_MAX_SETS_RECTANGLE: usize = 3;
 /// arrangement (`VENN_N4`) that the axis-aligned shapes lack.
 const VENN_SEED_MAX_SETS_ROTATED_RECTANGLE: usize = 4;
 
+/// Upper `n_sets` bound for the "small smooth diagram" fast path.
+///
+/// At and below this size, a *smooth*-loss fit on an analytic-gradient shape is
+/// already solved by the canonical Venn warm-start at restart 0: the warm-start
+/// lands in the correct basin and the gradient polish refines it, so the full
+/// 10-restart pool buys nothing. The `examples/restart_value` sweep over the
+/// corpus found that for the 3-set specs under the default `SumSquared` loss,
+/// additional restarts help 0/15 and the CMA-ES escape helps 0/15.
+///
+/// The cutoff is firmly between 3 and 4: at n=4 both levers start paying off
+/// (restarts help 2-3/8 specs, the escape 3/8), so the fast path stops here.
+///
+/// Only the *restart count* is trimmed (see [`SMALL_SMOOTH_N_RESTARTS`]); the
+/// default optimizer — including its self-gating CMA-ES escape — is kept, since
+/// the escape costs nothing on the easy path yet still rescues the occasional
+/// adversarial small fit (e.g. an unequal-area 2-set ellipse whose warm-start
+/// would otherwise refine into a disjoint layout, caught by the
+/// `synthetic_groundtruth` property tests).
+///
+/// Crucially the result is loss-dependent — under non-smooth losses
+/// (`SumAbsolute`, `MaxAbsolute`) the same 3-set specs need the full budget — so
+/// the fast path is gated on [`LossType::is_smooth`], not on set count alone.
+const SMALL_SMOOTH_MAX_SETS: usize = 3;
+
+/// Restart count used by the small-smooth fast path (down from the default 10).
+///
+/// For warm-startable specs restart 0 is deterministic, so one restart already
+/// suffices; the extra two are cheap insurance for the non-warm-startable
+/// (disjoint-pair) n≤3 specs whose restart 0 falls back to a random MDS init,
+/// and for smooth losses other than `SumSquared` that the corpus sweep didn't
+/// measure directly. Still a >3× cut from the default budget.
+const SMALL_SMOOTH_N_RESTARTS: usize = 3;
+
 /// Fitter for creating diagram layouts from specifications.
 ///
 /// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
@@ -106,6 +139,10 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     /// attempts still wins.
     optimizer_pool: Vec<Optimizer>,
     n_restarts: usize,
+    /// Whether the caller set [`Fitter::n_restarts`] explicitly. When `false`,
+    /// the small-smooth fast path may reduce the restart count for small
+    /// smooth-loss fits; an explicit count is always honoured.
+    n_restarts_explicit: bool,
     /// Pool of MDS solvers cycled across outer-loop restarts: attempt `i`
     /// uses `initial_solvers[i % initial_solvers.len()]`. Mixing solvers in
     /// the pool widens basin coverage (different solvers fall into different
@@ -235,6 +272,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             // optimizer per attempt, lowest-loss attempt kept). Matches
             // eulerr's `n_restarts = 10`. Each fit does that much work.
             n_restarts: 10,
+            n_restarts_explicit: false,
             // Levenberg-Marquardt for the MDS init. The previous default was
             // L-BFGS with a More-Thuente line search, which under certain
             // starting points (e.g. the LHS-induced
@@ -538,8 +576,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Higher values give a better chance of finding the global optimum but
     /// cost proportionally more (10× the work for `n=10`). Set to 1 to
     /// disable restarts.
+    ///
+    /// Calling this pins the count: it opts out of the automatic "small smooth
+    /// diagram" budget reduction that otherwise trims restarts for small
+    /// (≤ 3-set) smooth-loss fits on analytic-gradient shapes.
     pub fn n_restarts(mut self, n: usize) -> Self {
         self.n_restarts = n.max(1);
+        self.n_restarts_explicit = true;
         self
     }
 
@@ -861,6 +904,19 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         Ok(FitRecording { frames, set_names })
     }
 
+    /// Whether this fit qualifies for the reduced "small smooth diagram"
+    /// budget: a smooth loss on an analytic-gradient shape, at or below
+    /// [`SMALL_SMOOTH_MAX_SETS`] sets, and not a complement/container fit.
+    ///
+    /// `n_sets` is the *preprocessed* set count (after empty sets are dropped).
+    /// See [`SMALL_SMOOTH_MAX_SETS`] for the empirical justification.
+    fn qualifies_for_small_smooth(&self, n_sets: usize) -> bool {
+        S::SUPPORTS_ANALYTIC_GRADIENT
+            && self.loss_type.is_smooth()
+            && self.spec.complement.is_none()
+            && n_sets <= SMALL_SMOOTH_MAX_SETS
+    }
+
     fn fit_with_optimization(self, optimize: bool) -> Result<Layout<S>, DiagramError> {
         // Both solver pools are indexed `pool[i % pool.len()]` per restart, so
         // an empty pool has nothing to select. Each attempt picks its
@@ -918,7 +974,23 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         let ftol = self.ftol;
         let gtol = self.gtol;
         let loss_type = self.loss_type;
+
+        // Small-smooth fast path: for a smooth loss on an analytic-gradient
+        // shape with n_sets ≤ SMALL_SMOOTH_MAX_SETS, the Venn warm-start already
+        // lands restart 0 in the correct basin, so the default 10-restart pool
+        // buys nothing — trim the restart count (unless the caller pinned it).
+        // The default `CmaEsTrf` optimizer is *kept* on purpose: its CMA-ES
+        // escape is self-gating (zero cost when LM lands ≤ threshold) and still
+        // rescues the occasional wrong-basin small fit — e.g. an unequal-area
+        // 2-set ellipse whose warm-start otherwise refines into a disjoint
+        // layout. See `SMALL_SMOOTH_MAX_SETS`.
+        let small_smooth = optimize && self.qualifies_for_small_smooth(n_sets);
         let optimizer_pool = self.optimizer_pool.clone();
+        let effective_n_restarts = if small_smooth && !self.n_restarts_explicit {
+            SMALL_SMOOTH_N_RESTARTS
+        } else {
+            self.n_restarts
+        };
         let cmaes_fallback_threshold = self.cmaes_fallback_threshold;
         let escape_solver = self.escape_solver;
         let jobs = self.jobs;
@@ -939,7 +1011,11 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         // each restart explores an independent MDS basin (since MDS samples random
         // initial positions), and only one of those typically lands in a basin
         // that the final optimizer can refine to a perfect fit (issue #28).
-        let n_attempts = if optimize { self.n_restarts.max(1) } else { 1 };
+        let n_attempts = if optimize {
+            effective_n_restarts.max(1)
+        } else {
+            1
+        };
         let attempt_seeds: Vec<u64> = (0..n_attempts).map(|_| master_rng.random()).collect();
 
         // Pre-compute the Latin-hypercube design from the master RNG (so each
@@ -1633,6 +1709,105 @@ mod tests {
 
         assert_eq!(layout.shapes().len(), 2);
         assert!(layout.loss() >= 0.0);
+    }
+
+    #[test]
+    fn small_smooth_fast_path_gate() {
+        use crate::geometry::shapes::{Ellipse, RotatedRectangle, Square};
+        use crate::loss::LossType;
+
+        let spec3 = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .set("C", 6.0)
+            .intersection(&["A", "B"], 2.0)
+            .intersection(&["A", "C"], 2.0)
+            .intersection(&["B", "C"], 2.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .build()
+            .unwrap();
+
+        // Smooth loss (default SumSquared), analytic-gradient shape, n ≤ cutoff,
+        // no complement → qualifies for the reduced restart budget.
+        assert!(Fitter::<Circle>::new(&spec3).qualifies_for_small_smooth(SMALL_SMOOTH_MAX_SETS));
+        assert!(Fitter::<Ellipse>::new(&spec3).qualifies_for_small_smooth(3));
+        assert!(Fitter::<Square>::new(&spec3).qualifies_for_small_smooth(3));
+
+        // Above the set-count cutoff → full budget.
+        assert!(
+            !Fitter::<Circle>::new(&spec3).qualifies_for_small_smooth(SMALL_SMOOTH_MAX_SETS + 1)
+        );
+
+        // Non-smooth losses need the full budget even at small n (the corpus
+        // sweep showed restarts + escape both matter there).
+        assert!(
+            !Fitter::<Circle>::new(&spec3)
+                .loss_type(LossType::SumAbsolute)
+                .qualifies_for_small_smooth(3)
+        );
+        assert!(
+            !Fitter::<Circle>::new(&spec3)
+                .loss_type(LossType::MaxAbsolute)
+                .qualifies_for_small_smooth(3)
+        );
+
+        // Smooth but non-least-squares losses still qualify — `LevenbergMarquardt`
+        // falls back to a gradient solver, and the warm-start basin still holds.
+        assert!(
+            Fitter::<Circle>::new(&spec3)
+                .loss_type(LossType::RootMeanSquared)
+                .qualifies_for_small_smooth(3)
+        );
+
+        // Shapes without an analytic region-area gradient (derivative-free
+        // pool) are excluded — their landscape isn't the smooth LM basin.
+        assert!(!Fitter::<RotatedRectangle>::new(&spec3).qualifies_for_small_smooth(3));
+
+        // Complement/container fits keep the full budget (the container adds a
+        // coupled global degree of freedom the warm-start doesn't address).
+        let spec_complement = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .intersection(&["A", "B"], 2.0)
+            .complement(5.0)
+            .build()
+            .unwrap();
+        assert!(!Fitter::<Circle>::new(&spec_complement).qualifies_for_small_smooth(2));
+    }
+
+    #[test]
+    fn small_smooth_fast_path_matches_full_budget_quality() {
+        // The reduced budget must not degrade a small smooth fit: the default
+        // (auto-reduced) restart count should reach the same low loss as an
+        // explicit 10-restart run on a representative 3-set circle spec.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .set("C", 6.0)
+            .intersection(&["A", "B"], 3.0)
+            .intersection(&["A", "C"], 2.0)
+            .intersection(&["B", "C"], 2.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .build()
+            .unwrap();
+
+        let auto = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let full = Fitter::<Circle>::new(&spec)
+            .seed(42)
+            .n_restarts(10)
+            .fit()
+            .unwrap();
+
+        // The auto-reduced budget must be no worse than the full 10-restart
+        // budget (the warm-start already wins restart 0, so extra restarts add
+        // nothing here). Both should land at a good fit.
+        assert!(full.loss() < 1e-2, "full-budget loss {}", full.loss());
+        assert!(
+            auto.loss() <= full.loss() + 1e-6,
+            "auto-budget loss {} should match full-budget loss {}",
+            auto.loss(),
+            full.loss(),
+        );
     }
 
     #[test]
@@ -2607,10 +2782,20 @@ mod tests {
             "B offset {dist} should be ~{expected} (half of internal tangency)",
         );
 
-        // Re-normalizing is a stable no-op (the fit already normalized).
+        // Re-normalizing is a stable no-op up to floating-point noise. The
+        // circle centers sit at y ≈ ±1e-16 (machine zero), so exact-bit
+        // equality is testing the sign of a rounding error, not idempotency —
+        // assert the geometry is unchanged within a tight tolerance instead.
         let snapshot = layout.shapes().to_vec();
         layout.normalize(0.05);
-        assert_eq!(layout.shapes(), snapshot.as_slice());
+        for (before, after) in snapshot.iter().zip(layout.shapes()) {
+            assert!(
+                (before.centroid().x() - after.centroid().x()).abs() < 1e-9
+                    && (before.centroid().y() - after.centroid().y()).abs() < 1e-9
+                    && (before.area() - after.area()).abs() < 1e-9,
+                "normalize should be a no-op: {before:?} vs {after:?}",
+            );
+        }
     }
 }
 #[test]
