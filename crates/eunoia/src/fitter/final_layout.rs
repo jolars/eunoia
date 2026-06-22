@@ -45,6 +45,28 @@ pub enum Optimizer {
     /// where neither LM nor a meaningful gradient is available; kept mostly
     /// because the harness still uses it as a quality lower-bound sentinel.
     NelderMead,
+    /// OrthoMADS — mesh-adaptive direct search (`basin::Mads`), derivative-free.
+    ///
+    /// The non-smooth-objective counterpart to [`Optimizer::NelderMead`]: where
+    /// Nelder-Mead's simplex degenerates on a discontinuous/plateaued landscape
+    /// (all vertices tie, the simplex collapses and stalls), MADS polls a
+    /// shrinking rational mesh and walks down the discontinuity. Targets exactly
+    /// the cost landscapes eunoia hands to the derivative-free path: the
+    /// non-smooth losses (`Max*`, `SumAbsolute`, `DiagError`,
+    /// `SumAbsoluteRegionError`) and the piecewise-C¹ overlap area of shapes
+    /// without an analytic gradient ([`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]
+    /// `= false`, e.g. `RotatedRectangle`).
+    ///
+    /// Budgeted by **cost evaluations**, not iterations: one MADS poll round is
+    /// `O(n)` evaluations, so a fair comparison with Nelder-Mead's
+    /// `max_iterations` iteration cap budgets MADS at
+    /// `max_iterations · (2·n_params + 1)` evals (see the `run_mads` dispatch).
+    ///
+    /// **Not** in any default pool — a benchmark candidate evaluated against
+    /// `NelderMead` via `examples/nonsmooth_bench` and `examples/quality_report`.
+    ///
+    /// [`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]: crate::geometry::traits::DiagramShape::SUPPORTS_ANALYTIC_GRADIENT
+    Mads,
     /// Box-constrained CMA-ES (`basin::BoundedCmaEs`) run on its own, with **no**
     /// gradient polish — purely derivative-free, unlike [`Optimizer::CmaEsLm`] /
     /// [`Optimizer::CmaEsTrf`], which always finish with an LM/TRF step. It is
@@ -445,6 +467,7 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
         Optimizer::NelderMead => {
             run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)?
         }
+        Optimizer::Mads => run_mads::<S>(spec, params_per_shape, initial_param, config)?,
         // Pure derivative-free CMA-ES: the bounded global escape run standalone,
         // returning its best candidate with no gradient polish.
         Optimizer::CmaEs => run_bounded_cmaes::<S>(spec, params_per_shape, initial_param, config),
@@ -797,6 +820,51 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
     let solver = basin::NelderMead::new();
     let result = basin::Executor::new(cost_function, solver, state)
         .max_iter(config.max_iterations as u64)
+        .run()
+        .expect("solver problem is infallible");
+    Ok((DVector::from_vec(result.param().clone()), result.cost()))
+}
+
+/// Run OrthoMADS (`basin::Mads`), the mesh-adaptive direct-search counterpart to
+/// [`run_nelder_mead`]. Derivative-free; targets the same non-smooth cost
+/// landscapes (non-smooth losses, piecewise-C¹ shape overlaps).
+///
+/// **Budget.** Nelder-Mead is capped by `max_iterations` *iterations*, but a
+/// MADS iteration is a poll round of `O(n)` evaluations, so capping MADS by the
+/// same iteration count would give it ~`n×` the function-evaluation budget and
+/// make any head-to-head unfair. We instead budget by **cost evaluations**:
+/// `max_iterations · (2·n_params + 1)`, i.e. the per-iteration poll cost of a
+/// maximal positive basis (`2n` poll points plus the incumbent) times the NM
+/// iteration cap. `MeshTolerance` is left at the solver default (poll-size floor
+/// `1e-6`), so on an easy spec MADS converges and stops well under the eval cap;
+/// the cap only bounds the hard, stalling cases — mirroring how NM's simplex
+/// collapse ends easy fits before `max_iterations`.
+fn run_mads<S: DiagramShape + Copy + 'static>(
+    spec: &PreprocessedSpec,
+    params_per_shape: usize,
+    initial_param: &DVector<f64>,
+    config: &FinalLayoutConfig,
+) -> Result<(DVector<f64>, f64), DiagramError> {
+    let n_params = initial_param.len();
+    let cost_function = BasinDiagramCost::<S> {
+        inner: DiagramCost {
+            spec,
+            loss_type: config.loss_type,
+            params_per_shape,
+            _shape: std::marker::PhantomData,
+        },
+    };
+    // Match Nelder-Mead's effective function-evaluation budget: NM runs
+    // `max_iterations` simplex iterations; one MADS poll round costs `2n + 1`
+    // evals, so cap MADS at `max_iterations · (2n + 1)` evals.
+    let max_evals = config
+        .max_iterations
+        .saturating_mul(2 * n_params + 1)
+        .max(1) as u64;
+    let state = basin::MadsState::new(initial_param.as_slice().to_vec());
+    let solver = basin::Mads::new();
+    let result = basin::Executor::new(cost_function, solver, state)
+        .terminate_on(basin::MaxCostEvals(max_evals))
         .run()
         .expect("solver problem is infallible");
     Ok((DVector::from_vec(result.param().clone()), result.cost()))
@@ -1803,6 +1871,64 @@ mod tests {
         // For circles, params are [x0, y0, r0, x1, y1, r1, ...]
         assert_eq!(final_params.len(), 2 * Circle::n_params()); // 2 circles * 3 params each
         assert!(loss >= 0.0);
+    }
+
+    #[test]
+    fn test_mads_optimizes_nonsmooth_loss() {
+        // MADS is the OrthoMADS derivative-free counterpart to Nelder-Mead;
+        // exercise it on a non-smooth loss (its target landscape) and assert it
+        // produces a finite, sane result and improves on the too-far-apart init.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 3.0)
+            .set("B", 4.0)
+            .intersection(&["A", "B"], 1.0)
+            .build()
+            .unwrap();
+
+        let preprocessed = spec.preprocess().unwrap();
+
+        // Start with circles that are too far apart (no overlap → high loss).
+        let positions = vec![0.0, 0.0, 5.0, 0.0];
+        let radii = vec![
+            (3.0 / std::f64::consts::PI).sqrt(),
+            (4.0 / std::f64::consts::PI).sqrt(),
+        ];
+
+        let config = FinalLayoutConfig {
+            optimizer: Optimizer::Mads,
+            loss_type: crate::loss::LossType::MaxAbsolute,
+            max_iterations: 100,
+            tolerance: 1e-4,
+            seed: 0,
+            n_restarts: 1,
+            cmaes_fallback_threshold: 1e-3,
+            escape_solver: EscapeSolver::BoundedCmaEs,
+            xtol: None,
+            ftol: None,
+            gtol: None,
+        };
+
+        let start_loss = {
+            let cost_fn = DiagramCost::<Circle> {
+                spec: &preprocessed,
+                loss_type: config.loss_type,
+                params_per_shape: Circle::n_params(),
+                _shape: std::marker::PhantomData,
+            };
+            let mut params = positions.clone();
+            params.extend_from_slice(&radii);
+            cost_fn.cost(&DVector::from_vec(params)).unwrap()
+        };
+
+        let (final_params, loss) =
+            optimize_layout::<Circle>(&preprocessed, &positions, &radii, None, config).unwrap();
+        assert_eq!(final_params.len(), 2 * Circle::n_params());
+        assert!(loss.is_finite(), "MADS loss must be finite, got {loss}");
+        assert!(loss >= 0.0);
+        assert!(
+            loss < start_loss,
+            "MADS should improve on the disjoint init: {loss} !< {start_loss}"
+        );
     }
 
     #[test]

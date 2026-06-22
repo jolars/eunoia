@@ -78,6 +78,14 @@ mod quality_report {
             // Pure Nelder-Mead final-stage. Tracks how badly NM-only does
             // (huge ellipse loss) — useful as the lower bound on quality.
             ("neldermead_only", |f| f.optimizer(Optimizer::NelderMead)),
+            // Pure MADS (OrthoMADS) final-stage. The candidate derivative-free
+            // replacement for Nelder-Mead on non-smooth objectives — paired
+            // head-to-head against `neldermead_only` here (on the default
+            // SumSquared loss this is a secondary read: MADS isn't built for
+            // smooth fits, so this mainly checks it doesn't regress
+            // catastrophically). The non-smooth-loss head-to-head lives in
+            // `examples/nonsmooth_bench`.
+            ("mads_only", |f| f.optimizer(Optimizer::Mads)),
             // Mixed MDS pool: alternate L-BFGS with the default
             // Levenberg-Marquardt across restarts, to quantify mixing solvers
             // vs the LM-only default.

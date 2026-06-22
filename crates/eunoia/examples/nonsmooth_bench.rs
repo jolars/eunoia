@@ -1,4 +1,4 @@
-//! Non-smooth-loss fallback benchmark: plain Nelder-Mead vs CmaEsLm.
+//! Non-smooth-loss fallback benchmark: Nelder-Mead vs MADS vs CmaEsLm.
 //!
 //! The non-smooth losses (`MaxAbsolute`, `MaxSquared`, `SumAbsolute`,
 //! `SumAbsoluteRegionError`, `DiagError`) have no usable gradient, so the
@@ -7,9 +7,15 @@
 //! to "NM, plus a conditional bounded-CMA-ES escape with NM polish, keeping
 //! the better" — a strictly non-regressing escape layered on top of NM.
 //!
+//! `MADS` (OrthoMADS, `Optimizer::Mads`) is the candidate derivative-free
+//! *replacement* for Nelder-Mead on exactly these non-smooth landscapes: where
+//! NM's simplex degenerates on a discontinuity/plateau, MADS polls a shrinking
+//! mesh and walks down it. This benchmark puts MADS head-to-head with NM (and
+//! keeps the POL=CmaEsLm column as the non-regressing reference).
+//!
 //! This benchmark quantifies what that escape buys on the non-smooth losses,
 //! over the full corpus × {Circle, Ellipse} × a few seeds. For each
-//! (spec, seed) the two optimizers run back-to-back so results pair cleanly.
+//! (spec, seed) the three optimizers run back-to-back so results pair cleanly.
 //! We report the median of the *loss being minimized* and of `diag_error`
 //! (a common yardstick across loss types), median wall time, and the share
 //! of paired cases where the escape reaches a strictly lower loss than NM.
@@ -114,18 +120,24 @@ mod bench {
         shape_name: &str,
         fittable: fn(&CorpusEntry) -> Fittable,
     ) {
-        // NM = plain Nelder-Mead fallback. POL = CmaEsLm, which for a
-        // non-smooth loss is "NM, plus a conditional CMA-ES escape with NM
-        // polish, keeping the better" — strictly non-regressing vs NM.
+        // NM = plain Nelder-Mead fallback. MADS = OrthoMADS (the candidate
+        // derivative-free replacement for NM on non-smooth objectives). POL =
+        // CmaEsLm, which for a non-smooth loss is "NM, plus a conditional
+        // CMA-ES escape with NM polish, keeping the better" — strictly
+        // non-regressing vs NM. The two win% columns are vs NM: how often MADS
+        // (resp. POL) reaches a strictly lower loss than plain Nelder-Mead.
         println!("\n## {shape_name}\n");
         println!(
-            "| loss | NM loss | POL loss | NM diag | POL diag | NM ms | POL ms | POL loss-win% | n |"
+            "| loss | NM loss | MADS loss | POL loss | NM diag | MADS diag | POL diag | \
+             NM ms | MADS ms | POL ms | MADS<NM% | POL<NM% | n |"
         );
-        println!("|---|---|---|---|---|---|---|---|---|");
+        println!("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 
         for (loss_name, loss) in losses() {
             let mut nm_s: Vec<Sample> = Vec::new();
+            let mut mads_s: Vec<Sample> = Vec::new();
             let mut pol_s: Vec<Sample> = Vec::new();
+            let mut mads_loss_wins = 0usize;
             let mut pol_loss_wins = 0usize;
             let mut paired = 0usize;
 
@@ -136,14 +148,19 @@ mod bench {
                 let spec = (entry.build)();
                 for &seed in &SEEDS {
                     let nm = fit_one::<S>(&spec, loss, Optimizer::NelderMead, seed);
+                    let mads = fit_one::<S>(&spec, loss, Optimizer::Mads, seed);
                     let pol = fit_one::<S>(&spec, loss, Optimizer::CmaEsLm, seed);
-                    if let (Some(nm), Some(pol)) = (nm, pol) {
+                    if let (Some(nm), Some(mads), Some(pol)) = (nm, mads, pol) {
                         // Strictly-lower loss with a small relative slack so
-                        // ties (escape didn't fire / matched NM) don't count.
+                        // ties (matched NM) don't count.
+                        if mads.loss < nm.loss * (1.0 - 1e-6) {
+                            mads_loss_wins += 1;
+                        }
                         if pol.loss < nm.loss * (1.0 - 1e-6) {
                             pol_loss_wins += 1;
                         }
                         nm_s.push(nm);
+                        mads_s.push(mads);
                         pol_s.push(pol);
                         paired += 1;
                     }
@@ -151,27 +168,39 @@ mod bench {
             }
 
             let (nm_l, nm_d, nm_ms) = summarize(&nm_s);
+            let (mads_l, mads_d, mads_ms) = summarize(&mads_s);
             let (pol_l, pol_d, pol_ms) = summarize(&pol_s);
-            let win = if paired > 0 {
-                100.0 * pol_loss_wins as f64 / paired as f64
-            } else {
-                f64::NAN
+            let pct = |wins: usize| {
+                if paired > 0 {
+                    100.0 * wins as f64 / paired as f64
+                } else {
+                    f64::NAN
+                }
             };
+            let mads_win = pct(mads_loss_wins);
+            let pol_win = pct(pol_loss_wins);
             println!(
-                "| {loss_name} | {nm_l:.3e} | {pol_l:.3e} | {nm_d:.3e} | {pol_d:.3e} | \
-                 {nm_ms:.1} | {pol_ms:.1} | {win:.0}% | {paired} |"
+                "| {loss_name} | {nm_l:.3e} | {mads_l:.3e} | {pol_l:.3e} | \
+                 {nm_d:.3e} | {mads_d:.3e} | {pol_d:.3e} | \
+                 {nm_ms:.1} | {mads_ms:.1} | {pol_ms:.1} | \
+                 {mads_win:.0}% | {pol_win:.0}% | {paired} |"
             );
         }
     }
 
     pub fn run() {
-        println!("# Non-smooth fallback benchmark: Nelder-Mead vs CmaEsLm (NM + CMA escape)");
+        println!(
+            "# Non-smooth fallback benchmark: Nelder-Mead vs MADS vs CmaEsLm (NM + CMA escape)"
+        );
         println!("\nseeds = {SEEDS:?}, n_restarts = 10 (default), max_iterations = 200 (default).");
         println!(
             "Median over (corpus specs × seeds). `loss` = the metric being minimized \
              (comparable within a row); `diag_error` = common yardstick; lower is better. \
-             POL is ≥ NM by construction; the win% and the loss/diag deltas show how often, \
-             and by how much, the CMA-ES escape improves on plain NM."
+             MADS is the candidate NM replacement; POL (CmaEsLm) is ≥ NM by construction. \
+             The two win% columns are vs NM: how often MADS / POL reach a strictly lower \
+             loss than plain Nelder-Mead. A MADS win% that is high AND much faster — check \
+             that MADS didn't silently drop hard specs (paired `n` is identical across all \
+             three by construction, so a drop shows as a lower `n` for the whole row)."
         );
         run_shape::<Circle>("Circle", |e| e.fittable_circle);
         run_shape::<Ellipse>("Ellipse", |e| e.fittable_ellipse);
