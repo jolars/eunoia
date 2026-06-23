@@ -99,9 +99,9 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "basin"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c42fb255efd2d16490e0d247b7180497aa67d52b7217b7e6235dda5d5c1b4a9b"
+checksum = "b113ee0389c1b653337d1dd6717fe2a49c440c324566d1ed957934df0302e610"
 dependencies = [
  "nalgebra",
  "nalgebra-sparse",
@@ -1287,7 +1287,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys",
