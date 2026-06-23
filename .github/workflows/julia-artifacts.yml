@@ -45,7 +45,7 @@ jobs:
           - { rust: aarch64-apple-darwin,      julia: aarch64-apple-darwin, glibc: "",      dir: lib, lib: libeunoia_capi.dylib }
           - { rust: x86_64-pc-windows-gnu,     julia: x86_64-w64-mingw32,   glibc: "",      dir: bin, lib: eunoia_capi.dll }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
