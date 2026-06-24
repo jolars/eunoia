@@ -27,7 +27,7 @@ Or add it to `Cargo.toml` directly:
 
 ```toml
 [dependencies]
-eunoia = "1.4"
+eunoia = "%EUNOIA_VERSION_MINOR%"
 ```
 
 The crate is pure Rust with no system dependencies. Edition 2024,

@@ -3,6 +3,23 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import { escapeSvelte, mdsvex } from "mdsvex";
 import rehypeSlug from "rehype-slug";
 import { createHighlighter } from "shiki";
+import { VERSION, VERSION_MINOR } from "./version.config.js";
+
+// Replace version tokens in markup before mdsvex/shiki run, so the real
+// version is baked into highlighted code fences (where Svelte expressions and
+// Vite's `define` can't reach). `%EUNOIA_VERSION%` → the full version,
+// `%EUNOIA_VERSION_MINOR%` → major.minor. Must run before mdsvex below.
+const versionTokens = {
+  name: "eunoia-version-tokens",
+  /** @param {{ content: string }} input */
+  markup({ content }) {
+    if (!content.includes("%EUNOIA_VERSION")) return;
+    const code = content
+      .replaceAll("%EUNOIA_VERSION_MINOR%", VERSION_MINOR)
+      .replaceAll("%EUNOIA_VERSION%", VERSION);
+    return { code };
+  },
+};
 
 // Build-time syntax highlighter. Shiki runs only during preprocess/prerender
 // (Node), so none of it ships to the client. Dual-theme output emits
@@ -28,6 +45,7 @@ const highlighter = await createHighlighter({
 export default {
   extensions: [".svelte", ".svx"],
   preprocess: [
+    versionTokens,
     vitePreprocess(),
     mdsvex({
       extensions: [".svx"],
