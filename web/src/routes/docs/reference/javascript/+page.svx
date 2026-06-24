@@ -105,8 +105,7 @@ const placements = placeLabelsForRegions({
 `sizes` are the measured label dimensions in diagram units, which usually means
 a render → measure → re-place loop. The `strategy` knobs (`leader`, `precision`,
 `tether`, `leaderGap`) and that loop are covered in
-[Label placement](/docs/concepts/label-placement/) and
-[Resize loops](/docs/bindings/resize-loops/).
+[Label placement](/docs/concepts/label-placement/).
 
 ## `placementsBbox(options)`
 

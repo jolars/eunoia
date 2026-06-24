@@ -1,9 +1,0 @@
-# WASM/FFI contract
-
-> TODO: cover the JSON shapes the WASM surface accepts and returns
-> (regions, polygons, sizes, strategy), canonical combination keying
-> (`A`, `A&B`, `""` for complement), polygon orientation invariants
-> (CCW outer, CW holes, holes strictly inside outer), and the
-> caller-validated `RegionPolygons::from_map` reconstruction path
-> for FFI bindings that already have decomposed regions from another
-> source.

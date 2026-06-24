@@ -42,10 +42,7 @@ export const SUMMARY: DocSection[] = [
   },
   {
     title: "Bindings",
-    chapters: [
-      { title: "WASM contract", slug: "/docs/bindings/wasm-contract/" },
-      { title: "Resize loops", slug: "/docs/bindings/resize-loops/" },
-    ],
+    chapters: [{ title: "C ABI contract", slug: "/docs/bindings/c-abi/" }],
   },
   {
     title: "Reference",

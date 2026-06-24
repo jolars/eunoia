@@ -14,5 +14,5 @@ API references live outside this site:
   pipeline, and the contract for adding new shape types.
 
 The chapters under [Concepts](/docs/concepts/label-placement/) and
-[Bindings](/docs/bindings/wasm-contract/) cover the *why* and the
+[Bindings](/docs/bindings/c-abi/) cover the *why* and the
 *how*; use them alongside the rustdoc/tsdoc, not in place of them.

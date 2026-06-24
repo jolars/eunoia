@@ -15,9 +15,10 @@ These docs are aimed at two audiences:
 - **End users of language wrappers** (R, Python, JavaScript, Julia)
   who want to understand what the underlying library does, what its
   knobs mean, and how to read its outputs.
-- **Binding authors** wiring up downstream packages. The chapters
-  under [Bindings](/docs/bindings/wasm-contract/) describe the JSON
-  shapes, the size-measurement contract, and the resize-loop pattern.
+- **Binding authors** wiring up downstream packages. Most hosts bind
+  the Rust core directly (wasm-bindgen, PyO3, extendr); native hosts
+  that reach it through the C ABI have the
+  [Bindings](/docs/bindings/c-abi/) section.
 
 For Rust API reference see [docs.rs/eunoia](https://docs.rs/eunoia/);
 for the TypeScript surface see the type definitions shipped with
@@ -29,8 +30,8 @@ This site is the narrative companion.
 - Getting started: the quickstart sections for [JavaScript](/docs/quickstart/javascript/),
   [Rust](/docs/quickstart/rust/), [Python](/docs/quickstart/python/), [R](/docs/quickstart/r/),
   or [Julia](/docs/quickstart/julia/).
-- Writing a binding: [WASM contract](/docs/bindings/wasm-contract/)
-  and [Resize loops](/docs/bindings/resize-loops/).
+- Writing a native binding via the C ABI:
+  [C ABI contract](/docs/bindings/c-abi/).
 - Placing labels in a downstream renderer:
   [Label placement](/docs/concepts/label-placement/) (the only fully
   written chapter so far; the rest are stubs that will fill in as

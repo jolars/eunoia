@@ -1,0 +1,17 @@
+# C ABI contract
+
+> TODO: document the `eunoia-capi` C ABI seam for native bindings.
+>
+> This is the boundary used by hosts whose only Rust-interop path is a
+> C ABI — Julia today (via `ccall`/`Libdl`), and potentially Go (cgo),
+> C/C++, Zig, etc. Hosts with a native Rust-binding framework
+> (JavaScript via wasm-bindgen, Python via PyO3/maturin, R via extendr)
+> bind the core directly and never touch this surface.
+>
+> When a second, non-first-party consumer appears, cover the parts a
+> generated C header does not convey: the JSON shapes of inputs and
+> outputs, canonical combination keying (`A`, `A&B`, `""` for
+> complement), memory ownership across the boundary (who allocates, who
+> frees returned strings), error encoding, and thread-safety. Until
+> then `Eunoia.jl` is the reference implementation and the Rust source
+> is authoritative.

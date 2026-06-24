@@ -213,8 +213,7 @@ Interior labels come for free: each shape (and each region) carries a
 `labelAnchor`, and `"regions"` mode adds `setAnchors`. When a region is too small
 to hold its label, eunoia can place it outside with a leader line via
 `placeLabelsForRegions`. That involves measuring rendered text and (often) a
-resize loop, covered in [Label placement](/docs/concepts/label-placement/) and
-[Resize loops](/docs/bindings/resize-loops/).
+resize loop, covered in [Label placement](/docs/concepts/label-placement/).
 
 All three entry points ship from the one package: `@jolars/eunoia` (the bundler
 default), `@jolars/eunoia/web` (bundler-less, `init()`), and `@jolars/eunoia/svg`
