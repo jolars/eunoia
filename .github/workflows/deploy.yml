@@ -1,8 +1,13 @@
 name: Deploy to GitHub Pages
 
 on:
+  # Deploy only on releases. Versionary pushes a `v*` tag (the crate release)
+  # for each release; the npm tag is `eunoia-npm-v*`, which this does not match,
+  # so a release deploys the site exactly once. Use the manual trigger below for
+  # out-of-band redeploys (e.g. urgent doc fixes between releases).
   push:
-    branches: [main]
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
