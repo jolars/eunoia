@@ -30,7 +30,7 @@ solves for a bounding rectangle in addition to the shapes:
 <DiagramExample
   sets={TWO_SET_SPEC}
   shape="circle"
-  complement={10}
+  complement={25}
   seed={7}
   caption="A two-set diagram with a complement: the dashed frame is the container, and the shaded margin around the circles is the universe."
 />
@@ -40,7 +40,7 @@ import { euler } from "@jolars/eunoia";
 
 const layout = euler({
   sets: { A: 8, B: 6, "A&B": 2 },
-  complement: 10,
+  complement: 25,
 });
 
 layout.container; // -> { x, y, width, height } (center + full extents)

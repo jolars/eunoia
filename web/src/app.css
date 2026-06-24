@@ -72,3 +72,26 @@ body {
   background: var(--canvas);
   color: var(--ink);
 }
+
+/* Shiki syntax highlighting. The highlighter (see svelte.config.js) emits
+   dual-theme token colors as CSS variables; map them to the active theme.
+   The `.dark` rule needs `span` specificity to beat the light-mode `.shiki
+   span` rule, so both sides target spans. The code-block frame (background,
+   border, padding) stays owned by the prose-pre:* utilities for theme
+   consistency, so we only colorize tokens here. */
+.shiki span {
+  color: var(--shiki-light);
+}
+.dark .shiki span {
+  color: var(--shiki-dark);
+}
+
+/* Neutralize the inline-code chrome (bg, padding, rounding) that the
+   prose-code:* utilities would otherwise apply to the <code> wrapping a
+   highlighted block. */
+.prose .shiki code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-weight: inherit;
+}
