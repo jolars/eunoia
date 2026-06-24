@@ -20,39 +20,39 @@ exterior solver of your choice, with a `tether` so you can draw a
 leader line back to the region.
 
 The placer works in the same coordinate frame as the fitted diagram
-and never needs to know anything about your fonts or text metrics —
-**you measure, eunoia places.**
+and never needs to know anything about your fonts or text metrics; you
+measure the labels, and it places them.
 
 ## Mental model
 
-Call `place_labels` (Rust) / `placeLabelsForRegions` (npm) with a
+Call `place_labels` (Rust)/`placeLabelsForRegions` (npm) with a
 decomposed diagram and a `{ combination → (w, h) }` map. You get a
-`LabelPlacement` per region — interior when the box fits, exterior
+`LabelPlacement` per region: interior when the box fits, exterior
 otherwise. The returned `kind` tells the renderer which branch
 fired:
 
-- `interior` — the box fits; anchor sits at the region's POI.
-- `exteriorRaycast` — anchored outside the diagram bbox along the
+- `interior`: the box fits; anchor sits at the region's POI.
+- `exteriorRaycast`: anchored outside the diagram bbox along the
   ray from the diagram centroid through the region's POI.
-- `exteriorForceDirected` — initialised from the raycast position,
+- `exteriorForceDirected`: initialized from the raycast position,
   then iteratively settled against label-vs-label collisions and
   foreign-region polygon repulsion.
 
 For exterior kinds, `placement.tether` points back into the region
 so you can draw a leader line from the label to the region. By
 default the tether is the region's **pole of inaccessibility**
-(deep inside the polygon) — safe for any rendering style,
+(deep inside the polygon), safe for any rendering style,
 including stroke-less fills, because the leader endpoint sits well
 inside the visible colored area. Set `strategy.tether =
 'boundary'` to attach it at the point where the outgoing ray exits
-the polygon's outer ring instead — the rendered leader then starts
+the polygon's outer ring instead; the rendered leader then starts
 on the polygon edge, matching the standard labeling convention.
 Recommended when your renderer draws shape strokes.
 
 On the **label side**, the placer returns `placement.leaderEnd` —
 the point on the label's bounding box where the leader should
 terminate. Draw the leader from `tether` to `leaderEnd` (rather
-than to `anchor`, which is the box centre) so the line stops at
+than to `anchor`, which is the box center) so the line stops at
 the box edge instead of running through the rendered text. The box
 used for clipping is the size you passed in for that region, so
 any half-gap padding the caller adds (see the gotchas below) is
@@ -62,7 +62,7 @@ Independently of the tether choice, both exterior solvers run a
 **leader-vs-interior-label avoidance** pass: when an exterior
 label's leader segment would visually cross another region's
 interior label, the exterior anchor is pushed tangentially until
-the segment clears. This is always on — no opt-out — because
+the segment clears. This is always on (no opt-out) because
 crossings are visually wrong and the push is purely tangential
 (it doesn't change which side of the diagram the label ends up
 on).
@@ -70,7 +70,7 @@ on).
 ## Size measurement contract
 
 **You measure, eunoia places.** Eunoia has no font or text metric
-knowledge — it accepts label dimensions `(w, h)` in the same
+knowledge; it accepts label dimensions `(w, h)` in the same
 coordinate units as the fitted shapes and tests whether an
 axis-aligned rectangle of those dimensions inscribes inside the
 region. How you measure is up to your renderer:
@@ -93,12 +93,12 @@ Sizes are keyed by the **canonical combination string**:
 ## Resize loop (size → place → measure)
 
 Label sizes in user coordinates depend on the rendered canvas size
-(font px / canvas-px ratio). For diagrams where labels land
+(the ratio of font px to canvas px). For diagrams where labels land
 exterior, the canvas extent in turn depends on label sizes —
 labels stretch the bbox out. The fixed point typically converges in
 one to three iterations.
 
-### Native Rust — `place_labels_to_fixed_point`
+### Native Rust: `place_labels_to_fixed_point`
 
 ```rust
 use eunoia::plotting::{place_labels_to_fixed_point, PlacementStrategy};
@@ -114,10 +114,10 @@ let placements = place_labels_to_fixed_point(
 );
 ```
 
-### JavaScript / TypeScript
+### JavaScript/TypeScript
 
 The npm wrapper doesn't ship a fixed-point helper because passing a
-JS closure across the WASM boundary buys nothing — drive the loop in
+JS closure across the WASM boundary buys nothing; drive the loop in
 JS:
 
 ```ts
@@ -135,9 +135,9 @@ for (let i = 0; i < 8; i++) {
 }
 ```
 
-### R / Python (sketch)
+### R/Python (sketch)
 
-Same shape as the JS loop — host language drives `place →
+Same shape as the JS loop: the host language drives `place →
 placements_bbox → re-measure` until the canvas short side stops
 moving.
 
@@ -160,22 +160,22 @@ algorithm** that suits it. Today the only edge type is `straight`
 omit `leader` entirely for the default, straight leaders placed by
 raycasting. The placement chooses how exterior labels are positioned:
 
-- **`raycast` placement** *(default)* — deterministic ray from the
+- **`raycast` placement** *(default)*: deterministic ray from the
   diagram centroid through the region's POI; anchor lands outside
   the union polygon of the fitted shapes (or container, if you set
   one), padded by `margin`. Clearance is checked per-vertex with
-  the label's full footprint, so width and height are honoured
-  even on diagonal rays. Cheap, predictable, no surprises.
-- **`forceDirected` placement** — warm-starts from the raycast
+  the label's full footprint, so width and height are honored
+  even on diagonal rays. It is cheap and predictable.
+- **`forceDirected` placement**: warm-starts from the raycast
   positions, then iterates a soft spring (back to home) plus three
   repulsions: label-vs-label, label-vs-union-polygon containment
   along the raycast direction, and label-vs-foreign-region polygon
   repulsion. Default cap is 200 outer iterations.
 
 Pick `raycast` for typical n=2..3 diagrams or any case where labels
-naturally spread around the perimeter. Reach for `forceDirected`
+naturally spread around the perimeter. Use `forceDirected`
 when raycast labels visually overlap each other or land on top of
-unrelated regions — for example, dense n=4 ellipse diagrams where
+unrelated regions, for example dense n=4 ellipse diagrams where
 several intersection regions push their labels outward at similar
 angles. (d3-style `elbow` leaders, with their own placement
 algorithm, are planned.)
@@ -199,29 +199,29 @@ visible mostly when labels need exterior placement.
 />
 
 Strategy knobs (defaults in parentheses). `margin` and `iterations`
-live on the `leader` object alongside `type` / `placement`; the rest
+live on the `leader` object alongside `type`/`placement`; the rest
 sit on the strategy itself:
 
-- `leader.margin` *(per-label proportional: `0.5 * max(w, h)`)* —
-  padding between the diagram bbox / container and the label. The
+- `leader.margin` *(per-label proportional: `0.5 * max(w, h)`)*:
+  padding between the diagram bbox/container and the label. The
   default scales with each label's own size, so a long string like
   `A&B&C&D` ends up further out than a short one. Override with a
   fixed value (e.g. `margin: 2`) when you want every exterior
   label flush to the diagram regardless of length.
-- `leader.iterations` *(200, `forceDirected` only)* — outer
+- `leader.iterations` *(200, `forceDirected` only)*: outer
   iteration cap; inner label-vs-label sweep loops to disjointness so
   spring re-overlap doesn't leak into the converged result.
-- `precision` *(0.01)* — polylabel-style search precision for the
+- `precision` *(0.01)*: polylabel-style search precision for the
   interior fit-check; smaller is more accurate, costlier.
-- `tether` *(`'poi'`)* — where the exterior leader tether attaches
+- `tether` *(`'poi'`)*: where the exterior leader tether attaches
   on the source region. `'poi'` (default) keeps the tether at the
-  region's pole of inaccessibility — safe for any rendering style.
+  region's pole of inaccessibility, safe for any rendering style.
   `'boundary'` attaches at the point where the outgoing ray exits
   the region's outer polygon ring, so the rendered leader starts
   on the polygon edge; recommended when your renderer draws shape
   strokes. Falls back to the POI if no ray-vs-edge intersection is
   found.
-- `leaderGap` *(`0`)* — visible gap (in the same coordinate units
+- `leaderGap` *(`0`)*: visible gap (in the same coordinate units
   as the label sizes) between the leader tip
   (`placement.leaderEnd`) and the label's bounding box. The placer
   inflates the box used to compute `leaderEnd` by this amount on
@@ -256,7 +256,7 @@ for (const region of regions) {
 ```
 
 The web app's [`DiagramSvg.svelte`](https://github.com/jolars/eunoia/blob/main/web/src/lib/components/DiagramSvg.svelte)
-is the canonical SVG version — see the leader-line block around
+is the canonical SVG version; see the leader-line block around
 line 575 and the `placementsBbox` canvas-extent block around line
 100 for a complete reference renderer.
 
@@ -266,10 +266,10 @@ A few gotchas worth knowing:
   `complement: N`, the regions map includes a `combination === ""`
   entry whose pieces are the container minus the union of fitted
   shapes. Provide a size for `""` if you want to label it; omit it
-  to leave the complement unlabelled.
+  to leave the complement unlabeled.
 - **Canvas extent depends on label sizes.** Use `placementsBbox`
-  (or `placements_bbox` in Rust) to extend your viewBox / canvas to
-  cover exterior labels — without it, exterior anchors land
+  (or `placements_bbox` in Rust) to extend your viewBox/canvas to
+  cover exterior labels; without it, exterior anchors land
   off-screen.
 - **The placer separates labels to non-overlap, not to a visible
   gap.** If you want breathing room between adjacent labels (and
@@ -281,7 +281,7 @@ A few gotchas worth knowing:
   the rendered text, since `leaderEnd` sits on the padded box edge.
   If you hand the placer raw measured bboxes instead of pre-padded
   ones, use `strategy.leaderGap` to introduce the leader-side gap
-  independently — it only affects `leaderEnd`, not label-vs-label
+  independently; it only affects `leaderEnd`, not label-vs-label
   separation.
 - **The interior fit-check uses a radial-conservative bound.** It
   never returns false positives (the inscribed rectangle is always

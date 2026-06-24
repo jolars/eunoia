@@ -1,4 +1,4 @@
-# WASM / FFI contract
+# WASM/FFI contract
 
 > TODO: cover the JSON shapes the WASM surface accepts and returns
 > (regions, polygons, sizes, strategy), canonical combination keying

@@ -8,13 +8,13 @@ for programmatic callers.
 
 ## Metrics
 
-- **stress** — a scale-invariant measure due to *Wilkinson (2012)*,
-  popularised by `venneuler`. Lower is better.
-- **diagError** — the largest absolute discrepancy between a fitted
+- **stress:** a scale-invariant measure due to *Wilkinson (2012)*,
+  popularized by `venneuler`. Lower is better.
+- **diagError:** the largest absolute discrepancy between a fitted
   region's share of the total area and its requested share. Defined by
   *Micallef & Rodgers (2014)*; values below `0.01` generally indicate a
   faithful diagram.
-- **regionError** — the same quantity as `diagError`, but reported per
+- **regionError:** the same quantity as `diagError`, but reported per
   region rather than as the maximum across all of them.
 
 ## When a diagram can't be drawn exactly
@@ -28,9 +28,9 @@ A=5, B=3, C=1, A&B=2, A&B&C=2
 
 No two-dimensional Euler diagram with circles can satisfy these
 constraints exactly. In such cases `diagError` will be large, and the
-geometry eunoia returns is the best compromise the optimiser found. The
+geometry eunoia returns is the best compromise the optimizer found. The
 metrics above are how you tell a faithful diagram apart from a forced
-one — always check them before trusting a layout.
+one; always check them before trusting a layout.
 
 ## References
 

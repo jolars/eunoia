@@ -2,17 +2,17 @@
 
 API references live outside this site:
 
-- **Rust** — [docs.rs/eunoia](https://docs.rs/eunoia/) (rustdoc, the
+- **Rust:** [docs.rs/eunoia](https://docs.rs/eunoia/) (rustdoc, the
   authoritative reference for every public type, trait, and function).
-- **JavaScript / TypeScript** — the [JavaScript API
+- **JavaScript/TypeScript:** the [JavaScript API
   reference](/docs/reference/javascript/) catalogs the public surface, and full
   type definitions ship with
   [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) so your
-  editor's "go to definition" / IntelliSense will surface them.
-- **Repository conventions** — [AGENTS.md](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
-  describes the workspace layout, module organisation, optimisation
+  editor's "go to definition"/IntelliSense will surface them.
+- **Repository conventions:** [AGENTS.md](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
+  describes the workspace layout, module organization, optimization
   pipeline, and the contract for adding new shape types.
 
 The chapters under [Concepts](/docs/concepts/label-placement/) and
 [Bindings](/docs/bindings/wasm-contract/) cover the *why* and the
-*how* — use them alongside the rustdoc / tsdoc, not in place of them.
+*how*; use them alongside the rustdoc/tsdoc, not in place of them.

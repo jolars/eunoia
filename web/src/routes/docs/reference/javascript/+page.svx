@@ -29,7 +29,7 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 | `loss`            | `LossType`                                                       | optimizer's    | Region-error loss function.                                       |
 | `tolerance`       | `number`                                                         | —              | Optimizer convergence tolerance.                                  |
 | `restarts`        | `number`                                                        | `10`           | Random restarts of the two-phase fit; lowest loss is kept.        |
-| `polygonVertices` | `number`                                                        | `256`          | Vertices per polygon outline (`"polygons"` / `"regions"`).         |
+| `polygonVertices` | `number`                                                        | `256`          | Vertices per polygon outline (`"polygons"`/`"regions"`).           |
 | `complement`      | `number`                                                        | —              | Items outside every set; fits a bounding container. See [Complement](/docs/concepts/complement/). |
 
 `Optimizer` is one of `"cmaEsTrf"`, `"cmaEsLm"`, `"cmaEs"`,
@@ -60,26 +60,26 @@ const layout = venn({ n: 3 }); // 1 ≤ n ≤ 5
 | `complement`      | `number`                                             | —            | Optional complement container.                |
 
 Only `"ellipse"` reaches `n = 5`; `"circle"` gives the classic 1–3-circle
-diagrams, and `"square"` / `"rectangle"` are axis-aligned. The non-ellipse
+diagrams, and `"square"`/`"rectangle"` are axis-aligned. The non-ellipse
 shapes cap at `n = 3`.
 
 ## The `Layout` object
 
-Both `euler` and `venn` return a `Layout` — a union discriminated on `mode`,
+Both `euler` and `venn` return a `Layout`, a union discriminated on `mode`,
 which follows the `output` option:
 
 | `output`     | `mode`         | Carries                                                                 |
 | ------------ | -------------- | ----------------------------------------------------------------------- |
-| `"shapes"`   | `"shapes"`     | `circles` / `ellipses` / `squares` / `rectangles` — primitive params.   |
-| `"polygons"` | `"polygons"`   | the shapes **plus** `polygons` — one closed outline per set.            |
-| `"regions"`  | `"regions"`    | `regions` — the exclusive pieces (`A` only, `A&B`, …) + `setAnchors`.   |
+| `"shapes"`   | `"shapes"`     | `circles`/`ellipses`/`squares`/`rectangles`, the primitive params.      |
+| `"polygons"` | `"polygons"`   | the shapes **plus** `polygons`, one closed outline per set.             |
+| `"regions"`  | `"regions"`    | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors`.     |
 
 Every `Layout` also carries:
 
-- `shape` — the shape family used (`"circle"`, `"ellipse"`, …).
-- `metrics` — `{ loss, stress, diagError, iterations, targetAreas, fittedAreas,
+- `shape`: the shape family used (`"circle"`, `"ellipse"`, …).
+- `metrics`: `{ loss, stress, diagError, iterations, targetAreas, fittedAreas,
   regionError, residuals }`. See [Goodness of fit](/docs/concepts/goodness-of-fit/).
-- `container` — present only when `complement` was set: `{ x, y, width, height }`.
+- `container`: present only when `complement` was set: `{ x, y, width, height }`.
 
 Each shape and region carries a `labelAnchor` (`{ x, y }`) for interior labels;
 `"regions"` mode adds `setAnchors`. Coordinates are abstract, centered units —
@@ -111,10 +111,10 @@ a render → measure → re-place loop. The `strategy` knobs (`leader`, `precisi
 ## `placementsBbox(options)`
 
 Returns the bounding box (`{ x, y, width, height }`, or `undefined`) enclosing a
-set of placed label boxes — useful for extending the viewport so exterior labels
+set of placed label boxes; useful for extending the viewport so exterior labels
 aren't clipped.
 
-## SVG serializer — `@jolars/eunoia/svg`
+## SVG serializer: `@jolars/eunoia/svg`
 
 A wasm-free, DOM-free entry that turns a `Layout` into SVG. It never touches
 WebAssembly, so it works during server-side rendering and from a CDN as-is.
@@ -125,26 +125,26 @@ import { toSvg } from "@jolars/eunoia/svg";
 document.body.innerHTML = toSvg(layout, { showLabels: true });
 ```
 
-- `toSvg(layout, opts?)` — a complete standalone `<svg>` document string.
-- `svgBody(layout, opts?)` — inner markup only, when you own the `<svg>` element.
-- `viewBox(layout, opts?)` — the `{ x, y, w, h }` viewBox for a layout.
-- `boundingBox(layout, opts?)` — geometry bounds, including exterior labels when
+- `toSvg(layout, opts?)`: a complete standalone `<svg>` document string.
+- `svgBody(layout, opts?)`: inner markup only, when you own the `<svg>` element.
+- `viewBox(layout, opts?)`: the `{ x, y, w, h }` viewBox for a layout.
+- `boundingBox(layout, opts?)`: geometry bounds, including exterior labels when
   placements + sizes are supplied.
-- `polygonPath`, `regionPath`, `leaderPath` — SVG `d` path builders.
+- `polygonPath`, `regionPath`, `leaderPath`: SVG `d` path builders.
 - Color helpers: `PALETTES`, `paletteColors`, `defaultColorFor`, `colorForSet`,
-  `mixColors`, plus `nestedSets` / `regionTitleLines` for region labeling.
+  `mixColors`, plus `nestedSets`/`regionTitleLines` for region labeling.
 
 `ToSvgOptions` covers palettes and per-set color overrides, opacity, strokes,
-label and count rendering, a legend, padding, and the `placements` / `labelSizes`
+label and count rendering, a legend, padding, and the `placements`/`labelSizes`
 from `placeLabelsForRegions` for exterior labels with leader lines.
 
-## Bundler-less entry — `@jolars/eunoia/web`
+## Bundler-less entry: `@jolars/eunoia/web`
 
 A single self-contained ESM file with the WebAssembly inlined. Re-exports
 everything from the default entry, plus:
 
-- `init(): Promise<void>` — instantiate the embedded wasm once; idempotent. Must
-  be awaited before `euler` / `venn`.
+- `init(): Promise<void>`: instantiate the embedded wasm once; idempotent. Must
+  be awaited before `euler`/`venn`.
 
 ```html
 <script type="module">
@@ -157,4 +157,4 @@ everything from the default entry, plus:
 ---
 
 For exact field-level types, rely on the TypeScript definitions shipped with the
-package — your editor's "go to definition" / IntelliSense will surface them.
+package; your editor's "go to definition"/IntelliSense will surface them.

@@ -6,7 +6,7 @@ const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
 
 # Quickstart: Rust
 
-Eunioa is the pure-Rust core. Every other binding (JavaScript, R, Python,
+Eunoia is the pure-Rust core. Every other binding (JavaScript, R, Python,
 Julia) wraps the same engine. You describe a diagram with set sizes, pick a shape
 type, and fit. You get back fitted shapes plus goodness-of-fit metrics and,
 optionally, the region polygons to draw.
@@ -30,7 +30,7 @@ Or add it to `Cargo.toml` directly:
 eunoia = "1.4"
 ```
 
-The crate is `no_std`-free pure Rust with no system dependencies. Edition 2024,
+The crate is pure Rust with no system dependencies. Edition 2024,
 MSRV 1.88.
 
 ## Fit a diagram
@@ -55,7 +55,7 @@ let layout = Fitter::<Circle>::new(&spec).seed(42).fit().expect("fit");
 ```
 
 `.set` names a set and its size; `.intersection` names the size of an overlap.
-Values are **exclusive** by default — the part of `A` outside `B` is `5`, the
+Values are **exclusive** by default: the part of `A` outside `B` is `5`, the
 overlap is `1.5`. Pass `InputType::Inclusive` instead if your numbers are full
 set unions and eunoia will decompose them.
 
@@ -68,7 +68,7 @@ a fresh layout each run.
 
 ```rust
 for circle in layout.shapes() {
-    // Circle { center, radius, .. } — see geometry::shapes
+    // Circle { center, radius, .. }; see geometry::shapes
     println!("{:?}", circle);
 }
 
@@ -83,7 +83,7 @@ layout.fitted();      // achieved per-region areas
 
 ## Pick a different shape
 
-The shape is the generic parameter on `Fitter` — the spec doesn't change:
+The shape is the generic parameter on `Fitter`; the spec doesn't change:
 
 ```rust
 use eunoia::geometry::shapes::Ellipse;
@@ -93,7 +93,7 @@ let layout = Fitter::<Ellipse>::new(&spec).fit().expect("fit");
 
 `Circle`, `Ellipse`, `Square`, and `Rectangle` all live in
 `eunoia::geometry::shapes`. Ellipses have more freedom than circles and often fit
-three or more sets noticeably better — see [Shapes](/docs/concepts/shapes/).
+three or more sets noticeably better; see [Shapes](/docs/concepts/shapes/).
 
 ## Regions for rendering
 
@@ -110,8 +110,8 @@ for (combination, polygons) in &regions {
 
 ## Complement (the "universe")
 
-To fit a bounding container whose leftover area matches a target — items outside
-every set — opt in with `.complement`:
+To fit a bounding container whose leftover area matches a target (items outside
+every set), opt in with `.complement`:
 
 ```rust
 let spec = DiagramSpecBuilder::new()
@@ -123,14 +123,14 @@ let spec = DiagramSpecBuilder::new()
     .expect("valid spec");
 
 let layout = Fitter::<Circle>::new(&spec).fit().expect("fit");
-layout.container(); // Some(rect) — the jointly-fitted bounding box
+layout.container(); // Some(rect): the jointly-fitted bounding box
 ```
 
 See [Complement](/docs/concepts/complement/) for what this means.
 
 ## Next steps
 
-The full API — every builder method, optimizer, loss function, and shape trait —
+The full API (every builder method, optimizer, loss function, and shape trait)
 is on [docs.rs/eunoia](https://docs.rs/eunoia/). The in-tree `examples/`
 directory has runnable programs (e.g. `plotting_demo.rs`). For how the fit
 actually works, read the [Fitter pipeline](/docs/concepts/fitter-pipeline/) and

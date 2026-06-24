@@ -8,12 +8,12 @@ const TWO_SET_SPEC = {
 };
 </script>
 
-# Complement (universe / container)
+# Complement (universe/container)
 
 An Euler or Venn diagram normally shows only the named sets and their
 overlaps. Often, though, the sets are drawn from a larger population, and
-some items belong to *none* of them. That leftover — everything outside
-every set — is the **complement**, or the **universe**. eunoia can draw
+some items belong to *none* of them. That leftover, everything outside
+every set, is the **complement**, or the **universe**. eunoia can draw
 it as a bounding **container**: a rectangle around the diagram whose empty
 margin stands in for the items outside all sets.
 
@@ -43,7 +43,7 @@ const layout = euler({
   complement: 10,
 });
 
-layout.container; // -> { x, y, width, height } (centre + full extents)
+layout.container; // -> { x, y, width, height } (center + full extents)
 ```
 
 `layout.container` is present only when a complement was requested;
@@ -86,7 +86,7 @@ const named = layout.regions.filter((r) => r.combination !== "");
 
 ## Rendering the container as a frame
 
-The container is a centre `(x, y)` plus a full `width` and `height`, so a
+The container is a center `(x, y)` plus a full `width` and `height`, so a
 rectangle spans from `(x − width / 2, y − height / 2)` to
 `(x + width / 2, y + height / 2)`. The bundled SVG renderer
 (`@jolars/eunoia/svg`) draws it for you as a dashed frame, and can print
@@ -110,7 +110,7 @@ diagram is **topological, not area-proportional**: its canonical layout
 is fixed, so the complement value is not fitted. Instead the container is
 a purely visual frame, a fixed padding around the diagram's bounding box,
 and `layout.container` is therefore *not* proportional to the requested
-complement — it just gives you somewhere to write the count.
+complement; it just gives you somewhere to write the count.
 
 ```js
 import { venn } from "@jolars/eunoia";
@@ -139,9 +139,9 @@ let spec = DiagramSpecBuilder::new()
 
 ## See also
 
-- [Shapes](/docs/concepts/shapes/) — the primitives the container is
+- [Shapes](/docs/concepts/shapes/): the primitives the container is
   fitted around.
-- [Fitter pipeline](/docs/concepts/fitter-pipeline/) — how a spec becomes
+- [Fitter pipeline](/docs/concepts/fitter-pipeline/): how a spec becomes
   fitted geometry, container included.
-- [Label placement](/docs/concepts/label-placement/) — placing labels in
+- [Label placement](/docs/concepts/label-placement/): placing labels in
   and around the diagram.

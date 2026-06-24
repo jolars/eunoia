@@ -6,7 +6,7 @@ const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
 
 # Quickstart: R
 
-[`eulerr`](https://cran.r-project.org/package=eulerr) is the R binding — the
+[`eulerr`](https://cran.r-project.org/package=eulerr) is the R binding: the
 original package, now backed by the eunoia engine. You hand `euler()` a named
 vector of set sizes, it fits an area-proportional diagram, and `plot()` draws it
 with grid graphics.
@@ -24,7 +24,7 @@ install.packages("eulerr")
 ```
 
 CRAN ships binary builds, so no Rust toolchain is needed. (Installing from source
-does require `rustc` ≥ 1.88 — see the package README.)
+does require `rustc` ≥ 1.88; see the package README.)
 
 ## Fit a diagram
 
@@ -36,7 +36,7 @@ fit        # prints the residual table and goodness-of-fit metrics
 plot(fit)
 ```
 
-The input is a named numeric vector. Names are **combination expressions** — a
+The input is a named numeric vector. Names are **combination expressions**: a
 single set (`A`) or sets joined with `&` (`"A&B"`). Values are *disjoint*
 (exclusive) by default: the part of `A` outside `B` is `5`, the overlap is `1.5`.
 Pass `input = "union"` if your numbers are full set sizes instead.
@@ -58,7 +58,7 @@ plot(fit)
 
 `shape` is one of `"circle"` (default), `"ellipse"`, `"square"`, or
 `"rectangle"`. Ellipses are more flexible and often fit three or more sets
-noticeably better — see [Shapes](/docs/concepts/shapes/).
+noticeably better; see [Shapes](/docs/concepts/shapes/).
 
 ## Customize the plot
 

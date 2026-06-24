@@ -8,14 +8,14 @@ the [`eunoia`](https://pypi.org/project/eunoia/) Python package, and the
 modern rewrite of the C++ backend behind the
 [eulerr](https://github.com/jolars/eulerr) R package.
 
-## Who This is For
+## Who this is for
 
 These docs are aimed at two audiences:
 
 - **End users of language wrappers** (R, Python, JavaScript, Julia)
   who want to understand what the underlying library does, what its
   knobs mean, and how to read its outputs.
-- **Binding authors** wiring up downstream packages — the chapters
+- **Binding authors** wiring up downstream packages. The chapters
   under [Bindings](/docs/bindings/wasm-contract/) describe the JSON
   shapes, the size-measurement contract, and the resize-loop pattern.
 
@@ -24,14 +24,14 @@ for the TypeScript surface see the type definitions shipped with
 [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia).
 This site is the narrative companion.
 
-## Where to Start
+## Where to start
 
-- Just getting started? Visit the quickstart sections for [JavaScript](/docs/quickstart/javascript/),
+- Getting started: the quickstart sections for [JavaScript](/docs/quickstart/javascript/),
   [Rust](/docs/quickstart/rust/), [Python](/docs/quickstart/python/), [R](/docs/quickstart/r/),
   or [Julia](/docs/quickstart/julia/).
 - Writing a binding: [WASM contract](/docs/bindings/wasm-contract/)
   and [Resize loops](/docs/bindings/resize-loops/).
-- Placing labels in a downstream renderer —
+- Placing labels in a downstream renderer:
   [Label placement](/docs/concepts/label-placement/) (the only fully
   written chapter so far; the rest are stubs that will fill in as
   consumers hit the gap).

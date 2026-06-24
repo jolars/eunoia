@@ -37,7 +37,7 @@ fit.plot()
 plt.show()
 ```
 
-The input dict is keyed by **combination expression** — a single set (`"A"`) or
+The input dict is keyed by **combination expression**: a single set (`"A"`) or
 sets joined with `&` (`"A&B"`). Values are *exclusive* by default: the part of
 `A` outside `B` is `5`, the overlap is `1.5`. Pass `input="inclusive"` if your
 numbers are full set sizes and the core will decompose them:
@@ -49,7 +49,7 @@ fit = eu.euler({"A": 8, "B": 4.5, "A&B": 1.5}, input="inclusive")
 The result carries the fitted geometry and fit statistics:
 
 ```python
-fit.shapes        # list of fitted Circle / Ellipse structs
+fit.shapes        # list of fitted Circle/Ellipse structs
 fit.loss          # objective value (lower is better)
 fit.diag_error    # largest single-region error
 ```
@@ -63,7 +63,7 @@ fit.plot(quantities=True)
 
 `shape` is one of `"circle"` (default), `"ellipse"`, `"square"`, or
 `"rectangle"`. Ellipses are more flexible and often fit three or more sets
-noticeably better — see [Shapes](/docs/concepts/shapes/).
+noticeably better; see [Shapes](/docs/concepts/shapes/).
 
 ## Customize the plot
 
@@ -82,7 +82,7 @@ fit.plot(
 ## Venn diagrams
 
 For a fixed, *non*-proportional Venn template (every intersection shown
-regardless of size), use `venn()` — it accepts a set count, a list of names, or a
+regardless of size), use `venn()`; it accepts a set count, a list of names, or a
 mapping:
 
 ```python

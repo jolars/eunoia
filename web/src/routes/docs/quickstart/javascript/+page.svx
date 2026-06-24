@@ -8,8 +8,8 @@ const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
 
 `@jolars/eunoia` is the WebAssembly build of the eunoia engine. You hand it set
 sizes, it fits an area-proportional Euler (or canonical Venn) diagram, and hands
-back plain JavaScript objects — circles, ellipses, polygons, or per-region
-pieces — that you draw however you like (SVG, Canvas, D3).
+back plain JavaScript objects (circles, ellipses, polygons, or per-region
+pieces) that you draw however you like (SVG, Canvas, D3).
 
 <DiagramExample
   sets={TWO_SET_SPEC}
@@ -28,7 +28,7 @@ understands `import`-ed `.wasm` (Vite, webpack 5, Rollup, …). It ships its own
 TypeScript types.
 
 > Server-side rendering: call eunoia from the **client** (e.g. a dynamic
-> `import("@jolars/eunoia")` inside `onMount` / `useEffect`) so the wasm module
+> `import("@jolars/eunoia")` inside `onMount`/`useEffect`) so the wasm module
 > isn't instantiated during the server render.
 
 ## Without a bundler
@@ -36,7 +36,7 @@ TypeScript types.
 For a plain `<script type="module">`, an Observable notebook, or a raw-file CDN,
 use the **`@jolars/eunoia/web`** entry instead. It is a single self-contained ES
 module with the WebAssembly inlined, so there is nothing for a bundler to
-resolve — but you must `await init()` once before calling `euler` / `venn`:
+resolve, but you must `await init()` once before calling `euler`/`venn`:
 
 ```html
 <script type="module">
@@ -72,7 +72,7 @@ const layout = euler({
 });
 ```
 
-`sets` is keyed by **combination expression** — a single set (`"A"`) or sets
+`sets` is keyed by **combination expression**: a single set (`"A"`) or sets
 joined with `&` (`"A&B"`). By default the values are *exclusive* sizes (the part
 of `A` outside `B` is `5`, the overlap is `1.5`). Pass `inputType: "inclusive"`
 if your numbers are full set unions instead and eunoia will decompose them.
@@ -87,7 +87,7 @@ layout.circles;
 //   { label: "A", x, y, radius, labelAnchor: { x, y } },
 //   { label: "B", x, y, radius, labelAnchor: { x, y } },
 // ]
-layout.metrics.stress; // goodness-of-fit, plus loss / fittedAreas / …
+layout.metrics.stress; // goodness-of-fit, plus loss, fittedAreas, …
 ```
 
 ## Choose what comes back
@@ -95,11 +95,11 @@ layout.metrics.stress; // goodness-of-fit, plus loss / fittedAreas / …
 The `output` option decides the shape of the result. The `Layout` object is a
 union discriminated on `mode`:
 
-| `output`               | You get                                                              | Reach for it when                                  |
-| ---------------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
-| `"shapes"` *(default)* | `circles` / `ellipses` / `squares` / `rectangles` — primitive params | drawing native `<circle>` / `<ellipse>` / `<rect>` |
-| `"polygons"`           | the shapes **plus** `polygons` — one closed outline per set          | filling/stroking exact set outlines as `<path>`    |
-| `"regions"`            | `regions` — the exclusive pieces (`A` only, `A&B`, …) + `setAnchors` | per-region fills, colouring, label placement       |
+| `output`               | You get                                                                | Use it when                                      |
+| ---------------------- | ---------------------------------------------------------------------- | ------------------------------------------------ |
+| `"shapes"` *(default)* | `circles`/`ellipses`/`squares`/`rectangles`, the primitive params      | drawing native `<circle>`/`<ellipse>`/`<rect>`   |
+| `"polygons"`           | the shapes **plus** `polygons`, one closed outline per set             | filling/stroking exact set outlines as `<path>`  |
+| `"regions"`            | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors`     | per-region fills, coloring, label placement      |
 
 Every mode also carries `metrics` (loss, stress, fitted vs. target areas, …).
 See [Goodness of fit](/docs/concepts/goodness-of-fit/) for what those mean.
@@ -107,7 +107,7 @@ See [Goodness of fit](/docs/concepts/goodness-of-fit/) for what those mean.
 ## Render to SVG
 
 In `"shapes"` mode the fields map straight onto SVG attributes. Coordinates are
-in abstract, centred units, so compute a bounding box and use it as the
+in abstract, centered units, so compute a bounding box and use it as the
 `viewBox`:
 
 ```js
@@ -151,8 +151,8 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 document.body.innerHTML = renderCircles(layout.circles);
 ```
 
-Or skip the hand-rolling: the **`@jolars/eunoia/svg`** entry is a wasm-free,
-DOM-free serializer that turns a `Layout` straight into SVG. Use `toSvg` for a
+Or use the bundled serializer: the **`@jolars/eunoia/svg`** entry is wasm-free
+and DOM-free, and turns a `Layout` straight into SVG. Use `toSvg` for a
 complete document, or `svgBody` + `viewBox` when you want to own the `<svg>`
 element:
 
@@ -168,7 +168,7 @@ Because it never touches WebAssembly or the DOM, `./svg` works in server-side
 rendering and from a CDN as-is.
 
 `ellipses` carry `semiMajor`, `semiMinor`, and a `rotation` (radians);
-`squares` / `rectangles` carry `side` or `width` / `height` centred on `x`, `y`.
+`squares`/`rectangles` carry `side` or `width`/`height` centered on `x`, `y`.
 
 For exact overlap shading rather than translucent stacking, switch to
 `output: "regions"`, give each region its own fill from its `combination`, and
@@ -184,12 +184,12 @@ euler({ sets: { A: 5, B: 3, "A&B": 1.5 }, shape: "ellipse" });
 
 `shape` is one of `"circle"`, `"ellipse"`, `"square"`, `"rectangle"`. Ellipses
 have more freedom than circles and often fit three or more sets noticeably
-better — see [Shapes](/docs/concepts/shapes/).
+better; see [Shapes](/docs/concepts/shapes/).
 
 ## Venn diagrams
 
 For a fixed, *non*-proportional Venn template (the classic overlapping outlines),
-use `venn` instead — it ignores set sizes and just lays out `n` sets:
+use `venn` instead; it ignores set sizes and just lays out `n` sets:
 
 ```js
 import { venn } from "@jolars/eunoia";
@@ -200,7 +200,7 @@ layout.polygons; // one outline per set; output defaults to "polygons"
 
 Pick the shape with `shape`. `"ellipse"` (default) is the only one that
 reaches `n = 5`; `"circle"` gives the classic 1–3-circle diagrams, and
-`"square"` / `"rectangle"` are axis-aligned. The non-ellipse shapes cap at
+`"square"`/`"rectangle"` are axis-aligned. The non-ellipse shapes cap at
 `n = 3`:
 
 ```js

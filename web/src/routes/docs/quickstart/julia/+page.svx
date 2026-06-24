@@ -39,11 +39,11 @@ using Eunoia
 
 fit = euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5))
 fit          # `show` prints the residual table
-fit.shapes   # fitted Circle / Ellipse / Square / Rectangle structs
+fit.shapes   # fitted Circle/Ellipse/Square/Rectangle structs
 fit.loss     # fit quality (lower is better)
 ```
 
-The `Dict` is keyed by **combination expression** — a single set (`"A"`) or sets
+The `Dict` is keyed by **combination expression**: a single set (`"A"`) or sets
 joined with `&` (`"A&B"`). Values are *exclusive* by default: the part of `A`
 outside `B` is `5`, the overlap is `1.5`. Pass `input_type = "inclusive"` if your
 numbers are full set sizes instead.
@@ -60,7 +60,7 @@ Rendering lives in a Makie package extension that loads automatically once you
 import a Makie backend:
 
 ```julia
-using Eunoia, CairoMakie   # or GLMakie / WGLMakie
+using Eunoia, CairoMakie   # or GLMakie/WGLMakie
 
 fit = euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5))
 eunoiaplot(fit)                                   # publication-ready figure
@@ -79,12 +79,12 @@ euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5); shape = "ellipse")
 
 `shape` is one of `"circle"` (default), `"ellipse"`, `"square"`, or
 `"rectangle"`. Ellipses are more flexible and often fit three or more sets
-noticeably better — see [Shapes](/docs/concepts/shapes/).
+noticeably better; see [Shapes](/docs/concepts/shapes/).
 
 ## Venn diagrams
 
 For a fixed, *non*-proportional Venn template (every intersection shown
-regardless of size), use `venn` — it accepts an `Int`, a name vector, or a
+regardless of size), use `venn`; it accepts an `Int`, a name vector, or a
 mapping:
 
 ```julia
