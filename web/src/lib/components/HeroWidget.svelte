@@ -466,7 +466,7 @@ const aspectRatio = $derived(viewBox.w / viewBox.h || 1);
 
     <p class="text-xs text-muted">
       Values are exclusive region sizes. Drag any of them and the layout refits
-      live. Try switching the shape, ecause circles can't always represent every
+      live. Try switching the shape; circles can't always represent every
       overlap, but ellipses usually can.
     </p>
   </div>
