@@ -48,7 +48,10 @@ export const SUMMARY: DocSection[] = [
     ],
   },
   {
-    title: null,
-    chapters: [{ title: "Reference", slug: "/docs/reference/" }],
+    title: "Reference",
+    chapters: [
+      { title: "Overview", slug: "/docs/reference/" },
+      { title: "JavaScript API", slug: "/docs/reference/javascript/" },
+    ],
   },
 ];

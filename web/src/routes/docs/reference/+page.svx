@@ -4,9 +4,11 @@ API references live outside this site:
 
 - **Rust** — [docs.rs/eunoia](https://docs.rs/eunoia/) (rustdoc, the
   authoritative reference for every public type, trait, and function).
-- **JavaScript / TypeScript** — type definitions ship with
-  [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia);
-  your editor's "go to definition" / IntelliSense will surface them.
+- **JavaScript / TypeScript** — the [JavaScript API
+  reference](/docs/reference/javascript/) catalogs the public surface, and full
+  type definitions ship with
+  [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) so your
+  editor's "go to definition" / IntelliSense will surface them.
 - **Repository conventions** — [AGENTS.md](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
   describes the workspace layout, module organisation, optimisation
   pipeline, and the contract for adding new shape types.

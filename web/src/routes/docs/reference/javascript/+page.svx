@@ -1,0 +1,160 @@
+# JavaScript API reference
+
+The public surface of [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia).
+This page catalogs the exported functions and their options; the shipped
+TypeScript definitions remain the exhaustive, field-level source. New here? Start
+with the [JavaScript quickstart](/docs/quickstart/javascript/).
+
+All functions are pure (no shared state) and synchronous, except `init()` on the
+`./web` entry, which must be awaited once before fitting.
+
+## `euler(options)`
+
+Fits an area-proportional Euler diagram from set sizes and returns a `Layout`.
+
+```js
+import { euler } from "@jolars/eunoia";
+
+const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
+```
+
+| Option            | Type                                                              | Default        | Meaning                                                             |
+| ----------------- | ---------------------------------------------------------------- | -------------- | ------------------------------------------------------------------ |
+| `sets`            | `Record<string, number>`                                         | *(required)*   | Sizes keyed by combination expression (`"A"`, `"A&B"`, …).         |
+| `inputType`       | `"exclusive" \| "inclusive"`                                     | `"exclusive"`  | Whether values are exclusive pieces or full set unions.            |
+| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle"`              | `"circle"`     | Shape family to fit with.                                          |
+| `output`          | `"shapes" \| "polygons" \| "regions"`                           | `"shapes"`     | What the `Layout` carries (see [Layout](#the-layout-object)).      |
+| `seed`            | `number \| bigint`                                               | —              | RNG seed for reproducible fits.                                    |
+| `optimizer`       | `Optimizer`                                                       | core default   | Optimization algorithm (see below).                               |
+| `loss`            | `LossType`                                                       | optimizer's    | Region-error loss function.                                       |
+| `tolerance`       | `number`                                                         | —              | Optimizer convergence tolerance.                                  |
+| `restarts`        | `number`                                                        | `10`           | Random restarts of the two-phase fit; lowest loss is kept.        |
+| `polygonVertices` | `number`                                                        | `256`          | Vertices per polygon outline (`"polygons"` / `"regions"`).         |
+| `complement`      | `number`                                                        | —              | Items outside every set; fits a bounding container. See [Complement](/docs/concepts/complement/). |
+
+`Optimizer` is one of `"cmaEsTrf"`, `"cmaEsLm"`, `"cmaEs"`,
+`"levenbergMarquardt"`, `"trf"`, `"lbfgs"`, `"nelderMead"`. `LossType` is one of
+`"sumSquared"`, `"sumAbsolute"`, `"sumAbsoluteRegionError"`,
+`"sumSquaredRegionError"`, `"maxAbsolute"`, `"maxSquared"`, `"rootMeanSquared"`,
+`"stress"`, `"diagError"`. The defaults match the Rust core and are what you
+want unless you are deliberately exploring; see the
+[Fitter pipeline](/docs/concepts/fitter-pipeline/) chapter.
+
+## `venn(options)`
+
+Lays out a canonical n-set Venn diagram (fixed template, *not* proportional —
+set sizes are ignored). Returns a `Layout`.
+
+```js
+import { venn } from "@jolars/eunoia";
+
+const layout = venn({ n: 3 }); // 1 ≤ n ≤ 5
+```
+
+| Option            | Type                                                  | Default      | Meaning                                       |
+| ----------------- | ---------------------------------------------------- | ------------ | --------------------------------------------- |
+| `n`               | `number`                                             | *(required)* | Number of sets.                               |
+| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle"` | `"ellipse"`  | Shape family.                                 |
+| `output`          | `"polygons" \| "regions"`                           | `"polygons"` | What the `Layout` carries.                    |
+| `polygonVertices` | `number`                                             | `256`        | Vertices per outline.                         |
+| `complement`      | `number`                                             | —            | Optional complement container.                |
+
+Only `"ellipse"` reaches `n = 5`; `"circle"` gives the classic 1–3-circle
+diagrams, and `"square"` / `"rectangle"` are axis-aligned. The non-ellipse
+shapes cap at `n = 3`.
+
+## The `Layout` object
+
+Both `euler` and `venn` return a `Layout` — a union discriminated on `mode`,
+which follows the `output` option:
+
+| `output`     | `mode`         | Carries                                                                 |
+| ------------ | -------------- | ----------------------------------------------------------------------- |
+| `"shapes"`   | `"shapes"`     | `circles` / `ellipses` / `squares` / `rectangles` — primitive params.   |
+| `"polygons"` | `"polygons"`   | the shapes **plus** `polygons` — one closed outline per set.            |
+| `"regions"`  | `"regions"`    | `regions` — the exclusive pieces (`A` only, `A&B`, …) + `setAnchors`.   |
+
+Every `Layout` also carries:
+
+- `shape` — the shape family used (`"circle"`, `"ellipse"`, …).
+- `metrics` — `{ loss, stress, diagError, iterations, targetAreas, fittedAreas,
+  regionError, residuals }`. See [Goodness of fit](/docs/concepts/goodness-of-fit/).
+- `container` — present only when `complement` was set: `{ x, y, width, height }`.
+
+Each shape and region carries a `labelAnchor` (`{ x, y }`) for interior labels;
+`"regions"` mode adds `setAnchors`. Coordinates are abstract, centered units —
+compute a bounding box for your `viewBox`.
+
+## `placeLabelsForRegions(options)`
+
+Places one label per region, choosing interior or exterior positions (with
+leader lines) based on whether each region can hold its measured label. Returns
+`Record<string, LabelPlacement>` keyed by combination.
+
+```js
+import { placeLabelsForRegions } from "@jolars/eunoia";
+
+const placements = placeLabelsForRegions({
+  regions: layout.regions,
+  container: layout.container,
+  sizes: { A: { w: 0.4, h: 0.2 }, "A&B": { w: 0.3, h: 0.15 } },
+  strategy: { leader: { type: "straight" }, tether: "poi" },
+});
+```
+
+`sizes` are the measured label dimensions in diagram units, which usually means
+a render → measure → re-place loop. The `strategy` knobs (`leader`, `precision`,
+`tether`, `leaderGap`) and that loop are covered in
+[Label placement](/docs/concepts/label-placement/) and
+[Resize loops](/docs/bindings/resize-loops/).
+
+## `placementsBbox(options)`
+
+Returns the bounding box (`{ x, y, width, height }`, or `undefined`) enclosing a
+set of placed label boxes — useful for extending the viewport so exterior labels
+aren't clipped.
+
+## SVG serializer — `@jolars/eunoia/svg`
+
+A wasm-free, DOM-free entry that turns a `Layout` into SVG. It never touches
+WebAssembly, so it works during server-side rendering and from a CDN as-is.
+
+```js
+import { toSvg } from "@jolars/eunoia/svg";
+
+document.body.innerHTML = toSvg(layout, { showLabels: true });
+```
+
+- `toSvg(layout, opts?)` — a complete standalone `<svg>` document string.
+- `svgBody(layout, opts?)` — inner markup only, when you own the `<svg>` element.
+- `viewBox(layout, opts?)` — the `{ x, y, w, h }` viewBox for a layout.
+- `boundingBox(layout, opts?)` — geometry bounds, including exterior labels when
+  placements + sizes are supplied.
+- `polygonPath`, `regionPath`, `leaderPath` — SVG `d` path builders.
+- Color helpers: `PALETTES`, `paletteColors`, `defaultColorFor`, `colorForSet`,
+  `mixColors`, plus `nestedSets` / `regionTitleLines` for region labeling.
+
+`ToSvgOptions` covers palettes and per-set color overrides, opacity, strokes,
+label and count rendering, a legend, padding, and the `placements` / `labelSizes`
+from `placeLabelsForRegions` for exterior labels with leader lines.
+
+## Bundler-less entry — `@jolars/eunoia/web`
+
+A single self-contained ESM file with the WebAssembly inlined. Re-exports
+everything from the default entry, plus:
+
+- `init(): Promise<void>` — instantiate the embedded wasm once; idempotent. Must
+  be awaited before `euler` / `venn`.
+
+```html
+<script type="module">
+  import { euler, init } from "https://esm.sh/@jolars/eunoia/web";
+  await init();
+  const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
+</script>
+```
+
+---
+
+For exact field-level types, rely on the TypeScript definitions shipped with the
+package — your editor's "go to definition" / IntelliSense will surface them.

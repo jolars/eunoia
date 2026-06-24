@@ -11,7 +11,8 @@
 //   1. Compile the TS wrapper into npm/index.{js,d.ts}.
 //   2. Replace npm/package.json with ts/package.json minus build-only fields
 //      (`private`, `devDependencies`, `packageManager`).
-//   3. Remove the inner `.gitignore` wasm-pack writes (would shadow repo rules).
+//   3. Copy ts/README.md → npm/README.md (npm publishes the root README).
+//   4. Remove the inner `.gitignore` wasm-pack writes (would shadow repo rules).
 
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -87,7 +88,17 @@ await writeFile(
 );
 
 // ---------------------------------------------------------------------------
-// 3. Drop the inner .gitignore wasm-pack writes
+// 3. Copy the README into npm/ (npm publishes the package-root README)
+// ---------------------------------------------------------------------------
+
+const readmeSrc = resolve(tsDir, "README.md");
+if (!(await fileExists(readmeSrc))) {
+  throw new Error(`prepare-package: ${readmeSrc} not found`);
+}
+await copyFile(readmeSrc, resolve(npmDir, "README.md"));
+
+// ---------------------------------------------------------------------------
+// 4. Drop the inner .gitignore wasm-pack writes
 // ---------------------------------------------------------------------------
 
 await rm(resolve(npmDir, ".gitignore"), { force: true });

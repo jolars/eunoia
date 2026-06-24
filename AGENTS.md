@@ -19,7 +19,7 @@ This is a **Cargo workspace** plus two JS sub-projects. Four distinct artifacts:
 | `crates/eunoia/`      | Core library (pure Rust). Default workspace member. The real algorithms. |
 | `crates/eunoia-wasm/` | `wasm-bindgen` surface — a thin, raw binding layer. `publish = false`.   |
 | `ts/`                 | High-level TypeScript wrapper (`euler()`, `venn()`) + build script.      |
-| `npm/`                | The assembled, publishable `@jolars/eunoia` package (checked in).        |
+| `npm/`                | The assembled, publishable `@jolars/eunoia` package (generated, gitignored). |
 | `web/`                | SvelteKit app (Svelte 5, Tailwind 4, rolldown-vite). Links `file:../npm`.|
 
 How the JS layers fit together: `eunoia-wasm` is compiled by `wasm-pack` into
