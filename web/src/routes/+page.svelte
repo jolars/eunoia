@@ -27,8 +27,6 @@ const johanUrl = "https://jolars.co";
 <div class="text-ink">
   <main class="max-w-5xl mx-auto px-6 py-16 space-y-16">
     <section>
-      <!-- Stacked + logo-centred below `sm`; logo to the right alongside the
-           text at `sm` and up. Avoids the heading wrapping around a float. -->
       <div
         class="flex flex-col items-center gap-6 sm:flex-row-reverse sm:items-start sm:gap-8"
       >
@@ -47,6 +45,7 @@ const johanUrl = "https://jolars.co";
             WASM bindings for the web. Powers the R package
             <a href={eulerrRepoUrl} class="text-accent hover:underline">eulerr</a>,
             npm package <a href={npmUrl} class="text-accent hover:underline">@jolars/eunoia</a>,
+            Julia package <a href={juliaRepoUrl} class="text-accent hover:underline">Eunoia.jl</a>,
             and Python package <a href={pypiUrl} class="text-accent hover:underline">eunoia</a>.
           </p>
           <div class="flex flex-wrap gap-3 pt-2">
@@ -95,7 +94,7 @@ const johanUrl = "https://jolars.co";
           <pre class="bg-inset border border-line rounded p-2 font-mono text-xs overflow-x-auto">npm install @jolars/eunoia</pre>
           <p class="text-xs text-muted">
             WASM bindings; powers
-            <a href="/app/" class="text-accent hover:underline">this site</a>.
+            <a href="/app/" class="text-accent hover:underline">the web app</a> and all the interactive demos on this site.
           </p>
         </div>
         <div class="bg-surface border border-line rounded p-4 space-y-2">
@@ -139,11 +138,11 @@ const johanUrl = "https://jolars.co";
     <section class="space-y-4">
       <h3 class="text-xl font-semibold">Why Eunoia?</h3>
       <ul class="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm text-ink list-disc pl-5">
-        <li>Accurate and fast: uses exact n-way intersection geometry, analytical gradients, state-of-the-art optimizers, and is written in Rust.</li>
+        <li>Accurate and fast: uses exact n-way intersection geometry, analytical gradients, and efficient optimizers.</li>
         <li>Exact n-way intersection geometry for circles and ellipses.</li>
         <li>Multiple shapes: circles, ellipses, squares, and rectangles.</li>
         <li>Multiple loss functions to prioritize different aspects of fit quality.</li>
-        <li>Pluggable optimizers (CMA-ES, Levendberg-Marquardt, L-BFGS, Nelder-Mead).</li>
+        <li>Customizable optimizers (CMA-ES, Levendberg-Marquardt, L-BFGS, Nelder-Mead).</li>
         <li>Optional bounding-rectangle "complement" for universe sets.</li>
         <li>Extensive customization of plot aesthetics.</li>
         <li>Pure Rust core, no platform-specific deps.</li>

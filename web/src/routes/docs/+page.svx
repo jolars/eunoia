@@ -1,13 +1,14 @@
 # Introduction
 
-Eunoia is a Rust library for area-proportional Euler and Venn diagrams.
-It is the engine behind the [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)
-npm package, the [`eunoia`](https://pypi.org/project/eunoia/) Python
-package, and the [`Eunoia.jl`](https://github.com/jolars/Eunoia.jl) Julia
-package, as well as a modern rewrite of the C++
-backend behind the [eulerr](https://github.com/jolars/eulerr) R package.
+Eunoia is a Rust library for area-proportional Euler and Venn diagrams. It is
+the engine behind the
+[`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) npm package,
+the [`eunoia`](https://pypi.org/project/eunoia/) Python package, and the
+[`Eunoia.jl`](https://github.com/jolars/Eunoia.jl) Julia package, as well as a
+modern rewrite of the C++ backend behind the
+[eulerr](https://github.com/jolars/eulerr) R package.
 
-## Who this is for
+## Who This is For
 
 These docs are aimed at two audiences:
 
@@ -23,11 +24,12 @@ for the TypeScript surface see the type definitions shipped with
 [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia).
 This site is the narrative companion.
 
-## Where to start
+## Where to Start
 
-- New here — [Quickstart: JavaScript](/docs/quickstart/javascript/) or
-  [Quickstart: Rust](/docs/quickstart/rust/).
-- Writing a binding — [WASM contract](/docs/bindings/wasm-contract/)
+- Just getting started? Visit the quickstart sections for [JavaScript](/docs/quickstart/javascript/),
+  [Rust](/docs/quickstart/rust/), [Python](/docs/quickstart/python/), [R](/docs/quickstart/r/),
+  or [Julia](/docs/quickstart/julia/).
+- Writing a binding: [WASM contract](/docs/bindings/wasm-contract/)
   and [Resize loops](/docs/bindings/resize-loops/).
 - Placing labels in a downstream renderer —
   [Label placement](/docs/concepts/label-placement/) (the only fully

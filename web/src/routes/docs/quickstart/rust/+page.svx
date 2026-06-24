@@ -6,9 +6,9 @@ const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
 
 # Quickstart: Rust
 
-`eunoia` is the pure-Rust core — every other binding (JavaScript, R, Python,
+Eunioa is the pure-Rust core. Every other binding (JavaScript, R, Python,
 Julia) wraps the same engine. You describe a diagram with set sizes, pick a shape
-type, and fit; you get back fitted shapes plus goodness-of-fit metrics and,
+type, and fit. You get back fitted shapes plus goodness-of-fit metrics and,
 optionally, the region polygons to draw.
 
 <DiagramExample
