@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.14/schema.json",
   "files": {
     "includes": [
       "**",
@@ -10,11 +10,25 @@
       "!.cargo",
       "!dist",
       "!node_modules",
+      // Generated / build output (SvelteKit, wasm-pack, the assembled npm pkg).
+      "!**/.svelte-kit",
+      "!web/pkg",
+      "!web/static",
+      "!npm",
       "!.pre-commit-config.yaml",
       "!.versionary-manifest.json"
     ]
   },
   "formatter": {
     "indentStyle": "space"
+  },
+  // Svelte (`.svelte`) is formatted by Prettier + prettier-plugin-svelte (see
+  // web/.prettierrc.json); Biome owns JS/TS/JSON/CSS. The web app's CSS uses
+  // Tailwind 4 at-rules (`@plugin`, `@theme`, `@custom-variant`, …), which the
+  // CSS parser rejects unless this is enabled.
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   }
 }

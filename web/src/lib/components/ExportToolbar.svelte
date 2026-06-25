@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { appState } from "../state.svelte";
-  import { exportSvg, exportPng, exportPdf, exportJson } from "../export";
+  import { exportJson, exportPdf, exportPng, exportSvg } from "../export";
   import { embeddableFontFaceCss, pdfFontFor } from "../fonts";
+  import { appState } from "../state.svelte";
 
   let { svgEl }: { svgEl: SVGSVGElement | null } = $props();
 
@@ -75,15 +75,16 @@
         onclick={() => (popoverOpen = !popoverOpen)}
         class="px-2 py-1.5 text-xs text-muted border border-line rounded bg-surface hover:bg-inset"
         aria-label="Export size"
-        title="Size"
-      >Size</button>
+        title="Size">Size</button
+      >
     {/if}
     <button
       type="button"
       onclick={save}
       disabled={busy}
       class="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
-    >{busy ? "Saving…" : "Download"}</button>
+      >{busy ? "Saving…" : "Download"}</button
+    >
   </div>
 
   {#if popoverOpen}

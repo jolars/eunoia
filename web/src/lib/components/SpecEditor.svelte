@@ -39,7 +39,9 @@
 
   {#if appState.diagramType === "venn"}
     <div>
-      <div class="block text-xs font-medium text-muted mb-1.5">Number of sets</div>
+      <div class="block text-xs font-medium text-muted mb-1.5">
+        Number of sets
+      </div>
       <div class="flex gap-2">
         {#each [1, 2, 3, 4, 5] as n}
           <label class="flex items-center cursor-pointer">
@@ -135,7 +137,9 @@
     </div>
 
     <div>
-      <div class="block text-xs font-medium text-muted mb-1.5">Combinations</div>
+      <div class="block text-xs font-medium text-muted mb-1.5">
+        Combinations
+      </div>
       <div class="space-y-1.5">
         {#each appState.rows as row, i (i)}
           <div class="flex gap-1.5">
@@ -157,8 +161,8 @@
               onclick={() => appState.removeRow(i)}
               class="px-2 py-1.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-sm"
               aria-label="Remove row"
-              title="Remove"
-            >×</button>
+              title="Remove">×</button
+            >
           </div>
         {/each}
 
@@ -166,7 +170,8 @@
           type="button"
           onclick={() => appState.addRow()}
           class="w-full px-3 py-1.5 bg-inset text-ink rounded hover:bg-line text-sm"
-        >+ Add row</button>
+          >+ Add row</button
+        >
       </div>
     </div>
   {/if}

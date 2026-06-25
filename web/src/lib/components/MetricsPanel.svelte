@@ -28,7 +28,10 @@
     </dl>
     <p class="mt-3 text-xs text-muted">
       stress: venneuler-style. diagError: max region error. iterations: {metrics.iterations}.
-      <a href="/docs/concepts/goodness-of-fit/" class="text-accent hover:underline">Learn more</a>.
+      <a
+        href="/docs/concepts/goodness-of-fit/"
+        class="text-accent hover:underline">Learn more</a
+      >.
     </p>
   {:else}
     <p class="text-sm text-muted">No diagram fitted yet.</p>

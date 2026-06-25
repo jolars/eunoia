@@ -1,0 +1,9 @@
+# Build output and generated dirs
+dist
+.svelte-kit
+pkg
+node_modules
+
+# Vendored fonts / static assets
+src/lib/assets
+static

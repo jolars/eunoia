@@ -1,8 +1,8 @@
 <script lang="ts">
-import DocsSidebar from "$lib/components/DocsSidebar.svelte";
-import Footer from "$lib/components/Footer.svelte";
+  import DocsSidebar from "$lib/components/DocsSidebar.svelte";
+  import Footer from "$lib/components/Footer.svelte";
 
-let { children } = $props();
+  let { children } = $props();
 </script>
 
 <div class="max-w-7xl mx-auto px-6 py-8">

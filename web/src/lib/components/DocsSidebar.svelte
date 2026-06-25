@@ -1,8 +1,8 @@
 <script lang="ts">
-import { page } from "$app/state";
-import { SUMMARY } from "$lib/docs/SUMMARY";
+  import { page } from "$app/state";
+  import { SUMMARY } from "$lib/docs/SUMMARY";
 
-const currentPath = $derived(page.url.pathname);
+  const currentPath = $derived(page.url.pathname);
 </script>
 
 <nav class="space-y-6 text-sm">
@@ -11,7 +11,9 @@ const currentPath = $derived(page.url.pathname);
       {#if section.title}
         <p
           class="text-xs font-semibold text-muted uppercase tracking-wider mb-2"
-        >{section.title}</p>
+        >
+          {section.title}
+        </p>
       {/if}
       <ul class="space-y-1">
         {#each section.chapters as chapter}
@@ -24,8 +26,8 @@ const currentPath = $derived(page.url.pathname);
               class:text-accent={active}
               class:font-medium={active}
               class:text-ink={!active}
-              class:hover:bg-inset={!active}
-            >{chapter.title}</a>
+              class:hover:bg-inset={!active}>{chapter.title}</a
+            >
           </li>
         {/each}
       </ul>

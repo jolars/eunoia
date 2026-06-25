@@ -1,25 +1,24 @@
 <script lang="ts">
-import { appState } from "../state.svelte";
+  import { appState } from "../state.svelte";
 
-// Tolerance spans orders of magnitude, so the slider works in log10 space:
-// each step is one power of ten, from 1e-1 (loose, fast) to 1e-6 (tight,
-// slow). The stored value stays a plain number (1e-1 … 1e-6).
-const TOL_MIN_EXP = -6;
-const TOL_MAX_EXP = -1;
+  // Tolerance spans orders of magnitude, so the slider works in log10 space:
+  // each step is one power of ten, from 1e-1 (loose, fast) to 1e-6 (tight,
+  // slow). The stored value stays a plain number (1e-1 … 1e-6).
+  const TOL_MIN_EXP = -6;
+  const TOL_MAX_EXP = -1;
 
-const tolExp = $derived(Math.log10(appState.advanced.tolerance));
+  const tolExp = $derived(Math.log10(appState.advanced.tolerance));
 
-function setTolExp(exp: number) {
-  appState.advanced.tolerance = Math.pow(10, Math.round(exp));
-}
+  function setTolExp(exp: number) {
+    appState.advanced.tolerance = 10 ** Math.round(exp);
+  }
 </script>
 
 <div class="space-y-4">
   <div>
-    <label
-      for="optimizer"
-      class="block text-xs font-medium text-muted mb-1"
-    >Optimizer</label>
+    <label for="optimizer" class="block text-xs font-medium text-muted mb-1"
+      >Optimizer</label
+    >
     <select
       id="optimizer"
       bind:value={appState.advanced.optimizer}
@@ -34,7 +33,9 @@ function setTolExp(exp: number) {
 
   <div>
     <label for="tolerance" class="block text-xs font-medium text-muted mb-1">
-      Tolerance <span class="font-mono text-faint">{appState.advanced.tolerance.toExponential(0)}</span>
+      Tolerance <span class="font-mono text-faint"
+        >{appState.advanced.tolerance.toExponential(0)}</span
+      >
     </label>
     <input
       id="tolerance"
@@ -43,7 +44,8 @@ function setTolExp(exp: number) {
       max={TOL_MAX_EXP}
       step="1"
       value={tolExp}
-      oninput={(e) => setTolExp(parseFloat((e.target as HTMLInputElement).value))}
+      oninput={(e) =>
+        setTolExp(parseFloat((e.target as HTMLInputElement).value))}
       class="w-full"
     />
     <p class="mt-1 text-xs text-muted">
@@ -52,10 +54,9 @@ function setTolExp(exp: number) {
   </div>
 
   <div>
-    <label
-      for="loss"
-      class="block text-xs font-medium text-muted mb-1"
-    >Loss function</label>
+    <label for="loss" class="block text-xs font-medium text-muted mb-1"
+      >Loss function</label
+    >
     <select
       id="loss"
       bind:value={appState.advanced.lossType}

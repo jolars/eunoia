@@ -1,36 +1,37 @@
 <script lang="ts">
-import { appState } from "../state.svelte";
-import { defaultColorFor, PALETTES } from "../colors";
-import { FONT_FAMILIES } from "../fonts";
+  import { defaultColorFor, PALETTES } from "../colors";
+  import { FONT_FAMILIES } from "../fonts";
+  import { appState } from "../state.svelte";
 
-let setNames = $derived(appState.setNames);
+  let setNames = $derived(appState.setNames);
 
-function colorFor(name: string, idx: number): string {
-  return (
-    appState.style.colors[name] ?? defaultColorFor(idx, appState.style.palette)
-  );
-}
+  function colorFor(name: string, idx: number): string {
+    return (
+      appState.style.colors[name] ??
+      defaultColorFor(idx, appState.style.palette)
+    );
+  }
 
-// Switching palettes clears per-set overrides so the new scheme applies
-// cleanly; the per-set pickers below let you re-tweak afterwards.
-function selectPalette(id: string) {
-  appState.style.palette = id;
-  appState.style.colors = {};
-}
+  // Switching palettes clears per-set overrides so the new scheme applies
+  // cleanly; the per-set pickers below let you re-tweak afterwards.
+  function selectPalette(id: string) {
+    appState.style.palette = id;
+    appState.style.colors = {};
+  }
 
-function setColor(name: string, value: string) {
-  appState.style.colors = { ...appState.style.colors, [name]: value };
-}
+  function setColor(name: string, value: string) {
+    appState.style.colors = { ...appState.style.colors, [name]: value };
+  }
 
-function resetColor(name: string) {
-  const next = { ...appState.style.colors };
-  delete next[name];
-  appState.style.colors = next;
-}
+  function resetColor(name: string) {
+    const next = { ...appState.style.colors };
+    delete next[name];
+    appState.style.colors = next;
+  }
 
-function resetAllColors() {
-  appState.style.colors = {};
-}
+  function resetAllColors() {
+    appState.style.colors = {};
+  }
 </script>
 
 <div class="space-y-4">
@@ -67,8 +68,8 @@ function resetAllColors() {
         <button
           type="button"
           onclick={resetAllColors}
-          class="text-xs text-accent hover:underline"
-        >Reset</button>
+          class="text-xs text-accent hover:underline">Reset</button
+        >
       {/if}
     </div>
     {#if setNames.length === 0}
@@ -81,7 +82,8 @@ function resetAllColors() {
               type="color"
               aria-label={`Color for set ${name}`}
               value={colorFor(name, i)}
-              oninput={(e) => setColor(name, (e.target as HTMLInputElement).value)}
+              oninput={(e) =>
+                setColor(name, (e.target as HTMLInputElement).value)}
               class="h-6 w-7 cursor-pointer rounded border border-line p-0"
             />
             <span class="font-mono">{name}</span>
@@ -91,8 +93,8 @@ function resetAllColors() {
                 onclick={() => resetColor(name)}
                 class="text-xs text-faint hover:text-ink"
                 aria-label={`Reset ${name} to default color`}
-                title="Use default"
-              >×</button>
+                title="Use default">×</button
+              >
             {/if}
           </label>
         {/each}
@@ -102,7 +104,9 @@ function resetAllColors() {
 
   <div>
     <label for="alpha" class="block text-xs font-medium text-muted mb-1">
-      Opacity <span class="font-mono text-faint">{appState.style.alpha.toFixed(2)}</span>
+      Opacity <span class="font-mono text-faint"
+        >{appState.style.alpha.toFixed(2)}</span
+      >
     </label>
     <input
       id="alpha"
@@ -117,7 +121,9 @@ function resetAllColors() {
 
   <div>
     <label for="strokeWidth" class="block text-xs font-medium text-muted mb-1">
-      Border width <span class="font-mono text-faint">{appState.style.strokeWidth.toFixed(1)}</span>
+      Border width <span class="font-mono text-faint"
+        >{appState.style.strokeWidth.toFixed(1)}</span
+      >
     </label>
     <input
       id="strokeWidth"
@@ -132,7 +138,9 @@ function resetAllColors() {
 
   <div>
     <label for="labelSize" class="block text-xs font-medium text-muted mb-1">
-      Label size <span class="font-mono text-faint">{appState.style.labelSize}</span>
+      Label size <span class="font-mono text-faint"
+        >{appState.style.labelSize}</span
+      >
     </label>
     <input
       id="labelSize"
@@ -145,11 +153,19 @@ function resetAllColors() {
     />
     <div class="flex gap-3 mt-1.5">
       <label class="flex items-center cursor-pointer text-sm">
-        <input type="checkbox" bind:checked={appState.style.fontBold} class="mr-1.5" />
+        <input
+          type="checkbox"
+          bind:checked={appState.style.fontBold}
+          class="mr-1.5"
+        />
         Bold
       </label>
       <label class="flex items-center cursor-pointer text-sm">
-        <input type="checkbox" bind:checked={appState.style.fontItalic} class="mr-1.5" />
+        <input
+          type="checkbox"
+          bind:checked={appState.style.fontItalic}
+          class="mr-1.5"
+        />
         Italic
       </label>
     </div>
@@ -175,17 +191,28 @@ function resetAllColors() {
 
   <div class="flex flex-wrap gap-x-4 gap-y-2">
     <label class="flex items-center cursor-pointer text-sm">
-      <input type="checkbox" bind:checked={appState.style.showCounts} class="mr-1.5" />
+      <input
+        type="checkbox"
+        bind:checked={appState.style.showCounts}
+        class="mr-1.5"
+      />
       Region counts
     </label>
     <label class="flex items-center cursor-pointer text-sm">
-      <input type="checkbox" bind:checked={appState.style.showLegend} class="mr-1.5" />
+      <input
+        type="checkbox"
+        bind:checked={appState.style.showLegend}
+        class="mr-1.5"
+      />
       Legend
     </label>
   </div>
 
   <div>
-    <label for="labelPlacement" class="block text-xs font-medium text-muted mb-1">
+    <label
+      for="labelPlacement"
+      class="block text-xs font-medium text-muted mb-1"
+    >
       Exterior label solver
     </label>
     <select
@@ -219,9 +246,9 @@ function resetAllColors() {
       <option value="boundary">Polygon edge</option>
     </select>
     <p class="text-xs text-muted mt-1">
-      Where exterior leader lines anchor on the source region. POI is safe
-      with any rendering style; polygon edge looks cleaner when the shape
-      has a visible border (raise the border width above).
+      Where exterior leader lines anchor on the source region. POI is safe with
+      any rendering style; polygon edge looks cleaner when the shape has a
+      visible border (raise the border width above).
     </p>
   </div>
 

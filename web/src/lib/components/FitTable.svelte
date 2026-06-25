@@ -4,7 +4,13 @@
   let { metrics }: { metrics: FitMetrics | null } = $props();
 
   let rows = $derived.by(() => {
-    if (!metrics) return [] as { combo: string; target: number; fitted: number; regionError: number }[];
+    if (!metrics)
+      return [] as {
+        combo: string;
+        target: number;
+        fitted: number;
+        regionError: number;
+      }[];
     const keys = new Set([
       ...Object.keys(metrics.target),
       ...Object.keys(metrics.fitted),
@@ -32,7 +38,9 @@
   {:else}
     <table class="w-full text-sm">
       <thead>
-        <tr class="border-b border-line text-left text-muted text-xs uppercase tracking-wide">
+        <tr
+          class="border-b border-line text-left text-muted text-xs uppercase tracking-wide"
+        >
           <th class="py-1.5 pr-2">Combination</th>
           <th class="py-1.5 pr-2 text-right">Input</th>
           <th class="py-1.5 pr-2 text-right">Fit</th>

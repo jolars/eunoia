@@ -85,6 +85,16 @@
       biome = {
         enable = true;
       };
+
+      # Svelte is not handled by Biome; format it with prettier-plugin-svelte
+      # using the web/ project's local prettier (and its .prettierrc.json).
+      prettier-svelte = {
+        enable = true;
+        name = "prettier (svelte)";
+        entry = "web/node_modules/.bin/prettier --write";
+        files = "^web/.*\\.svelte$";
+        pass_filenames = true;
+      };
     };
   };
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { RELEASE_URL, VERSION } from "$lib/version";
+  import { RELEASE_URL, VERSION } from "$lib/version";
 </script>
 
 <footer
