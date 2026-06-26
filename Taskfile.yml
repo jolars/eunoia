@@ -120,6 +120,30 @@ tasks:
     cmds:
       - npm run dev
 
+  lighthouse:
+    desc: "Lighthouse desktop audit of the docs (perf, a11y, best-practices, SEO). Args: URL=..."
+    # Audits the live docs site by default. Point URL at a local preview
+    # (e.g. `task web-dev` → http://localhost:5173/docs/) to audit unreleased
+    # changes. Uses the chromium from the devenv shell.
+    vars:
+      URL: '{{.URL | default "https://eunoia.bz/docs/"}}'
+    cmds:
+      - mkdir -p .lighthouse
+      - >-
+        CHROME_PATH="$(command -v chromium)"
+        lighthouse "{{.URL}}"
+        --preset=desktop
+        --output=json --output=html
+        --output-path=.lighthouse/report
+        --chrome-flags="--headless=new --no-sandbox --disable-gpu"
+        --only-categories=performance,accessibility,best-practices,seo
+        --quiet
+      - >-
+        node -e 'const r=require("./.lighthouse/report.report.json");
+        for(const k in r.categories)
+        console.log(r.categories[k].title.padEnd(16),
+        Math.round(r.categories[k].score*100));'
+
   flamegraph:
     desc: "Flamegraph of the single-fit example. Args: CASE=3circle|4set|6set (default 6set)"
     vars:

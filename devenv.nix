@@ -12,6 +12,7 @@
     cargo-deny
     cargo-msrv
     google-lighthouse
+    chromium
     nodejs
     gnuplot
     samply
