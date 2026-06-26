@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.0](https://github.com/jolars/eunoia/compare/v1.5.0...v1.6.0) (2026-06-26)
+
+### Features
+- **fitter:** auto-reduce restarts for small smooth-loss fits ([`1a61437`](https://github.com/jolars/eunoia/commit/1a6143709dd4013bd85db49de2787257c7c38819))
+- **fitter:** wire MADS poll-size floor to tolerance; add lever sweep ([`90636b9`](https://github.com/jolars/eunoia/commit/90636b9d7f083e846b4bb82410906440e9788620))
+- **fitter:** add MADS optimizer + benchmark vs Nelder-Mead ([`04a144b`](https://github.com/jolars/eunoia/commit/04a144bfb0329afd7f3e2ef4043e1754a1e78a47))
+- **venn:** add rotated rectangle shape for 4 set venn diagrams ([`322c1d9`](https://github.com/jolars/eunoia/commit/322c1d9c7cc24ec23464116c35d252c41a4b6912))
+- **web:** add rotated rectangles ([`33b9250`](https://github.com/jolars/eunoia/commit/33b92504cbce2b5c0be25ef524bab9f4388fd30f))
+- **shapes:** add RotatedRectangle shape with derivative-free fitting ([`254adbd`](https://github.com/jolars/eunoia/commit/254adbd84888ecc8e6812782e4a0e7f26f012a6b))
+
 ## [1.5.0](https://github.com/jolars/eunoia/compare/v1.4.0...v1.5.0) (2026-06-20)
 
 ### Features

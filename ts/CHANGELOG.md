@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.5.0...eunoia-npm-v1.6.0) (2026-06-26)
+
+### Features
+- **shapes:** add RotatedRectangle shape with derivative-free fitting ([`254adbd`](https://github.com/jolars/eunoia/commit/254adbd84888ecc8e6812782e4a0e7f26f012a6b))
+
+### Dependencies
+- updated eunoia to v1.6.0
+
 ## [1.5.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.4.0...eunoia-npm-v1.5.0) (2026-06-20)
 
 ### Dependencies
