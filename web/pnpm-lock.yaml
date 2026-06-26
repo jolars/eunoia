@@ -57,6 +57,9 @@ importers:
       mdsvex:
         specifier: ^0.12.6
         version: 0.12.7(svelte@5.56.3)
+      prettier:
+        specifier: ^3.6.2
+        version: 3.8.3
       prettier-plugin-svelte:
         specifier: ^4.1.1
         version: 4.1.1(prettier@3.8.3)(svelte@5.56.3)
