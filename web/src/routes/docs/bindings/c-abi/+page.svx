@@ -1,17 +1,288 @@
 # C ABI contract
 
-> TODO: document the `eunoia-capi` C ABI seam for native bindings.
->
-> This is the boundary used by hosts whose only Rust-interop path is a
-> C ABI—Julia today (via `ccall`/`Libdl`), and potentially Go (cgo),
-> C/C++, Zig, etc. Hosts with a native Rust-binding framework
-> (JavaScript via wasm-bindgen, Python via PyO3/maturin, R via extendr)
-> bind the core directly and never touch this surface.
->
-> When a second, non-first-party consumer appears, cover the parts a
-> generated C header does not convey: the JSON shapes of inputs and
-> outputs, canonical combination keying (`A`, `A&B`, `""` for
-> complement), memory ownership across the boundary (who allocates, who
-> frees returned strings), error encoding, and thread-safety. Until
-> then `Eunoia.jl` is the reference implementation and the Rust source
-> is authoritative.
+`eunoia-capi` is a thin C ABI seam over the Rust core, meant for hosts whose
+only interop path is a C ABI—Julia today (via `ccall`/`Libdl`), and potentially
+Go (cgo), C/C++, or Zig. Hosts with a native Rust-binding framework (JavaScript
+via wasm-bindgen, Python via PyO3, R via extendr) bind the core directly and
+never touch this surface.
+
+The boundary is deliberately tiny: a diagram spec is an irregular, string-keyed,
+variable-length payload, so rather than marshal bespoke C structs, **every call
+passes a JSON string and receives a JSON string**. There are only five exported
+symbols. [`Eunoia.jl`](https://github.com/jolars/Eunoia.jl) is the reference
+consumer; the Rust source (`crates/eunoia-capi/src/lib.rs`) is authoritative.
+
+## The contract in one paragraph
+
+Build a JSON request, hand its NUL-terminated bytes to one of the entry points,
+and read back a freshly allocated JSON string. Every response is an envelope:
+branch on the boolean `ok`. On success the payload fields sit next to
+`"ok": true`; on failure you get `{"ok": false, "error": "<message>"}`. A panic
+in the core is caught and reported as an `error` envelope—it never unwinds
+across the boundary. Every returned pointer is owned by the caller and must be
+released exactly once with `eunoia_free`.
+
+## Exported symbols
+
+All five are `extern "C"`. Strings are NUL-terminated UTF-8.
+
+| Symbol                | C signature                          | Returns                          |
+| --------------------- | ------------------------------------ | -------------------------------- |
+| `eunoia_euler`        | `char *eunoia_euler(const char *)`   | fitted Euler layout envelope     |
+| `eunoia_venn`         | `char *eunoia_venn(const char *)`    | canonical Venn layout envelope   |
+| `eunoia_place_labels` | `char *eunoia_place_labels(const char *)` | label/leader placement envelope |
+| `eunoia_version`      | `char *eunoia_version(void)`         | crate version string             |
+| `eunoia_free`         | `void eunoia_free(char *)`           | —                                |
+
+There is no generated C header today—declare the five prototypes yourself from
+the table above.
+
+## Building the library
+
+`eunoia-capi` builds as both a `cdylib` (for runtime `dlopen`, as Julia does)
+and a `staticlib`:
+
+```bash
+cargo build -p eunoia-capi --release
+```
+
+That writes `libeunoia_capi.{so,dylib}` (and `eunoia_capi.dll` on Windows), plus
+`libeunoia_capi.a`, into `target/release/`. The crate compiles with the core's
+`parallel` feature on, so the restart loop is rayon-parallel inside each call.
+
+## `eunoia_euler`
+
+Fits an area-proportional Euler diagram from set sizes and returns a layout.
+
+Request:
+
+```json
+{
+  "sets": [
+    { "combination": "A", "size": 5 },
+    { "combination": "B", "size": 3 },
+    { "combination": "A&B", "size": 1 }
+  ],
+  "shape": "circle",
+  "seed": 1
+}
+```
+
+| Field         | Type                  | Default        | Meaning                                                                   |
+| ------------- | --------------------- | -------------- | ------------------------------------------------------------------------- |
+| `sets`        | array of `{combination, size}` | *(required)* | Sizes keyed by combination string (`"A"`, `"A&B"`, …).             |
+| `shape`       | string                | `"circle"`     | `"circle"`, `"ellipse"`, `"square"`, `"rectangle"`, or `"rotated_rectangle"`. |
+| `input_type`  | string                | `"exclusive"`  | `"exclusive"` (disjoint pieces) or `"inclusive"` (full set unions).       |
+| `complement`  | number                | —              | Area outside every set; fits a bounding container. See [Complement](/docs/concepts/complement/). |
+| `seed`        | integer               | —              | RNG seed for reproducible fits.                                           |
+| `max_sets`    | integer               | core default   | Raise the set-count ceiling (clamped core-side).                          |
+
+All remaining fields are optional fitting and plotting knobs; omitting one keeps
+the core default. The enum-valued knobs are **snake_case** strings, validated up
+front (a bad token errors regardless of the other inputs):
+
+| Field                      | Type    | Valid tokens/notes                                                                   |
+| -------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `loss`                     | string  | `sum_squared`, `sum_absolute`, `sum_absolute_region_error`, `sum_squared_region_error`, `max_absolute`, `max_squared`, `root_mean_squared`, `stress`, `diag_error`, `log_sum_absolute`, and the six `smooth_*` variants. |
+| `loss_eps`                 | number  | Smoothing `eps` for the `smooth_*` losses (default `1e-3`); ignored otherwise.        |
+| `optimizer`                | string  | `levenberg_marquardt`, `lbfgs`, `nelder_mead`, `trf`, `cmaes_lm`, `cmaes_trf`.        |
+| `mds_solver`               | string  | `lbfgs`, `levenberg_marquardt`.                                                       |
+| `initial_sampler`          | string  | `uniform`, `latin_hypercube`.                                                         |
+| `n_restarts`               | integer | Random restarts of the two-phase fit; lowest loss kept.                              |
+| `cmaes_fallback_threshold` | number  | Loss above which the CMA-ES escape kicks in.                                          |
+| `max_iterations`           | integer | Per-optimizer iteration cap.                                                          |
+| `tolerance`, `xtol`, `ftol`, `gtol` | number | Convergence tolerances.                                                      |
+| `jobs`                     | integer | Parallel restart job count.                                                           |
+| `n_vertices`               | integer | Vertices per polygonized shape/region (default `200`).                                |
+| `label_precision`          | number  | Pole-of-inaccessibility anchor precision (default `0.01`).                            |
+| `sliver_threshold`         | number  | Sliver-rejection fraction (default `1e-3`).                                           |
+
+These mirror the Rust `Fitter`/`PlotOptions`; the defaults are what you want
+unless you are deliberately exploring. See the
+[Fitter pipeline](/docs/concepts/fitter-pipeline/) chapter for what they do.
+
+Success response (abridged):
+
+```json
+{
+  "ok": true,
+  "shape": "circle",
+  "shapes": [
+    { "type": "circle", "label": "A", "x": -0.6, "y": 0.0, "radius": 1.26,
+      "label_anchor": { "x": -0.9, "y": 0.0 } },
+    { "type": "circle", "label": "B", "x": 1.0, "y": 0.0, "radius": 0.98,
+      "label_anchor": { "x": 1.2, "y": 0.0 } }
+  ],
+  "metrics": {
+    "loss": 0.0001, "stress": 0.002, "diag_error": 0.001, "iterations": 42,
+    "region_error": { "A": 0.01, "B": 0.02, "A&B": 0.005 },
+    "target_areas": { "A": 5, "B": 3, "A&B": 1 },
+    "fitted_areas": { "A": 5.01, "B": 2.98, "A&B": 1.02 }
+  },
+  "plot_data": {
+    "region_pieces": { "A": [ { "outer": [[x, y], …], "holes": [] } ], "A&B": [ … ] },
+    "region_anchors": { "A": [x, y], "A&B": [x, y] },
+    "region_areas": { "A": 5.01, "A&B": 1.02 },
+    "set_anchors": { "A": [x, y], "B": [x, y] },
+    "set_anchor_regions": { "A": "A", "B": "B" },
+    "shape_outlines": { "A": [[x, y], …], "B": [[x, y], …] }
+  }
+}
+```
+
+- `shapes` is a tagged union on `type`. Per shape the geometry fields vary:
+  `circle` has `radius`; `ellipse` has `semi_major`/`semi_minor`/`rotation`;
+  `square` has `side`; `rectangle` has `width`/`height`; `rotated_rectangle`
+  adds `rotation`. Every variant carries `label` and a `label_anchor` point.
+- `metrics` maps are keyed by combination string (always exclusive form). See
+  [Goodness of fit](/docs/concepts/goodness-of-fit/).
+- `plot_data` carries renderable geometry: every coordinate is an `[x, y]`
+  pair, region keys are combination strings, set keys are set names.
+  `set_anchor_regions` pairs a set's label with the region it anchored to (by
+  key, so renderers needn't compare floats); sets that fell back to the
+  whole-shape pole are omitted.
+- `container` (`{x, y, width, height}`) is present only when the request set
+  `complement`.
+
+## `eunoia_venn`
+
+Lays out a canonical n-set Venn diagram—a fixed template, *not* proportional
+(sizes are ignored, every intersection is drawn).
+
+```json
+{ "names": ["A", "B", "C"], "shape": "circle" }
+```
+
+| Field   | Type            | Default    | Meaning                                                |
+| ------- | --------------- | ---------- | ------------------------------------------------------ |
+| `names` | array of string | *(required)* | Set names, in order; their count selects the arrangement. |
+| `shape` | string          | `"circle"` | Same shape tokens as `eunoia_euler`.                   |
+
+The response is the same `LayoutOut` envelope as `eunoia_euler`. Circles cover
+n ≤ 3; ellipse arrangements (Wilkinson/Edwards) reach n = 4–5.
+
+## `eunoia_place_labels`
+
+Resolves one collision-aware label position (and leader-line geometry where
+needed) per region, given the region polygons and **caller-measured** label box
+sizes. This usually means a render → measure → re-place loop; see
+[Label placement](/docs/concepts/label-placement/).
+
+```json
+{
+  "regions": {
+    "A": [ { "outer": [[x, y], …], "holes": [] } ],
+    "A&B": [ { "outer": [[x, y], …], "holes": [] } ]
+  },
+  "sizes": { "A": [0.4, 0.2], "A&B": [0.3, 0.15] },
+  "container": { "x": -2, "y": -1.5, "width": 4, "height": 3 },
+  "strategy": { "leader": { "type": "straight", "placement": "raycast" }, "tether": "poi" }
+}
+```
+
+| Field       | Type                              | Notes                                                                   |
+| ----------- | --------------------------------- | ----------------------------------------------------------------------- |
+| `regions`   | `combo → [{outer, holes}]`        | Region pieces; `outer` is a CCW ring, `holes` are CW rings, `[x, y]` pairs. |
+| `sizes`     | `combo → [width, height]`         | Measured label box sizes, in diagram units.                             |
+| `container` | `{x, y, width, height}`           | Optional bounding frame.                                                |
+| `strategy`  | object                            | Optional; omitted fields keep core defaults (see below).                |
+
+The `strategy` knobs: `leader.type` is `"straight"` (default) or `"elbow"`;
+`leader.placement` is `"raycast"` (default) or `"force_directed"` for straight
+leaders (ignored for elbow); `leader.margin`/`iterations`/`min_gap` tune those;
+`precision` is the pole-of-inaccessibility precision; `tether` is `"poi"`
+(default) or `"boundary"`; `leader_gap` is the gap from label to leader.
+
+Only regions present in **both** `regions` and `sizes` get a placement. The
+success payload is a `placements` map:
+
+```json
+{
+  "ok": true,
+  "placements": {
+    "A": { "anchor": [x, y], "kind": "interior" },
+    "A&B": {
+      "anchor": [x, y], "kind": "exterior_raycast",
+      "tether": [x, y], "leader_end": [x, y], "leader_waypoints": [[x, y]]
+    }
+  }
+}
+```
+
+`kind` is `interior`, `exterior_raycast`, `exterior_force_directed`,
+`exterior_elbow`, or `unknown` (forward-compat). `tether`, `leader_end`, and
+`leader_waypoints` appear only for exterior placements that need a leader line.
+
+## `eunoia_version` and `eunoia_free`
+
+`eunoia_version()` takes no input and returns the crate version (e.g.
+`"%EUNOIA_VERSION%"`) as a string you must free. `eunoia_free(ptr)` releases any
+string returned by this library; passing `NULL` is a no-op.
+
+## Combination keying
+
+A combination string is a single set name (`"A"`) or an intersection joined by
+`&` with no spaces (`"A&B"`, `"A&B&C"`). Sizes and metrics are in **exclusive**
+form (the piece belonging to exactly those sets) unless you set
+`input_type: "inclusive"` on the request. Output maps are emitted in sorted key
+order, so serialization is deterministic.
+
+## Memory ownership
+
+Every `char *` returned by `eunoia_euler`, `eunoia_venn`,
+`eunoia_place_labels`, and `eunoia_version` is heap-allocated by Rust and
+**owned by the caller**. Hand it back to `eunoia_free` exactly once. Do not free
+it with the host's `free()`, do not free it twice, and do not read it after
+freeing—each is undefined behavior. Passing `NULL` to `eunoia_free` is safe.
+
+## Errors
+
+Failures come back as `{"ok": false, "error": "<message>"}`—a valid envelope, so
+you parse it the same way and branch on `ok`. The `error` string is hand-escaped
+so the error path can never itself fail to serialize. Representative messages:
+
+- `null input pointer`: the input pointer was `NULL`.
+- `input is not valid UTF-8: …`: the bytes weren't UTF-8.
+- `invalid JSON: …`: the input didn't parse.
+- `invalid optimizer 'x' (want …)`: an enum token was unrecognized.
+- `failed to build spec: …` or `failed to fit diagram: …`: the core rejected the spec or the fit failed.
+- `panic in eunoia core`: a panic was caught at the boundary.
+
+## Thread-safety
+
+The entry points are pure and stateless: each call is self-contained, holds no
+shared state, and exposes no synchronization primitives across the boundary. You
+may call them concurrently from multiple threads. The only parallelism is the
+rayon restart loop **inside** a single `eunoia_euler` call—it does not leak out.
+
+## Worked example (C)
+
+A minimal round-trip: declare the prototypes, fit, print, free. Link against the
+built library.
+
+```c
+#include <stdio.h>
+
+extern char *eunoia_euler(const char *);
+extern void  eunoia_free(char *);
+
+int main(void) {
+    const char *request =
+        "{\"sets\":["
+        "{\"combination\":\"A\",\"size\":5},"
+        "{\"combination\":\"B\",\"size\":3},"
+        "{\"combination\":\"A&B\",\"size\":1}],"
+        "\"seed\":1}";
+
+    char *response = eunoia_euler(request);
+    printf("%s\n", response);   /* {"ok":true,"shape":"circle",...} */
+    eunoia_free(response);
+    return 0;
+}
+```
+
+```bash
+cargo build -p eunoia-capi --release
+cc example.c -L target/release -leunoia_capi -o example
+LD_LIBRARY_PATH=target/release ./example
+```

@@ -35,6 +35,8 @@ const LANGS = [
   "js",
   "ts",
   "html",
+  "c",
+  "json",
 ];
 const highlighter = await createHighlighter({
   themes: ["github-light", "github-dark"],
