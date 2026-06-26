@@ -74,7 +74,7 @@ at <https://eunoia.bz/app>. The source code for the app resides in the `web/`
 directory of this repo and is built on the JavaScript (npm) package, using
 [Svelte](https://svelte.dev/).
 
-## The Eunoia ecosystem
+## The Eunoia Ecosystem
 
 The pure-Rust core powers bindings in several languages, all backed by the same
 fitting engine:
