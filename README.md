@@ -67,24 +67,30 @@ fn main() {
 `Layout` into region polygons and label anchors for rendering. See the
 [rustdoc](https://docs.rs/eunoia/) for the full API.
 
+## Web App
+
+Eunoia powers a web app for interactive diagram fitting and exploration, located
+at <https://eunoia.bz/app>. The source code for the app resides in the `web/`
+directory of this repo and is built on the JavaScript (npm) package, using
+[Svelte](https://svelte.dev/).
+
 ## The Eunoia ecosystem
 
 The pure-Rust core powers bindings in several languages, all backed by the same
 fitting engine:
 
-  | Language   | Package                                                                                          | Install                       |
-  | ---------- | ------------------------------------------------------------------------------------------------ | ----------------------------- |
-  | Rust       | [`eunoia`](https://crates.io/crates/eunoia)                                                      | `cargo add eunoia`            |
-  | R          | [`eulerr`](https://CRAN.R-project.org/package=eulerr) ([repo](https://github.com/jolars/eulerr)) | `install.packages("eulerr")`  |
-  | Python     | [`eunoia`](https://pypi.org/project/eunoia/) ([repo](https://github.com/jolars/eunoia-py))       | `pip install eunoia`          |
-  | Julia      | [`Eunoia.jl`](https://github.com/jolars/Eunoia.jl) ([repo](https://github.com/jolars/Eunoia.jl)) | `Pkg.add("Eunoia")`           |
-  | JavaScript | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia)                                 | `npm install @jolars/eunoia`  |
-  | Web app    | [eunoia.bz](https://eunoia.bz)                                                                   | build diagrams in the browser |
+  | Language   | Package                                                                                                               | Install                      |
+  | ---------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+  | R          | [`eulerr`](https://cran.r-project.org/package=eulerr) ([repo](https://github.com/jolars/eulerr))                      | `install.packages("eulerr")` |
+  | Python     | [`eunoia`](https://pypi.org/project/eunoia/) ([repo](https://github.com/jolars/eunoia-py))                            | `pip install eunoia`         |
+  | Julia      | [`Eunoia.jl`](https://platform.juliahub.com/ui/Packages/General/Eunoia) ([repo](https://github.com/jolars/Eunoia.jl)) | `]add Eunoia`                |
+  | JavaScript | [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) (this repo)                                          | `npm install @jolars/eunoia` |
 
 ### JavaScript/TypeScript
 
-WebAssembly bindings are published as
-[`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia):
+A TypeScript package is published as
+[`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia). Here's a
+minimal example of fitting an Euler diagram in Node or a bundler environment:
 
 ```ts
 import { euler, venn } from "@jolars/eunoia";
