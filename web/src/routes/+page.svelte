@@ -36,9 +36,9 @@
           class="w-32 shrink-0 sm:w-40 md:w-48 h-auto"
         />
         <div>
-          <h2 class="text-3xl font-bold leading-tight mb-4">
+          <h1 class="text-3xl font-bold leading-tight mb-4">
             Area-Proportional Euler and Venn Diagrams
-          </h2>
+          </h1>
           <p class="text-lg text-muted mb-4">
             A Rust library for fitting set-visualization diagrams with circles,
             ellipses, squares, and rectangles. Accurate, fast, and shipped with
@@ -71,7 +71,7 @@
     </section>
 
     <section class="space-y-4">
-      <h3 class="text-xl font-semibold">See It in Action</h3>
+      <h2 class="text-xl font-semibold">See It in Action</h2>
       <p class="text-sm text-muted max-w-2xl">
         A three-set diagram, fitted in your browser by the same WASM core the
         packages ship. Drag the region sizes or switch the shape and watch it
@@ -81,7 +81,7 @@
     </section>
 
     <section class="space-y-4">
-      <h3 class="text-xl font-semibold">Install</h3>
+      <h2 class="text-xl font-semibold">Install</h2>
       <div class="grid sm:grid-cols-2 gap-4">
         <div class="bg-surface border border-line rounded p-4 space-y-2">
           <div class="flex items-center justify-between">
@@ -177,7 +177,7 @@
     </section>
 
     <section class="space-y-4">
-      <h3 class="text-xl font-semibold">Why Eunoia?</h3>
+      <h2 class="text-xl font-semibold">Why Eunoia?</h2>
       <ul
         class="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm text-ink list-disc pl-5"
       >
@@ -202,7 +202,7 @@
     </section>
 
     <section class="space-y-3">
-      <h3 class="text-xl font-semibold">Citing Eunoia</h3>
+      <h2 class="text-xl font-semibold">Citing Eunoia</h2>
       <p class="text-sm text-muted">
         If you use Eunoia or any of its derived packages (eulerr in R and
         `@jolars/eunoia` in npm) in academic work, please cite the paper:

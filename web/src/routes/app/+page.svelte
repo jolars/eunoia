@@ -101,6 +101,7 @@
 </script>
 
 <div class="max-w-7xl mx-auto p-6">
+  <h1 class="sr-only">Euler and Venn diagram builder</h1>
   {#if appState.loading}
     <div class="bg-surface rounded-lg shadow p-8 text-center">
       <div
