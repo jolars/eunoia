@@ -1,7 +1,7 @@
 # Goodness of fit
 
 Not every set of region sizes can be drawn exactly, so eunoia reports a
-few scalars that summarise how faithfully the fitted geometry
+few scalars that summarize how faithfully the fitted geometry
 reproduces the requested set relationships. These appear under
 *Goodness of fit* in the [App](/app/), and are returned on the layout
 for programmatic callers.

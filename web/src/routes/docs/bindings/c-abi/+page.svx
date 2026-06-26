@@ -3,7 +3,7 @@
 > TODO: document the `eunoia-capi` C ABI seam for native bindings.
 >
 > This is the boundary used by hosts whose only Rust-interop path is a
-> C ABI — Julia today (via `ccall`/`Libdl`), and potentially Go (cgo),
+> C ABI—Julia today (via `ccall`/`Libdl`), and potentially Go (cgo),
 > C/C++, Zig, etc. Hosts with a native Rust-binding framework
 > (JavaScript via wasm-bindgen, Python via PyO3/maturin, R via extendr)
 > bind the core directly and never touch this surface.

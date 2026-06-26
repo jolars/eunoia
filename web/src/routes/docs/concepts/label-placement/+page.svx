@@ -49,8 +49,8 @@ the polygon's outer ring instead; the rendered leader then starts
 on the polygon edge, matching the standard labeling convention.
 Recommended when your renderer draws shape strokes.
 
-On the **label side**, the placer returns `placement.leaderEnd` —
-the point on the label's bounding box where the leader should
+On the **label side**, the placer returns `placement.leaderEnd`—the
+point on the label's bounding box where the leader should
 terminate. Draw the leader from `tether` to `leaderEnd` (rather
 than to `anchor`, which is the box center) so the line stops at
 the box edge instead of running through the rendered text. The box
@@ -94,8 +94,8 @@ Sizes are keyed by the **canonical combination string**:
 
 Label sizes in user coordinates depend on the rendered canvas size
 (the ratio of font px to canvas px). For diagrams where labels land
-exterior, the canvas extent in turn depends on label sizes —
-labels stretch the bbox out. The fixed point typically converges in
+exterior, the canvas extent in turn depends on label sizes—labels
+stretch the bbox out. The fixed point typically converges in
 one to three iterations.
 
 ### Native Rust: `place_labels_to_fixed_point`

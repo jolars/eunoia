@@ -64,8 +64,8 @@ would otherwise drift outside the frame is pulled back in, because area
 that spills beyond the container does not count toward the union.
 
 Because the container is a single enclosing universe, **a spec that fits
-as several disjoint clusters is rejected when a complement is set** —
-there is no one rectangle that meaningfully encloses unrelated groups.
+as several disjoint clusters is rejected when a complement is set**—there
+is no one rectangle that meaningfully encloses unrelated groups.
 
 ## The complement region (`""`)
 

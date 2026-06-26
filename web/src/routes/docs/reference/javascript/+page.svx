@@ -42,8 +42,8 @@ want unless you are deliberately exploring; see the
 
 ## `venn(options)`
 
-Lays out a canonical n-set Venn diagram (fixed template, *not* proportional —
-set sizes are ignored). Returns a `Layout`.
+Lays out a canonical n-set Venn diagram (fixed template, *not*
+proportional—set sizes are ignored). Returns a `Layout`.
 
 ```js
 import { venn } from "@jolars/eunoia";
@@ -82,8 +82,8 @@ Every `Layout` also carries:
 - `container`: present only when `complement` was set: `{ x, y, width, height }`.
 
 Each shape and region carries a `labelAnchor` (`{ x, y }`) for interior labels;
-`"regions"` mode adds `setAnchors`. Coordinates are abstract, centered units —
-compute a bounding box for your `viewBox`.
+`"regions"` mode adds `setAnchors`. Coordinates are abstract, centered
+units—compute a bounding box for your `viewBox`.
 
 ## `placeLabelsForRegions(options)`
 
