@@ -11,6 +11,7 @@
     cargo-audit
     cargo-deny
     cargo-msrv
+    google-lighthouse
     nodejs
     gnuplot
     samply
