@@ -30,18 +30,16 @@ they're pre-existing behaviour the harness now exposes.
   `4.086e-3`) shows up at `n_restarts ≥ 40` but only as the global-min,
   never the median.
 
-      ```
-        The basins differ in which ellipse area maps to which set's target
-        (basin A nails `C ≈ 4.24`, `E ≈ 4.56` and undershoots `A`/`B`; basin B
-        spreads the error more evenly). Neither raising `n_restarts` to 100 nor
-        forcing `Optimizer::CmaEsLm` to fire on every restart
-        (`cmaes_fallback_threshold = 1.0`) shifts the median off basin A —
-        CMA-ES at default budget / box doesn't span the basin gap from this
-        MDS init. Probed via a throwaway example (deleted after measurement).
+  The basins differ in which ellipse area maps to which set's target (basin A
+  nails `C ≈ 4.24`, `E ≈ 4.56` and undershoots `A`/`B`; basin B spreads the
+  error more evenly). Neither raising `n_restarts` to 100 nor forcing
+  `Optimizer::CmaEsLm` to fire on every restart
+  (`cmaes_fallback_threshold = 1.0`) shifts the median off basin A --- CMA-ES at
+  default budget / box doesn't span the basin gap from this MDS init. Probed via
+  a throwaway example (deleted after measurement).
 
-        Worth re-checking after any optimizer redesign that touches the global
-        stage; tighten the ceiling further if a future change closes basin A.
-      ```
+  Worth re-checking after any optimizer redesign that touches the global stage;
+  tighten the ceiling further if a future change closes basin A.
 
 - [ ] **Synthetic-groundtruth threshold is loose** (5e-2). The generating
   configuration is exactly representable by construction, so a healthy
@@ -152,12 +150,12 @@ didn't require but would tighten the surface.
      from "straight ray" to "polyline". Skip unless bent leaders are explicitly
      desired.
 
-      ```
-        Recommendation: do (1) first — cheap, on the existing TODO,
-        removes the common case. Reach for (2) only if real diagrams
-        still show crossings after (1). Surfaced 2026-05-11 during
-        the union-polygon raycast refinement.
-      ```
+     ```
+            Recommendation: do (1) first — cheap, on the existing TODO,
+            removes the common case. Reach for (2) only if real diagrams
+            still show crossings after (1). Surfaced 2026-05-11 during
+            the union-polygon raycast refinement.
+     ```
 
 - [ ] **Leader-line entry-point refinement**. Start the leader at the first
   ray--region-boundary intersection (where the ray exits the region) rather
@@ -175,20 +173,20 @@ didn't require but would tighten the surface.
 
 The `RotatedRectangle` shape shipped across core/fitter/capi/wasm/ts (commit
 `12b272d`, 2026-06-21): an oriented box fitted derivative-free (exact
-Sutherland–Hodgman convex-clip overlap is only piecewise-C¹, so it carries no
+Sutherland--Hodgman convex-clip overlap is only piecewise-C¹, so it carries no
 analytic gradient and the capability-driven default pool routes it to
 `[NelderMead, CmaEs]`). These are the loose ends that PR did not cover.
 
 - [x] **Web app doesn't expose the shape** (done). `ShapeType` in
-  `web/src/lib/types/diagram.ts` and the `FitResult.shapeType` field now carry
-  the `"rotatedRectangle"` variant, the `scaleLayout` dispatch in
-  `web/src/lib/fit.ts` has a `rotatedRectangle` case (rotation passes through
-  unscaled, like ellipse), and `SpecEditor.svelte` adds a "Rotated rectangle"
-  radio. Rendering rides the existing polygons path through
+  `web/src/lib/types/diagram.ts` and the `FitResult.shapeType` field now
+  carry the `"rotatedRectangle"` variant, the `scaleLayout` dispatch in
+  `web/src/lib/fit.ts` has a `rotatedRectangle` case (rotation passes
+  through unscaled, like ellipse), and `SpecEditor.svelte` adds a "Rotated
+  rectangle" radio. Rendering rides the existing polygons path through
   `@jolars/eunoia/svg`, so no serializer change was needed. No shape-param
-  geometry readout exists in the app, so there was nothing to surface rotation
-  in. The landing-page `HeroWidget` keeps its curated circle/ellipse/square/
-  rectangle subset (live slider re-fits stay fast).
+  geometry readout exists in the app, so there was nothing to surface
+  rotation in. The landing-page `HeroWidget` keeps its curated
+  circle/ellipse/square/ rectangle subset (live slider re-fits stay fast).
 
 - [ ] **No quality-harness coverage** (near-term, actionable). `quality_report`
   (`crates/eunoia/examples/quality_report.rs`), `corpus_quality`, and
@@ -211,11 +209,11 @@ analytic gradient and the capability-driven default pool routes it to
 - [ ] **TS handle-freeing is wasteful** (minor cleanup). The `euler` / `venn`
   dispatch in `ts/index.ts` frees the non-active shape arrays per branch by
   *accessing* each getter (which clones the wasm handles) only to free the
-  clones — `result.free()` already drops the internal vectors, so a branch
-  that never reads a getter leaks nothing. Pre-existing pattern, now extended
-  to `rotated_rectangles`. If that dispatch is ever revisited, drop the
-  create-then-free of unused shape arrays.
+  clones --- `result.free()` already drops the internal vectors, so a branch
+  that never reads a getter leaks nothing. Pre-existing pattern, now
+  extended to `rotated_rectangles`. If that dispatch is ever revisited, drop
+  the create-then-free of unused shape arrays.
 
-- [ ] **Narrative docs**. <https://eunoia.bz/docs/> and the rustdoc/README
-  shape lists don't mention `RotatedRectangle`. Add it once the web UI and
-  quality baseline land.
+- [ ] **Narrative docs**. <https://eunoia.bz/docs/> and the rustdoc/README shape
+  lists don't mention `RotatedRectangle`. Add it once the web UI and quality
+  baseline land.
