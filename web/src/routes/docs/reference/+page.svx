@@ -1,6 +1,6 @@
 # Reference
 
-API references live outside this site:
+API references live outside this site, one per language binding:
 
 - **Rust:** [docs.rs/eunoia](https://docs.rs/eunoia/) (rustdoc, the
   authoritative reference for every public type, trait, and function).
@@ -9,9 +9,15 @@ API references live outside this site:
   type definitions ship with
   [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) so your
   editor's "go to definition"/IntelliSense will surface them.
-- **Repository conventions:** [AGENTS.md](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
-  describes the workspace layout, module organization, optimization
-  pipeline, and the contract for adding new shape types.
+- **Python:** the [`eunoia` Python API
+  reference](https://jolars.github.io/eunoia-py/).
+- **R:** the [eulerr reference](https://jolars.github.io/eulerr/), now backed by
+  the eunoia engine.
+- **Julia:** the [`Eunoia.jl`
+  reference](https://jolars.github.io/Eunoia.jl/stable).
+- **Repository conventions:** [CONTRIBUTING.md](https://github.com/jolars/eunoia/blob/main/CONTRIBUTING.md)
+  describes how to set up the workspace, run the test and lint gates, and submit
+  changes.
 
 The chapters under [Concepts](/docs/concepts/label-placement/) and
 [Bindings](/docs/bindings/c-abi/) cover the *why* and the

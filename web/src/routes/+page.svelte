@@ -7,6 +7,7 @@
   import IconPython from "~icons/simple-icons/python";
   import IconR from "~icons/simple-icons/r";
   import IconRust from "~icons/simple-icons/rust";
+  import { RELEASE_URL, VERSION } from "$lib/version";
 
   // Repo links — kept here so the landing has a single declarative source of
   // truth that's easy to scan and edit.
@@ -253,6 +254,9 @@
       >
       <a href={npmUrl} class="hover:text-ink inline-flex items-center gap-1.5"
         ><IconNpm class="w-3.5 h-3.5" /> npm</a
+      >
+      <a href={RELEASE_URL} class="hover:text-ink inline-flex items-center"
+        >v{VERSION}</a
       >
     </footer>
   </main>

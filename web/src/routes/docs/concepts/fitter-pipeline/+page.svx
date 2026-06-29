@@ -79,4 +79,4 @@ by a few scalar metrics; see [Goodness of fit](/docs/concepts/goodness-of-fit/).
 
 For the authoritative details (optimizers, losses, gradients, and the
 shape-specific encodings) see the
-[Architecture section in `AGENTS.md`](https://github.com/jolars/eunoia/blob/main/AGENTS.md).
+[Architecture section in `CONTRIBUTING.md`](https://github.com/jolars/eunoia/blob/main/CONTRIBUTING.md).

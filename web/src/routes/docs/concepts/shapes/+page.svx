@@ -179,7 +179,7 @@ A type becomes fittable by implementing the `DiagramShape` trait, which
 also defines each shape's two parameter encodings (a human-friendly
 geometric one and an internal optimizer one). For the trait and the
 encodings in full, see the
-[architecture notes in `AGENTS.md`](https://github.com/jolars/eunoia/blob/main/AGENTS.md)
+[architecture notes in `CONTRIBUTING.md`](https://github.com/jolars/eunoia/blob/main/CONTRIBUTING.md)
 and the [rustdoc](https://docs.rs/eunoia/). (`Polygon` is used for output
 and region extraction, not for fitting, so it is not one of these
 primitives.)

@@ -33,7 +33,7 @@ pub enum Optimizer {
     /// per-residual Jacobian (one row per region mask), then approximates
     /// the Hessian as `JᵀJ`. The Jacobian comes from
     /// [`crate::geometry::traits::DiagramShape::compute_exclusive_regions_with_gradient`];
-    /// boundary builders for Circle and Ellipse are documented in `AGENTS.md`.
+    /// boundary builders for Circle and Ellipse are documented in `CONTRIBUTING.md`.
     LevenbergMarquardt,
     /// L-BFGS. Used as the non-LSQ fallback under the LM dispatch arm and
     /// available directly for losses where LM doesn't apply (RMSE, Stress,
