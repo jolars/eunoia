@@ -26,16 +26,6 @@ they're pre-existing behaviour the harness now exposes.
   Worth re-checking after any optimizer redesign that touches the global stage;
   tighten the ceiling further if a future change closes basin A.
 
-- [ ] **`test_issue28_four_set_superset_ellipse_regression`slow-test fails under
-  default LM at the test's tightened budget** (`tolerance=1e-10`,
-  `max_iterations=2000`). Default-budget LM at seed=1 reaches `diag_error`
-  well below the test's 1e-6 bar (the `corpus_ellipses_diag_error` fast test
-  passes the same spec at seed=1), but with `patience=2000` LM's
-  `max_fev = patience·(n+1) ≈ 42000` on n=20 lets it drift past the good
-  basin. Pre-existing --- surfaced in the SA-fallback drop. Either tighten
-  LM termination on `with_patience` or relax the tightened budget in the
-  test; the spec itself is fittable.
-
 - [ ] **issue89 (17-set) ellipse fits are highly multimodal and the global
   escape doesn't help**. Best-of-`n_restarts=10` ellipse stress swings
   wildly with the master seed: `1.8e-3`/`1.9e-3`/`2.3e-3`/`2.4e-3` (good) on
