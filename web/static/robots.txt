@@ -2,3 +2,5 @@ User-agent: *
 Allow: /
 
 Sitemap: https://eunoia.bz/sitemap.xml
+
+# LLM-readable site index: https://eunoia.bz/llms.txt
