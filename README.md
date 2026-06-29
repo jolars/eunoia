@@ -17,7 +17,7 @@ package [eulerr](https://github.com/jolars/eulerr): faster, more flexible, and
 built to power bindings across many languages.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jolars/eunoia/refs/heads/main/images/example.png" width="420" alt="An area-proportional Euler diagram of three overlapping sets labelled Adventure, Comedy, and Drama." />
+  <img src="https://raw.githubusercontent.com/jolars/eunoia/refs/heads/main/images/example.png" width="380" alt="An area-proportional Euler diagram of three overlapping sets labelled Adventure, Comedy, and Drama." />
 </p>
 
 ## Highlights
