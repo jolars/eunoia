@@ -74,20 +74,6 @@ they're pre-existing behaviour the harness now exposes.
   doing the shape-aware-MDS refactor anyway for triangles or another shape
   that can't reasonably warm-start as a circle.
 
-## Complement / container follow-ups
-
-Loose ends from S6 of the complement roadmap. The feature itself shipped (see
-the complement bullet in `AGENTS.md` Status); these are polish items the roadmap
-didn't require but would tighten the surface.
-
-- [ ] **Legend entry for the complement region**. `DiagramSvg.svelte` renders
-  the container as a dashed grey frame and (when `style.showCounts`) labels
-  the count in the top-right corner. The legend (`StyleControls` →
-  `legendPosition`) doesn't include a "complement" / "outside" swatch when a
-  container is present. Adding one means deciding the right label
-  ("complement", "outside", a user-supplied name?) and surfacing it through
-  the existing legend build path.
-
 ## Label placement follow-ups
 
 - [ ] **Leader lines crossing interior labels**. Exterior label leaders run from

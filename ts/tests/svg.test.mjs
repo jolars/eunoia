@@ -174,6 +174,31 @@ test("legend is drawn only when requested", () => {
   assert.match(withLegend, /<g>/);
 });
 
+test("legend gains a dashed complement entry when a container is present", () => {
+  const base = circleLayout();
+  const withContainer = {
+    ...base,
+    container: { x: 0, y: 0, width: 40, height: 40 },
+  };
+
+  const legend = toSvg(withContainer, { padding: 5, legend: { show: true } });
+  assert.match(legend, /stroke-dasharray="2 2"/);
+  assert.match(legend, />Complement<\/text>/);
+
+  // The label is overridable.
+  const custom = toSvg(withContainer, {
+    padding: 5,
+    legend: { show: true },
+    complementLabel: "Outside",
+  });
+  assert.match(custom, />Outside<\/text>/);
+
+  // No container → no complement entry.
+  const plain = toSvg(base, { padding: 5, legend: { show: true } });
+  assert.ok(!plain.includes("stroke-dasharray"));
+  assert.ok(!plain.includes(">Complement</text>"));
+});
+
 test("label text is XML-escaped", () => {
   const svg = toSvg(circleLayout("A&B"), { padding: 5 });
   assert.match(svg, />A&amp;B<\/text>/);

@@ -353,6 +353,8 @@ export interface ToSvgOptions {
   complement?: number;
   /** Complement count color. Default `"#6b7280"`. */
   complementColor?: string;
+  /** Legend label for the complement/container region. Default `"Complement"`. */
+  complementLabel?: string;
 }
 
 export interface BoundsOptions {
@@ -669,6 +671,8 @@ interface Resolved {
   leaderColor: string;
   containerStroke: string;
   complementColor: string;
+  complementLabel: string;
+  hasContainer: boolean;
   showLabels: boolean;
   showCounts: boolean;
   formatCount: (v: number) => string;
@@ -725,6 +729,8 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     leaderColor: opts.leaderColor ?? "#6b7280",
     containerStroke: opts.containerStroke ?? "#9ca3af",
     complementColor: opts.complementColor ?? "#6b7280",
+    complementLabel: opts.complementLabel ?? "Complement",
+    hasContainer: !!layout.container,
     showLabels: opts.showLabels ?? true,
     showCounts: opts.showCounts ?? false,
     formatCount: opts.formatCount ?? defaultFormatCount,
@@ -786,7 +792,8 @@ export function svgBody(layout: Layout, opts: ToSvgOptions = {}): string {
     renderShapes(parts, layout, o);
   }
 
-  if (o.legendShow && o.legendLabels.length > 0) renderLegend(parts, o);
+  if (o.legendShow && (o.legendLabels.length > 0 || o.hasContainer))
+    renderLegend(parts, o);
 
   return parts.join("\n");
 }
@@ -990,7 +997,8 @@ function renderLegend(parts: string[], o: Resolved): void {
   const swatch = o.labelSize * 0.9;
   const gap = swatch * 0.4;
   const lineH = swatch + gap;
-  const totalH = lineH * o.legendLabels.length;
+  const rows = o.legendLabels.length + (o.hasContainer ? 1 : 0);
+  const totalH = lineH * rows;
   const pad = o.padding * 0.5;
   let x = 0;
   let y = 0;
@@ -1025,6 +1033,15 @@ function renderLegend(parts: string[], o: Resolved): void {
       `<text x="${x + swatch + gap}" y="${yi + swatch / 2}" dominant-baseline="central" font-size="${o.labelSize}" font-weight="${o.fontWeight}" font-style="${o.fontStyle}" fill="${o.labelColor}">${escText(label)}</text>`,
     );
   });
+  if (o.hasContainer) {
+    const yi = y + o.legendLabels.length * lineH;
+    items.push(
+      `<rect x="${x}" y="${yi}" width="${swatch}" height="${swatch}" fill="none" stroke="${o.containerStroke}" stroke-width="${swStroke}" stroke-dasharray="2 2" />`,
+    );
+    items.push(
+      `<text x="${x + swatch + gap}" y="${yi + swatch / 2}" dominant-baseline="central" font-size="${o.labelSize}" font-weight="${o.fontWeight}" font-style="${o.fontStyle}" fill="${o.labelColor}">${escText(o.complementLabel)}</text>`,
+    );
+  }
   items.push("</g>");
   parts.push(items.join("\n"));
 }
