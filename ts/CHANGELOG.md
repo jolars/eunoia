@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.6.0...eunoia-npm-v1.7.0) (2026-06-30)
+
+### Features
+- **web:** add a legend entry for the complement ([`c56faea`](https://github.com/jolars/eunoia/commit/c56faea5c53b3fb5e631c7992a8f3bd773d5f400))
+
+### Dependencies
+- updated eunoia to v1.7.0
+
 ## [1.6.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.5.0...eunoia-npm-v1.6.0) (2026-06-26)
 
 ### Features
