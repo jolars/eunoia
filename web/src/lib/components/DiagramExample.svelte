@@ -20,7 +20,7 @@
      */
     complement?: number;
     /** Exterior placement strategy. Default `"raycast"`. */
-    strategy?: "raycast" | "forceDirected";
+    strategy?: "raycast" | "forceDirected" | "matched";
     /** RNG seed (lock examples so the chapter renders the same diagram for every reader). */
     seed?: number;
     /** Caption rendered below the diagram. */
@@ -385,9 +385,7 @@
         {#each regions as region}
           {#if region.combination !== ""}
             {@const p = placements[region.combination]}
-            {@const isExterior =
-              p?.kind === "exteriorRaycast" ||
-              p?.kind === "exteriorForceDirected"}
+            {@const isExterior = p?.kind !== undefined && p.kind !== "interior"}
             {@const anchor = p?.anchor ?? region.labelAnchor}
             {#if isExterior && p?.tether}
               <path

@@ -37,6 +37,11 @@ fired:
 - `exteriorForceDirected`: initialized from the raycast position,
   then iteratively settled against label-vs-label collisions and
   foreign-region polygon repulsion.
+- `exteriorMatched`: placed on a ring that hugs the diagram
+  silhouette, at its own outward angle, with angles spread in
+  proportion to each label's width and a final 2-opt uncrossing
+  pass, so the straight leaders are provably non-crossing and stay
+  close to the diagram.
 
 For exterior kinds, `placement.tether` points back into the region
 so you can draw a leader line from the label to the region. By
@@ -155,10 +160,12 @@ for (i in 1:8) {
 ## Strategy knobs
 
 The leader strategy ties the **edge type** to the **placement
-algorithm** that suits it. Today the only edge type is `straight`
-(`leader: { type: 'straight', placement: 'raycast' | 'forceDirected' }`);
-omit `leader` entirely for the default, straight leaders placed by
-raycasting. The placement chooses how exterior labels are positioned:
+algorithm** that suits it. The edge type is `straight`
+(`leader: { type: 'straight', placement: 'raycast' | 'forceDirected' | 'matched' }`)
+or d3-style `elbow` (orthogonal leaders with a column-based
+placement of their own); omit `leader` entirely for the default,
+straight leaders placed by raycasting. For straight leaders the
+placement chooses how exterior labels are positioned:
 
 - **`raycast` placement** *(default)*: deterministic ray from the
   diagram centroid through the region's POI; anchor lands outside
@@ -171,14 +178,24 @@ raycasting. The placement chooses how exterior labels are positioned:
   repulsions: label-vs-label, label-vs-union-polygon containment
   along the raycast direction, and label-vs-foreign-region polygon
   repulsion. Default cap is 200 outer iterations.
+- **`matched` placement**: boundary-labeling. Each label sits on a
+  ring that *hugs the diagram silhouette*, at its own outward (POI)
+  angle; the angles are then *spread proportionally* to each
+  label's width so neighbouring boxes don't overlap, and a final
+  2-opt pass uncrosses any crossing leaders. The uncrossing makes
+  the leaders provably non-crossing, and the silhouette ring plus
+  proportional spreading keeps the labels close to the diagram—
+  directly targeting the two raycast failure modes (leaders that
+  cross, labels that wander far). The ring grows only when a
+  diagram genuinely has too many labels to seat without overlap.
 
 Pick `raycast` for typical n=2..3 diagrams or any case where labels
-naturally spread around the perimeter. Use `forceDirected`
-when raycast labels visually overlap each other or land on top of
-unrelated regions, for example dense n=4 ellipse diagrams where
-several intersection regions push their labels outward at similar
-angles. (d3-style `elbow` leaders, with their own placement
-algorithm, are planned.)
+naturally spread around the perimeter. Reach for `forceDirected` or
+`matched` when raycast labels visually overlap each other or land on
+top of unrelated regions, for example dense n=4 ellipse diagrams
+where several intersection regions push their labels outward at
+similar angles; `matched` is the better choice when leader **crossings**
+are the problem, since it eliminates them by construction.
 
 The two examples below are the same n=4 spec under each strategy.
 Drag the page wider to see them side by side; the difference is
@@ -196,6 +213,13 @@ visible mostly when labels need exterior placement.
   shape="ellipse"
   strategy="forceDirected"
   caption="ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion."
+/>
+
+<DiagramExample
+  sets={FOUR_SET_SPEC}
+  shape="ellipse"
+  strategy="matched"
+  caption="Matched (boundary labeling). Labels are assigned to a ring of slots by an order-preserving, shortest-total-leader matching, so the leaders never cross and stay close to the diagram."
 />
 
 Strategy knobs (defaults in parentheses). `margin` and `iterations`

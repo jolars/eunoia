@@ -301,8 +301,14 @@ export interface RegionInput {
  *   *and* from foreign region polygons (the eunoia-specific bit: ggrepel
  *   can only see labels). Use this when raycast labels visually overlap
  *   unrelated regions or pile up at similar angles.
+ * - `"matched"` — boundary-labeling placement. Each label sits on a ring
+ *   that hugs the diagram silhouette, at its own outward angle, with the
+ *   angles spread proportionally to each label's width so they don't overlap;
+ *   a final 2-opt pass uncrosses any crossing leaders. The leaders are
+ *   provably non-crossing and the labels stay close to the diagram. Best for
+ *   dense diagrams where raycast leaders cross each other or pile up.
  */
-export type ExteriorPolicyName = "raycast" | "forceDirected";
+export type ExteriorPolicyName = "raycast" | "forceDirected" | "matched";
 
 /**
  * Where the exterior-leader tether attaches on the source region.
@@ -338,8 +344,8 @@ export type LeaderStrategy =
        */
       placement?: ExteriorPolicyName;
       /**
-       * Margin around the diagram bbox/container, applied to both
-       * `"raycast"` and `"forceDirected"` placement. Omit to use a per-region
+       * Margin around the diagram bbox/container, applied to `"raycast"`,
+       * `"forceDirected"`, and `"matched"` placement. Omit to use a per-region
        * proportional default of `0.5 * max(label_w, label_h)`.
        */
       margin?: number;
@@ -408,7 +414,8 @@ export type PlacementKind =
   | "interior"
   | "exteriorRaycast"
   | "exteriorForceDirected"
-  | "exteriorElbow";
+  | "exteriorElbow"
+  | "exteriorMatched";
 
 export interface LabelPlacement {
   /** Centre of the label box, in the same coordinates as the regions. */
@@ -1170,10 +1177,11 @@ export function venn(options: VennOptions): Layout {
 
 const EXTERIOR_POLICY_MAP: Record<
   ExteriorPolicyName,
-  "Raycast" | "ForceDirected"
+  "Raycast" | "ForceDirected" | "Matched"
 > = {
   raycast: "Raycast",
   forceDirected: "ForceDirected",
+  matched: "Matched",
 };
 
 const TETHER_SOURCE_MAP: Record<TetherSource, "Poi" | "Boundary"> = {
@@ -1182,13 +1190,18 @@ const TETHER_SOURCE_MAP: Record<TetherSource, "Poi" | "Boundary"> = {
 };
 
 const PLACEMENT_KIND_MAP: Record<
-  "Interior" | "ExteriorRaycast" | "ExteriorForceDirected" | "ExteriorElbow",
+  | "Interior"
+  | "ExteriorRaycast"
+  | "ExteriorForceDirected"
+  | "ExteriorElbow"
+  | "ExteriorMatched",
   PlacementKind
 > = {
   Interior: "interior",
   ExteriorRaycast: "exteriorRaycast",
   ExteriorForceDirected: "exteriorForceDirected",
   ExteriorElbow: "exteriorElbow",
+  ExteriorMatched: "exteriorMatched",
 };
 
 /**
@@ -1281,7 +1294,7 @@ export function placeLabelsForRegions(
     type LeaderPayload =
       | {
           type: "straight";
-          placement?: "Raycast" | "ForceDirected";
+          placement?: "Raycast" | "ForceDirected" | "Matched";
           margin?: number;
           iterations?: number;
         }

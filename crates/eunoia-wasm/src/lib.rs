@@ -2687,7 +2687,7 @@ pub fn generate_venn_regions_rotated_rectangles(
 /// {
 ///   "leader": {
 ///     "type": "straight",
-///     "placement": "Raycast" | "ForceDirected",
+///     "placement": "Raycast" | "ForceDirected" | "Matched",
 ///     "margin": 5.0,
 ///     "iterations": 200
 ///   },
@@ -2697,12 +2697,14 @@ pub fn generate_venn_regions_rotated_rectangles(
 /// }
 /// ```
 ///
-/// `leader` ties the edge type to its placement algorithm. Today the only
-/// `type` is `"straight"` (omit `leader` entirely for the default); the
-/// `placement` selects the straight-edge exterior solver. `margin` applies
-/// to both `Raycast` and `ForceDirected` (the per-region proportional
-/// default kicks in when omitted). `iterations` only affects `ForceDirected`
-/// (defaults to 200). `leaderGap` is the visible gap (in the same coordinate
+/// `leader` ties the edge type to its placement algorithm. `type` is
+/// `"straight"` (omit `leader` entirely for the default) or `"elbow"`; for
+/// straight leaders the `placement` selects the exterior solver — `"Raycast"`
+/// (default), `"ForceDirected"`, or `"Matched"` (boundary-labeling: an
+/// order-preserving, crossing-free slot ring). `margin` applies to all three
+/// (the per-region proportional default kicks in when omitted). `iterations`
+/// only affects `ForceDirected` (defaults to 200). `leaderGap` is the visible
+/// gap (in the same coordinate
 /// units as the label sizes) between the leader-line tip and the label's
 /// bounding box; defaults to `0.0` (leader stops exactly at the box edge).
 /// Negative values are clamped to `0.0`.
@@ -2754,8 +2756,8 @@ pub fn place_region_labels(
     struct LeaderJson {
         /// Edge type: `"straight"` (default) or `"elbow"`.
         r#type: Option<String>,
-        /// Placement algorithm for straight leaders: `"Raycast"` (default)
-        /// or `"ForceDirected"`. Ignored for `"elbow"`.
+        /// Placement algorithm for straight leaders: `"Raycast"` (default),
+        /// `"ForceDirected"`, or `"Matched"`. Ignored for `"elbow"`.
         placement: Option<String>,
         /// Margin around the diagram (both edge types).
         margin: Option<f64>,
@@ -2828,9 +2830,12 @@ pub fn place_region_labels(
                     margin: leader_in.margin,
                     iterations: leader_in.iterations,
                 },
+                Some("Matched") => ExteriorPolicy::Matched {
+                    margin: leader_in.margin,
+                },
                 Some(other) => {
                     return Err(JsValue::from_str(&format!(
-                        "invalid strategy.leader.placement '{other}' (expected 'Raycast' or 'ForceDirected')"
+                        "invalid strategy.leader.placement '{other}' (expected 'Raycast', 'ForceDirected', or 'Matched')"
                     )));
                 }
             };
@@ -2898,6 +2903,7 @@ pub fn place_region_labels(
             PlacementKind::ExteriorRaycast => "ExteriorRaycast",
             PlacementKind::ExteriorForceDirected => "ExteriorForceDirected",
             PlacementKind::ExteriorElbow => "ExteriorElbow",
+            PlacementKind::ExteriorMatched => "ExteriorMatched",
             // `PlacementKind` is `#[non_exhaustive]`; surface unknown future
             // kinds rather than failing to compile when one is added.
             _ => "Unknown",

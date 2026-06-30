@@ -189,8 +189,9 @@ placement](/docs/concepts/label-placement/).
   | `strategy`  | object                     | Optional; omitted fields keep core defaults (see below).                    |
 
 The `strategy` knobs: `leader.type` is `"straight"` (default) or `"elbow"`;
-`leader.placement` is `"raycast"` (default) or `"force_directed"` for straight
-leaders (ignored for elbow); `leader.margin`/`iterations`/`min_gap` tune those;
+`leader.placement` is `"raycast"` (default), `"force_directed"`, or `"matched"`
+for straight leaders (ignored for elbow); `leader.margin`/`iterations`/`min_gap`
+tune those;
 `precision` is the pole-of-inaccessibility precision; `tether` is `"poi"`
 (default) or `"boundary"`; `leader_gap` is the gap from label to leader.
 
@@ -211,8 +212,9 @@ success payload is a `placements` map:
 ```
 
 `kind` is `interior`, `exterior_raycast`, `exterior_force_directed`,
-`exterior_elbow`, or `unknown` (forward-compat). `tether`, `leader_end`, and
-`leader_waypoints` appear only for exterior placements that need a leader line.
+`exterior_elbow`, `exterior_matched`, or `unknown` (forward-compat). `tether`,
+`leader_end`, and `leader_waypoints` appear only for exterior placements that
+need a leader line.
 
 ## `eunoia_version` and `eunoia_free`
 

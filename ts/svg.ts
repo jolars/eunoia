@@ -869,9 +869,7 @@ function renderRegionLabel(parts: string[], r: Region, o: Resolved): void {
   const anchor = placement?.anchor ?? r.labelAnchor;
   const titleLines = regionTitleLines(r.combination, o.nested);
   const isExterior =
-    placement?.kind === "exteriorRaycast" ||
-    placement?.kind === "exteriorForceDirected" ||
-    placement?.kind === "exteriorElbow";
+    placement?.kind !== undefined && placement.kind !== "interior";
 
   if (isExterior && placement?.tether) {
     const lw = Math.max(o.strokeWidth * 0.5, 0.3);

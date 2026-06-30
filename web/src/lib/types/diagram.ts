@@ -63,7 +63,11 @@ export type LossName =
   | "DiagError";
 export type ExportFormat = "svg" | "png" | "pdf" | "json";
 
-export type LabelPlacementMode = "raycast" | "forceDirected" | "elbow";
+export type LabelPlacementMode =
+  | "raycast"
+  | "forceDirected"
+  | "matched"
+  | "elbow";
 
 export interface DiagramStyle {
   /** Base fill palette id (see `lib/colors.ts`). Per-set `colors` override it. */
@@ -96,6 +100,10 @@ export interface DiagramStyle {
    * - `"forceDirected"` — iterative spring + polygon-aware repulsion;
    *   slower than raycast but better for crowded layouts where raycast
    *   labels pile up or land on top of unrelated regions.
+   * - `"matched"` — boundary-labeling: labels are assigned to a ring of
+   *   slots by a shortest-total-leader matching and then uncrossed, so the
+   *   leaders never cross and stay close to the diagram.
+   * - `"elbow"` — column-stacked labels with orthogonal (d3-pie) leaders.
    */
   labelPlacement: LabelPlacementMode;
   /**

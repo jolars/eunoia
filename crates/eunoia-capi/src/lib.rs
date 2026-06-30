@@ -862,9 +862,9 @@ struct ContainerIn {
 /// Leader strategy: the edge type plus the placement algorithm for it. All
 /// fields optional. `r#type` is `"straight"` (default) or `"elbow"`;
 /// `placement` selects the straight-edge exterior solver (`"raycast"` default,
-/// or `"force_directed"`) and is ignored for `"elbow"`. `margin` applies to
-/// both edge types; `iterations` only to `force_directed`; `min_gap` only to
-/// `elbow`.
+/// `"force_directed"`, or `"matched"`) and is ignored for `"elbow"`. `margin`
+/// applies to both edge types; `iterations` only to `force_directed`; `min_gap`
+/// only to `elbow`.
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
 struct LeaderIn {
@@ -899,9 +899,9 @@ struct PlaceLabelsInput {
 }
 
 /// One resolved placement. `kind` is `interior` | `exterior_raycast` |
-/// `exterior_force_directed` | `exterior_elbow` (| `unknown` for any future
-/// variant). `tether`/`leader_end`/`leader_waypoints` are only set for exterior
-/// placements that need a leader line.
+/// `exterior_force_directed` | `exterior_elbow` | `exterior_matched` (|
+/// `unknown` for any future variant). `tether`/`leader_end`/`leader_waypoints`
+/// are only set for exterior placements that need a leader line.
 #[derive(Serialize)]
 struct PlacementOut {
     anchor: [f64; 2],
@@ -945,9 +945,12 @@ fn strategy_from_input(strategy: Option<StrategyIn>) -> Result<PlacementStrategy
                     margin: leader_in.margin,
                     iterations: leader_in.iterations,
                 },
+                Some("matched") => ExteriorPolicy::Matched {
+                    margin: leader_in.margin,
+                },
                 Some(other) => {
                     return Err(format!(
-                        "invalid placement '{other}' (want raycast|force_directed)"
+                        "invalid placement '{other}' (want raycast|force_directed|matched)"
                     ));
                 }
             };
@@ -1025,6 +1028,7 @@ fn place_labels_impl(input: PlaceLabelsInput) -> Result<PlaceLabelsOut, String> 
                 PlacementKind::ExteriorRaycast => "exterior_raycast",
                 PlacementKind::ExteriorForceDirected => "exterior_force_directed",
                 PlacementKind::ExteriorElbow => "exterior_elbow",
+                PlacementKind::ExteriorMatched => "exterior_matched",
                 // `PlacementKind` is `#[non_exhaustive]`; surface unknown future
                 // kinds rather than failing to compile when one is added.
                 _ => "unknown",
@@ -1553,6 +1557,24 @@ mod tests {
             waypoints.is_some_and(|w| !w.is_empty()),
             "elbow leader should carry waypoints, got {:?}",
             v["placements"]["A"]
+        );
+    }
+
+    #[test]
+    fn place_labels_matched_round_trips() {
+        // The "matched" boundary-labeling placement parses and reports its
+        // `exterior_matched` kind with a straight leader (no waypoints).
+        let sizes = serde_json::json!({ "A": [10.0, 10.0], "B": [10.0, 10.0] });
+        let strat = serde_json::json!({ "leader": { "placement": "matched" } });
+        let out = call(eunoia_place_labels, &place_input(sizes, Some(strat)));
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        let a = &v["placements"]["A"];
+        assert_eq!(a["kind"], "exterior_matched");
+        assert_eq!(a["tether"].as_array().unwrap().len(), 2);
+        assert!(
+            a.get("leader_waypoints").is_none(),
+            "matched leaders are straight (no waypoints), got {a:?}"
         );
     }
 

@@ -106,6 +106,10 @@ pub enum PlacementKind {
     /// Anchor is outside the diagram in a left/right column, reached by an
     /// orthogonal (elbow) leader — emitted by [`LeaderStrategy::Elbow`].
     ExteriorElbow,
+    /// Anchor is outside the diagram on a slot ring, assigned by the
+    /// order-preserving boundary-labeling matcher — emitted by
+    /// [`ExteriorPolicy::Matched`]. Straight leader (`tether → leader_end`).
+    ExteriorMatched,
 }
 
 /// Exterior fallback solver to use when a label doesn't fit inside its
@@ -148,6 +152,25 @@ pub enum ExteriorPolicy {
         margin: Option<f64>,
         iterations: Option<usize>,
     },
+    /// Boundary-labeling placement. Each exterior label is placed on a ring that
+    /// **hugs the diagram silhouette**, at its own outward (POI) angle, then the
+    /// angles are **spread proportionally** — each label claims arc according to
+    /// its own width — just enough that neighbouring boxes don't overlap. A final
+    /// 2-opt pass uncrosses any leaders that still cross, making the leaders
+    /// **provably non-crossing** (each swap of two crossing straight leaders
+    /// shortens their total length, so the pass converges).
+    ///
+    /// Proportional spreading is what keeps the ring tight: a diagram of many
+    /// narrow labels is *not* sized for its widest label, and the silhouette ring
+    /// puts labels just off the local boundary rather than out on a circle sized
+    /// for the farthest corner. The ring is inflated (uniformly, only as far as
+    /// needed) only when the labels genuinely can't all fit without overlap.
+    ///
+    /// `margin = None` selects the same `0.5 * max(label_w, label_h)`
+    /// proportional default (taken over the exterior labels) as
+    /// [`ExteriorPolicy::Raycast`]; it sets the clearance between each label and
+    /// the diagram outline.
+    Matched { margin: Option<f64> },
 }
 
 /// Tuning for d3-pie style orthogonal (elbow) leaders — [`LeaderStrategy::Elbow`].
@@ -202,8 +225,8 @@ impl ElbowOptions {
 ///
 /// Only consulted for exterior placements
 /// ([`PlacementKind::ExteriorRaycast`] / [`PlacementKind::ExteriorForceDirected`]
-/// / [`PlacementKind::ExteriorElbow`]); interior placements always carry
-/// `tether: None`.
+/// / [`PlacementKind::ExteriorElbow`] / [`PlacementKind::ExteriorMatched`]);
+/// interior placements always carry `tether: None`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum TetherSource {
@@ -393,6 +416,7 @@ pub fn place_labels(
             margin,
             iterations: iterations.unwrap_or(DEFAULT_FORCE_DIRECTED_ITERATIONS),
         },
+        ExteriorPolicy::Matched { margin } => ExteriorPlan::Matched { margin },
     };
 
     // Diagram boundary: when there's no container, we ray-cast against the
@@ -433,7 +457,13 @@ pub fn place_labels(
     let raycast_margin_opt = match exterior_kind {
         ExteriorPlan::Raycast { margin } => margin,
         ExteriorPlan::ForceDirected { margin, .. } => margin,
+        ExteriorPlan::Matched { margin } => margin,
     };
+    // `Matched` resolves every exterior anchor globally from the slot
+    // assignment, so the per-label raycast warm-start (and its foreign-overlap
+    // backstop) below is wasted work for it — skip it and seed the entry anchor
+    // at the POI as a placeholder that `resolve_matched` overwrites.
+    let is_matched = matches!(exterior_kind, ExteriorPlan::Matched { .. });
 
     for (key, &(w, h)) in sizes {
         if !(w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
@@ -475,30 +505,38 @@ pub fn place_labels(
 
         let mut direction = direction_from(&poi, &centroid, pieces, degenerate_dir_threshold);
         let margin = raycast_margin_opt.unwrap_or_else(|| 0.5 * w.max(h));
-        let mut anchor = raycast_anchor_union(&poi, w, h, &union_pieces, margin, direction)
-            .unwrap_or_else(|| raycast_anchor(&poi, w, h, &bbox, margin, direction));
+        let anchor = if is_matched {
+            // Placeholder; `resolve_matched` assigns the real anchor from the
+            // slot ring. We keep `direction` (the radial exit) for the tether.
+            poi
+        } else {
+            let mut anchor = raycast_anchor_union(&poi, w, h, &union_pieces, margin, direction)
+                .unwrap_or_else(|| raycast_anchor(&poi, w, h, &bbox, margin, direction));
 
-        // Backstop: if the placement still sits on a region this label doesn't
-        // belong to, the exit ray pointed into occupied space — the typical
-        // case being a thin region on the gap-facing edge of its cluster whose
-        // POI is too far from the global centroid for the degeneracy fallback
-        // above to catch (so the radial ray points straight into a neighbour).
-        // Re-cast along the region's principal axis, which runs out along the
-        // sliver into the open space at its tips; try both senses (+axis then
-        // −axis) and keep the first that actually clears. If neither clears we
-        // leave the original placement untouched, so this can only improve.
-        if box_overlaps_foreign(&anchor, w, h, regions, &combo) {
-            let pa = principal_axis_direction(pieces);
-            for cand in [pa, (-pa.0, -pa.1)] {
-                let alt = raycast_anchor_union(&poi, w, h, &union_pieces, margin, cand)
-                    .unwrap_or_else(|| raycast_anchor(&poi, w, h, &bbox, margin, cand));
-                if !box_overlaps_foreign(&alt, w, h, regions, &combo) {
-                    direction = cand;
-                    anchor = alt;
-                    break;
+            // Backstop: if the placement still sits on a region this label
+            // doesn't belong to, the exit ray pointed into occupied space — the
+            // typical case being a thin region on the gap-facing edge of its
+            // cluster whose POI is too far from the global centroid for the
+            // degeneracy fallback above to catch (so the radial ray points
+            // straight into a neighbour). Re-cast along the region's principal
+            // axis, which runs out along the sliver into the open space at its
+            // tips; try both senses (+axis then −axis) and keep the first that
+            // actually clears. If neither clears we leave the original placement
+            // untouched, so this can only improve.
+            if box_overlaps_foreign(&anchor, w, h, regions, &combo) {
+                let pa = principal_axis_direction(pieces);
+                for cand in [pa, (-pa.0, -pa.1)] {
+                    let alt = raycast_anchor_union(&poi, w, h, &union_pieces, margin, cand)
+                        .unwrap_or_else(|| raycast_anchor(&poi, w, h, &bbox, margin, cand));
+                    if !box_overlaps_foreign(&alt, w, h, regions, &combo) {
+                        direction = cand;
+                        anchor = alt;
+                        break;
+                    }
                 }
             }
-        }
+            anchor
+        };
 
         exteriors.push(ExteriorEntry {
             key: key.clone(),
@@ -557,6 +595,20 @@ pub fn place_labels(
                 );
             }
             PlacementKind::ExteriorForceDirected
+        }
+        ExteriorPlan::Matched { margin } => {
+            if let Some(bbox) = diagram_bbox {
+                resolve_matched(
+                    &mut exteriors,
+                    regions,
+                    &union_pieces,
+                    &bbox,
+                    container,
+                    strategy,
+                    margin,
+                );
+            }
+            PlacementKind::ExteriorMatched
         }
     };
 
@@ -1160,6 +1212,9 @@ enum ExteriorPlan {
     ForceDirected {
         margin: Option<f64>,
         iterations: usize,
+    },
+    Matched {
+        margin: Option<f64>,
     },
 }
 
@@ -2181,6 +2236,355 @@ fn segment_vs_aabb(
     Some((t_min, t_max))
 }
 
+/// Distance from `(cx, cy)` to the diagram silhouette in unit direction `dir`:
+/// the farthest forward crossing of the ray with the union outline (or the
+/// container rectangle when complement-fitting). Falls back to `fallback` when
+/// the ray misses everything. Used to shape the matched slot ring so it hugs the
+/// outline instead of sitting on a far circle sized for the diagram's farthest
+/// corner.
+fn silhouette_distance(
+    cx: f64,
+    cy: f64,
+    dir: (f64, f64),
+    union_pieces: &[RegionPiece],
+    container: Option<&Rectangle>,
+    fallback: f64,
+) -> f64 {
+    let (rx, ry) = dir;
+    if let Some(rect) = container {
+        // Ray from the rectangle centre exits at the nearer of the two axis
+        // slabs (`cx`/`cy` equal the container centre in the complement case).
+        let hw = 0.5 * rect.width();
+        let hh = 0.5 * rect.height();
+        let tx = if rx.abs() > 1e-9 {
+            hw / rx.abs()
+        } else {
+            f64::INFINITY
+        };
+        let ty = if ry.abs() > 1e-9 {
+            hh / ry.abs()
+        } else {
+            f64::INFINITY
+        };
+        let t = tx.min(ty);
+        return if t.is_finite() { t } else { fallback };
+    }
+    let eps = 1e-9;
+    let mut best = 0.0_f64;
+    for piece in union_pieces {
+        let verts = piece.outer.vertices();
+        let count = verts.len();
+        if count < 2 {
+            continue;
+        }
+        for i in 0..count {
+            let a = &verts[i];
+            let b = &verts[(i + 1) % count];
+            let sx = b.x() - a.x();
+            let sy = b.y() - a.y();
+            let denom = rx * sy - ry * sx;
+            if denom.abs() < eps {
+                continue; // parallel
+            }
+            let wx = a.x() - cx;
+            let wy = a.y() - cy;
+            let t = (wx * sy - wy * sx) / denom;
+            let u = (wx * ry - wy * rx) / denom;
+            if t > eps && (-eps..=1.0 + eps).contains(&u) {
+                best = best.max(t);
+            }
+        }
+    }
+    if best > 0.0 { best } else { fallback }
+}
+
+/// Boundary-labeling exterior placement (the [`ExteriorPolicy::Matched`]
+/// resolver).
+///
+/// Places each exterior label on a ring that *hugs the diagram silhouette*, at
+/// its own outward (POI) angle, then spreads the angles just enough that
+/// neighbouring label boxes don't overlap. Crucially the spread is
+/// *proportional*: each label claims arc according to its own width, so a
+/// diagram of many narrow labels stays tight instead of being sized for the
+/// widest label (the cause of the old uniform-slot ring ballooning far from the
+/// diagram). A final 2-opt pass uncrosses any leaders that still cross.
+///
+/// Only the entries' `anchor` is set here; the caller's finalization loop
+/// recomputes the tether (from `anchor − poi`) and `leader_end`, so matched
+/// leaders are straight single segments with no waypoints.
+///
+/// Crossing-free reasoning: labels keep their POI angular order (the spread is
+/// order-preserving) and sit on a ring around the diagram, so leaders run
+/// near-radially out of their own region and rarely cross. The bounded 2-opt
+/// [`uncross_leaders`] pass then swaps any remaining crossed pair — each swap
+/// shortens total leader length, so it terminates — guaranteeing no two leaders
+/// cross.
+#[allow(clippy::too_many_arguments)]
+fn resolve_matched(
+    entries: &mut [ExteriorEntry],
+    regions: &RegionPolygons,
+    union_pieces: &[RegionPiece],
+    bbox: &Rectangle,
+    container: Option<&Rectangle>,
+    strategy: &PlacementStrategy,
+    margin: Option<f64>,
+) {
+    use std::f64::consts::TAU;
+
+    let n = entries.len();
+    if n == 0 {
+        return;
+    }
+    let center = *bbox.center();
+    let (cx, cy) = (center.x(), center.y());
+
+    // Circumradius fallback for directions where a silhouette ray misses.
+    let outline_radius = {
+        let mut r = 0.0_f64;
+        for piece in union_pieces {
+            for v in piece.outer.vertices() {
+                r = r.max((v.x() - cx).hypot(v.y() - cy));
+            }
+        }
+        if r > 0.0 {
+            r
+        } else {
+            0.5 * bbox.width().hypot(bbox.height())
+        }
+    };
+    let max_label = entries.iter().map(|e| e.w.max(e.h)).fold(0.0_f64, f64::max);
+    let margin_val = margin.unwrap_or(0.5 * max_label);
+    // Breathing room between adjacent label boxes (length units on the ring).
+    let gap = 0.15 * max_label;
+
+    // Per-entry: tether, outward angle, sizes. Order by tether angle when the
+    // tether attaches on the boundary (matching what the renderer draws), else
+    // by the POI angle.
+    struct Item {
+        idx: usize,
+        key: String,
+        tether: Point,
+        angle: f64,
+        w: f64,
+        h: f64,
+    }
+    let mut items: Vec<Item> = Vec::with_capacity(n);
+    for (idx, e) in entries.iter().enumerate() {
+        let pieces = regions.get(&e.combo).map(|v| v.as_slice()).unwrap_or(&[]);
+        let dx = e.poi.x() - cx;
+        let dy = e.poi.y() - cy;
+        let mag = dx.hypot(dy);
+        let dir = if mag > 1e-9 {
+            (dx / mag, dy / mag)
+        } else {
+            principal_axis_direction(pieces)
+        };
+        let tether = tether_point(strategy.tether, &e.poi, dir, pieces);
+        let angle_pt = match strategy.tether {
+            TetherSource::Boundary => tether,
+            _ => e.poi,
+        };
+        let angle = (angle_pt.y() - cy).atan2(angle_pt.x() - cx);
+        items.push(Item {
+            idx,
+            key: e.key.clone(),
+            tether,
+            angle,
+            w: e.w,
+            h: e.h,
+        });
+    }
+
+    // Sort by angle and cut the cycle at the widest angular gap so the
+    // linearization seam falls in empty space.
+    items.sort_by(|a, b| {
+        a.angle
+            .partial_cmp(&b.angle)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.key.cmp(&b.key))
+    });
+    let mut seam = items[0].angle - 1e-6;
+    if n >= 2 {
+        let mut max_gap = -1.0;
+        for i in 0..n {
+            let a = items[i].angle;
+            let b = if i + 1 < n {
+                items[i + 1].angle
+            } else {
+                items[0].angle + TAU
+            };
+            if b - a > max_gap {
+                max_gap = b - a;
+                seam = a + 0.5 * (b - a);
+            }
+        }
+    }
+    let rel = |angle: f64| -> f64 {
+        let mut r = (angle - seam) % TAU;
+        if r < 0.0 {
+            r += TAU;
+        }
+        r
+    };
+    items.sort_by(|a, b| {
+        rel(a.angle)
+            .partial_cmp(&rel(b.angle))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.key.cmp(&b.key))
+    });
+
+    // Radial and tangential half-extents of an axis-aligned `w × h` box whose
+    // outward direction is `theta` (tangential is used to size angular spacing).
+    let radial_half =
+        |theta: f64, w: f64, h: f64| 0.5 * (theta.cos().abs() * w + theta.sin().abs() * h);
+    let tangential_half =
+        |theta: f64, w: f64, h: f64| 0.5 * (theta.sin().abs() * w + theta.cos().abs() * h);
+    // Distance from the centre at which a `w × h` label box, cast outward along
+    // `theta`, fully clears the diagram by `margin`. Uses the same full-box
+    // footprint clearance as the raycast solver (`raycast_anchor_union`), so a
+    // wide label's corners can't poke into a curving boundary; the
+    // center-ray silhouette is only a fallback (container present, or the union
+    // is degenerate).
+    let base_radius = |theta: f64, w: f64, h: f64| -> f64 {
+        let dir = (theta.cos(), theta.sin());
+        if let Some(p) = raycast_anchor_union(&center, w, h, union_pieces, margin_val, dir) {
+            (p.x() - cx).hypot(p.y() - cy)
+        } else {
+            silhouette_distance(cx, cy, dir, union_pieces, container, outline_radius)
+                + margin_val
+                + radial_half(theta, w, h)
+        }
+    };
+
+    // Desired (rel) angle and required angular half-width per label at its base
+    // radius. If the labels can't all fit in the circle, inflate every radius
+    // uniformly until they do (the crowded-diagram case) — this is the only
+    // thing that pushes the ring out, and only as far as needed.
+    let desired: Vec<f64> = items.iter().map(|it| rel(it.angle)).collect();
+    let mut radius: Vec<f64> = items
+        .iter()
+        .map(|it| base_radius(it.angle, it.w, it.h))
+        .collect();
+    let ang_half = |i: usize, radius: f64| -> f64 {
+        ((tangential_half(items[i].angle, items[i].w, items[i].h) + 0.5 * gap) / radius)
+            .clamp(0.0, 0.49 * TAU)
+    };
+    let mut half: Vec<f64> = (0..n).map(|i| ang_half(i, radius[i])).collect();
+    let demand: f64 = 2.0 * half.iter().sum::<f64>();
+    if demand > TAU {
+        let scale = demand / TAU;
+        for i in 0..n {
+            radius[i] *= scale;
+            half[i] = ang_half(i, radius[i]);
+        }
+    }
+
+    // Spread the rel angles, order-preserving, so neighbours don't overlap.
+    let spread = spread_angles(&desired, &half);
+
+    // Final placement: each label at its spread angle, pushed out far enough to
+    // clear the diagram (full-box footprint) and to honour the crowding radius.
+    // Then uncross.
+    let mut anchors: Vec<Point> = (0..n)
+        .map(|i| {
+            let a = seam + spread[i];
+            let r = base_radius(a, items[i].w, items[i].h).max(radius[i]);
+            Point::new(cx + r * a.cos(), cy + r * a.sin())
+        })
+        .collect();
+    let tethers: Vec<Point> = items.iter().map(|it| it.tether).collect();
+    uncross_leaders(&tethers, &mut anchors);
+
+    for (i, it) in items.iter().enumerate() {
+        entries[it.idx].anchor = anchors[i];
+    }
+}
+
+/// Order-preserving angular spread on a circle. Given desired rel angles
+/// `desired` (ascending, in `[0, TAU)`) and required angular half-widths
+/// `half`, returns angles in the same order with each neighbouring pair
+/// (cyclically) separated by at least the sum of their half-widths, kept near
+/// `desired`. The caller guarantees the labels fit (`2·Σhalf ≤ TAU`) by
+/// inflating radii, so the relaxation below converges.
+fn spread_angles(desired: &[f64], half: &[f64]) -> Vec<f64> {
+    use std::f64::consts::TAU;
+    let n = desired.len();
+    let mut p = desired.to_vec();
+    if n <= 1 {
+        return p;
+    }
+    for _ in 0..(2 * n + 8) {
+        let mut moved = false;
+        // Forward: push each label clear of its predecessor.
+        for i in 1..n {
+            let lo = p[i - 1] + half[i - 1] + half[i];
+            if p[i] < lo {
+                p[i] = lo;
+                moved = true;
+            }
+        }
+        // Wrap: the first label must clear the last across the seam.
+        let lo0 = p[n - 1] + half[n - 1] + half[0] - TAU;
+        if p[0] < lo0 {
+            p[0] = lo0;
+            moved = true;
+        }
+        // Backward: pull each label back toward its desired angle wherever its
+        // successor leaves room, so the spread stays centred on the POI angles.
+        for i in (0..n - 1).rev() {
+            let hi = p[i + 1] - half[i + 1] - half[i];
+            if p[i] > hi {
+                p[i] = hi;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    p
+}
+
+/// 2-opt uncrossing of straight leaders: while any two leaders cross, swap their
+/// outer endpoints (anchors). Each swap strictly reduces total leader length, so
+/// the loop terminates at a layout with no two leaders crossing. Bounded as a
+/// floating-point-tie guard.
+fn uncross_leaders(tethers: &[Point], anchors: &mut [Point]) {
+    let n = anchors.len();
+    let max_passes = n * n + 1;
+    for _ in 0..max_passes {
+        let mut swapped = false;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if segments_properly_cross(&tethers[i], &anchors[i], &tethers[j], &anchors[j]) {
+                    anchors.swap(i, j);
+                    swapped = true;
+                }
+            }
+        }
+        if !swapped {
+            break;
+        }
+    }
+}
+
+/// Do the open segments `p0p1` and `p2p3` cross at an interior point of both?
+/// Shared endpoints, collinear overlap, and mere touching all return `false` —
+/// only a proper transversal crossing counts. Used by the matched-placement
+/// uncrossing pass and by tests asserting leaders don't intersect.
+fn segments_properly_cross(p0: &Point, p1: &Point, p2: &Point, p3: &Point) -> bool {
+    let eps = 1e-9;
+    let orient = |a: &Point, b: &Point, c: &Point| -> f64 {
+        (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
+    };
+    let d1 = orient(p2, p3, p0);
+    let d2 = orient(p2, p3, p1);
+    let d3 = orient(p0, p1, p2);
+    let d4 = orient(p0, p1, p3);
+    ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps))
+        && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2795,6 +3199,55 @@ mod tests {
         let ab = placements.get("A&B").expect("A&B should be placed");
         assert_eq!(ab.kind, PlacementKind::ExteriorRaycast);
         assert!(ab.tether.is_some());
+    }
+
+    #[test]
+    fn test_matched_no_crossings_on_fitted_three_set() {
+        // End-to-end through the real fitter/decomposer: a 3-set diagram whose
+        // every region carries an oversized label, forcing the whole set
+        // exterior onto the matched ring. The matched leaders must not cross.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 6.0)
+            .set("B", 6.0)
+            .set("C", 6.0)
+            .intersection(&["A", "B"], 2.0)
+            .intersection(&["A", "C"], 2.0)
+            .intersection(&["B", "C"], 2.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+        let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|n| *layout.shape_for_set(n).unwrap())
+            .collect();
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
+
+        // Oversized labels for every region → all exterior.
+        let mut sizes = HashMap::new();
+        for combo in regions.iter().map(|(c, _)| c.to_string()) {
+            sizes.insert(combo, (50.0, 50.0));
+        }
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+
+        let leaders: Vec<(Point, Point)> = placements
+            .values()
+            .filter(|p| p.kind == PlacementKind::ExteriorMatched)
+            .map(|p| (p.tether.unwrap(), p.leader_end.unwrap()))
+            .collect();
+        assert!(leaders.len() >= 4, "expected several exterior labels");
+        for i in 0..leaders.len() {
+            for j in (i + 1)..leaders.len() {
+                let (a0, a1) = leaders[i];
+                let (b0, b1) = leaders[j];
+                assert!(
+                    !segments_properly_cross(&a0, &a1, &b0, &b1),
+                    "matched leaders {i} and {j} cross on a fitted 3-set diagram"
+                );
+            }
+        }
     }
 
     /// Diamond (rotated square) centered at `(cx, cy)` with vertex offset
@@ -3887,5 +4340,384 @@ mod tests {
         sizes.insert("A".to_string(), (20.0, 20.0));
         let placements = place_labels(&regions, &sizes, None, &elbow_strategy());
         assert!(!placements.contains_key("A"));
+    }
+
+    // ----- Matched (boundary-labeling) exterior placement -----
+
+    fn matched_strategy() -> PlacementStrategy {
+        PlacementStrategy {
+            leader: LeaderStrategy::Straight(ExteriorPolicy::Matched { margin: None }),
+            ..PlacementStrategy::default()
+        }
+    }
+
+    #[test]
+    fn test_segments_properly_cross() {
+        let p = |x: f64, y: f64| Point::new(x, y);
+        // Proper X crossing.
+        assert!(segments_properly_cross(
+            &p(0.0, 0.0),
+            &p(2.0, 2.0),
+            &p(0.0, 2.0),
+            &p(2.0, 0.0)
+        ));
+        // Shared endpoint — not a proper crossing.
+        assert!(!segments_properly_cross(
+            &p(0.0, 0.0),
+            &p(2.0, 2.0),
+            &p(0.0, 0.0),
+            &p(2.0, 0.0)
+        ));
+        // Collinear overlap.
+        assert!(!segments_properly_cross(
+            &p(0.0, 0.0),
+            &p(2.0, 0.0),
+            &p(1.0, 0.0),
+            &p(3.0, 0.0)
+        ));
+        // Disjoint.
+        assert!(!segments_properly_cross(
+            &p(0.0, 0.0),
+            &p(1.0, 0.0),
+            &p(0.0, 5.0),
+            &p(1.0, 5.0)
+        ));
+        // Near-parallel, no crossing.
+        assert!(!segments_properly_cross(
+            &p(0.0, 0.0),
+            &p(10.0, 0.1),
+            &p(0.0, 1.0),
+            &p(10.0, 1.1)
+        ));
+    }
+
+    #[test]
+    fn test_matched_emits_kind_and_straight_leader() {
+        // 10×10 region, oversized label → exterior via the matched ring.
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+        let p = placements.get("A").expect("A should be placed");
+        assert_eq!(p.kind, PlacementKind::ExteriorMatched);
+        assert!(p.tether.is_some());
+        assert!(p.leader_end.is_some());
+        assert!(
+            p.leader_waypoints.is_empty(),
+            "matched leaders are straight single segments"
+        );
+    }
+
+    #[test]
+    fn test_matched_is_not_default() {
+        // The default is still raycast; matched is strictly opt-in.
+        assert!(matches!(
+            PlacementStrategy::default().leader,
+            LeaderStrategy::Straight(ExteriorPolicy::Raycast { .. })
+        ));
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (20.0, 20.0));
+        let p = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+        assert_eq!(p.get("A").unwrap().kind, PlacementKind::ExteriorRaycast);
+    }
+
+    // Four tiny regions at the corners of a 12×12 area; each label is far too
+    // big to fit inside, so all four go exterior on the ring.
+    fn four_corner_exterior() -> (RegionPolygons, HashMap<String, (f64, f64)>) {
+        let regions = regions_from(vec![
+            (&["A"][..], vec![square_piece_at(0.0, 0.0, 2.0)]),
+            (&["B"][..], vec![square_piece_at(10.0, 0.0, 2.0)]),
+            (&["C"][..], vec![square_piece_at(10.0, 10.0, 2.0)]),
+            (&["D"][..], vec![square_piece_at(0.0, 10.0, 2.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        for k in ["A", "B", "C", "D"] {
+            sizes.insert(k.to_string(), (4.0, 4.0));
+        }
+        (regions, sizes)
+    }
+
+    #[test]
+    fn test_matched_leaders_do_not_cross() {
+        let (regions, sizes) = four_corner_exterior();
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+        let leaders: Vec<(Point, Point)> = placements
+            .values()
+            .filter(|p| p.kind == PlacementKind::ExteriorMatched)
+            .map(|p| (p.tether.unwrap(), p.leader_end.unwrap()))
+            .collect();
+        assert_eq!(leaders.len(), 4, "all four labels go exterior");
+        for i in 0..leaders.len() {
+            for j in (i + 1)..leaders.len() {
+                let (a0, a1) = leaders[i];
+                let (b0, b1) = leaders[j];
+                assert!(
+                    !segments_properly_cross(&a0, &a1, &b0, &b1),
+                    "matched leaders {i} and {j} cross"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_matched_order_preserved() {
+        // Anchors must appear in the same rotational order around the diagram
+        // centre as the regions' POIs: at most one descent (the seam) when the
+        // anchor angles are read in POI-angle order.
+        let (regions, sizes) = four_corner_exterior();
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+        let pois = regions.label_points(0.01);
+        let center = (6.0, 6.0); // bbox centre of the 0..12 square
+        let mut by_poi_angle: Vec<(f64, f64)> = placements
+            .iter()
+            .filter(|(_, p)| p.kind == PlacementKind::ExteriorMatched)
+            .map(|(k, p)| {
+                let combo: Combination = k.parse().unwrap();
+                let poi = pois[&combo];
+                let pa = (poi.y() - center.1).atan2(poi.x() - center.0);
+                let aa = (p.anchor.y() - center.1).atan2(p.anchor.x() - center.0);
+                (pa, aa)
+            })
+            .collect();
+        by_poi_angle.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let anchor_angles: Vec<f64> = by_poi_angle.iter().map(|&(_, aa)| aa).collect();
+        let descents = (0..anchor_angles.len())
+            .filter(|&i| {
+                let next = anchor_angles[(i + 1) % anchor_angles.len()];
+                next < anchor_angles[i]
+            })
+            .count();
+        assert!(
+            descents <= 1,
+            "anchor order not rotationally monotone (descents = {descents})"
+        );
+    }
+
+    #[test]
+    fn test_matched_clears_interior_labels() {
+        // A big central region holds its label inside; small peripheral
+        // regions go exterior. No exterior leader may cross the interior
+        // label's box (the foreign-interior-label penalty enforces this).
+        let regions = regions_from(vec![
+            (&["M"][..], vec![square_piece_at(0.0, 0.0, 30.0)]),
+            (&["A"][..], vec![rect_piece(0.0, 14.0, 1.0, 2.0)]),
+            (&["B"][..], vec![rect_piece(29.0, 14.0, 1.0, 2.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        sizes.insert("M".to_string(), (3.0, 3.0)); // fits inside → interior
+        sizes.insert("A".to_string(), (8.0, 4.0)); // too big for the sliver
+        sizes.insert("B".to_string(), (8.0, 4.0));
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+
+        let m = placements.get("M").expect("M placed");
+        assert_eq!(m.kind, PlacementKind::Interior);
+        let (mw, mh) = sizes["M"];
+        let (xmin, ymin, xmax, ymax) = (
+            m.anchor.x() - 0.5 * mw,
+            m.anchor.y() - 0.5 * mh,
+            m.anchor.x() + 0.5 * mw,
+            m.anchor.y() + 0.5 * mh,
+        );
+        for key in ["A", "B"] {
+            let p = placements.get(key).expect("placed");
+            assert_eq!(p.kind, PlacementKind::ExteriorMatched);
+            let t = p.tether.unwrap();
+            let e = p.leader_end.unwrap();
+            assert!(
+                segment_vs_aabb(&t, &e, xmin, ymin, xmax, ymax).is_none(),
+                "leader for {key} crosses M's interior label box"
+            );
+        }
+    }
+
+    #[test]
+    fn test_matched_labels_sit_on_tight_ring() {
+        // The "labels too far away" fix: every matched anchor sits just off the
+        // diagram outline, not flung far out. (The ring follows the silhouette
+        // and each label hugs by its own size, so radii vary a little — we only
+        // assert tightness here, not a perfect circle.)
+        let (regions, sizes) = four_corner_exterior();
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+        let center = (6.0, 6.0);
+        let radii: Vec<f64> = placements
+            .values()
+            .filter(|p| p.kind == PlacementKind::ExteriorMatched)
+            .map(|p| (p.anchor.x() - center.0).hypot(p.anchor.y() - center.1))
+            .collect();
+        let rmin = radii.iter().cloned().fold(f64::INFINITY, f64::min);
+        let rmax = radii.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        // Exterior (past the ≈ 8.49 circumradius) but tight: well under twice it.
+        assert!(rmin > 8.0, "anchors not outside the diagram: {rmin}");
+        assert!(rmax < 16.0, "ring radius {rmax} too far from the diagram");
+    }
+
+    #[test]
+    fn test_matched_labels_clear_the_diagram() {
+        // Every matched label box must sit fully outside the diagram shapes (no
+        // box corner pokes into a region), even where the boundary curves — the
+        // regression behind "labels overlapping the shapes". Uses a real fitted
+        // 3-set diagram with oversized labels so all go exterior.
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 6.0)
+            .set("B", 6.0)
+            .set("C", 6.0)
+            .intersection(&["A", "B"], 2.0)
+            .intersection(&["A", "C"], 2.0)
+            .intersection(&["B", "C"], 2.0)
+            .intersection(&["A", "B", "C"], 1.0)
+            .input_type(InputType::Exclusive)
+            .build()
+            .unwrap();
+        let layout = Fitter::<Circle>::new(&spec).seed(7).fit().unwrap();
+        let shapes: Vec<Circle> = spec
+            .set_names()
+            .iter()
+            .map(|n| *layout.shape_for_set(n).unwrap())
+            .collect();
+        let regions = decompose_regions(&shapes, spec.set_names(), &spec, None, 64);
+        let mut sizes = HashMap::new();
+        for combo in regions.iter().map(|(c, _)| c.to_string()) {
+            sizes.insert(combo, (6.0, 3.0));
+        }
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+        for (key, p) in placements.iter() {
+            if p.kind != PlacementKind::ExteriorMatched {
+                continue;
+            }
+            let (w, h) = sizes[key];
+            // Sample the label box; no sample may land inside any region piece.
+            for sx in [-0.5, -0.25, 0.0, 0.25, 0.5] {
+                for sy in [-0.5, -0.25, 0.0, 0.25, 0.5] {
+                    let px = p.anchor.x() + sx * w;
+                    let py = p.anchor.y() + sy * h;
+                    for (_, pieces) in regions.iter() {
+                        for piece in pieces {
+                            assert!(
+                                signed_clearance(px, py, piece) <= 1e-6,
+                                "label {key} box overlaps the diagram at ({px:.2},{py:.2})"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_matched_hugs_silhouette_on_wide_diagram() {
+        // On a wide, short diagram a top-facing exterior label must sit just
+        // above the local boundary, NOT pushed out to the diagram's far-corner
+        // circumradius (the failure the silhouette ring fixes). Union bbox is
+        // x[0,40] × y[0,12], centre (20, 6); the circumradius is ≈ 20.9, so the
+        // old circle ring would park the top label near y ≈ 37. The silhouette
+        // ring puts it near y ≈ 22.
+        let regions = regions_from(vec![
+            (&["M"][..], vec![rect_piece(0.0, 0.0, 40.0, 10.0)]),
+            (&["T"][..], vec![rect_piece(18.0, 10.0, 4.0, 2.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        sizes.insert("M".to_string(), (2.0, 1.0)); // fits inside the wide region
+        sizes.insert("T".to_string(), (10.0, 5.0)); // far too big for the bump
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+
+        assert_eq!(placements["M"].kind, PlacementKind::Interior);
+        let t = &placements["T"];
+        assert_eq!(t.kind, PlacementKind::ExteriorMatched);
+        // Exterior (above the diagram top at y = 12) but hugging the silhouette,
+        // well below the ~37 a far-corner circle ring would give.
+        assert!(
+            t.anchor.y() > 12.0 && t.anchor.y() < 28.0,
+            "top label not hugging the silhouette: anchor.y = {}",
+            t.anchor.y()
+        );
+    }
+
+    #[test]
+    fn test_matched_with_container_slots_outside() {
+        let regions = single_region(&["A"], vec![axis_aligned_square_piece(10.0)]);
+        let container = Rectangle::new(Point::new(5.0, 5.0), 100.0, 100.0);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (50.0, 50.0));
+        let placements = place_labels(&regions, &sizes, Some(&container), &matched_strategy());
+        let p = placements.get("A").expect("A placed");
+        assert_eq!(p.kind, PlacementKind::ExteriorMatched);
+        // Container half-extent is 50 about (5, 5): the anchor must clear it.
+        assert!(
+            (p.anchor.x() - 5.0).abs() > 50.0 || (p.anchor.y() - 5.0).abs() > 50.0,
+            "anchor {:?} not outside container",
+            p.anchor
+        );
+    }
+
+    #[test]
+    fn test_matched_capacity_expansion_no_overlap() {
+        // Eight tiny regions clustered tightly, each with a big label: the ring
+        // must expand so all eight are seated, and no two label boxes overlap.
+        let mut entries: Vec<(&[&str], Vec<RegionPiece>)> = Vec::new();
+        let combos: [&[&str]; 8] = [
+            &["A"],
+            &["B"],
+            &["C"],
+            &["D"],
+            &["E"],
+            &["F"],
+            &["G"],
+            &["H"],
+        ];
+        // Spread the tiny regions over a small 6×6 area so their POIs span all
+        // angles around the centre.
+        let coords = [
+            (0.0, 0.0),
+            (3.0, 0.0),
+            (6.0, 0.0),
+            (6.0, 3.0),
+            (6.0, 6.0),
+            (3.0, 6.0),
+            (0.0, 6.0),
+            (0.0, 3.0),
+        ];
+        for (c, (x, y)) in combos.iter().zip(coords.iter()) {
+            entries.push((*c, vec![square_piece_at(*x, *y, 1.0)]));
+        }
+        let regions = regions_from(entries);
+        let mut sizes = HashMap::new();
+        let (lw, lh) = (4.0_f64, 4.0_f64);
+        for c in combos {
+            sizes.insert(c[0].to_string(), (lw, lh));
+        }
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+        let anchors: Vec<Point> = placements
+            .values()
+            .filter(|p| p.kind == PlacementKind::ExteriorMatched)
+            .map(|p| p.anchor)
+            .collect();
+        assert_eq!(anchors.len(), 8, "all eight labels seated on the ring");
+        for i in 0..anchors.len() {
+            for j in (i + 1)..anchors.len() {
+                let dx = (anchors[i].x() - anchors[j].x()).abs();
+                let dy = (anchors[i].y() - anchors[j].y()).abs();
+                assert!(
+                    dx >= lw - 1e-6 || dy >= lh - 1e-6,
+                    "label boxes {i} and {j} overlap (dx={dx}, dy={dy})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_matched_all_interior_no_exterior() {
+        // Every label fits inside → no exterior labels, no panic on an empty
+        // exterior set.
+        let regions = regions_from(vec![
+            (&["A"][..], vec![square_piece_at(0.0, 0.0, 20.0)]),
+            (&["B"][..], vec![square_piece_at(40.0, 0.0, 20.0)]),
+        ]);
+        let mut sizes = HashMap::new();
+        sizes.insert("A".to_string(), (1.0, 1.0));
+        sizes.insert("B".to_string(), (1.0, 1.0));
+        let placements = place_labels(&regions, &sizes, None, &matched_strategy());
+        assert_eq!(placements.get("A").unwrap().kind, PlacementKind::Interior);
+        assert_eq!(placements.get("B").unwrap().kind, PlacementKind::Interior);
     }
 }

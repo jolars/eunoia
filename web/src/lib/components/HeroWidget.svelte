@@ -405,9 +405,7 @@
           {#if region.combination !== ""}
             {@const p = placements[region.combination]}
             {@const anchor = p?.anchor ?? region.labelAnchor}
-            {@const isExterior =
-              p?.kind === "exteriorRaycast" ||
-              p?.kind === "exteriorForceDirected"}
+            {@const isExterior = p?.kind !== undefined && p.kind !== "interior"}
             {#if isExterior && p?.tether}
               <path
                 d={leaderPath(
