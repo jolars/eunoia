@@ -12,12 +12,13 @@ powers a SvelteKit web app. Narrative docs: <https://eunoia.bz/docs/>. Rustdoc:
 
 ## Repository layout
 
-This is a **Cargo workspace** plus two JS sub-projects. Four distinct artifacts:
+This is a **Cargo workspace** plus two JS sub-projects:
 
 | Path                  | Artifact                                                                 |
 | --------------------- | ------------------------------------------------------------------------ |
 | `crates/eunoia/`      | Core library (pure Rust). Default workspace member. The real algorithms. |
 | `crates/eunoia-wasm/` | `wasm-bindgen` surface — a thin, raw binding layer. `publish = false`.   |
+| `crates/eunoia-capi/` | C ABI (JSON in/out `extern "C"`) backing the Julia package. `publish = false`. |
 | `ts/`                 | High-level TypeScript wrapper (`euler()`, `venn()`) + build script.      |
 | `npm/`                | The assembled, publishable `@jolars/eunoia` package (generated, gitignored). |
 | `web/`                | SvelteKit app (Svelte 5, Tailwind 4, rolldown-vite). Links `file:../npm`.|
@@ -198,6 +199,15 @@ the same `[x, y, ln(w·h), ln(w/h)]` rectangle encoding.
   separately. Pushing a `v*` tag triggers the crates and npm publish workflows.
 - All code must pass `cargo fmt -- --check` and clippy with `-D warnings`.
   Pre-commit hooks (rustfmt, clippy, biome for JS/TS) run via devenv git-hooks.
+- **Keep the bindings in sync with the core public API.** When you add or change
+  a public knob in `crates/eunoia/` (a new shape, `Optimizer`/`LossType`/
+  `MdsSolver` variant, builder method, `complement`, etc.), mirror it in **both**
+  binding layers it belongs in: `crates/eunoia-wasm/` (`Wasm*` enums + the
+  `generate_*` signatures) and `crates/eunoia-capi/` (the `parse_*` token maps,
+  input structs, and `euler_impl`/`venn_impl`). The capi enums are hand-mapped
+  snake_case strings (no serde on the core enums), so a new variant is silent
+  until added. Update the matching docs page (`web/src/routes/docs/bindings/`)
+  and add a test in the same commit.
 - The `corpus_quality.rs` / `synthetic_groundtruth.rs` fit-quality tests are the
   guardrail against fitter regressions; `TODO.md` tracks surfaced fitter issues.
   `corpus_quality` is `#[ignore]`d (too slow for the default suite) — run it via
