@@ -85,7 +85,7 @@ front (a bad token errors regardless of the other inputs):
 | -------------------------- | ------- | ------------------------------------------------------------------------------------ |
 | `loss`                     | string  | `sum_squared`, `sum_absolute`, `sum_absolute_region_error`, `sum_squared_region_error`, `max_absolute`, `max_squared`, `root_mean_squared`, `stress`, `diag_error`, `log_sum_absolute`, and the six `smooth_*` variants. |
 | `loss_eps`                 | number  | Smoothing `eps` for the `smooth_*` losses (default `1e-3`); ignored otherwise.        |
-| `optimizer`                | string  | `levenberg_marquardt`, `lbfgs`, `nelder_mead`, `trf`, `cmaes_lm`, `cmaes_trf`.        |
+| `optimizer`                | string  | `levenberg_marquardt`, `lbfgs`, `nelder_mead`, `mads`, `trf`, `cmaes`, `cmaes_lm`, `cmaes_trf`. |
 | `mds_solver`               | string  | `lbfgs`, `levenberg_marquardt`.                                                       |
 | `initial_sampler`          | string  | `uniform`, `latin_hypercube`.                                                         |
 | `n_restarts`               | integer | Random restarts of the two-phase fit; lowest loss kept.                              |
@@ -153,10 +153,11 @@ Lays out a canonical n-set Venn diagram—a fixed template, *not* proportional
 { "names": ["A", "B", "C"], "shape": "circle" }
 ```
 
-| Field   | Type            | Default    | Meaning                                                |
-| ------- | --------------- | ---------- | ------------------------------------------------------ |
-| `names` | array of string | *(required)* | Set names, in order; their count selects the arrangement. |
-| `shape` | string          | `"circle"` | Same shape tokens as `eunoia_euler`.                   |
+| Field        | Type            | Default      | Meaning                                                              |
+| ------------ | --------------- | ------------ | ------------------------------------------------------------------- |
+| `names`      | array of string | *(required)* | Set names, in order; their count selects the arrangement.           |
+| `shape`      | string          | `"circle"`   | Same shape tokens as `eunoia_euler`.                                |
+| `complement` | number          | —            | Frames the diagram with a bounding container (surfaced as `container`). |
 
 The response is the same `LayoutOut` envelope as `eunoia_euler`. Circles cover
 n ≤ 3; ellipse arrangements (Wilkinson/Edwards) reach n = 4–5.

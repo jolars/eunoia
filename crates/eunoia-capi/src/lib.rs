@@ -157,6 +157,11 @@ struct VennInput {
     names: Vec<String>,
     #[serde(default)]
     shape: Option<String>,
+    /// Optional complement ("universe") size; draws a bounding container frame
+    /// around the diagram (`VennDiagram::complement`). Omitting it leaves the
+    /// diagram unframed.
+    #[serde(default)]
+    complement: Option<f64>,
 }
 
 fn default_input_type() -> String {
@@ -589,12 +594,14 @@ fn parse_optimizer(name: &str) -> Result<Optimizer, String> {
         "levenberg_marquardt" => Ok(Optimizer::LevenbergMarquardt),
         "lbfgs" => Ok(Optimizer::Lbfgs),
         "nelder_mead" => Ok(Optimizer::NelderMead),
+        "mads" => Ok(Optimizer::Mads),
         "trf" => Ok(Optimizer::Trf),
+        "cmaes" => Ok(Optimizer::CmaEs),
         "cmaes_lm" => Ok(Optimizer::CmaEsLm),
         "cmaes_trf" => Ok(Optimizer::CmaEsTrf),
         other => Err(format!(
             "invalid optimizer '{other}' (want levenberg_marquardt|lbfgs|\
-             nelder_mead|trf|cmaes_lm|cmaes_trf)"
+             nelder_mead|mads|trf|cmaes|cmaes_lm|cmaes_trf)"
         )),
     }
 }
@@ -795,10 +802,15 @@ fn venn_impl(input: VennInput) -> Result<LayoutOut, String> {
     // spec so label anchors and metrics compute exactly as for `euler`.
     macro_rules! venn_arm {
         ($shape:ty, $name:literal) => {{
-            let (layout, spec) = VennDiagram::<$shape>::new(n)
+            let mut venn = VennDiagram::<$shape>::new(n)
                 .map_err(|e| format!("no {}-set Venn for {}: {e}", n, $name))?
-                .with_names(&refs)
-                .into_layout_and_spec();
+                .with_names(&refs);
+            if let Some(c) = input.complement {
+                venn = venn
+                    .complement(c)
+                    .map_err(|e| format!("invalid complement: {e}"))?;
+            }
+            let (layout, spec) = venn.into_layout_and_spec();
             // Venn plot-tuning knobs are out of scope (slice (a)/(b) are
             // euler-only); the shared `extract` just gets the defaults.
             Ok(extract(&layout, &spec, $name, PlotOptions::default()))
@@ -1268,6 +1280,28 @@ mod tests {
     }
 
     #[test]
+    fn venn_complement_emits_container() {
+        // A complement size frames the Venn diagram with a bounding container,
+        // which `extract` surfaces as the top-level `container` field.
+        let out = call(eunoia_venn, r#"{"names":["A","B"],"complement":4}"#);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        let container = &v["container"];
+        assert!(
+            container.is_object(),
+            "expected a container, got {container}"
+        );
+        assert!(container["width"].as_f64().unwrap() > 0.0);
+        assert!(container["height"].as_f64().unwrap() > 0.0);
+
+        // Without a complement there is no container frame.
+        let out = call(eunoia_venn, r#"{"names":["A","B"]}"#);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert!(v.get("container").is_none());
+    }
+
+    #[test]
     fn bad_shape_is_reported_not_panicked() {
         let out = call(
             eunoia_euler,
@@ -1345,6 +1379,18 @@ mod tests {
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["ok"], true);
+    }
+
+    #[test]
+    fn euler_mads_and_cmaes_optimizers_accepted() {
+        // The MADS (v1.6) and plain CMA-ES optimizer tokens both map to core
+        // variants and fit cleanly.
+        for opt in ["mads", "cmaes"] {
+            let out = call(eunoia_euler, &two_set(&format!(r#","optimizer":"{opt}""#)));
+            let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(v["ok"], true, "optimizer {opt}");
+            assert_eq!(v["shapes"].as_array().unwrap().len(), 2);
+        }
     }
 
     #[test]
