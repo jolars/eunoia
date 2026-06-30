@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.7.0](https://github.com/jolars/eunoia/compare/v1.6.0...v1.7.0) (2026-06-30)
+
+### Features
+- **capi:** expose mads/cmaes optimizers and venn complement ([`496b60c`](https://github.com/jolars/eunoia/commit/496b60c352288ce96872c0d4d2c2a8f024857fa7))
+- **web:** add a legend entry for the complement ([`c56faea`](https://github.com/jolars/eunoia/commit/c56faea5c53b3fb5e631c7992a8f3bd773d5f400))
+
 ## [1.6.0](https://github.com/jolars/eunoia/compare/v1.5.0...v1.6.0) (2026-06-26)
 
 ### Features
