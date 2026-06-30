@@ -26,13 +26,13 @@ released exactly once with `eunoia_free`.
 
 All five are `extern "C"`. Strings are NUL-terminated UTF-8.
 
-| Symbol                | C signature                          | Returns                          |
-| --------------------- | ------------------------------------ | -------------------------------- |
-| `eunoia_euler`        | `char *eunoia_euler(const char *)`   | fitted Euler layout envelope     |
-| `eunoia_venn`         | `char *eunoia_venn(const char *)`    | canonical Venn layout envelope   |
-| `eunoia_place_labels` | `char *eunoia_place_labels(const char *)` | label/leader placement envelope |
-| `eunoia_version`      | `char *eunoia_version(void)`         | crate version string             |
-| `eunoia_free`         | `void eunoia_free(char *)`           | —                                |
+  | Symbol                | C signature                               | Returns                         |
+  | --------------------- | ----------------------------------------- | ------------------------------- |
+  | `eunoia_euler`        | `char *eunoia_euler(const char *)`        | fitted Euler layout envelope    |
+  | `eunoia_venn`         | `char *eunoia_venn(const char *)`         | canonical Venn layout envelope  |
+  | `eunoia_place_labels` | `char *eunoia_place_labels(const char *)` | label/leader placement envelope |
+  | `eunoia_version`      | `char *eunoia_version(void)`              | crate version string            |
+  | `eunoia_free`         | `void eunoia_free(char *)`                | —                               |
 
 There is no generated C header today—declare the five prototypes yourself from
 the table above.
@@ -68,38 +68,38 @@ Request:
 }
 ```
 
-| Field         | Type                  | Default        | Meaning                                                                   |
-| ------------- | --------------------- | -------------- | ------------------------------------------------------------------------- |
-| `sets`        | array of `{combination, size}` | *(required)* | Sizes keyed by combination string (`"A"`, `"A&B"`, …).             |
-| `shape`       | string                | `"circle"`     | `"circle"`, `"ellipse"`, `"square"`, `"rectangle"`, or `"rotated_rectangle"`. |
-| `input_type`  | string                | `"exclusive"`  | `"exclusive"` (disjoint pieces) or `"inclusive"` (full set unions).       |
-| `complement`  | number                | —              | Area outside every set; fits a bounding container. See [Complement](/docs/concepts/complement/). |
-| `seed`        | integer               | —              | RNG seed for reproducible fits.                                           |
-| `max_sets`    | integer               | core default   | Raise the set-count ceiling (clamped core-side).                          |
+  | Field        | Type                           | Default       | Meaning                                                                                          |
+  | ------------ | ------------------------------ | ------------- | ------------------------------------------------------------------------------------------------ |
+  | `sets`       | array of `{combination, size}` | *(required)*  | Sizes keyed by combination string (`"A"`, `"A&B"`, …).                                           |
+  | `shape`      | string                         | `"circle"`    | `"circle"`, `"ellipse"`, `"square"`, `"rectangle"`, or `"rotated_rectangle"`.                    |
+  | `input_type` | string                         | `"exclusive"` | `"exclusive"` (disjoint pieces) or `"inclusive"` (full set unions).                              |
+  | `complement` | number                         | —             | Area outside every set; fits a bounding container. See [Complement](/docs/concepts/complement/). |
+  | `seed`       | integer                        | —             | RNG seed for reproducible fits.                                                                  |
+  | `max_sets`   | integer                        | core default  | Raise the set-count ceiling (clamped core-side).                                                 |
 
 All remaining fields are optional fitting and plotting knobs; omitting one keeps
 the core default. The enum-valued knobs are **snake_case** strings, validated up
 front (a bad token errors regardless of the other inputs):
 
-| Field                      | Type    | Valid tokens/notes                                                                   |
-| -------------------------- | ------- | ------------------------------------------------------------------------------------ |
-| `loss`                     | string  | `sum_squared`, `sum_absolute`, `sum_absolute_region_error`, `sum_squared_region_error`, `max_absolute`, `max_squared`, `root_mean_squared`, `stress`, `diag_error`, `log_sum_absolute`, and the six `smooth_*` variants. |
-| `loss_eps`                 | number  | Smoothing `eps` for the `smooth_*` losses (default `1e-3`); ignored otherwise.        |
-| `optimizer`                | string  | `levenberg_marquardt`, `lbfgs`, `nelder_mead`, `mads`, `trf`, `cmaes`, `cmaes_lm`, `cmaes_trf`. |
-| `mds_solver`               | string  | `lbfgs`, `levenberg_marquardt`.                                                       |
-| `initial_sampler`          | string  | `uniform`, `latin_hypercube`.                                                         |
-| `n_restarts`               | integer | Random restarts of the two-phase fit; lowest loss kept.                              |
-| `cmaes_fallback_threshold` | number  | Loss above which the CMA-ES escape kicks in.                                          |
-| `max_iterations`           | integer | Per-optimizer iteration cap.                                                          |
-| `tolerance`, `xtol`, `ftol`, `gtol` | number | Convergence tolerances.                                                      |
-| `jobs`                     | integer | Parallel restart job count.                                                           |
-| `n_vertices`               | integer | Vertices per polygonized shape/region (default `200`).                                |
-| `label_precision`          | number  | Pole-of-inaccessibility anchor precision (default `0.01`).                            |
-| `sliver_threshold`         | number  | Sliver-rejection fraction (default `1e-3`).                                           |
+  | Field                               | Type    | Valid tokens/notes                                                                                                                                                                                                       |
+  | ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `loss`                              | string  | `sum_squared`, `sum_absolute`, `sum_absolute_region_error`, `sum_squared_region_error`, `max_absolute`, `max_squared`, `root_mean_squared`, `stress`, `diag_error`, `log_sum_absolute`, and the six `smooth_*` variants. |
+  | `loss_eps`                          | number  | Smoothing `eps` for the `smooth_*` losses (default `1e-3`); ignored otherwise.                                                                                                                                           |
+  | `optimizer`                         | string  | `levenberg_marquardt`, `lbfgs`, `nelder_mead`, `mads`, `trf`, `cmaes`, `cmaes_lm`, `cmaes_trf`.                                                                                                                          |
+  | `mds_solver`                        | string  | `lbfgs`, `levenberg_marquardt`.                                                                                                                                                                                          |
+  | `initial_sampler`                   | string  | `uniform`, `latin_hypercube`.                                                                                                                                                                                            |
+  | `n_restarts`                        | integer | Random restarts of the two-phase fit; lowest loss kept.                                                                                                                                                                  |
+  | `cmaes_fallback_threshold`          | number  | Loss above which the CMA-ES escape kicks in.                                                                                                                                                                             |
+  | `max_iterations`                    | integer | Per-optimizer iteration cap.                                                                                                                                                                                             |
+  | `tolerance`, `xtol`, `ftol`, `gtol` | number  | Convergence tolerances.                                                                                                                                                                                                  |
+  | `jobs`                              | integer | Parallel restart job count.                                                                                                                                                                                              |
+  | `n_vertices`                        | integer | Vertices per polygonized shape/region (default `200`).                                                                                                                                                                   |
+  | `label_precision`                   | number  | Pole-of-inaccessibility anchor precision (default `0.01`).                                                                                                                                                               |
+  | `sliver_threshold`                  | number  | Sliver-rejection fraction (default `1e-3`).                                                                                                                                                                              |
 
 These mirror the Rust `Fitter`/`PlotOptions`; the defaults are what you want
-unless you are deliberately exploring. See the
-[Fitter pipeline](/docs/concepts/fitter-pipeline/) chapter for what they do.
+unless you are deliberately exploring. See the [Fitter
+pipeline](/docs/concepts/fitter-pipeline/) chapter for what they do.
 
 Success response (abridged):
 
@@ -136,8 +136,8 @@ Success response (abridged):
   adds `rotation`. Every variant carries `label` and a `label_anchor` point.
 - `metrics` maps are keyed by combination string (always exclusive form). See
   [Goodness of fit](/docs/concepts/goodness-of-fit/).
-- `plot_data` carries renderable geometry: every coordinate is an `[x, y]`
-  pair, region keys are combination strings, set keys are set names.
+- `plot_data` carries renderable geometry: every coordinate is an `[x, y]` pair,
+  region keys are combination strings, set keys are set names.
   `set_anchor_regions` pairs a set's label with the region it anchored to (by
   key, so renderers needn't compare floats); sets that fell back to the
   whole-shape pole are omitted.
@@ -153,21 +153,21 @@ Lays out a canonical n-set Venn diagram—a fixed template, *not* proportional
 { "names": ["A", "B", "C"], "shape": "circle" }
 ```
 
-| Field        | Type            | Default      | Meaning                                                              |
-| ------------ | --------------- | ------------ | ------------------------------------------------------------------- |
-| `names`      | array of string | *(required)* | Set names, in order; their count selects the arrangement.           |
-| `shape`      | string          | `"circle"`   | Same shape tokens as `eunoia_euler`.                                |
-| `complement` | number          | —            | Frames the diagram with a bounding container (surfaced as `container`). |
+  | Field        | Type            | Default      | Meaning                                                                 |
+  | ------------ | --------------- | ------------ | ----------------------------------------------------------------------- |
+  | `names`      | array of string | *(required)* | Set names, in order; their count selects the arrangement.               |
+  | `shape`      | string          | `"circle"`   | Same shape tokens as `eunoia_euler`.                                    |
+  | `complement` | number          | —            | Frames the diagram with a bounding container (surfaced as `container`). |
 
-The response is the same `LayoutOut` envelope as `eunoia_euler`. Circles cover
-n ≤ 3; ellipse arrangements (Wilkinson/Edwards) reach n = 4–5.
+The response is the same `LayoutOut` envelope as `eunoia_euler`. Circles cover n
+≤ 3; ellipse arrangements (Wilkinson/Edwards) reach n = 4–5.
 
 ## `eunoia_place_labels`
 
 Resolves one collision-aware label position (and leader-line geometry where
 needed) per region, given the region polygons and **caller-measured** label box
-sizes. This usually means a render → measure → re-place loop; see
-[Label placement](/docs/concepts/label-placement/).
+sizes. This usually means a render → measure → re-place loop; see [Label
+placement](/docs/concepts/label-placement/).
 
 ```json
 {
@@ -181,12 +181,12 @@ sizes. This usually means a render → measure → re-place loop; see
 }
 ```
 
-| Field       | Type                              | Notes                                                                   |
-| ----------- | --------------------------------- | ----------------------------------------------------------------------- |
-| `regions`   | `combo → [{outer, holes}]`        | Region pieces; `outer` is a CCW ring, `holes` are CW rings, `[x, y]` pairs. |
-| `sizes`     | `combo → [width, height]`         | Measured label box sizes, in diagram units.                             |
-| `container` | `{x, y, width, height}`           | Optional bounding frame.                                                |
-| `strategy`  | object                            | Optional; omitted fields keep core defaults (see below).                |
+  | Field       | Type                       | Notes                                                                       |
+  | ----------- | -------------------------- | --------------------------------------------------------------------------- |
+  | `regions`   | `combo → [{outer, holes}]` | Region pieces; `outer` is a CCW ring, `holes` are CW rings, `[x, y]` pairs. |
+  | `sizes`     | `combo → [width, height]`  | Measured label box sizes, in diagram units.                                 |
+  | `container` | `{x, y, width, height}`    | Optional bounding frame.                                                    |
+  | `strategy`  | object                     | Optional; omitted fields keep core defaults (see below).                    |
 
 The `strategy` knobs: `leader.type` is `"straight"` (default) or `"elbow"`;
 `leader.placement` is `"raycast"` (default) or `"force_directed"` for straight
@@ -230,11 +230,11 @@ order, so serialization is deterministic.
 
 ## Memory ownership
 
-Every `char *` returned by `eunoia_euler`, `eunoia_venn`,
-`eunoia_place_labels`, and `eunoia_version` is heap-allocated by Rust and
-**owned by the caller**. Hand it back to `eunoia_free` exactly once. Do not free
-it with the host's `free()`, do not free it twice, and do not read it after
-freeing—each is undefined behavior. Passing `NULL` to `eunoia_free` is safe.
+Every `char *` returned by `eunoia_euler`, `eunoia_venn`, `eunoia_place_labels`,
+and `eunoia_version` is heap-allocated by Rust and **owned by the caller**. Hand
+it back to `eunoia_free` exactly once. Do not free it with the host's `free()`,
+do not free it twice, and do not read it after freeing—each is undefined
+behavior. Passing `NULL` to `eunoia_free` is safe.
 
 ## Errors
 
@@ -246,7 +246,8 @@ so the error path can never itself fail to serialize. Representative messages:
 - `input is not valid UTF-8: …`: the bytes weren't UTF-8.
 - `invalid JSON: …`: the input didn't parse.
 - `invalid optimizer 'x' (want …)`: an enum token was unrecognized.
-- `failed to build spec: …` or `failed to fit diagram: …`: the core rejected the spec or the fit failed.
+- `failed to build spec: …` or `failed to fit diagram: …`: the core rejected the
+  spec or the fit failed.
 - `panic in eunoia core`: a panic was caught at the boundary.
 
 ## Thread-safety
