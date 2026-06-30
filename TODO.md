@@ -104,12 +104,9 @@ they're pre-existing behaviour the harness now exposes.
      from "straight ray" to "polyline". Skip unless bent leaders are explicitly
      desired.
 
-     ```
-            Recommendation: do (1) first — cheap, on the existing TODO,
-            removes the common case. Reach for (2) only if real diagrams
-            still show crossings after (1). Surfaced 2026-05-11 during
-            the union-polygon raycast refinement.
-     ```
+     Recommendation: do (1) first --- cheap, on the existing TODO, removes the
+     common case. Reach for (2) only if real diagrams still show crossings after
+     (1). Surfaced 2026-05-11 during the union-polygon raycast refinement.
 
 - [ ] **Leader-line entry-point refinement**. Start the leader at the first
   ray--region-boundary intersection (where the ray exits the region) rather
