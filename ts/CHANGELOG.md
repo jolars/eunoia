@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.7.0...eunoia-npm-v1.8.0) (2026-07-01)
+
+### Features
+- **plotting:** add matched exterior label placement ([`e76314b`](https://github.com/jolars/eunoia/commit/e76314b702919d8929deb539f0570d2ec244d7e4))
+
+### Dependencies
+- updated eunoia to v1.8.0
+
 ## [1.7.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.6.0...eunoia-npm-v1.7.0) (2026-06-30)
 
 ### Features
