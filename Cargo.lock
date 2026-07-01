@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "eunoia"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "basin",
  "criterion",
@@ -418,7 +418,7 @@ dependencies = [
 
 [[package]]
 name = "eunoia-capi"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "eunoia",
  "serde",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "eunoia-wasm"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "console_error_panic_hook",
  "eunoia",
