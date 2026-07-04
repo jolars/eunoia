@@ -49,9 +49,9 @@ fit = eu.euler({"A": 8, "B": 4.5, "A&B": 1.5}, input="inclusive")
 The result carries the fitted geometry and fit statistics:
 
 ```python
-fit.shapes        # list of fitted Circle/Ellipse structs
-fit.loss          # objective value (lower is better)
-fit.diag_error    # largest single-region error
+fit.shapes  # list of fitted Circle/Ellipse structs
+fit.loss  # objective value (lower is better)
+fit.diag_error  # largest single-region error
 ```
 
 ## Pick a different shape
@@ -70,14 +70,14 @@ noticeably better; see [Shapes](/docs/concepts/shapes/).
 ```python
 fit.plot(
     colors=["#e41a1c", "#377eb8"],  # per-set
-    quantities="fitted",            # show fitted areas at region anchors
+    quantities="fitted",  # show fitted areas at region anchors
     labels=True,
     edges={"linewidth": 1.5},
 )
 ```
 
-`eunoia.options(...)` sets defaults for every subsequent plot;
-`reset_options()` reverts to the built-ins.
+`eunoia.options(...)` sets defaults for every subsequent plot; `reset_options()`
+reverts to the built-ins.
 
 ## Venn diagrams
 
@@ -93,9 +93,9 @@ fit.plot(quantities=True)
 Ellipse Venn diagrams support 1–5 sets; circle, square, and rectangle support
 1–3.
 
-## Next steps
+## Next Steps
 
-The full API reference lives on the
-[eunoia-py docs site](https://jolars.github.io/eunoia-py/). For how the fit works
-across all bindings, see the [Fitter pipeline](/docs/concepts/fitter-pipeline/)
-and [Goodness of fit](/docs/concepts/goodness-of-fit/) chapters.
+The full API reference lives on the [eunoia-py docs
+site](https://jolars.github.io/eunoia-py/). For how the fit works across all
+bindings, see the [Fitter pipeline](/docs/concepts/fitter-pipeline/) and
+[Goodness of fit](/docs/concepts/goodness-of-fit/) chapters.
