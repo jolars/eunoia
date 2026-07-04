@@ -1,0 +1,4 @@
+[formatters]
+ts = "biome"
+r = "air"
+python = "ruff"
