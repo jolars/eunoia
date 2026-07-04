@@ -1,4 +1,6 @@
 [formatters]
 ts = "biome"
+js = "biome"
 r = "air"
 python = "ruff"
+rust = "rustfmt"
