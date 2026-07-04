@@ -32,7 +32,7 @@ add Eunoia
 The native fitting engine ships as a Julia artifact, fetched lazily on first
 use, so no Rust toolchain is needed.
 
-## Fit a diagram
+## Fit a Diagram
 
 ```julia
 using Eunoia
@@ -71,7 +71,7 @@ eunoiaplot(fit; quantities = true, legend = true)
 into an existing axis. Styling keywords (`colors`, `fills`, `edges`, `labels`,
 `quantities`, `legend`) mirror the other bindings.
 
-## Pick a different shape
+## Pick a Different Shape
 
 ```julia
 euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5); shape = "ellipse")
@@ -81,7 +81,7 @@ euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5); shape = "ellipse")
 `"rectangle"`. Ellipses are more flexible and often fit three or more sets
 noticeably better; see [Shapes](/docs/concepts/shapes/).
 
-## Venn diagrams
+## Venn Diagrams
 
 For a fixed, *non*-proportional Venn template (every intersection shown
 regardless of size), use `venn`; it accepts an `Int`, a name vector, or a
@@ -92,7 +92,7 @@ venn(3)                                    # three sets named A, B, C
 venn(["A", "B", "C"]; shape = "ellipse")
 ```
 
-## Next steps
+## Next Steps
 
 The full reference lives on the
 [Eunoia.jl docs site](https://jolars.github.io/Eunoia.jl/stable). For how the fit

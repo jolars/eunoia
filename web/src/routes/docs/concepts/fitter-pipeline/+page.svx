@@ -11,7 +11,7 @@ const THREE_SET_SPEC = {
 };
 </script>
 
-# Fitter pipeline
+# Fitter Pipeline
 
 Fitting a diagram turns a set of region sizes into concrete shapes
 (circles, ellipses, squares, or rectangles) whose overlaps reproduce
@@ -31,7 +31,7 @@ between circles and ellipses.
   caption="A real recording of the fitter, played back one optimizer step at a time. Run the initial layout, then the final layout. Re-run draws a new random start; a real fit keeps the lowest-loss of several such starts."
 />
 
-## 1. Initial layout (MDS)
+## 1. Initial Layout (MDS)
 
 An initial arrangement is computed with **positional multidimensional
 scaling**. Each shape's size is fixed up front from the requested set
@@ -41,7 +41,7 @@ the animation. Target pairwise distances come from inverting
 each shape's own overlap formula, so the warm start already places
 overlapping sets near each other and disjoint sets apart.
 
-## 2. Optimizer encoding
+## 2. Optimizer Encoding
 
 The MDS positions are converted into the per-shape parameter encoding
 the optimizer works in. An ellipse, for example, is optimized over
@@ -50,7 +50,7 @@ keeps widths and heights positive and balances the scales of the
 parameters so a single solver setting works across positions, radii,
 and angles.
 
-## 3. Final optimization
+## 3. Final Optimization
 
 The shape parameters are refined by **minimizing a loss** that measures
 the discrepancy between the fitted region areas and the requested ones.

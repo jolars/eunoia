@@ -8,7 +8,7 @@ const TWO_SET_SPEC = {
 };
 </script>
 
-# Complement (universe/container)
+# Complement (Universe/Container)
 
 An Euler or Venn diagram normally shows only the named sets and their
 overlaps. Often, though, the sets are drawn from a larger population, and
@@ -21,7 +21,7 @@ Support is opt-in. Pass `complement: N` and eunoia fits a container,
 exposes it on the returned layout, and surfaces the leftover area as its
 own region.
 
-## Opting in
+## Opting In
 
 The `complement` option on `euler()` is the area of the region outside
 every set, in the same units as the set sizes. With it set, the fitter
@@ -49,7 +49,7 @@ layout.container; // -> { x, y, width, height } (center + full extents)
 `layout.container` is present only when a complement was requested;
 otherwise it is absent.
 
-## How the container is fitted
+## How the Container Is Fitted
 
 For an area-proportional Euler diagram the container is part of the fit,
 not an afterthought. The fitter jointly optimizes an axis-aligned
@@ -67,7 +67,7 @@ Because the container is a single enclosing universe, **a spec that fits
 as several disjoint clusters is rejected when a complement is set**—there
 is no one rectangle that meaningfully encloses unrelated groups.
 
-## The complement region (`""`)
+## The Complement Region (`""`)
 
 In `output: "regions"` mode the universe is returned as a region like any
 other, except that its combination key is the **empty string**. Its
@@ -84,7 +84,7 @@ const universe = layout.regions.find((r) => r.combination === "");
 const named = layout.regions.filter((r) => r.combination !== "");
 ```
 
-## Rendering the container as a frame
+## Rendering the Container as a Frame
 
 The container is a center `(x, y)` plus a full `width` and `height`, so a
 rectangle spans from `(x − width / 2, y − height / 2)` to
@@ -103,7 +103,7 @@ const svg = toSvg(layout, {
 });
 ```
 
-## Venn diagrams
+## Venn Diagrams
 
 `venn()` accepts a `complement` too, but it behaves differently. A Venn
 diagram is **topological, not area-proportional**: its canonical layout
@@ -137,7 +137,7 @@ let spec = DiagramSpecBuilder::new()
     .build()?;
 ```
 
-## See also
+## See Also
 
 - [Shapes](/docs/concepts/shapes/): the primitives the container is
   fitted around.

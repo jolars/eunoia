@@ -31,7 +31,7 @@ TypeScript types.
 > `import("@jolars/eunoia")` inside `onMount`/`useEffect`) so the wasm module
 > isn't instantiated during the server render.
 
-## Without a bundler
+## Without a Bundler
 
 For a plain `<script type="module">`, an Observable notebook, or a raw-file CDN,
 use the **`@jolars/eunoia/web`** entry instead. It is a single self-contained ES
@@ -62,7 +62,7 @@ layout = (await eunoia.init(), eunoia.euler({ sets: { A: 5, B: 3, "A&B": 1.5 } }
 Apart from that one `await init()`, every function below behaves identically on
 the `./web` entry.
 
-## Fit a diagram
+## Fit a Diagram
 
 ```js
 import { euler } from "@jolars/eunoia";
@@ -90,7 +90,7 @@ layout.circles;
 layout.metrics.stress; // goodness-of-fit, plus loss, fittedAreas, …
 ```
 
-## Choose what comes back
+## Choose What Comes Back
 
 The `output` option decides the shape of the result. The `Layout` object is a
 union discriminated on `mode`:
@@ -176,7 +176,7 @@ draw each piece's `outer` ring (plus any `holes`) as one `<path>`. See the
 [Fitter pipeline](/docs/concepts/fitter-pipeline/) chapter for how regions are
 derived.
 
-## Pick a different shape
+## Pick a Different Shape
 
 ```js
 euler({ sets: { A: 5, B: 3, "A&B": 1.5 }, shape: "ellipse" });
@@ -186,7 +186,7 @@ euler({ sets: { A: 5, B: 3, "A&B": 1.5 }, shape: "ellipse" });
 have more freedom than circles and often fit three or more sets noticeably
 better; see [Shapes](/docs/concepts/shapes/).
 
-## Venn diagrams
+## Venn Diagrams
 
 For a fixed, *non*-proportional Venn template (the classic overlapping outlines),
 use `venn` instead; it ignores set sizes and just lays out `n` sets:

@@ -1,4 +1,4 @@
-# JavaScript API reference
+# JavaScript API Reference
 
 The public surface of [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia).
 This page catalogs the exported functions and their options; the shipped
@@ -63,7 +63,7 @@ Only `"ellipse"` reaches `n = 5`; `"circle"` gives the classic 1–3-circle
 diagrams, and `"square"`/`"rectangle"` are axis-aligned. The non-ellipse
 shapes cap at `n = 3`.
 
-## The `Layout` object
+## The `Layout` Object
 
 Both `euler` and `venn` return a `Layout`, a union discriminated on `mode`,
 which follows the `output` option:
@@ -113,7 +113,7 @@ Returns the bounding box (`{ x, y, width, height }`, or `undefined`) enclosing a
 set of placed label boxes; useful for extending the viewport so exterior labels
 aren't clipped.
 
-## SVG serializer: `@jolars/eunoia/svg`
+## SVG Serializer: `@jolars/eunoia/svg`
 
 A wasm-free, DOM-free entry that turns a `Layout` into SVG. It never touches
 WebAssembly, so it works during server-side rendering and from a CDN as-is.
@@ -137,7 +137,7 @@ document.body.innerHTML = toSvg(layout, { showLabels: true });
 label and count rendering, a legend, padding, and the `placements`/`labelSizes`
 from `placeLabelsForRegions` for exterior labels with leader lines.
 
-## Bundler-less entry: `@jolars/eunoia/web`
+## Bundler-Less Entry: `@jolars/eunoia/web`
 
 A single self-contained ESM file with the WebAssembly inlined. Re-exports
 everything from the default entry, plus:

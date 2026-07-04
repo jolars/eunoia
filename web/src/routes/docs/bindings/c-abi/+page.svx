@@ -1,4 +1,4 @@
-# C ABI contract
+# C ABI Contract
 
 `eunoia-capi` is a thin C ABI seam over the Rust core, meant for hosts whose
 only interop path is a C ABI—Julia today (via `ccall`/`Libdl`), and potentially
@@ -12,7 +12,7 @@ passes a JSON string and receives a JSON string**. There are only five exported
 symbols. [`Eunoia.jl`](https://github.com/jolars/Eunoia.jl) is the reference
 consumer; the Rust source (`crates/eunoia-capi/src/lib.rs`) is authoritative.
 
-## The contract in one paragraph
+## The Contract in One Paragraph
 
 Build a JSON request, hand its NUL-terminated bytes to one of the entry points,
 and read back a freshly allocated JSON string. Every response is an envelope:
@@ -22,7 +22,7 @@ in the core is caught and reported as an `error` envelope—it never unwinds
 across the boundary. Every returned pointer is owned by the caller and must be
 released exactly once with `eunoia_free`.
 
-## Exported symbols
+## Exported Symbols
 
 All five are `extern "C"`. Strings are NUL-terminated UTF-8.
 
@@ -37,7 +37,7 @@ All five are `extern "C"`. Strings are NUL-terminated UTF-8.
 There is no generated C header today—declare the five prototypes yourself from
 the table above.
 
-## Building the library
+## Building the Library
 
 `eunoia-capi` builds as both a `cdylib` (for runtime `dlopen`, as Julia does)
 and a `staticlib`:
@@ -222,7 +222,7 @@ need a leader line.
 `"%EUNOIA_VERSION%"`) as a string you must free. `eunoia_free(ptr)` releases any
 string returned by this library; passing `NULL` is a no-op.
 
-## Combination keying
+## Combination Keying
 
 A combination string is a single set name (`"A"`) or an intersection joined by
 `&` with no spaces (`"A&B"`, `"A&B&C"`). Sizes and metrics are in **exclusive**
@@ -230,7 +230,7 @@ form (the piece belonging to exactly those sets) unless you set
 `input_type: "inclusive"` on the request. Output maps are emitted in sorted key
 order, so serialization is deterministic.
 
-## Memory ownership
+## Memory Ownership
 
 Every `char *` returned by `eunoia_euler`, `eunoia_venn`, `eunoia_place_labels`,
 and `eunoia_version` is heap-allocated by Rust and **owned by the caller**. Hand
@@ -252,14 +252,14 @@ so the error path can never itself fail to serialize. Representative messages:
   spec or the fit failed.
 - `panic in eunoia core`: a panic was caught at the boundary.
 
-## Thread-safety
+## Thread-Safety
 
 The entry points are pure and stateless: each call is self-contained, holds no
 shared state, and exposes no synchronization primitives across the boundary. You
 may call them concurrently from multiple threads. The only parallelism is the
 rayon restart loop **inside** a single `eunoia_euler` call—it does not leak out.
 
-## Worked example (C)
+## Worked Example (C)
 
 A minimal round-trip: declare the prototypes, fit, print, free. Link against the
 built library.

@@ -25,7 +25,7 @@ pip install eunoia
 Wheels ship for all common platforms, so no Rust toolchain is needed. Plotting
 uses matplotlib (a dependency).
 
-## Fit a diagram
+## Fit a Diagram
 
 ```python
 import eunoia as eu
@@ -54,7 +54,7 @@ fit.loss  # objective value (lower is better)
 fit.diag_error  # largest single-region error
 ```
 
-## Pick a different shape
+## Pick a Different Shape
 
 ```python
 fit = eu.euler({"A": 5, "B": 3, "A&B": 1.5}, shape="ellipse")
@@ -65,7 +65,7 @@ fit.plot(quantities=True)
 `"rectangle"`. Ellipses are more flexible and often fit three or more sets
 noticeably better; see [Shapes](/docs/concepts/shapes/).
 
-## Customize the plot
+## Customize the Plot
 
 ```python
 fit.plot(
@@ -79,7 +79,7 @@ fit.plot(
 `eunoia.options(...)` sets defaults for every subsequent plot; `reset_options()`
 reverts to the built-ins.
 
-## Venn diagrams
+## Venn Diagrams
 
 For a fixed, *non*-proportional Venn template (every intersection shown
 regardless of size), use `venn()`; it accepts a set count, a list of names, or a

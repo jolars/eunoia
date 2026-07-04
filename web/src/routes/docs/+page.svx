@@ -8,7 +8,7 @@ the [`eunoia`](https://pypi.org/project/eunoia/) Python package, and the
 modern rewrite of the C++ backend behind the
 [eulerr](https://github.com/jolars/eulerr) R package.
 
-## Who this is for
+## Who This Is For
 
 These docs are aimed at two audiences:
 
@@ -25,7 +25,7 @@ for the TypeScript surface see the type definitions shipped with
 [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia).
 This site is the narrative companion.
 
-## Where to start
+## Where to Start
 
 - Getting started: the quickstart sections for [JavaScript](/docs/quickstart/javascript/),
   [Rust](/docs/quickstart/rust/), [Python](/docs/quickstart/python/), [R](/docs/quickstart/r/),

@@ -33,7 +33,7 @@ eunoia = "%EUNOIA_VERSION_MINOR%"
 The crate is pure Rust with no system dependencies. Edition 2024,
 MSRV 1.88.
 
-## Fit a diagram
+## Fit a Diagram
 
 Building a diagram is two steps: describe *what* to draw with
 `DiagramSpecBuilder` (shape-agnostic), then fit it with `Fitter<S>`, choosing the
@@ -62,7 +62,7 @@ set unions and eunoia will decompose them.
 `.seed(u64)` makes the (stochastic, multi-restart) fit reproducible; omit it for
 a fresh layout each run.
 
-## Read the result
+## Read the Result
 
 `fit()` returns a `Layout<S>` carrying the fitted shapes and fit metrics:
 
@@ -81,7 +81,7 @@ layout.requested();   // target per-region areas
 layout.fitted();      // achieved per-region areas
 ```
 
-## Pick a different shape
+## Pick a Different Shape
 
 The shape is the generic parameter on `Fitter`; the spec doesn't change:
 
@@ -95,7 +95,7 @@ let layout = Fitter::<Ellipse>::new(&spec).fit().expect("fit");
 `eunoia::geometry::shapes`. Ellipses have more freedom than circles and often fit
 three or more sets noticeably better; see [Shapes](/docs/concepts/shapes/).
 
-## Regions for rendering
+## Regions for Rendering
 
 To draw the diagram, decompose it into the exclusive regions (`A` only, `A&B`, …)
 as polygons. Each region comes back as one or more polygons sampled at the given
@@ -108,7 +108,7 @@ for (combination, polygons) in &regions {
 }
 ```
 
-## Complement (the "universe")
+## Complement (the "Universe")
 
 To fit a bounding container whose leftover area matches a target (items outside
 every set), opt in with `.complement`:
@@ -128,7 +128,7 @@ layout.container(); // Some(rect): the jointly-fitted bounding box
 
 See [Complement](/docs/concepts/complement/) for what this means.
 
-## Next steps
+## Next Steps
 
 The full API (every builder method, optimizer, loss function, and shape trait)
 is on [docs.rs/eunoia](https://docs.rs/eunoia/). The in-tree `examples/`

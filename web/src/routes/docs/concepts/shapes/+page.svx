@@ -119,7 +119,7 @@ size that a fixed aspect ratio is too constraining.
   caption="A two-set spec with unequal sizes fitted with rectangles."
 />
 
-## Choosing a shape
+## Choosing a Shape
 
 A few rules of thumb:
 
@@ -150,7 +150,7 @@ can fit more sets), but the more free parameters a shape has, the harder
 the fit, so expect ellipse fits to take longer and to vary more between
 runs than circle fits.
 
-## Selecting a shape in code
+## Selecting a Shape in Code
 
 In JavaScript, the shape is the `shape` option on `euler()` and
 `venn()`. It accepts `"circle"`, `"ellipse"`, `"square"`, or
@@ -184,7 +184,7 @@ and the [rustdoc](https://docs.rs/eunoia/). (`Polygon` is used for output
 and region extraction, not for fitting, so it is not one of these
 primitives.)
 
-## See also
+## See Also
 
 - [Fitter pipeline](/docs/concepts/fitter-pipeline/): how a spec
   becomes fitted geometry.

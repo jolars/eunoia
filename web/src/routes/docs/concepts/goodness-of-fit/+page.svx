@@ -1,4 +1,4 @@
-# Goodness of fit
+# Goodness of Fit
 
 Not every set of region sizes can be drawn exactly, so eunoia reports a
 few scalars that summarize how faithfully the fitted geometry
@@ -17,7 +17,7 @@ for programmatic callers.
 - **regionError:** the same quantity as `diagError`, but reported per
   region rather than as the maximum across all of them.
 
-## When a diagram can't be drawn exactly
+## When a Diagram Can't Be Drawn Exactly
 
 Not every set of region areas can be represented faithfully with
 circles, or even with ellipses. A classic example:

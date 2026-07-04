@@ -100,11 +100,11 @@ and `scale` moves when the bbox does), **and** at least one label lands exterior
 (interior labels sit at their POI and never stretch the bbox). If either fails,
 measure once and place once. Two common cases skip the loop entirely: fonts
 expressed in the diagram's own coordinate units make label sizes scale-invariant
-(this is what the web app does—`getBBox()` inside the SVG viewBox already returns
-user-coordinate sizes), and all-interior diagrams never move the bbox. A
-pixel-fixed host like matplotlib does want the loop, because its `points → data
-coordinates` conversion depends on the axes limits, which in turn depend on where
-exterior labels land.
+(this is what the web app does—`getBBox()` inside the SVG viewBox already
+returns user-coordinate sizes), and all-interior diagrams never move the bbox. A
+pixel-fixed host like matplotlib does want the loop, because its
+`points → data coordinates` conversion depends on the axes limits, which in turn
+depend on where exterior labels land.
 
 ### Native Rust: `place_labels_to_fixed_point`
 
@@ -147,7 +147,7 @@ for (let i = 0; i < 8; i++) {
 }
 ```
 
-### R/Python (sketch)
+### R/Python (Sketch)
 
 Same shape as the JS loop: the host language drives place → placements_bbox →
 re-measure until the canvas short side stops moving.
@@ -260,7 +260,7 @@ itself:
   glyphs; leave at `0` when you already pre-pad sizes for the label-vs-label gap
   (the same padding then acts as the leader gap automatically).
 
-## Rendering recipe
+## Rendering Recipe
 
 Pattern-match on `placement.kind`. Interior placements just need an anchor;
 exterior placements also need a leader line from `placement.tether` (the
