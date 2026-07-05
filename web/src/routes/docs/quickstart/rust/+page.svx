@@ -133,5 +133,5 @@ See [Complement](/docs/concepts/complement/) for what this means.
 The full API (every builder method, optimizer, loss function, and shape trait)
 is on [docs.rs/eunoia](https://docs.rs/eunoia/). The in-tree `examples/`
 directory has runnable programs (e.g. `plotting_demo.rs`). For how the fit
-actually works, read the [Fitter pipeline](/docs/concepts/fitter-pipeline/) and
-[Goodness of fit](/docs/concepts/goodness-of-fit/) chapters.
+actually works, read the [Fitter Pipeline](/docs/concepts/fitter-pipeline/) and
+[Goodness of Fit](/docs/concepts/goodness-of-fit/) chapters.

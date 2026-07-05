@@ -24,16 +24,16 @@ at authors of downstream bindings.
 ## Concepts
 
 - [Shapes](https://eunoia.bz/docs/concepts/shapes/): The shape types eunoia can fit (circle, ellipse, square, rectangle) and when each is appropriate.
-- [Fitter pipeline](https://eunoia.bz/docs/concepts/fitter-pipeline/): How region sizes become concrete shapes: spec, preprocess, initial layout, final layout.
-- [Goodness of fit](https://eunoia.bz/docs/concepts/goodness-of-fit/): The error metrics eunoia reports and how to judge whether a diagram represents the data well.
-- [Complement (universe/container)](https://eunoia.bz/docs/concepts/complement/): Fitting a bounding container so the leftover area matches a target "outside the sets" region.
-- [Label placement](https://eunoia.bz/docs/concepts/label-placement/): How labels are positioned within regions using poles of inaccessibility.
+- [Fitter Pipeline](https://eunoia.bz/docs/concepts/fitter-pipeline/): How region sizes become concrete shapes: spec, preprocess, initial layout, final layout.
+- [Goodness of Fit](https://eunoia.bz/docs/concepts/goodness-of-fit/): The error metrics eunoia reports and how to judge whether a diagram represents the data well.
+- [Complement (Universe/Container)](https://eunoia.bz/docs/concepts/complement/): Fitting a bounding container so the leftover area matches a target "outside the sets" region.
+- [Label Placement](https://eunoia.bz/docs/concepts/label-placement/): How labels are positioned within regions using poles of inaccessibility.
 
 ## Reference
 
 - [Reference overview](https://eunoia.bz/docs/reference/): Where the per-language API references live.
-- [JavaScript API reference](https://eunoia.bz/docs/reference/javascript/): The public surface of `@jolars/eunoia`.
-- [Bindings: C ABI contract](https://eunoia.bz/docs/bindings/c-abi/): The C ABI for native hosts that reach the core without wasm-bindgen, PyO3, or extendr.
+- [JavaScript API Reference](https://eunoia.bz/docs/reference/javascript/): The public surface of `@jolars/eunoia`.
+- [Bindings: C ABI Contract](https://eunoia.bz/docs/bindings/c-abi/): The C ABI for native hosts that reach the core without wasm-bindgen, PyO3, or extendr.
 
 ## Optional
 

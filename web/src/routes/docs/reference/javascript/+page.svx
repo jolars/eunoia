@@ -38,7 +38,7 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 `"sumSquaredRegionError"`, `"maxAbsolute"`, `"maxSquared"`, `"rootMeanSquared"`,
 `"stress"`, `"diagError"`. The defaults match the Rust core and are what you
 want unless you are deliberately exploring; see the
-[Fitter pipeline](/docs/concepts/fitter-pipeline/) chapter.
+[Fitter Pipeline](/docs/concepts/fitter-pipeline/) chapter.
 
 ## `venn(options)`
 
@@ -78,7 +78,7 @@ Every `Layout` also carries:
 
 - `shape`: the shape family used (`"circle"`, `"ellipse"`, …).
 - `metrics`: `{ loss, stress, diagError, iterations, targetAreas, fittedAreas,
-  regionError, residuals }`. See [Goodness of fit](/docs/concepts/goodness-of-fit/).
+  regionError, residuals }`. See [Goodness of Fit](/docs/concepts/goodness-of-fit/).
 - `container`: present only when `complement` was set: `{ x, y, width, height }`.
 
 Each shape and region carries a `labelAnchor` (`{ x, y }`) for interior labels;
@@ -105,7 +105,7 @@ const placements = placeLabelsForRegions({
 `sizes` are the measured label dimensions in diagram units, which usually means
 a render → measure → re-place loop. The `strategy` knobs (`leader`, `precision`,
 `tether`, `leaderGap`) and that loop are covered in
-[Label placement](/docs/concepts/label-placement/).
+[Label Placement](/docs/concepts/label-placement/).
 
 ## `placementsBbox(options)`
 

@@ -89,5 +89,5 @@ Read the [introductory
 vignette](https://cran.r-project.org/package=eulerr/vignettes/introduction.html)
 and the full reference on the [eulerr
 website](https://jolars.github.io/eulerr/). For how the fit works across all
-bindings, see the [Fitter pipeline](/docs/concepts/fitter-pipeline/) and
-[Goodness of fit](/docs/concepts/goodness-of-fit/) chapters.
+bindings, see the [Fitter Pipeline](/docs/concepts/fitter-pipeline/) and
+[Goodness of Fit](/docs/concepts/goodness-of-fit/) chapters.

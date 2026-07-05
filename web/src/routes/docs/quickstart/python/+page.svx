@@ -97,5 +97,5 @@ Ellipse Venn diagrams support 1–5 sets; circle, square, and rectangle support
 
 The full API reference lives on the [eunoia-py docs
 site](https://jolars.github.io/eunoia-py/). For how the fit works across all
-bindings, see the [Fitter pipeline](/docs/concepts/fitter-pipeline/) and
-[Goodness of fit](/docs/concepts/goodness-of-fit/) chapters.
+bindings, see the [Fitter Pipeline](/docs/concepts/fitter-pipeline/) and
+[Goodness of Fit](/docs/concepts/goodness-of-fit/) chapters.

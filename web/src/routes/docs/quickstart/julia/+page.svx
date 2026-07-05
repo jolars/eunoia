@@ -97,5 +97,5 @@ venn(["A", "B", "C"]; shape = "ellipse")
 The full reference lives on the
 [Eunoia.jl docs site](https://jolars.github.io/Eunoia.jl/stable). For how the fit
 works across all bindings, see the
-[Fitter pipeline](/docs/concepts/fitter-pipeline/) and
-[Goodness of fit](/docs/concepts/goodness-of-fit/) chapters.
+[Fitter Pipeline](/docs/concepts/fitter-pipeline/) and
+[Goodness of Fit](/docs/concepts/goodness-of-fit/) chapters.

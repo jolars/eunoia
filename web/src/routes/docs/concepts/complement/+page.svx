@@ -141,7 +141,7 @@ let spec = DiagramSpecBuilder::new()
 
 - [Shapes](/docs/concepts/shapes/): the primitives the container is
   fitted around.
-- [Fitter pipeline](/docs/concepts/fitter-pipeline/): how a spec becomes
+- [Fitter Pipeline](/docs/concepts/fitter-pipeline/): how a spec becomes
   fitted geometry, container included.
-- [Label placement](/docs/concepts/label-placement/): placing labels in
+- [Label Placement](/docs/concepts/label-placement/): placing labels in
   and around the diagram.

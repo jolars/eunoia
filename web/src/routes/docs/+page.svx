@@ -31,8 +31,8 @@ This site is the narrative companion.
   [Rust](/docs/quickstart/rust/), [Python](/docs/quickstart/python/), [R](/docs/quickstart/r/),
   or [Julia](/docs/quickstart/julia/).
 - Writing a native binding via the C ABI:
-  [C ABI contract](/docs/bindings/c-abi/).
+  [C ABI Contract](/docs/bindings/c-abi/).
 - Placing labels in a downstream renderer:
-  [Label placement](/docs/concepts/label-placement/) (the only fully
+  [Label Placement](/docs/concepts/label-placement/) (the only fully
   written chapter so far; the rest are stubs that will fill in as
   consumers hit the gap).

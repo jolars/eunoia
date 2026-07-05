@@ -102,7 +102,7 @@ union discriminated on `mode`:
 | `"regions"`            | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors`     | per-region fills, coloring, label placement      |
 
 Every mode also carries `metrics` (loss, stress, fitted vs. target areas, …).
-See [Goodness of fit](/docs/concepts/goodness-of-fit/) for what those mean.
+See [Goodness of Fit](/docs/concepts/goodness-of-fit/) for what those mean.
 
 ## Render to SVG
 
@@ -173,7 +173,7 @@ rendering and from a CDN as-is.
 For exact overlap shading rather than translucent stacking, switch to
 `output: "regions"`, give each region its own fill from its `combination`, and
 draw each piece's `outer` ring (plus any `holes`) as one `<path>`. See the
-[Fitter pipeline](/docs/concepts/fitter-pipeline/) chapter for how regions are
+[Fitter Pipeline](/docs/concepts/fitter-pipeline/) chapter for how regions are
 derived.
 
 ## Pick a Different Shape
@@ -213,7 +213,7 @@ Interior labels come for free: each shape (and each region) carries a
 `labelAnchor`, and `"regions"` mode adds `setAnchors`. When a region is too small
 to hold its label, eunoia can place it outside with a leader line via
 `placeLabelsForRegions`. That involves measuring rendered text and (often) a
-resize loop, covered in [Label placement](/docs/concepts/label-placement/).
+resize loop, covered in [Label Placement](/docs/concepts/label-placement/).
 
 All three entry points ship from the one package: `@jolars/eunoia` (the bundler
 default), `@jolars/eunoia/web` (bundler-less, `init()`), and `@jolars/eunoia/svg`

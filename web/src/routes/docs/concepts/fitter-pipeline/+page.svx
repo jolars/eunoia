@@ -75,7 +75,7 @@ together. The result is a layout you can polygonize, label, and render.
 cosmetic step.)
 
 How faithfully the result reproduces the requested sizes is summarized
-by a few scalar metrics; see [Goodness of fit](/docs/concepts/goodness-of-fit/).
+by a few scalar metrics; see [Goodness of Fit](/docs/concepts/goodness-of-fit/).
 
 For the authoritative details (optimizers, losses, gradients, and the
 shape-specific encodings) see the

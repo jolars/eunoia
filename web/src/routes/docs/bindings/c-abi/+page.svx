@@ -135,7 +135,7 @@ Success response (abridged):
   `square` has `side`; `rectangle` has `width`/`height`; `rotated_rectangle`
   adds `rotation`. Every variant carries `label` and a `label_anchor` point.
 - `metrics` maps are keyed by combination string (always exclusive form). See
-  [Goodness of fit](/docs/concepts/goodness-of-fit/).
+  [Goodness of Fit](/docs/concepts/goodness-of-fit/).
 - `plot_data` carries renderable geometry: every coordinate is an `[x, y]` pair,
   region keys are combination strings, set keys are set names.
   `set_anchor_regions` pairs a set's label with the region it anchored to (by
