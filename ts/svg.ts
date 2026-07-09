@@ -291,6 +291,28 @@ export interface LegendOptions {
   position?: LegendPosition;
 }
 
+/**
+ * Descriptor passed to the interactivity hooks ({@link ToSvgOptions.tooltip},
+ * {@link ToSvgOptions.regionAttrs}) for one drawn region or set shape.
+ */
+export interface RegionInfo {
+  /**
+   * Canonical combination string, e.g. `"A"`, `"A&B"`, or `""` for the
+   * complement region. For a shape-mode fill this is the set's own name.
+   */
+  combination: string;
+  /**
+   * The individual sets in the combination — a single-element list for a
+   * shape-mode fill, empty for the complement.
+   */
+  sets: string[];
+  /**
+   * Net region area (`region.totalArea`) or, in shape mode, the set's fitted
+   * area (`0` when no fit metrics are attached).
+   */
+  area: number;
+}
+
 export interface ToSvgOptions {
   /** Base fill palette id (see {@link PALETTES}). Default `"default"`. */
   palette?: string;
@@ -355,6 +377,33 @@ export interface ToSvgOptions {
   complementColor?: string;
   /** Legend label for the complement/container region. Default `"Complement"`. */
   complementLabel?: string;
+  /**
+   * Emit stable identifying attributes — `data-combination` and `data-area` —
+   * on every region/shape fill element. Default `false`. Turn on to give a host
+   * (the web app, a notebook, an htmlwidget) a delegation hook for hover/click
+   * without baking any payload into the SVG. Combines with
+   * {@link ToSvgOptions.regionAttrs} (explicit attrs win on key collision).
+   */
+  interactive?: boolean;
+  /**
+   * Per-region/shape tooltip text. When it returns a non-empty string, a
+   * `<title>` child is added to the fill element, giving native (zero-JS)
+   * browser hover tooltips. Return `null`, `undefined`, or `""` to skip.
+   *
+   * Keep large payloads (e.g. long member lists) out of here — bake only what
+   * you want in the file. For big lists, prefer {@link ToSvgOptions.interactive}
+   * plus a host-side lookup keyed on `data-combination`.
+   */
+  tooltip?: (info: RegionInfo) => string | null | undefined;
+  /**
+   * Extra attributes for each region/shape fill element (typically `data-*`).
+   * Values that are `null`/`undefined` are skipped; others are stringified and
+   * XML-escaped. Runs on top of {@link ToSvgOptions.interactive}'s defaults and
+   * can override them.
+   */
+  regionAttrs?: (
+    info: RegionInfo,
+  ) => Record<string, string | number | null | undefined>;
 }
 
 export interface BoundsOptions {
@@ -682,6 +731,11 @@ interface Resolved {
   setColor: Map<string, string>;
   nested: Record<string, string[]>;
   placements: Record<string, LabelPlacement>;
+  interactive: boolean;
+  tooltip?: (info: RegionInfo) => string | null | undefined;
+  regionAttrs?: (
+    info: RegionInfo,
+  ) => Record<string, string | number | null | undefined>;
 }
 
 function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
@@ -740,7 +794,34 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     setColor,
     nested: nestedSets(layout),
     placements: opts.placements ?? {},
+    interactive: opts.interactive ?? false,
+    tooltip: opts.tooltip,
+    regionAttrs: opts.regionAttrs,
   };
+}
+
+/**
+ * Build the extra attribute string and optional `<title>` child for a region /
+ * shape fill element from the interactivity options. Returns empty strings when
+ * no interactivity is configured, so callers keep emitting self-closing tags.
+ */
+function interactiveMarkup(
+  info: RegionInfo,
+  o: Resolved,
+): { attrs: string; title: string } {
+  const map: Record<string, string | number | null | undefined> = {};
+  if (o.interactive) {
+    map["data-combination"] = info.combination;
+    map["data-area"] = info.area;
+  }
+  if (o.regionAttrs) Object.assign(map, o.regionAttrs(info));
+  let attrs = "";
+  for (const [k, v] of Object.entries(map)) {
+    if (v === undefined || v === null) continue;
+    attrs += ` ${k}="${escAttr(String(v))}"`;
+  }
+  const text = o.tooltip?.(info);
+  return { attrs, title: text ? `<title>${escText(text)}</title>` : "" };
 }
 
 function regionFill(combination: string, o: Resolved): string {
@@ -842,9 +923,18 @@ function renderRegions(
   // Fills.
   for (const r of layout.regions) {
     const fill = regionFill(r.combination, o);
+    const { attrs, title } = interactiveMarkup(
+      {
+        combination: r.combination,
+        sets: setsOf(r.combination),
+        area: r.totalArea,
+      },
+      o,
+    );
     for (const piece of r.pieces) {
+      const open = `<path d="${regionPath(piece)}" fill="${fill}" fill-opacity="${o.alpha}" stroke="none"`;
       parts.push(
-        `<path d="${regionPath(piece)}" fill="${fill}" fill-opacity="${o.alpha}" stroke="none" />`,
+        attrs || title ? `${open}${attrs}>${title}</path>` : `${open} />`,
       );
     }
   }
@@ -900,25 +990,46 @@ function renderShapes(parts: string[], layout: Layout, o: Resolved): void {
   const fillFor = (label: string, i: number) =>
     o.setColor.get(label) || defaultColorFor(i, o.palette);
 
+  // A single-set shape fill is a region of one set; attach the same
+  // tooltip/data-* hooks keyed on the set's own name and fitted area.
+  const fittedAreas = layout.metrics?.fittedAreas ?? {};
+  const emitFill = (open: string, tag: string, label: string) => {
+    const { attrs, title } = interactiveMarkup(
+      { combination: label, sets: [label], area: fittedAreas[label] ?? 0 },
+      o,
+    );
+    parts.push(
+      attrs || title ? `${open}${attrs}>${title}</${tag}>` : `${open} />`,
+    );
+  };
+
   // Fills.
   a.circles.forEach((c, i) => {
-    parts.push(
-      `<circle cx="${c.x}" cy="${c.y}" r="${c.radius}" fill="${fillFor(c.label, i)}" fill-opacity="${o.alpha}" stroke="none" />`,
+    emitFill(
+      `<circle cx="${c.x}" cy="${c.y}" r="${c.radius}" fill="${fillFor(c.label, i)}" fill-opacity="${o.alpha}" stroke="none"`,
+      "circle",
+      c.label,
     );
   });
   a.ellipses.forEach((e, i) => {
-    parts.push(
-      `<ellipse cx="${e.x}" cy="${e.y}" rx="${e.semiMajor}" ry="${e.semiMinor}" transform="${ellipseTransform(e)}" fill="${fillFor(e.label, i)}" fill-opacity="${o.alpha}" stroke="none" />`,
+    emitFill(
+      `<ellipse cx="${e.x}" cy="${e.y}" rx="${e.semiMajor}" ry="${e.semiMinor}" transform="${ellipseTransform(e)}" fill="${fillFor(e.label, i)}" fill-opacity="${o.alpha}" stroke="none"`,
+      "ellipse",
+      e.label,
     );
   });
   a.squares.forEach((s, i) => {
-    parts.push(
-      `<rect x="${s.x - s.side / 2}" y="${s.y - s.side / 2}" width="${s.side}" height="${s.side}" fill="${fillFor(s.label, i)}" fill-opacity="${o.alpha}" stroke="none" />`,
+    emitFill(
+      `<rect x="${s.x - s.side / 2}" y="${s.y - s.side / 2}" width="${s.side}" height="${s.side}" fill="${fillFor(s.label, i)}" fill-opacity="${o.alpha}" stroke="none"`,
+      "rect",
+      s.label,
     );
   });
   a.rectangles.forEach((r, i) => {
-    parts.push(
-      `<rect x="${r.x - r.width / 2}" y="${r.y - r.height / 2}" width="${r.width}" height="${r.height}" fill="${fillFor(r.label, i)}" fill-opacity="${o.alpha}" stroke="none" />`,
+    emitFill(
+      `<rect x="${r.x - r.width / 2}" y="${r.y - r.height / 2}" width="${r.width}" height="${r.height}" fill="${fillFor(r.label, i)}" fill-opacity="${o.alpha}" stroke="none"`,
+      "rect",
+      r.label,
     );
   });
 

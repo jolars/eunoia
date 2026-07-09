@@ -104,6 +104,21 @@ const layout = euler({ sets: { A: 5, B: 2, "A&B": 1 }, output: "regions" });
 document.body.innerHTML = toSvg(layout, { showLabels: true });
 ```
 
+For interactivity, `toSvg` / `svgBody` can attach native hover tooltips and
+`data-*` hooks to each region and set shape via `tooltip`, `interactive`, and
+`regionAttrs` (each hook gets a `RegionInfo` of `{ combination, sets, area }`):
+
+```ts
+const svg = toSvg(layout, {
+  interactive: true, // data-combination + data-area on each fill
+  tooltip: (r) => `${r.combination}: ${r.area.toFixed(0)}`,
+});
+```
+
+Eunoia sees only set/intersection sizes, so `combination -> members` is yours to
+compute; format small lists in `tooltip`, or keep large ones JS-side and look
+them up on hover via `data-combination` to keep the SVG small.
+
 > Server-side rendering: call the wasm-backed `euler` / `venn` from the
 > **client** (e.g. a dynamic `import("@jolars/eunoia")` inside `onMount` /
 > `useEffect`) so the wasm module isn't instantiated during the server render.

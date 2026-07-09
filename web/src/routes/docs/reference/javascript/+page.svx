@@ -137,6 +137,35 @@ document.body.innerHTML = toSvg(layout, { showLabels: true });
 label and count rendering, a legend, padding, and the `placements`/`labelSizes`
 from `placeLabelsForRegions` for exterior labels with leader lines.
 
+### Interactivity: tooltips and data hooks
+
+The serializer can attach hover tooltips and identifying attributes to each
+region (and each set shape) so a host page can layer interactivity on top of the
+static markup. Three `ToSvgOptions` fields drive this, and each hook receives a
+`RegionInfo` (`{ combination, sets, area }`):
+
+- `tooltip(info) => string | null` — a non-empty return becomes a `<title>`
+  child on the fill element, giving native (zero-JS) browser hover tooltips.
+- `interactive: boolean` — emits `data-combination` and `data-area` on every
+  fill, a payload-free hook for event delegation.
+- `regionAttrs(info) => Record<string, string | number | null>` — arbitrary
+  extra attributes (typically `data-*`); nullish values are skipped, and keys
+  override the `interactive` defaults.
+
+```js
+const svg = toSvg(layout, {
+  interactive: true, // -> data-combination, data-area on each fill
+  tooltip: (r) => `${r.combination}: ${r.area.toFixed(0)}`,
+});
+```
+
+**Member names.** Eunoia only sees set and intersection *sizes*, never the
+underlying elements, so the `combination -> members` mapping is yours to build
+(set algebra over your own data). For small lists, format them in `tooltip`. For
+large lists (e.g. gene sets), don't bake them into the file — enable
+`interactive` and look the members up on hover from a JS-side map keyed on
+`data-combination`, keeping the SVG small.
+
 ## Bundler-Less Entry: `@jolars/eunoia/web`
 
 A single self-contained ESM file with the WebAssembly inlined. Re-exports

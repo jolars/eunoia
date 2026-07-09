@@ -244,3 +244,91 @@ test("nestedSets falls back to area scan without setAnchorRegions", () => {
   // Same result as the core map, re-derived from region areas.
   assert.deepEqual(nestedSets(nestedRegionLayout(false)), { "A&B": ["B"] });
 });
+
+// --- interactivity hooks (tooltip / interactive / regionAttrs) ---------------
+
+test("no interactivity options leave fills as self-closing tags", () => {
+  const region = svgBody(regionLayout());
+  assert.match(
+    region,
+    /<path d="[^"]*" fill="[^"]*" fill-opacity="1" stroke="none" \/>/,
+  );
+  assert.ok(!region.includes("<title>"));
+  assert.ok(!region.includes("data-combination"));
+
+  const shape = svgBody(circleLayout());
+  assert.match(shape, /<circle [^>]*stroke="none" \/>/);
+  assert.ok(!shape.includes("<title>"));
+});
+
+test("tooltip adds an XML-escaped <title> to a region fill", () => {
+  const info = [];
+  const svg = svgBody(regionLayout(), {
+    tooltip: (r) => {
+      info.push(r);
+      return `${r.combination} <${r.area}>`;
+    },
+  });
+  assert.match(
+    svg,
+    /<path [^>]*stroke="none"><title>A &lt;5&gt;<\/title><\/path>/,
+  );
+  assert.ok(!svg.includes("<title>A <5>"));
+  // The hook receives the region descriptor.
+  assert.deepEqual(info, [{ combination: "A", sets: ["A"], area: 5 }]);
+});
+
+test("empty or nullish tooltip return adds no <title>", () => {
+  assert.ok(
+    !svgBody(regionLayout(), { tooltip: () => "" }).includes("<title>"),
+  );
+  assert.ok(
+    !svgBody(regionLayout(), { tooltip: () => null }).includes("<title>"),
+  );
+  assert.ok(
+    !svgBody(regionLayout(), { tooltip: () => undefined }).includes("<title>"),
+  );
+});
+
+test("interactive emits data-combination/data-area on fills but not strokes", () => {
+  const svg = svgBody(regionLayout(), { interactive: true, strokeWidth: 1 });
+  // Fill path carries the data attributes.
+  assert.match(
+    svg,
+    /<path [^>]*fill-opacity="1" stroke="none" data-combination="A" data-area="5">/,
+  );
+  // The stroke pass (fill="none") must not carry them.
+  const strokePath = svg
+    .split("\n")
+    .find((l) => l.includes('fill="none"') && l.includes("stroke-width"));
+  assert.ok(strokePath, "expected a stroke path");
+  assert.ok(!strokePath.includes("data-combination"));
+});
+
+test("regionAttrs adds custom data-*, skips nullish, and overrides defaults", () => {
+  const svg = svgBody(regionLayout(), {
+    interactive: true,
+    regionAttrs: (r) => ({
+      "data-members": r.combination === "A" ? 3 : undefined,
+      "data-skip": undefined,
+      "data-area": "override",
+    }),
+  });
+  assert.match(svg, /data-members="3"/);
+  assert.ok(!svg.includes("data-skip"));
+  // Explicit key wins over the interactive default.
+  assert.match(svg, /data-area="override"/);
+  assert.ok(!svg.includes('data-area="5"'));
+});
+
+test("shape-mode fills carry tooltip/data-* keyed on the set and fitted area", () => {
+  const svg = svgBody(circleLayout(), {
+    interactive: true,
+    tooltip: (r) => `${r.combination}: ${r.area}`,
+  });
+  // fittedAreas.A === 5 from the shared metrics fixture.
+  assert.match(
+    svg,
+    /<circle [^>]*stroke="none" data-combination="A" data-area="5"><title>A: 5<\/title><\/circle>/,
+  );
+});
