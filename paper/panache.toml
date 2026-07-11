@@ -1,0 +1,4 @@
+flavor = "pandoc"
+
+extend = "../panache.toml"
+

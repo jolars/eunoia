@@ -201,3 +201,6 @@ dist
 /ts/.web-build/
 /ts/package-lock.json
 /.claude/scheduled_tasks.lock
+/.task/checksum
+/paper/jats
+/paper/paper.pdf
