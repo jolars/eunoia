@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.8.0](https://github.com/jolars/eunoia/compare/v1.7.0...v1.8.0) (2026-07-15)
+
+### Features
+- **plotting:** add matched exterior label placement ([`e76314b`](https://github.com/jolars/eunoia/commit/e76314b702919d8929deb539f0570d2ec244d7e4))
+- **ts:** add tooltip and data hooks to SVG serializer ([`449067d`](https://github.com/jolars/eunoia/commit/449067da580956aa13b54b0040cf4f53582ae91f))
+
 ## [1.7.0](https://github.com/jolars/eunoia/compare/v1.6.0...v1.7.0) (2026-06-30)
 
 ### Features
