@@ -99,9 +99,9 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "basin"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0dbb8f846441e3d0ef60f7c59034447f94702f3386d76c2ecf6cbdaea7a1b2f"
+checksum = "9ef3a6dfcb3a6207c8bca93aefae275b406d4cb4b4a126ed12414af6d260b91e"
 dependencies = [
  "nalgebra",
  "nalgebra-sparse",
