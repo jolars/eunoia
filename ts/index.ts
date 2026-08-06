@@ -470,6 +470,81 @@ export interface PlaceLabelsForRegionsOptions {
 }
 
 /**
+ * How glyph centers are arranged within a region.
+ *
+ * - `"uniform"` (default) — centers sit on a hexagonal lattice anchored at
+ *   the region's pole of inaccessibility, with the spacing widened so the
+ *   glyphs spread across the region. Fully deterministic.
+ * - `"random"` — seeded dart throwing with a minimum center-to-center
+ *   spacing, giving the scattered look of the original eulerGlyphs tool.
+ *   Deterministic for a fixed `seed`.
+ */
+export type GlyphArrangement = "uniform" | "random";
+
+/** Tuning knobs for [`placeGlyphsForRegions`]. All optional. */
+export interface GlyphOptions {
+  /** Arrangement of glyph centers. Default `"uniform"`. */
+  arrangement?: GlyphArrangement;
+  /**
+   * Glyph radius, in the same units as the region polygons. Omit for the
+   * auto mode: the largest radius at which every region holds its full
+   * count, found by bisection. With an explicit radius, overflowing regions
+   * place as many glyphs as fit and report the shortfall in
+   * [`GlyphPlacements.unplaced`].
+   */
+  radius?: number;
+  /**
+   * Extra breathing room between glyphs, as a fraction of the radius: the
+   * minimum center-to-center distance is `2r * (1 + gap)`. Default `0.25`.
+   */
+  gap?: number;
+  /** Seed for the `"random"` arrangement. Default `0`. */
+  seed?: number;
+  /** Pole-of-inaccessibility search precision. Default `0.01`. */
+  precision?: number;
+  /**
+   * `"random"` only: dart throws attempted per glyph before the region is
+   * declared full. Default `300`.
+   */
+  maxAttempts?: number;
+}
+
+/** Result of [`placeGlyphsForRegions`]. */
+export interface GlyphPlacements {
+  /**
+   * The radius actually used — auto-chosen, or the caller's `radius` echoed
+   * back. `0` when no region could hold any glyph (degenerate input).
+   */
+  radius: number;
+  /**
+   * Glyph center points per region, keyed by canonical combination (e.g.
+   * `"A"`, `"A&B"`, `""` for the complement region). Regions absent from
+   * `counts`, or with a count of zero, are omitted.
+   */
+  positions: Record<string, Point[]>;
+  /**
+   * Per-region count that did **not** fit at the used radius. Only present
+   * when a fixed radius overflowed a region (or the input was degenerate).
+   */
+  unplaced?: Record<string, number>;
+}
+
+export interface PlaceGlyphsForRegionsOptions {
+  /**
+   * Already-decomposed regions, same shape as
+   * [`PlaceLabelsForRegionsOptions.regions`].
+   */
+  regions: ReadonlyArray<RegionInput>;
+  /**
+   * Glyph count per region, keyed by canonical combination (`""` for the
+   * complement region). One glyph is placed per unit.
+   */
+  counts: Record<string, number>;
+  /** Tuning knobs. Defaults to a uniform arrangement with auto radius. */
+  options?: GlyphOptions;
+}
+
+/**
  * Options for a canonical Venn diagram. Unlike {@link EulerOptions}, there is no
  * `seed`/`optimizer`/`loss`/`tolerance`: the layout is fixed and topological
  * (not area-proportional), so no fitting runs.
@@ -1471,4 +1546,119 @@ export function placementsBbox(
     height: number;
   };
   return { x: raw.x, y: raw.y, width: raw.width, height: raw.height };
+}
+
+const GLYPH_ARRANGEMENT_MAP: Record<GlyphArrangement, "Uniform" | "Random"> = {
+  uniform: "Uniform",
+  random: "Random",
+};
+
+/**
+ * Pack equally-sized circular glyphs — one mark per data unit,
+ * eulerGlyphs-style — inside each region.
+ *
+ * All glyphs share a single radius so counts stay visually comparable
+ * across regions. Omit `options.radius` to have the largest feasible
+ * radius chosen automatically; pass one to take control, in which case
+ * regions that cannot hold their count report the shortfall in
+ * [`GlyphPlacements.unplaced`].
+ *
+ * @example
+ * ```ts
+ * import { placeGlyphsForRegions } from "@jolars/eunoia";
+ *
+ * const glyphs = placeGlyphsForRegions({
+ *   regions: layout.regions,           // from euler({ output: "regions" })
+ *   counts: { A: 20, B: 12, "A&B": 5 },
+ * });
+ * for (const [combo, points] of Object.entries(glyphs.positions)) {
+ *   for (const p of points) {
+ *     drawCircle(p.x, p.y, glyphs.radius);
+ *   }
+ * }
+ * ```
+ */
+export function placeGlyphsForRegions(
+  options: PlaceGlyphsForRegionsOptions,
+): GlyphPlacements {
+  const { regions, counts, options: glyphOptions } = options;
+  if (!regions || !Array.isArray(regions)) {
+    throw new TypeError("placeGlyphsForRegions: `regions` must be an array");
+  }
+  if (!counts || typeof counts !== "object") {
+    throw new TypeError(
+      "placeGlyphsForRegions: `counts` must be an object of region → count",
+    );
+  }
+
+  const polygonsPayload: Record<
+    string,
+    { outer: [number, number][]; holes: [number, number][][] }[]
+  > = {};
+  for (const r of regions) {
+    polygonsPayload[r.combination] = r.pieces.map(
+      (p: RegionInput["pieces"][number]) => ({
+        outer: p.outer.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        holes: p.holes.map((h: { vertices: ReadonlyArray<Point> }) =>
+          h.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        ),
+      }),
+    );
+  }
+
+  const countsPayload: Record<string, number> = {};
+  for (const [k, v] of Object.entries(counts)) {
+    if (Number.isFinite(v) && v >= 0) {
+      countsPayload[k] = Math.round(v);
+    }
+  }
+
+  let optionsJson: string | undefined;
+  if (glyphOptions) {
+    const payload: {
+      arrangement?: "Uniform" | "Random";
+      radius?: number;
+      gap?: number;
+      seed?: number;
+      precision?: number;
+      maxAttempts?: number;
+    } = {};
+    if (glyphOptions.arrangement !== undefined) {
+      const mapped = GLYPH_ARRANGEMENT_MAP[glyphOptions.arrangement];
+      if (mapped === undefined) {
+        throw new RangeError(
+          `placeGlyphsForRegions: unknown arrangement "${glyphOptions.arrangement}"`,
+        );
+      }
+      payload.arrangement = mapped;
+    }
+    if (glyphOptions.radius !== undefined) payload.radius = glyphOptions.radius;
+    if (glyphOptions.gap !== undefined) payload.gap = glyphOptions.gap;
+    if (glyphOptions.seed !== undefined) payload.seed = glyphOptions.seed;
+    if (glyphOptions.precision !== undefined)
+      payload.precision = glyphOptions.precision;
+    if (glyphOptions.maxAttempts !== undefined)
+      payload.maxAttempts = glyphOptions.maxAttempts;
+    optionsJson = JSON.stringify(payload);
+  }
+
+  const json = wasm.place_region_glyphs(
+    JSON.stringify(polygonsPayload),
+    JSON.stringify(countsPayload),
+    optionsJson,
+  );
+  const raw = JSON.parse(json) as {
+    radius: number;
+    positions: Record<string, [number, number][]>;
+    unplaced?: Record<string, number>;
+  };
+  const positions: Record<string, Point[]> = {};
+  for (const [k, pts] of Object.entries(raw.positions)) {
+    positions[k] = pts.map((p) => ({ x: p[0], y: p[1] }));
+  }
+  const out: GlyphPlacements = { radius: raw.radius, positions };
+  if (raw.unplaced && Object.keys(raw.unplaced).length > 0) {
+    out.unplaced = raw.unplaced;
+  }
+  return out;
 }

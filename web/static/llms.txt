@@ -28,6 +28,7 @@ at authors of downstream bindings.
 - [Goodness of Fit](https://eunoia.bz/docs/concepts/goodness-of-fit/): The error metrics eunoia reports and how to judge whether a diagram represents the data well.
 - [Complement (Universe/Container)](https://eunoia.bz/docs/concepts/complement/): Fitting a bounding container so the leftover area matches a target "outside the sets" region.
 - [Label Placement](https://eunoia.bz/docs/concepts/label-placement/): How labels are positioned within regions using poles of inaccessibility.
+- [Glyphs](https://eunoia.bz/docs/concepts/glyphs/): Packing equally-sized unit glyphs (eulerGlyphs-style dots) inside regions, with uniform or random arrangements.
 
 ## Reference
 

@@ -158,9 +158,11 @@ until fit time**:
    optimizers behave. Selected via `LossType`.
 
 5. **`plotting`** — turns a `Layout` into renderable output: region polygon
-   extraction, clipping (`i_overlay`), and **label placement** via poles of
-   inaccessibility (`polylabel-mini`). Always available. See also
-   `LABEL_PLACEMENT_PLAN.md`.
+   extraction, clipping (`i_overlay`), **label placement** via poles of
+   inaccessibility (in-house hole-aware polylabel), and **glyph placement**
+   (`place_glyphs` — equally-sized unit marks packed per region,
+   eulerGlyphs-style). Always available. Narrative docs:
+   `web/src/routes/docs/concepts/label-placement/` and `concepts/glyphs/`.
 
 6. **`venn`** — canonical n-set Venn diagrams independent of the fitter (circles
    for n≤3, Wilkinson/Edwards ellipse arrangements for n=4..5).

@@ -113,6 +113,28 @@ Returns the bounding box (`{ x, y, width, height }`, or `undefined`) enclosing a
 set of placed label boxes; useful for extending the viewport so exterior labels
 aren't clipped.
 
+## `placeGlyphsForRegions(options)`
+
+Packs equally-sized circular glyphs—one mark per data unit,
+eulerGlyphs-style—inside each region. Returns
+`{ radius, positions, unplaced? }`: the single diagram-wide radius plus the
+glyph centers per combination.
+
+```js
+import { placeGlyphsForRegions } from "@jolars/eunoia";
+
+const glyphs = placeGlyphsForRegions({
+  regions: layout.regions,
+  counts: { A: 20, B: 12, "A&B": 5 },
+  options: { arrangement: "uniform" }, // or "random" with a seed
+});
+```
+
+Omit `options.radius` to auto-size the glyphs (largest radius at which every
+region holds its count). Arrangements, the `gap` knob, and the fixed-radius
+overflow behavior are covered in [Glyphs](/docs/concepts/glyphs/). Pass the
+result straight to the SVG serializer via `ToSvgOptions.glyphs`.
+
 ## SVG Serializer: `@jolars/eunoia/svg`
 
 A wasm-free, DOM-free entry that turns a `Layout` into SVG. It never touches
@@ -134,8 +156,10 @@ document.body.innerHTML = toSvg(layout, { showLabels: true });
   `mixColors`, plus `nestedSets`/`regionTitleLines` for region labeling.
 
 `ToSvgOptions` covers palettes and per-set color overrides, opacity, strokes,
-label and count rendering, a legend, padding, and the `placements`/`labelSizes`
-from `placeLabelsForRegions` for exterior labels with leader lines.
+label and count rendering, a legend, padding, the `placements`/`labelSizes`
+from `placeLabelsForRegions` for exterior labels with leader lines, and the
+`glyphs` result from `placeGlyphsForRegions` (rendered above region fills,
+below labels).
 
 ### Interactivity: tooltips and data hooks
 

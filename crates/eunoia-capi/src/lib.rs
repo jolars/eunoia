@@ -17,6 +17,9 @@
 //! - `eunoia_place_labels(*const c_char) -> *mut c_char` — resolve
 //!   collision-aware label positions (and leader-line geometry) for region
 //!   polygons, given caller-measured label box sizes.
+//! - `eunoia_place_glyphs(*const c_char) -> *mut c_char` — pack equally-sized
+//!   circular glyphs (one per data unit, eulerGlyphs-style) inside region
+//!   polygons, given per-region counts.
 //! - `eunoia_version() -> *mut c_char` — crate version string.
 //! - `eunoia_free(*mut c_char)` — free any string returned by the above.
 //!
@@ -39,8 +42,9 @@
 //! anchors, set-anchor regions, region areas, shape outlines) mirrors the PyO3
 //! binding so the Julia side can render diagrams. `eunoia_place_labels` instead
 //! returns `{"ok": true,
-//! "placements": {...}}`. Failure: `{"ok": false, "error": "<message>"}`.
-//! Callers branch on `ok`.
+//! "placements": {...}}`, and `eunoia_place_glyphs` returns `{"ok": true,
+//! "radius": ..., "positions": {...}, "unplaced": {...}}`. Failure:
+//! `{"ok": false, "error": "<message>"}`. Callers branch on `ok`.
 
 // Mirrors the WASM crate: the shape constructors panic on bad input, so the
 // `disallowed-methods` clippy.toml forbids them here. `try_new` is the FFI-safe
@@ -58,8 +62,9 @@ use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, RotatedRecta
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
 use eunoia::loss::LossType;
 use eunoia::plotting::{
-    ElbowOptions, ExteriorPolicy, LeaderStrategy, PlacementKind, PlacementStrategy, PlotData,
-    PlotOptions, RegionPiece, RegionPolygons, TetherSource, classify_into_pieces, place_labels,
+    ElbowOptions, ExteriorPolicy, GlyphArrangement, GlyphOptions, LeaderStrategy, PlacementKind,
+    PlacementStrategy, PlotData, PlotOptions, RegionPiece, RegionPolygons, TetherSource,
+    classify_into_pieces, place_glyphs, place_labels,
 };
 use eunoia::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
 use eunoia::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer, VennDiagram};
@@ -1049,6 +1054,125 @@ fn place_labels_impl(input: PlaceLabelsInput) -> Result<PlaceLabelsOut, String> 
     Ok(PlaceLabelsOut { placements })
 }
 
+/// Glyph options for [`eunoia_place_glyphs`]. All fields optional; omitted
+/// fields keep the core defaults (uniform arrangement, auto radius,
+/// `gap = 0.25`, `seed = 0`, `precision = 0.01`, `max_attempts = 300`).
+/// `arrangement` is `"uniform"` (default) or `"random"`.
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct GlyphOptionsIn {
+    arrangement: Option<String>,
+    radius: Option<f64>,
+    gap: Option<f64>,
+    seed: Option<u64>,
+    precision: Option<f64>,
+    max_attempts: Option<u32>,
+}
+
+/// Input to [`eunoia_place_glyphs`]. `regions` and `counts` are keyed by
+/// canonical combination strings (`""` for the complement region); only
+/// regions present in both, with a positive count, get glyphs.
+#[derive(serde::Deserialize)]
+struct PlaceGlyphsInput {
+    regions: BTreeMap<String, Vec<PieceIn>>,
+    counts: BTreeMap<String, u64>,
+    #[serde(default)]
+    options: Option<GlyphOptionsIn>,
+}
+
+/// Success payload for [`eunoia_place_glyphs`]: the diagram-wide glyph
+/// radius, glyph center points per combination, and any per-combination
+/// shortfall (only populated when a fixed radius overflows a region).
+#[derive(Serialize)]
+struct PlaceGlyphsOut {
+    radius: f64,
+    positions: BTreeMap<String, Vec<[f64; 2]>>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    unplaced: BTreeMap<String, u64>,
+}
+
+/// Resolve an optional [`GlyphOptionsIn`] into core [`GlyphOptions`],
+/// validating the arrangement token up front (mirroring
+/// [`strategy_from_input`]).
+fn glyph_options_from_input(options: Option<GlyphOptionsIn>) -> Result<GlyphOptions, String> {
+    let options = options.unwrap_or_default();
+    let arrangement = match options.arrangement.as_deref() {
+        None | Some("uniform") => GlyphArrangement::Uniform,
+        Some("random") => GlyphArrangement::Random,
+        Some(other) => {
+            return Err(format!(
+                "invalid arrangement '{other}' (want uniform|random)"
+            ));
+        }
+    };
+    let mut out = GlyphOptions::default()
+        .arrangement(arrangement)
+        .radius(options.radius);
+    if let Some(gap) = options.gap {
+        out = out.gap(gap);
+    }
+    if let Some(seed) = options.seed {
+        out = out.seed(seed);
+    }
+    if let Some(precision) = options.precision {
+        out = out.precision(precision);
+    }
+    if let Some(max_attempts) = options.max_attempts {
+        out = out.max_attempts(max_attempts);
+    }
+    Ok(out)
+}
+
+fn place_glyphs_impl(input: PlaceGlyphsInput) -> Result<PlaceGlyphsOut, String> {
+    let options = glyph_options_from_input(input.options)?;
+
+    let counts: HashMap<String, usize> = input
+        .counts
+        .into_iter()
+        .map(|(k, n)| match usize::try_from(n) {
+            Ok(n) => Ok((k, n)),
+            Err(_) => Err(format!("count for '{k}' does not fit in usize")),
+        })
+        .collect::<Result<_, _>>()?;
+
+    // Rebuild each region's pieces through the public classifier, exactly as
+    // in `place_labels_impl` — `RegionPiece` is `#[non_exhaustive]`.
+    let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
+        Polygon::new(pts.into_iter().map(|p| Point::new(p[0], p[1])).collect())
+    };
+    let mut region_map: HashMap<Combination, Vec<RegionPiece>> =
+        HashMap::with_capacity(input.regions.len());
+    for (key, pieces_in) in input.regions {
+        let Ok(combo) = key.parse::<Combination>();
+        let pieces: Vec<RegionPiece> = pieces_in
+            .into_iter()
+            .flat_map(|p| {
+                let mut rings = vec![to_polygon(p.outer)];
+                rings.extend(p.holes.into_iter().map(to_polygon));
+                classify_into_pieces(rings)
+            })
+            .collect();
+        region_map.insert(combo, pieces);
+    }
+    let regions = RegionPolygons::from_map(region_map);
+
+    let result = place_glyphs(&regions, &counts, &options);
+
+    Ok(PlaceGlyphsOut {
+        radius: result.radius,
+        positions: result
+            .positions
+            .into_iter()
+            .map(|(k, pts)| (k, pts.into_iter().map(|p| [p.x(), p.y()]).collect()))
+            .collect(),
+        unplaced: result
+            .unplaced
+            .into_iter()
+            .map(|(k, n)| (k, n as u64))
+            .collect(),
+    })
+}
+
 // ============================================================================
 // FFI boundary
 // ============================================================================
@@ -1124,6 +1248,16 @@ pub extern "C" fn eunoia_venn(input: *const c_char) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn eunoia_place_labels(input: *const c_char) -> *mut c_char {
     run(input, place_labels_impl)
+}
+
+/// Pack equally-sized circular glyphs inside a set of region polygons.
+/// `input` is a JSON `PlaceGlyphsInput` (region pieces + per-region counts +
+/// optional glyph options); the success envelope carries the diagram-wide
+/// `radius`, a `positions` map, and an `unplaced` map when a fixed radius
+/// overflows. Free the result with [`eunoia_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn eunoia_place_glyphs(input: *const c_char) -> *mut c_char {
+    run(input, place_glyphs_impl)
 }
 
 /// Return the crate version as a NUL-terminated C string. Free with
@@ -1604,5 +1738,57 @@ mod tests {
                 v["error"]
             );
         }
+    }
+
+    // ------------------------------------------------------------------------
+    // Glyph placement
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn place_glyphs_round_trips() {
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "counts": { "A": 8, "B": 5, "A&B": 2 },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyphs, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true, "got {v}");
+        assert!(v["radius"].as_f64().unwrap() > 0.0);
+        for (combo, n) in [("A", 8), ("B", 5), ("A&B", 2)] {
+            let points = v["positions"][combo].as_array().unwrap();
+            assert_eq!(points.len(), n, "combo {combo}");
+            assert_eq!(points[0].as_array().unwrap().len(), 2);
+        }
+        assert!(v.get("unplaced").is_none(), "auto radius places everything");
+    }
+
+    #[test]
+    fn place_glyphs_random_and_fixed_radius_accepted() {
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "counts": { "A": 4 },
+            "options": { "arrangement": "random", "radius": 0.05, "seed": 3 },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyphs, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true, "got {v}");
+        assert_eq!(v["radius"].as_f64().unwrap(), 0.05);
+        assert_eq!(v["positions"]["A"].as_array().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn place_glyphs_bad_arrangement_is_reported() {
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "counts": { "A": 1 },
+            "options": { "arrangement": "spiral" },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyphs, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], false);
+        assert!(v["error"].as_str().unwrap().contains("spiral"));
     }
 }

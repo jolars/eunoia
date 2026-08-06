@@ -2998,6 +2998,161 @@ pub fn placements_bbox(
         .map_err(|e| JsValue::from_str(&format!("{e}")))
 }
 
+/// Glyph placement on already-decomposed region polygons (no re-fit):
+/// equally-sized circular marks, one per data unit, packed inside each
+/// region (eulerGlyphs-style).
+///
+/// `polygons_json` uses the same wire format as [`place_region_labels`]: a
+/// JSON object keyed by canonical combination string (use `""` for the
+/// complement region), where each value is an array of pieces
+/// `{ "outer": [[x, y], ...], "holes": [[[x, y], ...], ...] }`.
+///
+/// `counts_json` is `{ combination: count }` with non-negative integer
+/// counts. Regions with no matching count (or zero) are skipped; count keys
+/// with no matching region are ignored.
+///
+/// `options_json` is an optional JSON object — when `None`, the defaults
+/// (uniform arrangement, auto radius) are used. The accepted shape is:
+///
+/// ```json
+/// {
+///   "arrangement": "Uniform" | "Random",
+///   "radius": 0.05,
+///   "gap": 0.25,
+///   "seed": 0,
+///   "precision": 0.01,
+///   "maxAttempts": 300
+/// }
+/// ```
+///
+/// Omit `radius` for the auto mode: the largest radius at which every
+/// region holds its full count, found by bisection. With an explicit
+/// `radius`, overflowing regions place as many glyphs as fit and report the
+/// shortfall. `gap` is extra spacing as a fraction of the radius (minimum
+/// center-to-center distance is `2r * (1 + gap)`). `seed` and `maxAttempts`
+/// only affect the `"Random"` arrangement.
+///
+/// Returns a JSON object `{ "radius": r, "positions": { combination:
+/// [[x, y], ...] }, "unplaced"?: { combination: count } }`. `unplaced` is
+/// omitted when every glyph was placed.
+#[wasm_bindgen]
+pub fn place_region_glyphs(
+    polygons_json: String,
+    counts_json: String,
+    options_json: Option<String>,
+) -> Result<String, JsValue> {
+    use eunoia::geometry::primitives::Point;
+    use eunoia::geometry::shapes::Polygon;
+    use eunoia::plotting::{
+        GlyphArrangement, GlyphOptions, RegionPiece, RegionPolygons, classify_into_pieces,
+        place_glyphs,
+    };
+    use eunoia::spec::Combination;
+
+    #[derive(serde::Deserialize)]
+    struct PieceJson {
+        outer: Vec<[f64; 2]>,
+        holes: Vec<Vec<[f64; 2]>>,
+    }
+
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct OptionsJson {
+        /// `"Uniform"` (default) or `"Random"`.
+        arrangement: Option<String>,
+        /// Glyph radius; omit for the auto (feasibility-bisection) mode.
+        radius: Option<f64>,
+        gap: Option<f64>,
+        seed: Option<u64>,
+        precision: Option<f64>,
+        #[serde(rename = "maxAttempts")]
+        max_attempts: Option<u32>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct GlyphsJson {
+        radius: f64,
+        positions: std::collections::BTreeMap<String, Vec<[f64; 2]>>,
+        #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        unplaced: std::collections::BTreeMap<String, usize>,
+    }
+
+    let regions_in: std::collections::HashMap<String, Vec<PieceJson>> =
+        serde_json::from_str(&polygons_json)
+            .map_err(|e| JsValue::from_str(&format!("invalid polygons_json: {e}")))?;
+    let counts: std::collections::HashMap<String, usize> = serde_json::from_str(&counts_json)
+        .map_err(|e| JsValue::from_str(&format!("invalid counts_json: {e}")))?;
+
+    let options_in: OptionsJson = match options_json.as_deref() {
+        Some(s) => serde_json::from_str(s)
+            .map_err(|e| JsValue::from_str(&format!("invalid options_json: {e}")))?,
+        None => OptionsJson::default(),
+    };
+    let arrangement = match options_in.arrangement.as_deref() {
+        None | Some("Uniform") => GlyphArrangement::Uniform,
+        Some("Random") => GlyphArrangement::Random,
+        Some(other) => {
+            return Err(JsValue::from_str(&format!(
+                "invalid options.arrangement '{other}' (expected 'Uniform' or 'Random')"
+            )));
+        }
+    };
+    let mut options = GlyphOptions::default()
+        .arrangement(arrangement)
+        .radius(options_in.radius);
+    if let Some(gap) = options_in.gap {
+        options = options.gap(gap);
+    }
+    if let Some(seed) = options_in.seed {
+        options = options.seed(seed);
+    }
+    if let Some(precision) = options_in.precision {
+        options = options.precision(precision);
+    }
+    if let Some(max_attempts) = options_in.max_attempts {
+        options = options.max_attempts(max_attempts);
+    }
+
+    let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
+        Polygon::new(pts.into_iter().map(|p| Point::new(p[0], p[1])).collect())
+    };
+
+    let mut region_map: std::collections::HashMap<Combination, Vec<RegionPiece>> =
+        std::collections::HashMap::with_capacity(regions_in.len());
+    for (key, pieces_json) in regions_in {
+        let combo: Combination = match key.parse() {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        // `RegionPiece` is `#[non_exhaustive]` and must not be hand-built;
+        // rebuild each piece through the public classifier (outer + holes as a
+        // flat ring list), which re-derives the outer/holes pairing.
+        let pieces: Vec<RegionPiece> = pieces_json
+            .into_iter()
+            .flat_map(|p| {
+                let mut rings = vec![to_polygon(p.outer)];
+                rings.extend(p.holes.into_iter().map(to_polygon));
+                classify_into_pieces(rings)
+            })
+            .collect();
+        region_map.insert(combo, pieces);
+    }
+    let regions = RegionPolygons::from_map(region_map);
+
+    let result = place_glyphs(&regions, &counts, &options);
+
+    let payload = GlyphsJson {
+        radius: result.radius,
+        positions: result
+            .positions
+            .into_iter()
+            .map(|(k, pts)| (k, pts.into_iter().map(|p| [p.x(), p.y()]).collect()))
+            .collect(),
+        unplaced: result.unplaced.into_iter().collect(),
+    };
+    serde_json::to_string(&payload).map_err(|e| JsValue::from_str(&format!("{e}")))
+}
+
 // ---------------------------------------------------------------------------
 // Trajectory recording (docs pipeline animation)
 //

@@ -37,6 +37,7 @@ export const SUMMARY: DocSection[] = [
       { title: "Goodness of fit", slug: "/docs/concepts/goodness-of-fit/" },
       { title: "Shapes", slug: "/docs/concepts/shapes/" },
       { title: "Label placement", slug: "/docs/concepts/label-placement/" },
+      { title: "Glyphs", slug: "/docs/concepts/glyphs/" },
       { title: "Complement", slug: "/docs/concepts/complement/" },
     ],
   },

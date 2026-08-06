@@ -332,3 +332,44 @@ test("shape-mode fills carry tooltip/data-* keyed on the set and fitted area", (
     /<circle [^>]*stroke="none" data-combination="A" data-area="5"><title>A: 5<\/title><\/circle>/,
   );
 });
+
+test("glyphs render as one circle per point, above fills and below labels", () => {
+  const svg = svgBody(regionLayout(), {
+    glyphs: {
+      radius: 0.5,
+      positions: {
+        A: [
+          { x: 2, y: 2 },
+          { x: 5, y: 5 },
+          { x: 8, y: 8 },
+        ],
+      },
+    },
+  });
+  const circles = svg.match(/<circle class="eunoia-glyph"/g) ?? [];
+  assert.equal(circles.length, 3);
+  assert.match(svg, /<g data-glyphs="A" fill="#374151">/);
+  assert.match(svg, /<circle class="eunoia-glyph" cx="2" cy="2" r="0.5" \/>/);
+  // Layering: glyph group after the region fill path, before the label text.
+  const glyphAt = svg.indexOf("data-glyphs");
+  assert.ok(svg.indexOf("<path") < glyphAt);
+  assert.ok(glyphAt < svg.indexOf("<text"));
+});
+
+test("glyph fill, opacity, and class are configurable; empty regions skipped", () => {
+  const svg = svgBody(regionLayout(), {
+    glyphs: {
+      radius: 1,
+      positions: { A: [{ x: 3, y: 3 }], "A&B": [] },
+      fill: "#ff0000",
+      opacity: 0.5,
+      className: "dot",
+    },
+  });
+  assert.match(svg, /<g data-glyphs="A" fill="#ff0000" fill-opacity="0.5">/);
+  assert.match(svg, /<circle class="dot" cx="3" cy="3" r="1" \/>/);
+  assert.ok(
+    !svg.includes('data-glyphs="A&amp;B"'),
+    "empty region emits no group",
+  );
+});

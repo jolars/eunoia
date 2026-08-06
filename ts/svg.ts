@@ -363,6 +363,26 @@ export interface ToSvgOptions {
    * around exterior labels. Pair with {@link ToSvgOptions.placements}.
    */
   labelSizes?: Record<string, LabelSize>;
+  /**
+   * Pre-computed glyph placements (from `placeGlyphsForRegions`): one
+   * equally-sized circle per data unit, drawn inside its region — above the
+   * region fills and strokes, below labels. Only rendered for region-mode
+   * layouts (`euler({ output: "regions" })` / `venn(...)`), which is also
+   * where the positions come from. Glyphs are strictly interior, so the
+   * `viewBox` needs no expansion.
+   */
+  glyphs?: {
+    /** Glyph radius in layout units (`GlyphPlacements.radius`). */
+    radius: number;
+    /** Glyph centers per combination (`GlyphPlacements.positions`). */
+    positions: Record<string, Point[]>;
+    /** Fill color for every glyph. Default `"#374151"`. */
+    fill?: string;
+    /** Fill opacity. Default `1`. */
+    opacity?: number;
+    /** `class` attribute on each circle. Default `"eunoia-glyph"`. */
+    className?: string;
+  };
   /** Leader-line color. Default `"#6b7280"`. */
   leaderColor?: string;
   /** Container (universe) frame stroke color. Default `"#9ca3af"`. */
@@ -731,6 +751,7 @@ interface Resolved {
   setColor: Map<string, string>;
   nested: Record<string, string[]>;
   placements: Record<string, LabelPlacement>;
+  glyphs?: ToSvgOptions["glyphs"];
   interactive: boolean;
   tooltip?: (info: RegionInfo) => string | null | undefined;
   regionAttrs?: (
@@ -794,6 +815,7 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     setColor,
     nested: nestedSets(layout),
     placements: opts.placements ?? {},
+    glyphs: opts.glyphs,
     interactive: opts.interactive ?? false,
     tooltip: opts.tooltip,
     regionAttrs: opts.regionAttrs,
@@ -948,9 +970,33 @@ function renderRegions(
       }
     }
   }
+  // Glyphs — above fills and strokes, below labels.
+  if (o.glyphs) renderGlyphs(parts, o.glyphs);
   // Labels + leaders.
   for (const r of layout.regions) {
     renderRegionLabel(parts, r, o);
+  }
+}
+
+function renderGlyphs(
+  parts: string[],
+  glyphs: NonNullable<ToSvgOptions["glyphs"]>,
+): void {
+  const fill = glyphs.fill ?? "#374151";
+  const opacity = glyphs.opacity ?? 1;
+  const cls = glyphs.className ?? "eunoia-glyph";
+  const opacityAttr = opacity !== 1 ? ` fill-opacity="${opacity}"` : "";
+  for (const [combination, points] of Object.entries(glyphs.positions)) {
+    if (points.length === 0) continue;
+    parts.push(
+      `<g data-glyphs="${escAttr(combination)}" fill="${fill}"${opacityAttr}>`,
+    );
+    for (const p of points) {
+      parts.push(
+        `<circle class="${cls}" cx="${p.x}" cy="${p.y}" r="${glyphs.radius}" />`,
+      );
+    }
+    parts.push("</g>");
   }
 }
 

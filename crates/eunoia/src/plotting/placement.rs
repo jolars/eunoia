@@ -10,15 +10,16 @@
 //! region.
 //!
 //! The leader strategy ties the *edge type* to the *placement algorithm*
-//! that suits it. Today the only edge type is [`LeaderStrategy::Straight`]
-//! — straight leader lines — placed by one of two exterior solvers:
-//! [`ExteriorPolicy::Raycast`] (the default — closed-form anchor along the
-//! centroid→POI ray, with collision resolution) and
-//! [`ExteriorPolicy::ForceDirected`] (an iterative spring-and-repulsion
-//! solve that's polygon-aware: each label repels both other labels *and*
-//! foreign region pieces, so labels are prevented from drifting across
-//! unrelated regions). Elbow (orthogonal) leaders with their own placement
-//! algorithm are a planned follow-up — see `LABEL_PLACEMENT_PLAN.md`.
+//! that suits it. [`LeaderStrategy::Straight`] — straight leader lines — is
+//! placed by one of three exterior solvers: [`ExteriorPolicy::Raycast`]
+//! (the default — closed-form anchor along the centroid→POI ray, with
+//! collision resolution), [`ExteriorPolicy::ForceDirected`] (an iterative
+//! spring-and-repulsion solve that's polygon-aware: each label repels both
+//! other labels *and* foreign region pieces, so labels are prevented from
+//! drifting across unrelated regions), and [`ExteriorPolicy::Matched`]
+//! (boundary labeling on a silhouette-hugging slot ring with provably
+//! non-crossing leaders). [`LeaderStrategy::Elbow`] — d3-pie style
+//! orthogonal leaders — uses a standalone column-based placement of its own.
 
 use std::collections::HashMap;
 

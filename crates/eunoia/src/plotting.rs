@@ -12,14 +12,18 @@
 //! - Label placement ([`place_labels`]) — every requested region gets a
 //!   position back, interior when the label fits inside the polygon,
 //!   exterior otherwise, with a `tether` so callers can draw a leader line
+//! - Glyph placement ([`place_glyphs`]) — equally-sized unit marks packed
+//!   inside each region, eulerGlyphs-style
 
 mod clip;
+mod glyphs;
 mod inscribed;
 mod placement;
 mod plot_data;
 mod regions;
 
 pub use clip::{ClipOperation, polygon_clip, polygon_difference, polygon_union_many};
+pub use glyphs::{GlyphArrangement, GlyphOptions, GlyphPlacements, place_glyphs};
 pub use inscribed::{fit_label_in_region, largest_inscribed_rect, principal_axis};
 pub use placement::{
     ElbowOptions, ExteriorPolicy, LabelPlacement, LeaderStrategy, PlacementKind, PlacementStrategy,

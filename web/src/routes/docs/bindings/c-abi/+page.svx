@@ -24,17 +24,18 @@ released exactly once with `eunoia_free`.
 
 ## Exported Symbols
 
-All five are `extern "C"`. Strings are NUL-terminated UTF-8.
+All six are `extern "C"`. Strings are NUL-terminated UTF-8.
 
   | Symbol                | C signature                               | Returns                         |
   | --------------------- | ----------------------------------------- | ------------------------------- |
   | `eunoia_euler`        | `char *eunoia_euler(const char *)`        | fitted Euler layout envelope    |
   | `eunoia_venn`         | `char *eunoia_venn(const char *)`         | canonical Venn layout envelope  |
   | `eunoia_place_labels` | `char *eunoia_place_labels(const char *)` | label/leader placement envelope |
+  | `eunoia_place_glyphs` | `char *eunoia_place_glyphs(const char *)` | glyph placement envelope        |
   | `eunoia_version`      | `char *eunoia_version(void)`              | crate version string            |
   | `eunoia_free`         | `void eunoia_free(char *)`                | —                               |
 
-There is no generated C header today—declare the five prototypes yourself from
+There is no generated C header today—declare the six prototypes yourself from
 the table above.
 
 ## Building the Library
@@ -216,6 +217,55 @@ success payload is a `placements` map:
 `leader_end`, and `leader_waypoints` appear only for exterior placements that
 need a leader line.
 
+## `eunoia_place_glyphs`
+
+Packs equally-sized circular glyphs—one mark per data unit,
+eulerGlyphs-style—inside each region, given the region polygons and a
+per-region count. See [Glyphs](/docs/concepts/glyphs/).
+
+```json
+{
+  "regions": {
+    "A": [ { "outer": [[x, y], …], "holes": [] } ],
+    "A&B": [ { "outer": [[x, y], …], "holes": [] } ]
+  },
+  "counts": { "A": 20, "A&B": 5 },
+  "options": { "arrangement": "uniform", "gap": 0.25 }
+}
+```
+
+  | Field     | Type                       | Notes                                                                       |
+  | --------- | -------------------------- | --------------------------------------------------------------------------- |
+  | `regions` | `combo → [{outer, holes}]` | Region pieces; `outer` is a CCW ring, `holes` are CW rings, `[x, y]` pairs. |
+  | `counts`  | `combo → integer`          | Glyphs to place per region; zero or missing skips the region.               |
+  | `options` | object                     | Optional; omitted fields keep core defaults (see below).                    |
+
+The `options` knobs: `arrangement` is `"uniform"` (default, hex lattice spread
+across the region) or `"random"` (seeded dart throwing); `radius` fixes the
+glyph radius (omit for the auto mode, which picks the largest radius at which
+every region holds its full count); `gap` is extra spacing as a fraction of the
+radius (default `0.25`; the minimum center-to-center distance is
+`2r * (1 + gap)`); `seed` (default `0`) and `max_attempts` (default `300`) only
+affect `"random"`; `precision` (default `0.01`) tunes the
+pole-of-inaccessibility search.
+
+Only regions present in both `regions` and `counts`, with a positive count, get
+glyphs. The success payload carries the diagram-wide radius and the center
+points:
+
+```json
+{
+  "ok": true,
+  "radius": 0.21,
+  "positions": { "A": [[x, y], …], "A&B": [[x, y], …] },
+  "unplaced": { "A": 3 }
+}
+```
+
+`unplaced` is only present when a fixed `radius` overflowed a region (the auto
+mode sizes the radius so everything fits); it maps each overflowing region to
+the count that did not fit.
+
 ## `eunoia_version` and `eunoia_free`
 
 `eunoia_version()` takes no input and returns the crate version (e.g.
@@ -233,7 +283,8 @@ order, so serialization is deterministic.
 ## Memory Ownership
 
 Every `char *` returned by `eunoia_euler`, `eunoia_venn`, `eunoia_place_labels`,
-and `eunoia_version` is heap-allocated by Rust and **owned by the caller**. Hand
+`eunoia_place_glyphs`, and `eunoia_version` is heap-allocated by Rust and
+**owned by the caller**. Hand
 it back to `eunoia_free` exactly once. Do not free it with the host's `free()`,
 do not free it twice, and do not read it after freeing—each is undefined
 behavior. Passing `NULL` to `eunoia_free` is safe.
