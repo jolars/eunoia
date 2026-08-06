@@ -165,6 +165,55 @@ they're pre-existing behaviour the harness now exposes.
   exterior policy currently return `PlacementError::Unimplemented` (see
   `plotting/placement.rs`). Moved from `AGENTS.md` "Open work" 2026-05-22.
 
+## Glyph placement follow-ups
+
+`place_glyphs` shipped across core/wasm/capi/ts/web (eulerGlyphs-style unit
+marks packed per region, `plotting/glyphs.rs`): uniform (hex lattice, spread
+by spacing bisection) and random (seeded dart-throwing) arrangements, a
+diagram-wide radius auto-sized by feasibility bisection, and a `gap` knob
+padding both glyph-vs-glyph spacing and the boundary inset. These are the
+loose ends that work deliberately deferred. Surfaced 2026-08-06.
+
+- [ ] **Label keep-out** (most visible gap). Glyphs ignore region labels
+  entirely, and the overlap is guaranteed by construction: the uniform
+  lattice anchors at the piece's pole of inaccessibility, which is exactly
+  where interior labels sit, so the center dot lands under the label.
+  Intended fix: accept per-region obstacle rectangles (the caller's measured
+  label boxes, same `(w, h)` contract as `place_labels`) and reject lattice
+  cells / darts whose glyph disc intersects an obstacle. Needs a signature
+  or options change --- fine while the API is unreleased; after release it
+  would ride a new `GlyphOptions` field (`#[non_exhaustive]` covers it).
+  Feasibility subtlety: obstacles shrink capacity, so the auto-radius
+  bisection must probe with them applied.
+
+- [ ] **Member text labels as glyphs**. The original motivation for the
+  feature (see the web docs page roadmap): pack per-item `w × h` boxes
+  (member names) instead of equal circles, with a bounded resize factor to
+  negotiate fits --- a `place_labels_to_fixed_point`-style loop. Breaks the
+  single-global-radius model, so it's a second footprint mode
+  (`GlyphFootprint::Rect`-ish), not a tweak. Composes with label keep-out
+  above (both are "pack around obstacles" problems).
+
+- [ ] **Relaxation pass for the `random` arrangement**. Dart-throwing scatter
+  can look locally uneven; a few Lloyd iterations (or a force-directed
+  push-apart using `signed_clearance` as the boundary force) would even it
+  out while keeping determinism (fixed iteration count, seeded start). A
+  Bridson Poisson-disk sampler is the alternative blue-noise upgrade;
+  phyllotaxis is a further arrangement candidate. The uniform mode already
+  spreads deterministically and needs none of this.
+
+- [ ] **Random-packer spatial hash** (perf, only if needed). Dart acceptance
+  checks are O(placed) per dart, O(n²) per piece overall --- fine at the
+  hundreds-of-glyphs scale the web app caps at (2000), noticeable beyond.
+  A uniform grid keyed at cell size `2r(1+gap)` makes it O(1) per dart.
+
+- [ ] **Counts-from-spec convenience**. The web app rounds
+  `metrics.target` (exclusive quantities) into counts client-side
+  (`DiagramSvg.svelte`); the same convenience could ship in the TS wrapper
+  (e.g. `glyphCountsFromLayout(layout)`) so other consumers don't re-derive
+  it. Core stays counts-only --- spec quantities are `f64` areas, not
+  cardinalities, so the rounding policy belongs to the caller.
+
 ## RotatedRectangle follow-ups
 
 The `RotatedRectangle` shape shipped across core/fitter/capi/wasm/ts (commit
