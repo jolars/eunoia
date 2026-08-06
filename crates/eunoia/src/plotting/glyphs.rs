@@ -68,9 +68,13 @@ pub struct GlyphOptions {
     /// regions that cannot hold their count at this radius place as many
     /// glyphs as fit and report the rest in [`GlyphPlacements::unplaced`].
     pub radius: Option<f64>,
-    /// Extra breathing room between glyphs, as a fraction of the radius:
-    /// the minimum center-to-center distance is `2r * (1 + gap)`. Negative
-    /// values are clamped to `0.0`. Defaults to `0.25`.
+    /// Extra breathing room around glyphs, as a fraction of the radius. It
+    /// applies both between glyphs — the minimum center-to-center distance
+    /// is `2r * (1 + gap)` — and against the region boundary: centers keep
+    /// a clearance of `r * (1 + gap)` to every ring, so glyphs never sit
+    /// tangent to (or under the stroke of) a region edge. Negative values
+    /// are clamped to `0.0` (glyphs may then touch each other and the
+    /// boundary). Defaults to `0.25`.
     pub gap: f64,
     /// Seed for the [`GlyphArrangement::Random`] arrangement. Ignored by
     /// [`GlyphArrangement::Uniform`]. Defaults to `0`.
@@ -170,10 +174,12 @@ pub struct GlyphPlacements {
 /// or a count of zero, are skipped; count keys with no matching region are
 /// ignored — both mirror [`place_labels`](crate::plotting::place_labels).
 ///
-/// Every glyph center is guaranteed to have clearance ≥ radius to the
-/// region boundary (outer ring and holes), and every pair of centers within
-/// a region is at least `2r * (1 + gap)` apart. When a region is split into
-/// several disconnected pieces, its count is apportioned across the pieces
+/// Every glyph center is guaranteed to have clearance ≥ `r * (1 + gap)` to
+/// the region boundary (outer ring and holes), and every pair of centers
+/// within a region is at least `2r * (1 + gap)` apart — the same `gap`
+/// fraction pads both, so glyphs keep visible breathing room from edges as
+/// well as from each other. When a region is split into several
+/// disconnected pieces, its count is apportioned across the pieces
 /// proportionally to their net areas (largest-remainder rounding).
 ///
 /// # Examples
@@ -287,7 +293,11 @@ fn auto_radius(
     for (_, pieces, n) in work {
         let area: f64 = pieces.iter().map(|p| p.area()).sum();
         if let Some((_, clearance)) = poi_with_holes(pieces, options.precision) {
-            r_hi = r_hi.min(clearance).min((area / (*n as f64 * PI)).sqrt());
+            // Centers must keep clearance r*(1+gap) to the boundary, so the
+            // deepest point caps the radius at clearance/(1+gap).
+            r_hi = r_hi
+                .min(clearance / (1.0 + gap))
+                .min((area / (*n as f64 * PI)).sqrt());
         }
     }
     if !r_hi.is_finite() || r_hi <= 0.0 {
@@ -444,14 +454,15 @@ fn ring_bounds(ring: &[Point]) -> Option<(f64, f64, f64, f64)> {
 const HEX_ENUM_CAP: usize = 1_000_000;
 
 /// Centers of a hexagonal lattice with spacing `s`, anchored at `anchor`,
-/// restricted to points with clearance ≥ `r` inside `piece`. Stops early
+/// restricted to points with clearance ≥ `min_clearance` inside `piece`
+/// (the caller passes the gap-padded inset `r * (1 + gap)`). Stops early
 /// once `cap` valid cells are found (feasibility probing only needs to know
 /// whether the count reaches the quota).
 fn hex_valid_cells(
     piece: &RegionPiece,
     anchor: Point,
     s: f64,
-    r: f64,
+    min_clearance: f64,
     cap: Option<usize>,
 ) -> Vec<Point> {
     let Some((min_x, max_x, min_y, max_y)) = ring_bounds(piece.outer.vertices()) else {
@@ -476,7 +487,7 @@ fn hex_valid_cells(
                 return cells;
             }
             let x = anchor.x() + offset + i as f64 * s;
-            if signed_clearance(x, y, piece) >= r {
+            if signed_clearance(x, y, piece) >= min_clearance {
                 cells.push(Point::new(x, y));
                 if cap.is_some_and(|c| cells.len() >= c) {
                     return cells;
@@ -492,6 +503,8 @@ fn hex_valid_cells(
 /// it does and `spread` is set, the spacing is widened by bisection to the
 /// largest value still yielding `n` valid cells, and the `n` cells nearest
 /// the piece's pole of inaccessibility are kept (centered, deterministic).
+/// Valid cells keep clearance ≥ `r * (1 + gap)` to the boundary, so glyphs
+/// get the same breathing room from edges as from each other.
 fn pack_uniform_piece(
     piece: &RegionPiece,
     n: usize,
@@ -504,8 +517,9 @@ fn pack_uniform_piece(
     let Some((anchor, _)) = poi_with_holes(single, precision) else {
         return Vec::new();
     };
+    let inset = r * (1.0 + gap);
     let s_min = 2.0 * r * (1.0 + gap);
-    let at_min = hex_valid_cells(piece, anchor, s_min, r, Some(n));
+    let at_min = hex_valid_cells(piece, anchor, s_min, inset, Some(n));
     if at_min.len() < n || !spread {
         // Infeasible (best effort: whatever fit at minimum spacing), or a
         // feasibility probe that doesn't need the spread refinement.
@@ -517,7 +531,7 @@ fn pack_uniform_piece(
     let s_max = ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
     let mut lo = s_min;
     let mut hi = s_max.max(s_min);
-    if hex_valid_cells(piece, anchor, hi, r, Some(n)).len() >= n {
+    if hex_valid_cells(piece, anchor, hi, inset, Some(n)).len() >= n {
         lo = hi;
     } else {
         // Largest spacing still fitting `n` cells; `lo` stays feasible by
@@ -527,14 +541,14 @@ fn pack_uniform_piece(
                 break;
             }
             let mid = 0.5 * (lo + hi);
-            if hex_valid_cells(piece, anchor, mid, r, Some(n)).len() >= n {
+            if hex_valid_cells(piece, anchor, mid, inset, Some(n)).len() >= n {
                 lo = mid;
             } else {
                 hi = mid;
             }
         }
     }
-    let mut cells = hex_valid_cells(piece, anchor, lo, r, None);
+    let mut cells = hex_valid_cells(piece, anchor, lo, inset, None);
     cells.sort_by(|a, b| {
         let da = (a.x() - anchor.x()).powi(2) + (a.y() - anchor.y()).powi(2);
         let db = (b.x() - anchor.x()).powi(2) + (b.y() - anchor.y()).powi(2);
@@ -547,8 +561,8 @@ fn pack_uniform_piece(
 }
 
 /// Random (dart-throwing) packer for one piece: uniform samples over the
-/// piece's bounding box, accepted when they keep clearance ≥ `r` to the
-/// boundary and distance ≥ `2r * (1 + gap)` to every accepted center.
+/// piece's bounding box, accepted when they keep clearance ≥ `r * (1 + gap)`
+/// to the boundary and distance ≥ `2r * (1 + gap)` to every accepted center.
 /// Gives up after `max_attempts` misses for a single glyph (a glyph that
 /// exhausts its darts means the piece is effectively full).
 fn pack_random_piece(
@@ -562,6 +576,7 @@ fn pack_random_piece(
     let Some((min_x, max_x, min_y, max_y)) = ring_bounds(piece.outer.vertices()) else {
         return Vec::new();
     };
+    let inset = r * (1.0 + gap);
     let d_min2 = (2.0 * r * (1.0 + gap)).powi(2);
     let mut placed: Vec<Point> = Vec::with_capacity(n);
     'glyphs: for _ in 0..n {
@@ -571,7 +586,7 @@ fn pack_random_piece(
             let clear_of_placed = placed
                 .iter()
                 .all(|q| (x - q.x()).powi(2) + (y - q.y()).powi(2) >= d_min2);
-            if clear_of_placed && signed_clearance(x, y, piece) >= r {
+            if clear_of_placed && signed_clearance(x, y, piece) >= inset {
                 placed.push(Point::new(x, y));
                 continue 'glyphs;
             }
@@ -609,12 +624,13 @@ mod tests {
 
     fn assert_invariants(result: &GlyphPlacements, regions: &RegionPolygons, gap: f64) {
         let d_min = 2.0 * result.radius * (1.0 + gap);
+        let inset = result.radius * (1.0 + gap);
         for (key, points) in &result.positions {
             let combo: Combination = key.parse().unwrap();
             let pieces = regions.get(&combo).unwrap();
             for (i, p) in points.iter().enumerate() {
                 assert!(
-                    region_clearance(p, pieces) >= result.radius - 1e-9,
+                    region_clearance(p, pieces) >= inset - 1e-9,
                     "glyph {i} in {key:?} too close to the boundary"
                 );
                 for q in &points[i + 1..] {

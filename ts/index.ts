@@ -494,8 +494,11 @@ export interface GlyphOptions {
    */
   radius?: number;
   /**
-   * Extra breathing room between glyphs, as a fraction of the radius: the
-   * minimum center-to-center distance is `2r * (1 + gap)`. Default `0.25`.
+   * Extra breathing room around glyphs, as a fraction of the radius. It
+   * applies both between glyphs (the minimum center-to-center distance is
+   * `2r * (1 + gap)`) and against the region boundary (centers keep a
+   * clearance of `r * (1 + gap)` to every ring, so glyphs never sit tangent
+   * to a region edge). Default `0.25`.
    */
   gap?: number;
   /** Seed for the `"random"` arrangement. Default `0`. */

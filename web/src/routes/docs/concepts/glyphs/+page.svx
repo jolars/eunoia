@@ -26,12 +26,14 @@ diagram and per-region counts. You get back:
 - `unplaced`: per-region shortfall, only populated when you fixed the radius
   yourself and a region could not hold its count.
 
-Every center keeps a clearance of at least `radius` to the region boundary
-(outer ring **and** holes), and centers within a region stay at least
-`2 * radius * (1 + gap)` apart, so rendered circles never overlap each other
-or leak across a boundary. Regions that are split into several disconnected
-pieces have their count apportioned across the pieces proportionally to piece
-area (largest-remainder rounding, fully deterministic).
+Every center keeps a clearance of at least `radius * (1 + gap)` to the region
+boundary (outer ring **and** holes), and centers within a region stay at
+least `2 * radius * (1 + gap)` apart — the same `gap` fraction pads both, so
+rendered circles never overlap each other, never leak across a boundary, and
+keep visible breathing room from region edges and their strokes. Regions that
+are split into several disconnected pieces have their count apportioned
+across the pieces proportionally to piece area (largest-remainder rounding,
+fully deterministic).
 
 ## Arrangements
 
@@ -61,10 +63,11 @@ its count, the placer fills it as far as it can and reports the rest in
 `unplaced` rather than erroring; check that map if dropping marks silently is
 not acceptable for your use case.
 
-The `gap` knob (default `0.25`) adds breathing room between glyphs as a
+The `gap` knob (default `0.25`) adds breathing room around glyphs as a
 fraction of the radius: the minimum center-to-center distance is
-`2 * radius * (1 + gap)`. Raise it for a sparser, airier look; set it to `0`
-to let circles touch.
+`2 * radius * (1 + gap)`, and centers keep a clearance of
+`radius * (1 + gap)` to the region boundary. Raise it for a sparser, airier
+look; set it to `0` to let circles touch each other and the edges.
 
 ## JavaScript/TypeScript
 
@@ -140,5 +143,11 @@ are keyed by the [canonical combination string](/docs/bindings/c-abi/#combinatio
   with a bounded resize factor to make fits work) is a planned follow-up on
   the same packer; the options and result types are non-exhaustive so this
   can land without breaking changes.
-- A blue-noise (Poisson-disk) upgrade for `random` and a phyllotaxis
-  arrangement are on the roadmap.
+- **Label keep-out** is a planned follow-up: glyphs currently ignore region
+  labels (the uniform lattice is anchored at the pole of inaccessibility,
+  which is also where interior labels sit), so a label drawn over a dense
+  glyph field will overlap dots. Passing the label boxes as obstacles to the
+  packer is the intended fix.
+- A relaxation pass (Lloyd/force-directed) to even out the `random` scatter,
+  a blue-noise (Poisson-disk) upgrade, and a phyllotaxis arrangement are on
+  the roadmap.

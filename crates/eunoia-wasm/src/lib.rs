@@ -3028,8 +3028,10 @@ pub fn placements_bbox(
 /// Omit `radius` for the auto mode: the largest radius at which every
 /// region holds its full count, found by bisection. With an explicit
 /// `radius`, overflowing regions place as many glyphs as fit and report the
-/// shortfall. `gap` is extra spacing as a fraction of the radius (minimum
-/// center-to-center distance is `2r * (1 + gap)`). `seed` and `maxAttempts`
+/// shortfall. `gap` is extra breathing room as a fraction of the radius,
+/// applied both between glyphs (minimum center-to-center distance is
+/// `2r * (1 + gap)`) and against the region boundary (centers keep a
+/// clearance of `r * (1 + gap)` to every ring). `seed` and `maxAttempts`
 /// only affect the `"Random"` arrangement.
 ///
 /// Returns a JSON object `{ "radius": r, "positions": { combination:
