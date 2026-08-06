@@ -127,8 +127,16 @@ const svg = toSvg(layout, { glyphs });
 
 `toSvg`/`svgBody` accept the result directly via the `glyphs` option and
 render one `<circle class="eunoia-glyph">` per point, grouped per region in a
-`<g data-glyphs="...">`; `fill`, `opacity`, and `className` are configurable.
-Since glyphs are strictly interior, the `viewBox` needs no expansion.
+`<g data-glyphs="...">`. Since glyphs are strictly interior, the `viewBox`
+needs no expansion.
+
+By default the marks borrow their region's color: the fill is that color
+lightened by `tint` (default `0.45`), and the edge is the same color darkened,
+at half the diagram's `strokeWidth` so glyph outlines stay finer than the set
+outlines. Give `tint` a negative value for marks that sit *darker* than their
+region—useful with pale palettes, since the default palette opens on white.
+`fill`, `stroke` (`"none"` for flat dots), `strokeWidth`, `opacity`, and
+`className` all override the defaults.
 
 Options ride along under `options`:
 

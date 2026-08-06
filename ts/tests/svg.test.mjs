@@ -348,7 +348,6 @@ test("glyphs render as one circle per point, above fills and below labels", () =
   });
   const circles = svg.match(/<circle class="eunoia-glyph"/g) ?? [];
   assert.equal(circles.length, 3);
-  assert.match(svg, /<g data-glyphs="A" fill="#374151">/);
   assert.match(svg, /<circle class="eunoia-glyph" cx="2" cy="2" r="0.5" \/>/);
   // Layering: glyph group after the region fill path, before the label text.
   const glyphAt = svg.indexOf("data-glyphs");
@@ -356,12 +355,27 @@ test("glyphs render as one circle per point, above fills and below labels", () =
   assert.ok(glyphAt < svg.indexOf("<text"));
 });
 
-test("glyph fill, opacity, and class are configurable; empty regions skipped", () => {
+test("glyphs default to a tinted region fill with a finer, darker edge", () => {
+  const svg = svgBody(regionLayout(), {
+    strokeWidth: 0.8,
+    colors: { A: "#808080" },
+    glyphs: { radius: 0.5, positions: { A: [{ x: 2, y: 2 }] } },
+  });
+  // Mid gray lightened by the default tint of 0.45, edged with the same
+  // color darkened, at half the shape stroke width.
+  assert.match(
+    svg,
+    /<g data-glyphs="A" fill="rgb\(185,185,185\)" stroke="rgb\(77,77,77\)" stroke-width="0.4">/,
+  );
+});
+
+test("glyph fill, tint, stroke, opacity, and class are configurable; empty regions skipped", () => {
   const svg = svgBody(regionLayout(), {
     glyphs: {
       radius: 1,
       positions: { A: [{ x: 3, y: 3 }], "A&B": [] },
       fill: "#ff0000",
+      stroke: "none",
       opacity: 0.5,
       className: "dot",
     },
@@ -372,4 +386,17 @@ test("glyph fill, opacity, and class are configurable; empty regions skipped", (
     !svg.includes('data-glyphs="A&amp;B"'),
     "empty region emits no group",
   );
+
+  // `tint` drives the derived fill when `fill` is omitted, and goes negative
+  // for marks that sit darker than their region.
+  const darker = svgBody(regionLayout(), {
+    colors: { A: "#808080" },
+    glyphs: {
+      radius: 1,
+      positions: { A: [{ x: 3, y: 3 }] },
+      tint: -0.5,
+      strokeWidth: 0,
+    },
+  });
+  assert.match(darker, /<g data-glyphs="A" fill="rgb\(64,64,64\)">/);
 });

@@ -180,7 +180,8 @@ document.body.innerHTML = toSvg(layout, { showLabels: true });
 label and count rendering, a legend, padding, the `placements`/`labelSizes`
 from `placeLabelsForRegions` for exterior labels with leader lines, and the
 `glyphs` result from `placeGlyphsForRegions` (rendered above region fills,
-below labels).
+below labels; tinted from each region's own color with a finer, darker edge by
+default, tunable via `tint`, `fill`, `stroke`, and `strokeWidth`).
 
 ### Interactivity: tooltips and data hooks
 

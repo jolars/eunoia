@@ -202,6 +202,39 @@ export function mixColors(colors: string[]): string {
   return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
 }
 
+/**
+ * Blend a color toward `target` by `amount` (`0` = unchanged, `1` = the
+ * target). Unparseable colors are returned as-is.
+ */
+function blendToward(color: string, target: number, amount: number): string {
+  const rgb = parseColor(color);
+  if (!rgb) return color;
+  const t = Math.min(Math.max(amount, 0), 1);
+  const [r, g, b] = rgb.map((v) => Math.round(v + (target - v) * t));
+  return `rgb(${r},${g},${b})`;
+}
+
+/** Lighten by a positive `amount`, darken by a negative one. */
+function tintColor(color: string, amount: number): string {
+  return amount < 0
+    ? blendToward(color, 0, -amount)
+    : blendToward(color, 255, amount);
+}
+
+/** Blend a color toward black by `amount`. */
+function darken(color: string, amount: number): string {
+  return blendToward(color, 0, amount);
+}
+
+/**
+ * Glyphs in the complement region belong to no set, so they have no region
+ * color to borrow; this neutral matches the container frame's family.
+ */
+const COMPLEMENT_GLYPH_COLOR = "#6b7280";
+
+/** How far a glyph's default edge is darkened from its region's color. */
+const GLYPH_EDGE_SHADE = 0.4;
+
 function parseColor(c: string): [number, number, number] | null {
   const s = c.trim();
   const rgbMatch = s.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
@@ -376,8 +409,32 @@ export interface ToSvgOptions {
     radius: number;
     /** Glyph centers per combination (`GlyphPlacements.positions`). */
     positions: Record<string, Point[]>;
-    /** Fill color for every glyph. Default `"#374151"`. */
+    /**
+     * Fill color for every glyph. Default: the region's own color shifted
+     * by `tint`, so glyphs read as belonging to the region they sit in.
+     */
     fill?: string;
+    /**
+     * How far the derived fill is shifted from the region color: positive
+     * lightens toward white, negative darkens toward black, `0` keeps the
+     * region color. Ignored when `fill` is set. Default `0.45`. Palettes of
+     * light colors (the default palette opens on white) give airy marks
+     * read mostly by their edge; dial in a negative value for dots that sit
+     * darker than the region instead.
+     */
+    tint?: number;
+    /**
+     * Outline color. Default: the region's own color darkened, which stays
+     * visible even where the region color is very light (the default
+     * palette opens on white). Set to `"none"` for flat, edgeless dots.
+     */
+    stroke?: string;
+    /**
+     * Outline width in layout units. Default: half
+     * {@link ToSvgOptions.strokeWidth}, so glyph edges stay visibly finer
+     * than the set outlines.
+     */
+    strokeWidth?: number;
     /** Fill opacity. Default `1`. */
     opacity?: number;
     /** `class` attribute on each circle. Default `"eunoia-glyph"`. */
@@ -971,7 +1028,7 @@ function renderRegions(
     }
   }
   // Glyphs — above fills and strokes, below labels.
-  if (o.glyphs) renderGlyphs(parts, o.glyphs);
+  if (o.glyphs) renderGlyphs(parts, o.glyphs, o);
   // Labels + leaders.
   for (const r of layout.regions) {
     renderRegionLabel(parts, r, o);
@@ -981,15 +1038,32 @@ function renderRegions(
 function renderGlyphs(
   parts: string[],
   glyphs: NonNullable<ToSvgOptions["glyphs"]>,
+  o: Resolved,
 ): void {
-  const fill = glyphs.fill ?? "#374151";
   const opacity = glyphs.opacity ?? 1;
   const cls = glyphs.className ?? "eunoia-glyph";
+  const tint = glyphs.tint ?? 0.45;
+  const strokeWidth = glyphs.strokeWidth ?? o.strokeWidth / 2;
   const opacityAttr = opacity !== 1 ? ` fill-opacity="${opacity}"` : "";
   for (const [combination, points] of Object.entries(glyphs.positions)) {
     if (points.length === 0) continue;
+    // Glyphs take the color of the region they sit in: a tinted fill plus a
+    // darker edge, so the marks read as discrete units even where they
+    // cluster, without fighting the region for attention.
+    const base = combination
+      ? regionFill(combination, o)
+      : COMPLEMENT_GLYPH_COLOR;
+    const fill = glyphs.fill ?? tintColor(base, tint);
+    // Darkened, not the region color itself: the region color *is* the
+    // background here, and the default palette opens on `#ffffff`, so an
+    // undarkened edge would be invisible.
+    const stroke = glyphs.stroke ?? darken(base, GLYPH_EDGE_SHADE);
+    const strokeAttr =
+      stroke === "none" || !(strokeWidth > 0)
+        ? ""
+        : ` stroke="${stroke}" stroke-width="${strokeWidth}"`;
     parts.push(
-      `<g data-glyphs="${escAttr(combination)}" fill="${fill}"${opacityAttr}>`,
+      `<g data-glyphs="${escAttr(combination)}" fill="${fill}"${strokeAttr}${opacityAttr}>`,
     );
     for (const p of points) {
       parts.push(
