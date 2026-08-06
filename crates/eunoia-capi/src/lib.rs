@@ -855,9 +855,11 @@ struct PieceIn {
     holes: Vec<Vec<[f64; 2]>>,
 }
 
-/// Fitted complement container, in the same coordinate space as the regions.
+/// An axis-aligned rectangle in the same coordinate space as the regions:
+/// center plus full extents. Used for the fitted complement container and
+/// for glyph keep-out boxes.
 #[derive(serde::Deserialize)]
-struct ContainerIn {
+struct RectIn {
     x: f64,
     y: f64,
     width: f64,
@@ -898,7 +900,7 @@ struct PlaceLabelsInput {
     regions: BTreeMap<String, Vec<PieceIn>>,
     sizes: BTreeMap<String, [f64; 2]>,
     #[serde(default)]
-    container: Option<ContainerIn>,
+    container: Option<RectIn>,
     #[serde(default)]
     strategy: Option<StrategyIn>,
 }
@@ -1056,8 +1058,10 @@ fn place_labels_impl(input: PlaceLabelsInput) -> Result<PlaceLabelsOut, String> 
 
 /// Glyph options for [`eunoia_place_glyphs`]. All fields optional; omitted
 /// fields keep the core defaults (uniform arrangement, auto radius,
-/// `gap = 0.25`, `seed = 0`, `precision = 0.01`, `max_attempts = 300`).
-/// `arrangement` is `"uniform"` (default) or `"random"`.
+/// `gap = 0.25`, `seed = 0`, `precision = 0.01`, `max_attempts = 300`, no
+/// obstacles). `arrangement` is `"uniform"` (default) or `"random"`.
+/// `obstacles` are diagram-wide keep-out boxes (usually the caller's measured
+/// label boxes); degenerate ones are ignored rather than rejected.
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
 struct GlyphOptionsIn {
@@ -1067,6 +1071,7 @@ struct GlyphOptionsIn {
     seed: Option<u64>,
     precision: Option<f64>,
     max_attempts: Option<u32>,
+    obstacles: Option<Vec<RectIn>>,
 }
 
 /// Input to [`eunoia_place_glyphs`]. `regions` and `counts` are keyed by
@@ -1119,6 +1124,16 @@ fn glyph_options_from_input(options: Option<GlyphOptionsIn>) -> Result<GlyphOpti
     }
     if let Some(max_attempts) = options.max_attempts {
         out = out.max_attempts(max_attempts);
+    }
+    if let Some(obstacles) = options.obstacles {
+        // `Rectangle::new`, not `try_new`: an empty label legitimately
+        // measures 0 x 0, and the core drops degenerate boxes silently
+        // rather than failing the whole call over one.
+        out = out.obstacles(
+            obstacles
+                .into_iter()
+                .map(|r| Rectangle::new(Point::new(r.x, r.y), r.width, r.height)),
+        );
     }
     Ok(out)
 }
@@ -1776,6 +1791,85 @@ mod tests {
         assert_eq!(v["ok"], true, "got {v}");
         assert_eq!(v["radius"].as_f64().unwrap(), 0.05);
         assert_eq!(v["positions"]["A"].as_array().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn place_glyphs_obstacles_are_honored() {
+        // The intended pipeline: place the labels, then hand their boxes to
+        // the glyph packer as keep-out boxes.
+        let boxes = [("A", 0.1, 0.1), ("B", 0.1, 0.1), ("A&B", 0.05, 0.05)];
+        let sizes = serde_json::json!({ "A": [0.1, 0.1], "B": [0.1, 0.1], "A&B": [0.05, 0.05] });
+        let labels = call(eunoia_place_labels, &place_input(sizes, None));
+        let labels: serde_json::Value = serde_json::from_str(&labels).unwrap();
+        let obstacles: Vec<serde_json::Value> = boxes
+            .iter()
+            .map(|(key, w, h)| {
+                let anchor = labels["placements"][key]["anchor"].as_array().unwrap();
+                serde_json::json!({
+                    "x": anchor[0].as_f64().unwrap(),
+                    "y": anchor[1].as_f64().unwrap(),
+                    "width": w,
+                    "height": h,
+                })
+            })
+            .collect();
+
+        let radius = 0.02;
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "counts": { "A": 8, "B": 5, "A&B": 2 },
+            "options": { "radius": radius, "obstacles": obstacles },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyphs, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true, "got {v}");
+        assert!(v.get("unplaced").is_none(), "got {v}");
+
+        let clearance = radius * 1.25;
+        for (combo, n) in [("A", 8), ("B", 5), ("A&B", 2)] {
+            let points = v["positions"][combo].as_array().unwrap();
+            assert_eq!(points.len(), n, "combo {combo}");
+            for point in points {
+                let (px, py) = (point[0].as_f64().unwrap(), point[1].as_f64().unwrap());
+                for (i, (_, w, h)) in boxes.iter().enumerate() {
+                    let cx = obstacles[i]["x"].as_f64().unwrap();
+                    let cy = obstacles[i]["y"].as_f64().unwrap();
+                    let dx = ((px - cx).abs() - 0.5 * w).max(0.0);
+                    let dy = ((py - cy).abs() - 0.5 * h).max(0.0);
+                    assert!(
+                        dx.hypot(dy) >= clearance - 1e-9,
+                        "glyph in {combo} sits on a label box"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn place_glyphs_degenerate_obstacle_is_dropped() {
+        // A 0 x 0 box (an empty label measures exactly that) is ignored, not
+        // an error.
+        let with_junk = serde_json::json!({
+            "regions": region_pieces(),
+            "counts": { "A": 4 },
+            "options": {
+                "obstacles": [{ "x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0 }],
+            },
+        })
+        .to_string();
+        let plain = serde_json::json!({
+            "regions": region_pieces(),
+            "counts": { "A": 4 },
+        })
+        .to_string();
+
+        let a: serde_json::Value =
+            serde_json::from_str(&call(eunoia_place_glyphs, &with_junk)).unwrap();
+        let b: serde_json::Value =
+            serde_json::from_str(&call(eunoia_place_glyphs, &plain)).unwrap();
+        assert_eq!(a["ok"], true, "got {a}");
+        assert_eq!(a, b);
     }
 
     #[test]

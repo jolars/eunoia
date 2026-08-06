@@ -69,6 +69,42 @@ fraction of the radius: the minimum center-to-center distance is
 `radius * (1 + gap)` to the region boundary. Raise it for a sparser, airier
 look; set it to `0` to let circles touch each other and the edges.
 
+## Label Keep-Out
+
+Labels are painted over glyphs, so anything a label covers is invisible. Pass
+the boxes you measured for [label placement](/docs/concepts/label-placement/)
+as `obstacles` and glyph centers will keep the same `radius * (1 + gap)`
+clearance from them as they do from region edges:
+
+```ts
+import { labelObstacles, placeGlyphsForRegions, placeLabelsForRegions } from "@jolars/eunoia";
+
+const placements = placeLabelsForRegions({ regions: layout.regions, sizes });
+const glyphs = placeGlyphsForRegions({
+  regions: layout.regions,
+  counts,
+  options: {
+    obstacles: labelObstacles({ placements, sizes, padding: 0.15 }),
+  },
+});
+```
+
+`labelObstacles` is the convenience bridge (`label_boxes` in Rust): it turns
+every placement—interior *and* exterior, since an exterior box is the one
+most likely to land on a region that is not its own—into a padded rectangle.
+Obstacles are a diagram-wide list, not per region: occlusion is a question of
+what is painted over what. You can add boxes of your own for a legend, a
+title, or anything else drawn on top.
+
+The list also feeds the auto-radius bisection, since a keep-out box shrinks a
+region's usable capacity. Clearance is a strong preference rather than a hard
+guarantee: the radius is allowed to shrink only to half of what it would have
+been without obstacles, and a region that still cannot fit its count packs
+into its box rather than dropping marks. Without that floor, one small region
+whose label nearly fills it would shrink every glyph in the diagram to a dot.
+Boxes with a non-positive or non-finite extent (an empty label measures
+exactly `0 x 0`) are ignored.
+
 ## JavaScript/TypeScript
 
 ```ts
@@ -143,11 +179,6 @@ are keyed by the [canonical combination string](/docs/bindings/c-abi/#combinatio
   with a bounded resize factor to make fits work) is a planned follow-up on
   the same packer; the options and result types are non-exhaustive so this
   can land without breaking changes.
-- **Label keep-out** is a planned follow-up: glyphs currently ignore region
-  labels (the uniform lattice is anchored at the pole of inaccessibility,
-  which is also where interior labels sit), so a label drawn over a dense
-  glyph field will overlap dots. Passing the label boxes as obstacles to the
-  packer is the intended fix.
 - A relaxation pass (Lloyd/force-directed) to even out the `random` scatter,
   a blue-noise (Poisson-disk) upgrade, and a phyllotaxis arrangement are on
   the roadmap.

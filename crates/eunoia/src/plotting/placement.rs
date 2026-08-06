@@ -1061,6 +1061,86 @@ pub fn placements_bbox(
     ))
 }
 
+/// One rectangle per placed label, each grown by `padding` on every side.
+///
+/// This is the bridge from [`place_labels`] to
+/// [`GlyphOptions::obstacles`](crate::plotting::GlyphOptions::obstacles):
+/// labels are painted over glyphs, so the boxes the caller measured for
+/// [`place_labels`] are exactly the areas glyphs should steer clear of.
+/// Every placement is included, interior and exterior alike — an exterior
+/// box is the one most likely to land on a region that is not its own.
+/// Placements with no matching size, or with a degenerate size or anchor,
+/// are skipped; the output is ordered by region key, so it is stable across
+/// runs despite the `HashMap` inputs.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use eunoia::{DiagramSpecBuilder, Fitter, InputType};
+/// use eunoia::geometry::shapes::Circle;
+/// use eunoia::plotting::{
+///     GlyphOptions, label_boxes, place_glyphs, place_labels, PlacementStrategy,
+/// };
+///
+/// let spec = DiagramSpecBuilder::new()
+///     .set("A", 5.0)
+///     .set("B", 3.0)
+///     .intersection(&["A", "B"], 1.0)
+///     .input_type(InputType::Exclusive)
+///     .build()
+///     .unwrap();
+///
+/// let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
+/// let regions = layout.region_polygons(&spec, 64);
+///
+/// let mut sizes = HashMap::new();
+/// sizes.insert("A".to_string(), (0.4, 0.2));
+/// sizes.insert("B".to_string(), (0.4, 0.2));
+/// sizes.insert("A&B".to_string(), (0.4, 0.2));
+///
+/// let placements = place_labels(&regions, &sizes, None, &PlacementStrategy::default());
+/// let obstacles = label_boxes(&placements, &sizes, 0.02);
+/// assert_eq!(obstacles.len(), placements.len());
+///
+/// let mut counts = HashMap::new();
+/// counts.insert("A".to_string(), 10);
+/// let glyphs = place_glyphs(
+///     &regions,
+///     &counts,
+///     &GlyphOptions::default().obstacles(obstacles),
+/// );
+/// assert_eq!(glyphs.positions["A"].len(), 10);
+/// ```
+pub fn label_boxes(
+    placements: &HashMap<String, LabelPlacement>,
+    sizes: &HashMap<String, (f64, f64)>,
+    padding: f64,
+) -> Vec<Rectangle> {
+    let pad = if padding.is_finite() && padding > 0.0 {
+        padding
+    } else {
+        0.0
+    };
+    let mut keys: Vec<&String> = placements.keys().collect();
+    keys.sort();
+    keys.into_iter()
+        .filter_map(|key| {
+            let placement = placements.get(key)?;
+            let &(w, h) = sizes.get(key)?;
+            let cx = placement.anchor.x();
+            let cy = placement.anchor.y();
+            let valid = w.is_finite()
+                && h.is_finite()
+                && w > 0.0
+                && h > 0.0
+                && cx.is_finite()
+                && cy.is_finite();
+            valid.then(|| Rectangle::new(Point::new(cx, cy), w + 2.0 * pad, h + 2.0 * pad))
+        })
+        .collect()
+}
+
 /// Iteratively place labels and remeasure on bbox change until the
 /// canvas bbox stabilises.
 ///

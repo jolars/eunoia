@@ -3021,7 +3021,8 @@ pub fn placements_bbox(
 ///   "gap": 0.25,
 ///   "seed": 0,
 ///   "precision": 0.01,
-///   "maxAttempts": 300
+///   "maxAttempts": 300,
+///   "obstacles": [{ "x": 0.0, "y": 0.0, "width": 0.4, "height": 0.2 }]
 /// }
 /// ```
 ///
@@ -3034,6 +3035,14 @@ pub fn placements_bbox(
 /// clearance of `r * (1 + gap)` to every ring). `seed` and `maxAttempts`
 /// only affect the `"Random"` arrangement.
 ///
+/// `obstacles` are diagram-wide keep-out boxes (center + full extents, the
+/// same shape as the container elsewhere in this API) that glyph centers
+/// clear by `r * (1 + gap)` — typically the caller's measured label boxes,
+/// since labels are painted over glyphs. Clearance is best-effort: the
+/// auto-radius shrinks to honour them but not below half the radius it would
+/// have chosen without, so one cramped region cannot shrink the whole
+/// diagram. Degenerate boxes are ignored.
+///
 /// Returns a JSON object `{ "radius": r, "positions": { combination:
 /// [[x, y], ...] }, "unplaced"?: { combination: count } }`. `unplaced` is
 /// omitted when every glyph was placed.
@@ -3044,7 +3053,7 @@ pub fn place_region_glyphs(
     options_json: Option<String>,
 ) -> Result<String, JsValue> {
     use eunoia::geometry::primitives::Point;
-    use eunoia::geometry::shapes::Polygon;
+    use eunoia::geometry::shapes::{Polygon, Rectangle};
     use eunoia::plotting::{
         GlyphArrangement, GlyphOptions, RegionPiece, RegionPolygons, classify_into_pieces,
         place_glyphs,
@@ -3055,6 +3064,15 @@ pub fn place_region_glyphs(
     struct PieceJson {
         outer: Vec<[f64; 2]>,
         holes: Vec<Vec<[f64; 2]>>,
+    }
+
+    /// Center + full extents, matching the container wire format.
+    #[derive(serde::Deserialize)]
+    struct RectJson {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
     }
 
     #[derive(serde::Deserialize, Default)]
@@ -3069,6 +3087,9 @@ pub fn place_region_glyphs(
         precision: Option<f64>,
         #[serde(rename = "maxAttempts")]
         max_attempts: Option<u32>,
+        /// Keep-out boxes; degenerate ones are dropped by the core rather
+        /// than rejected, so an empty label's `0 x 0` box is harmless.
+        obstacles: Option<Vec<RectJson>>,
     }
 
     #[derive(serde::Serialize)]
@@ -3113,6 +3134,13 @@ pub fn place_region_glyphs(
     }
     if let Some(max_attempts) = options_in.max_attempts {
         options = options.max_attempts(max_attempts);
+    }
+    if let Some(obstacles) = options_in.obstacles {
+        options = options.obstacles(
+            obstacles
+                .into_iter()
+                .map(|r| Rectangle::new(Point::new(r.x, r.y), r.width, r.height)),
+        );
     }
 
     let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {

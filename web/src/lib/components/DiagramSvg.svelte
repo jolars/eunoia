@@ -5,7 +5,11 @@
     LabelSize,
     Region,
   } from "@jolars/eunoia";
-  import { placeGlyphsForRegions, placeLabelsForRegions } from "@jolars/eunoia";
+  import {
+    labelObstacles,
+    placeGlyphsForRegions,
+    placeLabelsForRegions,
+  } from "@jolars/eunoia";
   import {
     nestedSets,
     regionTitleLines,
@@ -190,6 +194,14 @@
           arrangement: style.glyphArrangement,
           gap: style.glyphGap,
           seed: style.glyphSeed,
+          // Labels are drawn over the glyphs, so keep the marks out of the
+          // boxes we just measured for them. Padded by a fraction of the
+          // font size so glyphs don't kiss the text.
+          obstacles: labelObstacles({
+            placements: regionPlacements,
+            sizes: measuredSizes,
+            padding: style.labelSize * 0.15,
+          }),
         },
       });
     } catch (err) {

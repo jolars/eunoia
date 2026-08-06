@@ -248,7 +248,12 @@ fraction of the radius (default `0.25`), applied both between glyphs (minimum
 center-to-center distance `2r * (1 + gap)`) and against the region boundary
 (centers keep clearance `r * (1 + gap)` to every ring); `seed` (default `0`)
 and `max_attempts` (default `300`) only affect `"random"`; `precision`
-(default `0.01`) tunes the pole-of-inaccessibility search.
+(default `0.01`) tunes the pole-of-inaccessibility search; `obstacles` is an
+array of keep-out boxes `{"x", "y", "width", "height"}` (center plus full
+extents, like `container` on `eunoia_place_labels`) that glyph centers clear
+by `r * (1 + gap)`—usually the caller's measured label boxes, since labels
+are drawn over glyphs. Degenerate boxes are ignored rather than rejected, and
+the clearance is best-effort; see [Glyphs](/docs/concepts/glyphs/#label-keep-out).
 
 Only regions present in both `regions` and `counts`, with a positive count, get
 glyphs. The success payload carries the diagram-wide radius and the center

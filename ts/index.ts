@@ -114,6 +114,22 @@ export interface Container {
   height: number;
 }
 
+/**
+ * An axis-aligned rectangle: centre plus full extents, the same convention
+ * as {@link Container}. Used for glyph keep-out boxes — see
+ * {@link GlyphOptions.obstacles} and {@link labelObstacles}.
+ */
+export interface Rect {
+  /** X coordinate of the rectangle's centre. */
+  x: number;
+  /** Y coordinate of the rectangle's centre. */
+  y: number;
+  /** Full width along x. */
+  width: number;
+  /** Full height along y. */
+  height: number;
+}
+
 export interface Polygon {
   label: string;
   vertices: Point[];
@@ -510,6 +526,19 @@ export interface GlyphOptions {
    * declared full. Default `300`.
    */
   maxAttempts?: number;
+  /**
+   * Diagram-wide keep-out boxes that glyph centers clear by
+   * `r * (1 + gap)`, in the same coordinates as the region polygons.
+   * Labels are painted over glyphs, so these are usually the measured label
+   * boxes — see {@link labelObstacles}, which builds them from a
+   * [`placeLabelsForRegions`] result.
+   *
+   * Clearance is a strong preference, not a guarantee: the auto radius
+   * shrinks to honour the boxes, but not below half the radius it would
+   * have chosen without them, so one cramped region cannot shrink every
+   * glyph in the diagram. Degenerate boxes are ignored. Default: none.
+   */
+  obstacles?: ReadonlyArray<Rect>;
 }
 
 /** Result of [`placeGlyphsForRegions`]. */
@@ -1551,6 +1580,79 @@ export function placementsBbox(
   return { x: raw.x, y: raw.y, width: raw.width, height: raw.height };
 }
 
+export interface LabelObstaclesOptions {
+  /**
+   * Placements as returned from [`placeLabelsForRegions`] (or any other
+   * source producing the same `Record<string, LabelPlacement>` shape).
+   */
+  placements: Record<string, LabelPlacement>;
+  /**
+   * Label dimensions per region, keyed by canonical combination. Entries
+   * with no matching placement, or with non-finite or non-positive
+   * dimensions, are skipped.
+   */
+  sizes: Record<string, LabelSize>;
+  /**
+   * Extra margin added on every side of each box, in region coordinates.
+   * Default `0`.
+   */
+  padding?: number;
+}
+
+/**
+ * Turn placed labels into keep-out boxes for {@link placeGlyphsForRegions}.
+ *
+ * Labels are painted over glyphs, so the boxes measured for
+ * [`placeLabelsForRegions`] are exactly the areas glyphs should avoid. Every
+ * placement is included, interior and exterior alike — an exterior box is
+ * the one most likely to land on a region that is not its own. Pure JS: no
+ * wasm call.
+ *
+ * @example
+ * ```ts
+ * const placements = placeLabelsForRegions({ regions, sizes });
+ * const glyphs = placeGlyphsForRegions({
+ *   regions,
+ *   counts,
+ *   options: { obstacles: labelObstacles({ placements, sizes }) },
+ * });
+ * ```
+ */
+export function labelObstacles(options: LabelObstaclesOptions): Rect[] {
+  const { placements, sizes, padding = 0 } = options;
+  if (!placements || typeof placements !== "object") {
+    throw new TypeError(
+      "labelObstacles: `placements` must be a record of region → LabelPlacement",
+    );
+  }
+  if (!sizes || typeof sizes !== "object") {
+    throw new TypeError(
+      "labelObstacles: `sizes` must be a record of region → { w, h }",
+    );
+  }
+  const pad = Number.isFinite(padding) && padding > 0 ? padding : 0;
+
+  const out: Rect[] = [];
+  for (const key of Object.keys(placements).sort()) {
+    const placement = placements[key];
+    const size = sizes[key];
+    if (!placement?.anchor || !size) continue;
+    const { x, y } = placement.anchor;
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(size.w) ||
+      !Number.isFinite(size.h) ||
+      size.w <= 0 ||
+      size.h <= 0
+    ) {
+      continue;
+    }
+    out.push({ x, y, width: size.w + 2 * pad, height: size.h + 2 * pad });
+  }
+  return out;
+}
+
 const GLYPH_ARRANGEMENT_MAP: Record<GlyphArrangement, "Uniform" | "Random"> = {
   uniform: "Uniform",
   random: "Random",
@@ -1625,6 +1727,7 @@ export function placeGlyphsForRegions(
       seed?: number;
       precision?: number;
       maxAttempts?: number;
+      obstacles?: Rect[];
     } = {};
     if (glyphOptions.arrangement !== undefined) {
       const mapped = GLYPH_ARRANGEMENT_MAP[glyphOptions.arrangement];
@@ -1642,6 +1745,23 @@ export function placeGlyphsForRegions(
       payload.precision = glyphOptions.precision;
     if (glyphOptions.maxAttempts !== undefined)
       payload.maxAttempts = glyphOptions.maxAttempts;
+    if (glyphOptions.obstacles !== undefined) {
+      const obstacles: Rect[] = [];
+      for (const r of glyphOptions.obstacles) {
+        if (
+          r &&
+          Number.isFinite(r.x) &&
+          Number.isFinite(r.y) &&
+          Number.isFinite(r.width) &&
+          Number.isFinite(r.height) &&
+          r.width > 0 &&
+          r.height > 0
+        ) {
+          obstacles.push({ x: r.x, y: r.y, width: r.width, height: r.height });
+        }
+      }
+      if (obstacles.length > 0) payload.obstacles = obstacles;
+    }
     optionsJson = JSON.stringify(payload);
   }
 

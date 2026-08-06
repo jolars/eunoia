@@ -27,7 +27,7 @@ pub use glyphs::{GlyphArrangement, GlyphOptions, GlyphPlacements, place_glyphs};
 pub use inscribed::{fit_label_in_region, largest_inscribed_rect, principal_axis};
 pub use placement::{
     ElbowOptions, ExteriorPolicy, LabelPlacement, LeaderStrategy, PlacementKind, PlacementStrategy,
-    TetherSource, place_labels, place_labels_to_fixed_point, placements_bbox,
+    TetherSource, label_boxes, place_labels, place_labels_to_fixed_point, placements_bbox,
 };
 pub use plot_data::{PlotData, PlotOptions};
 pub use regions::{

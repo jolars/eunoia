@@ -174,25 +174,26 @@ diagram-wide radius auto-sized by feasibility bisection, and a `gap` knob
 padding both glyph-vs-glyph spacing and the boundary inset. These are the
 loose ends that work deliberately deferred. Surfaced 2026-08-06.
 
-- [ ] **Label keep-out** (most visible gap). Glyphs ignore region labels
-  entirely, and the overlap is guaranteed by construction: the uniform
-  lattice anchors at the piece's pole of inaccessibility, which is exactly
-  where interior labels sit, so the center dot lands under the label.
-  Intended fix: accept per-region obstacle rectangles (the caller's measured
-  label boxes, same `(w, h)` contract as `place_labels`) and reject lattice
-  cells / darts whose glyph disc intersects an obstacle. Needs a signature
-  or options change --- fine while the API is unreleased; after release it
-  would ride a new `GlyphOptions` field (`#[non_exhaustive]` covers it).
-  Feasibility subtlety: obstacles shrink capacity, so the auto-radius
-  bisection must probe with them applied.
+- [x] **Label keep-out**. Done: `GlyphOptions::obstacles` takes a
+  diagram-wide list of axis-aligned keep-out boxes (`label_boxes` /
+  `labelObstacles` build them from a `place_labels` result), mirrored through
+  wasm/capi/ts and wired into the web app. Lattice cells and darts within
+  `r * (1 + gap)` of a box are rejected, the lattice anchor escapes a blocked
+  pole of inaccessibility, and the auto-radius bisection probes with the
+  boxes applied. Two deliberate softenings: the obstacle-aware radius is
+  floored at half the obstacle-blind one, and a region that still cannot fit
+  packs into its box rather than reporting a shortfall --- otherwise one
+  small region whose label nearly fills it would shrink every glyph in the
+  diagram.
 
 - [ ] **Member text labels as glyphs**. The original motivation for the
   feature (see the web docs page roadmap): pack per-item `w × h` boxes
   (member names) instead of equal circles, with a bounded resize factor to
   negotiate fits --- a `place_labels_to_fixed_point`-style loop. Breaks the
   single-global-radius model, so it's a second footprint mode
-  (`GlyphFootprint::Rect`-ish), not a tweak. Composes with label keep-out
-  above (both are "pack around obstacles" problems).
+  (`GlyphFootprint::Rect`-ish), not a tweak. Composes with the label keep-out
+  above: it reuses the same obstacle plumbing, but with per-item rectangular
+  footprints instead of one shared disc radius.
 
 - [ ] **Relaxation pass for the `random` arrangement**. Dart-throwing scatter
   can look locally uneven; a few Lloyd iterations (or a force-directed
