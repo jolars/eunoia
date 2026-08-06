@@ -116,6 +116,25 @@ export interface DiagramStyle {
    *   the renderer draws shape strokes.
    */
   labelTether: "poi" | "boundary";
+  /**
+   * Draw eulerGlyphs-style unit glyphs: one equally-sized dot per data unit,
+   * packed inside each region. Counts come from the spec's exclusive region
+   * quantities, rounded to integers (plus the complement value inside the
+   * container, when one is fitted).
+   */
+  showGlyphs: boolean;
+  /**
+   * Glyph arrangement: `"uniform"` (hex lattice spread across the region,
+   * fully deterministic) or `"random"` (seeded dart-throwing scatter).
+   */
+  glyphArrangement: "uniform" | "random";
+  /**
+   * Extra spacing between glyphs as a fraction of the radius (min
+   * center-to-center distance is `2r * (1 + gap)`).
+   */
+  glyphGap: number;
+  /** Seed for the `"random"` glyph arrangement. */
+  glyphSeed: number;
 }
 
 export interface RasterSize {

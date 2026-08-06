@@ -34,6 +34,10 @@ const DEFAULT_STYLE: DiagramStyle = {
   showCounts: false,
   labelPlacement: "raycast",
   labelTether: "boundary",
+  showGlyphs: false,
+  glyphArrangement: "uniform",
+  glyphGap: 0.25,
+  glyphSeed: 0,
 };
 
 const DEFAULT_ADVANCED: AdvancedOptions = {

@@ -1,6 +1,11 @@
 <script lang="ts">
-  import type { LabelPlacement, LabelSize, Region } from "@jolars/eunoia";
-  import { placeLabelsForRegions } from "@jolars/eunoia";
+  import type {
+    GlyphPlacements,
+    LabelPlacement,
+    LabelSize,
+    Region,
+  } from "@jolars/eunoia";
+  import { placeGlyphsForRegions, placeLabelsForRegions } from "@jolars/eunoia";
   import {
     nestedSets,
     regionTitleLines,
@@ -142,6 +147,57 @@
     }
   });
 
+  // Interactive glyph budget: deriving counts from the spec quantities means a
+  // user typing large numbers (say population-scale frequencies) would ask the
+  // packer for that many dots. Beyond this the diagram is unreadable anyway,
+  // so skip rendering instead of stalling the UI.
+  const MAX_GLYPHS = 2000;
+
+  // eulerGlyphs-style unit glyphs: counts are the spec's exclusive region
+  // quantities rounded to integers (plus the complement inside the container,
+  // when fitted), packed by the eunoia core with a shared auto-sized radius.
+  let glyphPlacements: GlyphPlacements | undefined = $derived.by(() => {
+    if (!style.showGlyphs || !result || result.layout.mode !== "regions")
+      return undefined;
+    const counts: Record<string, number> = {};
+    let total = 0;
+    for (const [combo, quantity] of Object.entries(result.metrics.target)) {
+      const n = Math.round(quantity);
+      if (n > 0) {
+        counts[combo] = n;
+        total += n;
+      }
+    }
+    if (result.complement !== undefined) {
+      const n = Math.round(result.complement);
+      if (n > 0) {
+        counts[""] = n;
+        total += n;
+      }
+    }
+    if (total === 0) return undefined;
+    if (total > MAX_GLYPHS) {
+      console.warn(
+        `[glyphs] skipped: ${total} glyphs exceed the interactive budget of ${MAX_GLYPHS}`,
+      );
+      return undefined;
+    }
+    try {
+      return placeGlyphsForRegions({
+        regions: result.layout.regions,
+        counts,
+        options: {
+          arrangement: style.glyphArrangement,
+          gap: style.glyphGap,
+          seed: style.glyphSeed,
+        },
+      });
+    } catch (err) {
+      console.warn("[glyphs] placement failed:", err);
+      return undefined;
+    }
+  });
+
   // The single options object handed to the serializer — the adapter from the
   // app's `DiagramStyle` + computed set order/placements to `@jolars/eunoia/svg`.
   let svgOptions: ToSvgOptions = $derived({
@@ -159,6 +215,7 @@
     placements: regionPlacements,
     labelSizes: measuredSizes,
     complement: result?.complement,
+    glyphs: glyphPlacements,
   });
 
   let vb = $derived(

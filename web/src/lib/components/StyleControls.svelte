@@ -206,7 +206,73 @@
       />
       Legend
     </label>
+    <label class="flex items-center cursor-pointer text-sm">
+      <input
+        type="checkbox"
+        bind:checked={appState.style.showGlyphs}
+        class="mr-1.5"
+      />
+      Unit glyphs
+    </label>
   </div>
+
+  {#if appState.style.showGlyphs}
+    <div>
+      <label
+        for="glyphArrangement"
+        class="block text-xs font-medium text-muted mb-1"
+      >
+        Glyph arrangement
+      </label>
+      <select
+        id="glyphArrangement"
+        bind:value={appState.style.glyphArrangement}
+        class="w-full px-2 py-1.5 text-sm border border-line rounded"
+      >
+        <option value="uniform">Uniform (hex lattice)</option>
+        <option value="random">Random (seeded scatter)</option>
+      </select>
+      <p class="text-xs text-muted mt-1">
+        One equally-sized dot per data unit, packed inside its region
+        (eulerGlyphs-style). Counts are the region quantities rounded to
+        integers; the dot radius is auto-sized so every region fits its count.
+      </p>
+      <div class="mt-2">
+        <label for="glyphGap" class="block text-xs font-medium text-muted mb-1">
+          Glyph spacing <span class="font-mono text-faint"
+            >{appState.style.glyphGap.toFixed(2)}</span
+          >
+        </label>
+        <input
+          id="glyphGap"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          bind:value={appState.style.glyphGap}
+          class="w-full"
+        />
+      </div>
+      {#if appState.style.glyphArrangement === "random"}
+        <div class="mt-2">
+          <label
+            for="glyphSeed"
+            class="block text-xs font-medium text-muted mb-1"
+          >
+            Glyph seed
+          </label>
+          <input
+            id="glyphSeed"
+            type="number"
+            min="0"
+            step="1"
+            bind:value={appState.style.glyphSeed}
+            class="w-full px-2 py-1.5 text-sm border border-line rounded"
+          />
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <div>
     <label
