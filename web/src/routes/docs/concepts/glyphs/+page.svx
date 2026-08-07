@@ -105,6 +105,86 @@ whose label nearly fills it would shrink every glyph in the diagram to a dot.
 Boxes with a non-positive or non-finite extent (an empty label measures
 exactly `0 x 0`) are ignored.
 
+## Member Labels
+
+Glyphs answer "how many"; **member labels** answer "which ones". Instead of
+packing anonymous dots, `place_glyph_boxes` (Rust) / `placeGlyphBoxesForRegions`
+(npm) packs the per-item `w × h` boxes you measured for the member *names*, and
+returns one rectangle per item plus the single diagram-wide `scale` they were
+packed at. Render your text at `fontSize * scale`.
+
+```ts
+import { placeGlyphBoxesForRegions } from "@jolars/eunoia";
+import { toSvg } from "@jolars/eunoia/svg";
+
+const members = {
+  A: ["Ada", "Grace", "Barbara"],
+  B: ["Alan", "Edsger"],
+  "A&B": ["Katherine"],
+};
+const FONT = 12;
+const sizes = Object.fromEntries(
+  Object.entries(members).map(([k, names]) => [k, names.map(measureAtFont(FONT))]),
+);
+
+const placed = placeGlyphBoxesForRegions({ regions: layout.regions, sizes });
+const svg = toSvg(layout, {
+  glyphBoxes: { ...placed, labels: members, fontSize: FONT },
+});
+```
+
+The core stays font-blind, exactly as [label
+placement](/docs/concepts/label-placement/) does: you measure, it packs. The
+returned `scale` is the bridge back—it is the one number you need to re-render
+text at the size the geometry assumes.
+
+### How the boxes are laid out
+
+The `uniform` arrangement packs **rows**. Every row shares one height (the
+diagram-wide maximum scaled box height), boxes fill a row left to right at
+their own widths, the run is centered in the space it found, and the block of
+rows is centered on the region's pole of inaccessibility. Text reads in rows,
+and a max-cell grid would let one long name inflate every cell. The `random`
+arrangement throws rectangular darts instead, for the scattered look.
+
+`gap` works the same way it does for discs, but as a fraction of the **row
+height** rather than of a radius: each box carries a halo of
+`0.5 * gap * rowHeight`, so adjacent boxes end up `gap * rowHeight` apart and
+every box keeps half that to region boundaries, holes, and obstacles. The
+shared default of `0.25` therefore reads as "a quarter of a line-height apart,
+half that from the edge" in both modes.
+
+### Scale: shrink-only
+
+Omit `scale` for the auto mode: a bisection for the largest factor in
+`[minScale, 1]` at which *every* region holds all of its items. Note the
+asymmetry with the disc packer, which grows to fill—this one **only ever
+shrinks**, because you own the reference font size and the packer has no
+business enlarging past what you measured. A roomy diagram therefore renders
+sparse text at your chosen size rather than blowing it up.
+
+`minScale` (default `0.35`) is a readability floor, not a hint: below it the
+packer would rather drop items than render text nobody can read.
+
+### Dropped items are normal here
+
+A member name is typically five to ten times wider than tall, so a region with
+ample *area* can still fail to seat a single row of them. Expect `unplaced` to
+be populated far more often than it ever is for discs—that is the geometry, not
+a bug.
+
+The packer takes each region's items **in order** and stops at the first that
+fits nowhere, so `boxes[combo]` is a prefix of `sizes[combo]` and
+`boxes[combo][i]` belongs to your `labels[combo][i]`. Which items get dropped is
+therefore decided by the order you supply them in: sort meaningfully
+(alphabetically, by salience), check `unplaced`, and consider rendering a
+"+n more" affordance. You can also measure **wrapped, multi-line** boxes and
+pass those—the packer needs no special support for it, and a two-line box is a
+much easier shape to seat.
+
+Obstacles compose exactly as above: pass `labelObstacles(...)` and the member
+boxes will steer clear of your region labels too.
+
 ## JavaScript/TypeScript
 
 ```ts
@@ -169,12 +249,33 @@ for (combo, points) in &glyphs.positions {
 }
 ```
 
+Member labels use the sibling call, with measured boxes in place of counts:
+
+```rust
+use eunoia::plotting::{place_glyph_boxes, GlyphBoxOptions};
+
+let sizes = HashMap::from([
+    ("A".to_string(), vec![(0.30, 0.10), (0.24, 0.10)]),
+    ("A&B".to_string(), vec![(0.20, 0.10)]),
+]);
+
+let placed = place_glyph_boxes(&regions, &sizes, &GlyphBoxOptions::default());
+for (combo, rects) in &placed.boxes {
+    for (i, r) in rects.iter().enumerate() {
+        // `rects` is a prefix of `sizes[combo]`, so `i` indexes your names.
+        draw_text(&names[combo][i], r.center(), font_size * placed.scale);
+    }
+}
+```
+
 ## Other Bindings
 
-The C ABI exposes the same call as
-[`eunoia_place_glyphs`](/docs/bindings/c-abi/#eunoia_place_glyphs) (JSON in,
-JSON out), which is what the R, Python, and Julia packages build on. Counts
-are keyed by the [canonical combination string](/docs/bindings/c-abi/#combination-keying)
+The C ABI exposes the same calls as
+[`eunoia_place_glyphs`](/docs/bindings/c-abi/#eunoia_place_glyphs) and
+[`eunoia_place_glyph_boxes`](/docs/bindings/c-abi/#eunoia_place_glyph_boxes)
+(JSON in, JSON out), which is what the R, Python, and Julia packages build on.
+Counts and sizes are keyed by the
+[canonical combination string](/docs/bindings/c-abi/#combination-keying)
 (`"A"`, `"A&B"`, `""` for the complement region), the same keying as
 [label placement](/docs/concepts/label-placement/).
 
@@ -183,10 +284,9 @@ are keyed by the [canonical combination string](/docs/bindings/c-abi/#combinatio
 - **Counts are yours to supply.** Spec quantities are `f64` areas and are not
   assumed to be cardinalities; pass the integer counts you want visualized
   (usually the same numbers you fed the spec, when those are frequencies).
-- **Member labels as glyphs** (packing per-item text boxes instead of dots,
-  with a bounded resize factor to make fits work) is a planned follow-up on
-  the same packer; the options and result types are non-exhaustive so this
-  can land without breaking changes.
+- **Member labels are not wired into the web app yet**—the demo has no
+  per-member name input to feed them. The API is complete across Rust, npm,
+  and the C ABI.
 - A relaxation pass (Lloyd/force-directed) to even out the `random` scatter,
   a blue-noise (Poisson-disk) upgrade, and a phyllotaxis arrangement are on
   the roadmap.

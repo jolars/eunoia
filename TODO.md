@@ -186,14 +186,37 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
   small region whose label nearly fills it would shrink every glyph in the
   diagram.
 
-- [ ] **Member text labels as glyphs**. The original motivation for the
-  feature (see the web docs page roadmap): pack per-item `w × h` boxes
-  (member names) instead of equal circles, with a bounded resize factor to
-  negotiate fits --- a `place_labels_to_fixed_point`-style loop. Breaks the
-  single-global-radius model, so it's a second footprint mode
-  (`GlyphFootprint::Rect`-ish), not a tweak. Composes with the label keep-out
-  above: it reuses the same obstacle plumbing, but with per-item rectangular
-  footprints instead of one shared disc radius.
+- [x] **Member text labels as glyphs**. Done: `place_glyph_boxes` is a
+  sibling entry point taking per-item measured `(w, h)` boxes instead of
+  counts, with a single diagram-wide `scale` bisected in `[min_scale, 1.0]`
+  (shrink-only --- the caller owns the reference font size). The uniform
+  arrangement packs rows over a new exact scan-line band oracle
+  (`plotting/glyphs/scan.rs`); the random one throws rectangular darts. The
+  obstacle plumbing, apportionment, and `PROBE`/`PACK` split are shared with
+  the disc packer, which moved to `plotting/glyphs/discs.rs`. Mirrored
+  through wasm/capi/ts + a `toSvg` `glyphBoxes` mode. `boxes[key]` is a
+  prefix of `sizes[key]`, so drop order is the caller's item order.
+
+- [ ] **Web app doesn't expose member labels**. `place_glyph_boxes` ships
+  across core/wasm/capi/ts/svg but nothing in `web/` calls it: the demo has
+  no per-member name input, so there is no source of member strings to
+  measure. Needs a UI decision (a per-region names textarea? derive
+  placeholder names from the counts?) before it is worth wiring
+  `DiagramSvg.svelte` and `StyleControls.svelte`.
+
+- [ ] **`max_scale` for glyph boxes** (minor). The auto-scale bracket's upper
+  end is hardcoded to `1.0`, so a roomy diagram renders sparse text at the
+  caller's reference size rather than growing to fill --- deliberately
+  asymmetric with `place_glyphs`, which does grow. `GlyphBoxOptions` is
+  `#[non_exhaustive]`, so a `max_scale` field defaulting to `1.0` can land
+  later without a break if the asymmetry proves annoying in practice.
+
+- [ ] **"+n more" affordance for overflowing regions**. Text boxes are 5-10x
+  wider than tall, so `place_glyph_boxes` populates `unplaced` far more often
+  than the disc packer ever does. The renderer has no way to say "and 3
+  more"; today the caller must add it. Worth a `toSvg` option once there is
+  real usage to shape it. Multi-line (wrapped) measurement is the other half
+  of the answer and already works with no core change.
 
 - [ ] **Relaxation pass for the `random` arrangement**. Dart-throwing scatter
   can look locally uneven; a few Lloyd iterations (or a force-directed
@@ -206,7 +229,9 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
 - [ ] **Random-packer spatial hash** (perf, only if needed). Dart acceptance
   checks are O(placed) per dart, O(n²) per piece overall --- fine at the
   hundreds-of-glyphs scale the web app caps at (2000), noticeable beyond.
-  A uniform grid keyed at cell size `2r(1+gap)` makes it O(1) per dart.
+  A uniform grid keyed at cell size `2r(1+gap)` makes it O(1) per dart. The
+  box packer's `pack_random_boxes_piece` has the same shape (per-pair AABB
+  separation instead of one squared distance) and would want the same fix.
 
 - [ ] **Counts-from-spec convenience**. The web app rounds
   `metrics.target` (exclusive quantities) into counts client-side

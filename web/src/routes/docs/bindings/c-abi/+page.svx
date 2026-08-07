@@ -24,18 +24,19 @@ released exactly once with `eunoia_free`.
 
 ## Exported Symbols
 
-All six are `extern "C"`. Strings are NUL-terminated UTF-8.
+All seven are `extern "C"`. Strings are NUL-terminated UTF-8.
 
-  | Symbol                | C signature                               | Returns                         |
-  | --------------------- | ----------------------------------------- | ------------------------------- |
-  | `eunoia_euler`        | `char *eunoia_euler(const char *)`        | fitted Euler layout envelope    |
-  | `eunoia_venn`         | `char *eunoia_venn(const char *)`         | canonical Venn layout envelope  |
-  | `eunoia_place_labels` | `char *eunoia_place_labels(const char *)` | label/leader placement envelope |
-  | `eunoia_place_glyphs` | `char *eunoia_place_glyphs(const char *)` | glyph placement envelope        |
-  | `eunoia_version`      | `char *eunoia_version(void)`              | crate version string            |
-  | `eunoia_free`         | `void eunoia_free(char *)`                | —                               |
+  | Symbol                    | C signature                                   | Returns                         |
+  | ------------------------- | --------------------------------------------- | ------------------------------- |
+  | `eunoia_euler`            | `char *eunoia_euler(const char *)`            | fitted Euler layout envelope    |
+  | `eunoia_venn`             | `char *eunoia_venn(const char *)`             | canonical Venn layout envelope  |
+  | `eunoia_place_labels`     | `char *eunoia_place_labels(const char *)`     | label/leader placement envelope |
+  | `eunoia_place_glyphs`     | `char *eunoia_place_glyphs(const char *)`     | glyph placement envelope        |
+  | `eunoia_place_glyph_boxes`| `char *eunoia_place_glyph_boxes(const char *)`| member-label box envelope       |
+  | `eunoia_version`          | `char *eunoia_version(void)`                  | crate version string            |
+  | `eunoia_free`             | `void eunoia_free(char *)`                    | —                               |
 
-There is no generated C header today—declare the six prototypes yourself from
+There is no generated C header today—declare the seven prototypes yourself from
 the table above.
 
 ## Building the Library
@@ -272,6 +273,58 @@ points:
 mode sizes the radius so everything fits); it maps each overflowing region to
 the count that did not fit.
 
+## `eunoia_place_glyph_boxes`
+
+Packs per-item text boxes—member names—inside each region, given the region
+polygons and the `width × height` you measured for every item. The
+rectangular-footprint sibling of `eunoia_place_glyphs`. See
+[Member labels](/docs/concepts/glyphs/#member-labels).
+
+```json
+{
+  "regions": {
+    "A": [ { "outer": [[x, y], …], "holes": [] } ],
+    "A&B": [ { "outer": [[x, y], …], "holes": [] } ]
+  },
+  "sizes": { "A": [[0.30, 0.10], [0.24, 0.10]], "A&B": [[0.20, 0.10]] },
+  "options": { "arrangement": "uniform", "min_scale": 0.35 }
+}
+```
+
+  | Field     | Type                       | Notes                                                                        |
+  | --------- | -------------------------- | ---------------------------------------------------------------------------- |
+  | `regions` | `combo → [{outer, holes}]` | Region pieces, exactly as for `eunoia_place_glyphs`.                         |
+  | `sizes`   | `combo → [[w, h], …]`      | One measured box per item, **in the order you want them placed**.            |
+  | `options` | object                     | Optional; omitted fields keep core defaults (see below).                     |
+
+The `options` knobs: `arrangement` is `"uniform"` (default, row/shelf packing—
+rows of one shared height, boxes left to right at their own widths, the block
+centered on the region's pole of inaccessibility) or `"random"` (seeded
+rectangular dart throwing); `scale` fixes the diagram-wide box factor (omit for
+the auto mode); `min_scale` (default `0.35`) is the lower end of the auto
+bracket; `gap` (default `0.25`) is breathing room as a fraction of the **row
+height**, not of a radius; `seed`, `max_attempts`, `precision`, and `obstacles`
+behave exactly as in `eunoia_place_glyphs`.
+
+The success payload carries the diagram-wide scale and one `[cx, cy, w, h]`
+quad—center plus full extents—per placed item:
+
+```json
+{
+  "ok": true,
+  "scale": 0.82,
+  "boxes": { "A": [[cx, cy, w, h], …], "A&B": [[cx, cy, w, h], …] },
+  "unplaced": { "A": 3 }
+}
+```
+
+`boxes[combo]` is always a **prefix** of `sizes[combo]`, so `boxes[combo][i]`
+belongs to item `i`—render your text at `fontSize * scale`. Auto-scale only
+ever shrinks (the bracket tops out at `1.0`), since the caller owns the
+reference font size. Text boxes are much wider than tall, so `unplaced` is far
+more common here than for the disc packer; see
+[Member labels](/docs/concepts/glyphs/#member-labels) for what to do about it.
+
 ## `eunoia_version` and `eunoia_free`
 
 `eunoia_version()` takes no input and returns the crate version (e.g.
@@ -289,8 +342,8 @@ order, so serialization is deterministic.
 ## Memory Ownership
 
 Every `char *` returned by `eunoia_euler`, `eunoia_venn`, `eunoia_place_labels`,
-`eunoia_place_glyphs`, and `eunoia_version` is heap-allocated by Rust and
-**owned by the caller**. Hand
+`eunoia_place_glyphs`, `eunoia_place_glyph_boxes`, and `eunoia_version` is
+heap-allocated by Rust and **owned by the caller**. Hand
 it back to `eunoia_free` exactly once. Do not free it with the host's `free()`,
 do not free it twice, and do not read it after freeing—each is undefined
 behavior. Passing `NULL` to `eunoia_free` is safe.

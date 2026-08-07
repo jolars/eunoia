@@ -139,6 +139,40 @@ result straight to the SVG serializer via `ToSvgOptions.glyphs`.
 plus full extents) that glyph centers steer clear of—see
 [Label keep-out](/docs/concepts/glyphs/#label-keep-out).
 
+## `placeGlyphBoxesForRegions(options)`
+
+Packs per-item text boxes—member names—inside each region. The
+rectangular-footprint sibling of `placeGlyphsForRegions`: hand it the
+`{ w, h }` you measured for every item and it returns
+`{ scale, boxes, unplaced? }`—one centered `{ x, y, width, height }` per item,
+plus the single diagram-wide factor those boxes were packed at.
+
+```js
+import { placeGlyphBoxesForRegions } from "@jolars/eunoia";
+
+const members = { A: ["Ada", "Grace"], "A&B": ["Katherine"] };
+const sizes = Object.fromEntries(
+  Object.entries(members).map(([k, names]) => [k, names.map(measure)]),
+);
+
+const placed = placeGlyphBoxesForRegions({
+  regions: layout.regions,
+  sizes,
+  options: { arrangement: "uniform" }, // or "random" with a seed
+});
+// Render your text at `fontSize * placed.scale`.
+```
+
+Omit `options.scale` to auto-fit. Auto-scale only ever *shrinks* (the bracket
+is `[minScale, 1]`, default floor `0.35`), since you own the reference font
+size—deliberately asymmetric with the disc packer, which grows to fill.
+
+`boxes[combo]` is a **prefix** of `sizes[combo]`, so `boxes[combo][i]` belongs
+to your `labels[combo][i]`. Pass the result plus the strings to the SVG
+serializer via `ToSvgOptions.glyphBoxes`. `options.obstacles` takes the same
+keep-out boxes as `placeGlyphsForRegions`. See
+[Member labels](/docs/concepts/glyphs/#member-labels).
+
 ## `labelObstacles(options)`
 
 Turns a `placeLabelsForRegions` result plus the sizes you measured into the
@@ -182,6 +216,23 @@ from `placeLabelsForRegions` for exterior labels with leader lines, and the
 `glyphs` result from `placeGlyphsForRegions` (rendered above region fills,
 below labels; tinted from each region's own color with a finer, darker edge by
 default, tunable via `tint`, `fill`, `stroke`, and `strokeWidth`).
+
+`glyphBoxes` renders a `placeGlyphBoxesForRegions` result in the same slot.
+The placer deliberately carries no text, so pass the strings alongside it as
+`labels`, index-aligned with `boxes`:
+
+```js
+toSvg(layout, {
+  glyphBoxes: { scale: placed.scale, boxes: placed.boxes, labels: members, fontSize: 12 },
+});
+```
+
+`fontSize` is the reference size you measured at—the rendered size is
+`fontSize * scale`, emitted once on each region's `<g>`. `color`, `fontWeight`,
+`fontFamily`, and `className` override the defaults, and `background` (off by
+default) adds a rounded chip behind each label, tinted from the region color
+like the glyph discs. `glyphs` and `glyphBoxes` may both be set; discs draw
+first.
 
 ### Interactivity: tooltips and data hooks
 
