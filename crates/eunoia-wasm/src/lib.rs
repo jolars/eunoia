@@ -3183,6 +3183,184 @@ pub fn place_region_glyphs(
     serde_json::to_string(&payload).map_err(|e| JsValue::from_str(&format!("{e}")))
 }
 
+/// Pack per-item text boxes (member names) inside decomposed regions.
+///
+/// The rectangular-footprint sibling of [`place_region_glyphs`]: instead of a
+/// count and a shared radius, the caller supplies the `w × h` box it measured
+/// for every item and gets back one rectangle per item plus the single
+/// diagram-wide `scale` those boxes were packed at. Re-render the text at
+/// `fontSize * scale`.
+///
+/// `polygons_json` has the same shape as for `place_region_glyphs`:
+/// `{ combination: [{ "outer": [[x, y], ...], "holes": [[[x, y], ...]] }] }`,
+/// keyed by canonical combination string (`""` for the complement region).
+///
+/// `sizes_json` is `{ combination: [[w, h], ...] }`, **in the order the
+/// caller wants the items placed** — the packer consumes each region's list
+/// in order and stops at the first item that fits nowhere, so `boxes[key]` is
+/// always a prefix of `sizes[key]`. Non-finite or negative extents are
+/// clamped to zero rather than rejected (an empty name measures `0 × 0`).
+///
+/// `options_json` is optional:
+/// `{ "arrangement": "Uniform" | "Random", "scale": 0.8, "minScale": 0.35,
+/// "gap": 0.25, "seed": 0, "precision": 0.01, "maxAttempts": 300,
+/// "obstacles": [{ "x": .., "y": .., "width": .., "height": .. }] }`.
+/// Omit `scale` for the auto mode, which bisects for the largest factor in
+/// `[minScale, 1.0]` at which every region holds all of its items — it only
+/// ever shrinks, since the caller owns the reference font size. `gap` is a
+/// fraction of the row height, and `obstacles` are best-effort keep-outs
+/// exactly as in `place_region_glyphs`.
+///
+/// Returns `{ "scale": k, "boxes": { combination: [[cx, cy, w, h], ...] },
+/// "unplaced"?: { combination: count } }`. `unplaced` is omitted when every
+/// item was placed.
+#[wasm_bindgen]
+pub fn place_region_glyph_boxes(
+    polygons_json: String,
+    sizes_json: String,
+    options_json: Option<String>,
+) -> Result<String, JsValue> {
+    use eunoia::geometry::primitives::Point;
+    use eunoia::geometry::shapes::{Polygon, Rectangle};
+    use eunoia::plotting::{
+        GlyphArrangement, GlyphBoxOptions, RegionPiece, RegionPolygons, classify_into_pieces,
+        place_glyph_boxes,
+    };
+    use eunoia::spec::Combination;
+
+    #[derive(serde::Deserialize)]
+    struct PieceJson {
+        outer: Vec<[f64; 2]>,
+        holes: Vec<Vec<[f64; 2]>>,
+    }
+
+    /// Center + full extents, matching the container wire format.
+    #[derive(serde::Deserialize)]
+    struct RectJson {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    }
+
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct OptionsJson {
+        /// `"Uniform"` (default, row/shelf packing) or `"Random"`.
+        arrangement: Option<String>,
+        /// Diagram-wide box scale; omit for the auto (bisection) mode.
+        scale: Option<f64>,
+        #[serde(rename = "minScale")]
+        min_scale: Option<f64>,
+        gap: Option<f64>,
+        seed: Option<u64>,
+        precision: Option<f64>,
+        #[serde(rename = "maxAttempts")]
+        max_attempts: Option<u32>,
+        obstacles: Option<Vec<RectJson>>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct BoxesJson {
+        scale: f64,
+        /// `[cx, cy, w, h]` per item, mirroring `positions`' `[x, y]` pairs.
+        boxes: std::collections::BTreeMap<String, Vec<[f64; 4]>>,
+        #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        unplaced: std::collections::BTreeMap<String, usize>,
+    }
+
+    let regions_in: std::collections::HashMap<String, Vec<PieceJson>> =
+        serde_json::from_str(&polygons_json)
+            .map_err(|e| JsValue::from_str(&format!("invalid polygons_json: {e}")))?;
+    let sizes: std::collections::HashMap<String, Vec<(f64, f64)>> =
+        serde_json::from_str(&sizes_json)
+            .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {e}")))?;
+
+    let options_in: OptionsJson = match options_json.as_deref() {
+        Some(s) => serde_json::from_str(s)
+            .map_err(|e| JsValue::from_str(&format!("invalid options_json: {e}")))?,
+        None => OptionsJson::default(),
+    };
+    let arrangement = match options_in.arrangement.as_deref() {
+        None | Some("Uniform") => GlyphArrangement::Uniform,
+        Some("Random") => GlyphArrangement::Random,
+        Some(other) => {
+            return Err(JsValue::from_str(&format!(
+                "invalid options.arrangement '{other}' (expected 'Uniform' or 'Random')"
+            )));
+        }
+    };
+    let mut options = GlyphBoxOptions::default()
+        .arrangement(arrangement)
+        .scale(options_in.scale);
+    if let Some(min_scale) = options_in.min_scale {
+        options = options.min_scale(min_scale);
+    }
+    if let Some(gap) = options_in.gap {
+        options = options.gap(gap);
+    }
+    if let Some(seed) = options_in.seed {
+        options = options.seed(seed);
+    }
+    if let Some(precision) = options_in.precision {
+        options = options.precision(precision);
+    }
+    if let Some(max_attempts) = options_in.max_attempts {
+        options = options.max_attempts(max_attempts);
+    }
+    if let Some(obstacles) = options_in.obstacles {
+        options = options.obstacles(
+            obstacles
+                .into_iter()
+                .map(|r| Rectangle::new(Point::new(r.x, r.y), r.width, r.height)),
+        );
+    }
+
+    let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
+        Polygon::new(pts.into_iter().map(|p| Point::new(p[0], p[1])).collect())
+    };
+
+    let mut region_map: std::collections::HashMap<Combination, Vec<RegionPiece>> =
+        std::collections::HashMap::with_capacity(regions_in.len());
+    for (key, pieces_json) in regions_in {
+        let combo: Combination = match key.parse() {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        // `RegionPiece` is `#[non_exhaustive]`; rebuild through the public
+        // classifier, exactly as `place_region_glyphs` does.
+        let pieces: Vec<RegionPiece> = pieces_json
+            .into_iter()
+            .flat_map(|p| {
+                let mut rings = vec![to_polygon(p.outer)];
+                rings.extend(p.holes.into_iter().map(to_polygon));
+                classify_into_pieces(rings)
+            })
+            .collect();
+        region_map.insert(combo, pieces);
+    }
+    let regions = RegionPolygons::from_map(region_map);
+
+    let result = place_glyph_boxes(&regions, &sizes, &options);
+
+    let payload = BoxesJson {
+        scale: result.scale,
+        boxes: result
+            .boxes
+            .into_iter()
+            .map(|(k, rects)| {
+                let quads = rects
+                    .into_iter()
+                    .map(|r| [r.center().x(), r.center().y(), r.width(), r.height()])
+                    .collect();
+                (k, quads)
+            })
+            .collect(),
+        unplaced: result.unplaced.into_iter().collect(),
+    };
+    serde_json::to_string(&payload).map_err(|e| JsValue::from_str(&format!("{e}")))
+}
+
 // ---------------------------------------------------------------------------
 // Trajectory recording (docs pipeline animation)
 //

@@ -44,8 +44,11 @@ use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Rectangle;
 use crate::plotting::regions::RegionPiece;
 
+mod boxes;
 mod discs;
+mod scan;
 
+pub use boxes::{GlyphBoxOptions, GlyphBoxPlacements, place_glyph_boxes};
 pub use discs::{GlyphOptions, GlyphPlacements, place_glyphs};
 
 /// How glyph centers are arranged within a region.
@@ -162,6 +165,31 @@ pub(super) fn clear_of_obstacles(
     obstacles
         .iter()
         .all(|rect| dist_to_rect(px, py, rect) >= clearance)
+}
+
+/// Separation between the axis-aligned `w × h` box centered at `(cx, cy)`
+/// and `rect`: the distance between the two boxes' nearest points, `0.0`
+/// when they touch or overlap. The box analogue of [`dist_to_rect`], which
+/// it reduces to exactly when `w` and `h` are zero.
+pub(super) fn box_rect_separation(cx: f64, cy: f64, w: f64, h: f64, rect: &Rectangle) -> f64 {
+    let dx = (cx - rect.center().x()).abs() - 0.5 * w - 0.5 * rect.width();
+    let dy = (cy - rect.center().y()).abs() - 0.5 * h - 0.5 * rect.height();
+    dx.max(0.0).hypot(dy.max(0.0))
+}
+
+/// Whether the `w × h` box centered at `(cx, cy)` keeps `clearance` to every
+/// obstacle.
+pub(super) fn box_clear_of_obstacles(
+    cx: f64,
+    cy: f64,
+    w: f64,
+    h: f64,
+    obstacles: &[Rectangle],
+    clearance: f64,
+) -> bool {
+    obstacles
+        .iter()
+        .all(|rect| box_rect_separation(cx, cy, w, h, rect) >= clearance)
 }
 
 /// Drops obstacles that cannot describe a keep-out area. An empty label

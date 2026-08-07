@@ -20,6 +20,9 @@
 //! - `eunoia_place_glyphs(*const c_char) -> *mut c_char` — pack equally-sized
 //!   circular glyphs (one per data unit, eulerGlyphs-style) inside region
 //!   polygons, given per-region counts.
+//! - `eunoia_place_glyph_boxes(*const c_char) -> *mut c_char` — pack per-item
+//!   text boxes (member names) inside region polygons, given caller-measured
+//!   `w × h` sizes, at one auto-fitted diagram-wide scale.
 //! - `eunoia_version() -> *mut c_char` — crate version string.
 //! - `eunoia_free(*mut c_char)` — free any string returned by the above.
 //!
@@ -42,8 +45,10 @@
 //! anchors, set-anchor regions, region areas, shape outlines) mirrors the PyO3
 //! binding so the Julia side can render diagrams. `eunoia_place_labels` instead
 //! returns `{"ok": true,
-//! "placements": {...}}`, and `eunoia_place_glyphs` returns `{"ok": true,
-//! "radius": ..., "positions": {...}, "unplaced": {...}}`. Failure:
+//! "placements": {...}}`, `eunoia_place_glyphs` returns `{"ok": true,
+//! "radius": ..., "positions": {...}, "unplaced": {...}}`, and
+//! `eunoia_place_glyph_boxes` returns `{"ok": true, "scale": ...,
+//! "boxes": {...}, "unplaced": {...}}`. Failure:
 //! `{"ok": false, "error": "<message>"}`. Callers branch on `ok`.
 
 // Mirrors the WASM crate: the shape constructors panic on bad input, so the
@@ -62,9 +67,9 @@ use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, RotatedRecta
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
 use eunoia::loss::LossType;
 use eunoia::plotting::{
-    ElbowOptions, ExteriorPolicy, GlyphArrangement, GlyphOptions, LeaderStrategy, PlacementKind,
-    PlacementStrategy, PlotData, PlotOptions, RegionPiece, RegionPolygons, TetherSource,
-    classify_into_pieces, place_glyphs, place_labels,
+    ElbowOptions, ExteriorPolicy, GlyphArrangement, GlyphBoxOptions, GlyphOptions, LeaderStrategy,
+    PlacementKind, PlacementStrategy, PlotData, PlotOptions, RegionPiece, RegionPolygons,
+    TetherSource, classify_into_pieces, place_glyph_boxes, place_glyphs, place_labels,
 };
 use eunoia::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
 use eunoia::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer, VennDiagram};
@@ -1188,6 +1193,146 @@ fn place_glyphs_impl(input: PlaceGlyphsInput) -> Result<PlaceGlyphsOut, String> 
     })
 }
 
+/// Glyph-box options for [`eunoia_place_glyph_boxes`]. All fields optional;
+/// omitted fields keep the core defaults (uniform row/shelf packing, auto
+/// scale, `min_scale = 0.35`, `gap = 0.25`, `seed = 0`, `precision = 0.01`,
+/// `max_attempts = 300`, no obstacles). `arrangement` is `"uniform"`
+/// (default) or `"random"`. `gap` is a fraction of the row height, not of a
+/// radius; `obstacles` behave exactly as in [`GlyphOptionsIn`].
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct GlyphBoxOptionsIn {
+    arrangement: Option<String>,
+    scale: Option<f64>,
+    min_scale: Option<f64>,
+    gap: Option<f64>,
+    seed: Option<u64>,
+    precision: Option<f64>,
+    max_attempts: Option<u32>,
+    obstacles: Option<Vec<RectIn>>,
+}
+
+/// Input to [`eunoia_place_glyph_boxes`]. `regions` and `sizes` are keyed by
+/// canonical combination strings (`""` for the complement region); `sizes`
+/// holds one `[width, height]` per item, **in the order the caller wants them
+/// placed**, since the packer returns a prefix.
+#[derive(serde::Deserialize)]
+struct PlaceGlyphBoxesInput {
+    regions: BTreeMap<String, Vec<PieceIn>>,
+    sizes: BTreeMap<String, Vec<[f64; 2]>>,
+    #[serde(default)]
+    options: Option<GlyphBoxOptionsIn>,
+}
+
+/// Success payload for [`eunoia_place_glyph_boxes`]: the diagram-wide box
+/// scale, one `[cx, cy, w, h]` per placed item, and any per-combination
+/// shortfall.
+#[derive(Serialize)]
+struct PlaceGlyphBoxesOut {
+    scale: f64,
+    boxes: BTreeMap<String, Vec<[f64; 4]>>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    unplaced: BTreeMap<String, u64>,
+}
+
+/// Resolve an optional [`GlyphBoxOptionsIn`] into core [`GlyphBoxOptions`],
+/// validating the arrangement token up front (mirroring
+/// [`glyph_options_from_input`]).
+fn glyph_box_options_from_input(
+    options: Option<GlyphBoxOptionsIn>,
+) -> Result<GlyphBoxOptions, String> {
+    let options = options.unwrap_or_default();
+    let arrangement = match options.arrangement.as_deref() {
+        None | Some("uniform") => GlyphArrangement::Uniform,
+        Some("random") => GlyphArrangement::Random,
+        Some(other) => {
+            return Err(format!(
+                "invalid arrangement '{other}' (want uniform|random)"
+            ));
+        }
+    };
+    let mut out = GlyphBoxOptions::default()
+        .arrangement(arrangement)
+        .scale(options.scale);
+    if let Some(min_scale) = options.min_scale {
+        out = out.min_scale(min_scale);
+    }
+    if let Some(gap) = options.gap {
+        out = out.gap(gap);
+    }
+    if let Some(seed) = options.seed {
+        out = out.seed(seed);
+    }
+    if let Some(precision) = options.precision {
+        out = out.precision(precision);
+    }
+    if let Some(max_attempts) = options.max_attempts {
+        out = out.max_attempts(max_attempts);
+    }
+    if let Some(obstacles) = options.obstacles {
+        // `Rectangle::new`, not `try_new`: see `glyph_options_from_input`.
+        out = out.obstacles(
+            obstacles
+                .into_iter()
+                .map(|r| Rectangle::new(Point::new(r.x, r.y), r.width, r.height)),
+        );
+    }
+    Ok(out)
+}
+
+fn place_glyph_boxes_impl(input: PlaceGlyphBoxesInput) -> Result<PlaceGlyphBoxesOut, String> {
+    let options = glyph_box_options_from_input(input.options)?;
+
+    let sizes: HashMap<String, Vec<(f64, f64)>> = input
+        .sizes
+        .into_iter()
+        .map(|(k, items)| (k, items.into_iter().map(|wh| (wh[0], wh[1])).collect()))
+        .collect();
+
+    // Rebuild each region's pieces through the public classifier, exactly as
+    // in `place_glyphs_impl` — `RegionPiece` is `#[non_exhaustive]`.
+    let to_polygon = |pts: Vec<[f64; 2]>| -> Polygon {
+        Polygon::new(pts.into_iter().map(|p| Point::new(p[0], p[1])).collect())
+    };
+    let mut region_map: HashMap<Combination, Vec<RegionPiece>> =
+        HashMap::with_capacity(input.regions.len());
+    for (key, pieces_in) in input.regions {
+        let Ok(combo) = key.parse::<Combination>();
+        let pieces: Vec<RegionPiece> = pieces_in
+            .into_iter()
+            .flat_map(|p| {
+                let mut rings = vec![to_polygon(p.outer)];
+                rings.extend(p.holes.into_iter().map(to_polygon));
+                classify_into_pieces(rings)
+            })
+            .collect();
+        region_map.insert(combo, pieces);
+    }
+    let regions = RegionPolygons::from_map(region_map);
+
+    let result = place_glyph_boxes(&regions, &sizes, &options);
+
+    Ok(PlaceGlyphBoxesOut {
+        scale: result.scale,
+        boxes: result
+            .boxes
+            .into_iter()
+            .map(|(k, rects)| {
+                let quads = rects
+                    .into_iter()
+                    .map(|r| [r.center().x(), r.center().y(), r.width(), r.height()])
+                    .collect();
+                (k, quads)
+            })
+            .collect(),
+        unplaced: result
+            .unplaced
+            .into_iter()
+            .map(|(k, n)| (k, n as u64))
+            .collect(),
+    })
+}
+
 // ============================================================================
 // FFI boundary
 // ============================================================================
@@ -1273,6 +1418,18 @@ pub extern "C" fn eunoia_place_labels(input: *const c_char) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn eunoia_place_glyphs(input: *const c_char) -> *mut c_char {
     run(input, place_glyphs_impl)
+}
+
+/// Pack per-item text boxes (member names) inside a set of region polygons.
+/// `input` is a JSON `PlaceGlyphBoxesInput` (region pieces + per-region
+/// caller-measured `[width, height]` lists + optional glyph-box options); the
+/// success envelope carries the diagram-wide `scale`, a `boxes` map of
+/// `[cx, cy, w, h]` quads, and an `unplaced` map when a region overflows.
+/// `boxes[key]` is always a prefix of `sizes[key]`. Free the result with
+/// [`eunoia_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn eunoia_place_glyph_boxes(input: *const c_char) -> *mut c_char {
+    run(input, place_glyph_boxes_impl)
 }
 
 /// Return the crate version as a NUL-terminated C string. Free with
@@ -1881,6 +2038,165 @@ mod tests {
         })
         .to_string();
         let out = call(eunoia_place_glyphs, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], false);
+        assert!(v["error"].as_str().unwrap().contains("spiral"));
+    }
+
+    /// `n` copies of one measured box, as the wire format wants them.
+    fn box_sizes(n: usize, w: f64, h: f64) -> serde_json::Value {
+        serde_json::Value::Array(vec![serde_json::json!([w, h]); n])
+    }
+
+    #[test]
+    fn place_glyph_boxes_round_trips() {
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": {
+                "A": box_sizes(4, 0.12, 0.05),
+                "B": box_sizes(2, 0.12, 0.05),
+                "A&B": box_sizes(1, 0.08, 0.05),
+            },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyph_boxes, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true, "got {v}");
+        let scale = v["scale"].as_f64().unwrap();
+        assert!(scale > 0.0 && scale <= 1.0, "scale {scale}");
+        for (combo, n) in [("A", 4), ("B", 2), ("A&B", 1)] {
+            let boxes = v["boxes"][combo].as_array().unwrap();
+            assert_eq!(boxes.len(), n, "combo {combo}");
+            // Each entry is a `[cx, cy, w, h]` quad at the reported scale.
+            let quad = boxes[0].as_array().unwrap();
+            assert_eq!(quad.len(), 4);
+            assert!((quad[3].as_f64().unwrap() - 0.05 * scale).abs() < 1e-12);
+        }
+        assert!(v.get("unplaced").is_none(), "auto scale places everything");
+    }
+
+    #[test]
+    fn place_glyph_boxes_random_and_fixed_scale_accepted() {
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": { "A": box_sizes(3, 0.1, 0.04) },
+            "options": { "arrangement": "random", "scale": 0.5, "seed": 3 },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyph_boxes, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true, "got {v}");
+        assert_eq!(v["scale"].as_f64().unwrap(), 0.5);
+        let boxes = v["boxes"]["A"].as_array().unwrap();
+        assert_eq!(boxes.len(), 3);
+        assert!((boxes[0][2].as_f64().unwrap() - 0.05).abs() < 1e-12);
+    }
+
+    #[test]
+    fn place_glyph_boxes_obstacles_are_honored() {
+        // Same pipeline as the disc version: place the labels, then hand
+        // their boxes to the packer as keep-outs.
+        let boxes = [("A", 0.1, 0.1), ("B", 0.1, 0.1), ("A&B", 0.05, 0.05)];
+        let sizes = serde_json::json!({ "A": [0.1, 0.1], "B": [0.1, 0.1], "A&B": [0.05, 0.05] });
+        let labels = call(eunoia_place_labels, &place_input(sizes, None));
+        let labels: serde_json::Value = serde_json::from_str(&labels).unwrap();
+        let obstacles: Vec<serde_json::Value> = boxes
+            .iter()
+            .map(|(key, w, h)| {
+                let anchor = labels["placements"][key]["anchor"].as_array().unwrap();
+                serde_json::json!({
+                    "x": anchor[0].as_f64().unwrap(),
+                    "y": anchor[1].as_f64().unwrap(),
+                    "width": w,
+                    "height": h,
+                })
+            })
+            .collect();
+
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": { "A": box_sizes(3, 0.1, 0.03), "B": box_sizes(2, 0.1, 0.03) },
+            "options": { "scale": 0.5, "obstacles": obstacles },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyph_boxes, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true, "got {v}");
+        assert!(v.get("unplaced").is_none(), "got {v}");
+
+        // halo = 0.5 * gap * row_height = 0.5 * 0.25 * (0.5 * 0.03).
+        let halo = 0.5 * 0.25 * 0.5 * 0.03;
+        for combo in ["A", "B"] {
+            for quad in v["boxes"][combo].as_array().unwrap() {
+                let (cx, cy) = (quad[0].as_f64().unwrap(), quad[1].as_f64().unwrap());
+                let (w, h) = (quad[2].as_f64().unwrap(), quad[3].as_f64().unwrap());
+                for (i, (_, bw, bh)) in boxes.iter().enumerate() {
+                    let ox = obstacles[i]["x"].as_f64().unwrap();
+                    let oy = obstacles[i]["y"].as_f64().unwrap();
+                    let dx = ((cx - ox).abs() - 0.5 * w - 0.5 * bw).max(0.0);
+                    let dy = ((cy - oy).abs() - 0.5 * h - 0.5 * bh).max(0.0);
+                    assert!(
+                        dx.hypot(dy) >= halo - 1e-9,
+                        "box in {combo} sits on a label box"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn place_glyph_boxes_degenerate_obstacle_is_dropped() {
+        let with_junk = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": { "A": box_sizes(3, 0.1, 0.04) },
+            "options": {
+                "obstacles": [{ "x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0 }],
+            },
+        })
+        .to_string();
+        let plain = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": { "A": box_sizes(3, 0.1, 0.04) },
+        })
+        .to_string();
+
+        let a: serde_json::Value =
+            serde_json::from_str(&call(eunoia_place_glyph_boxes, &with_junk)).unwrap();
+        let b: serde_json::Value =
+            serde_json::from_str(&call(eunoia_place_glyph_boxes, &plain)).unwrap();
+        assert_eq!(a["ok"], true, "got {a}");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn place_glyph_boxes_reports_unplaced_below_min_scale() {
+        // Boxes far wider than any region: the scale bottoms out at the
+        // caller's readability floor and the shortfall is reported.
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": { "A": box_sizes(3, 50.0, 0.05) },
+            "options": { "min_scale": 0.5 },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyph_boxes, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true, "got {v}");
+        assert!(
+            (v["scale"].as_f64().unwrap() - 0.5).abs() < 1e-12,
+            "got {v}"
+        );
+        assert_eq!(v["unplaced"]["A"].as_u64().unwrap(), 3);
+    }
+
+    #[test]
+    fn place_glyph_boxes_bad_arrangement_is_reported() {
+        let input = serde_json::json!({
+            "regions": region_pieces(),
+            "sizes": { "A": box_sizes(1, 0.1, 0.04) },
+            "options": { "arrangement": "spiral" },
+        })
+        .to_string();
+        let out = call(eunoia_place_glyph_boxes, &input);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["ok"], false);
         assert!(v["error"].as_str().unwrap().contains("spiral"));

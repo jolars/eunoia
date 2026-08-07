@@ -14,6 +14,9 @@
 //!   exterior otherwise, with a `tether` so callers can draw a leader line
 //! - Glyph placement ([`place_glyphs`]) — equally-sized unit marks packed
 //!   inside each region, eulerGlyphs-style
+//! - Member-label placement ([`place_glyph_boxes`]) — the same packer with a
+//!   rectangular footprint, so per-item text boxes (member names) fill each
+//!   region at a shared, auto-fitted scale
 
 mod clip;
 mod glyphs;
@@ -23,7 +26,10 @@ mod plot_data;
 mod regions;
 
 pub use clip::{ClipOperation, polygon_clip, polygon_difference, polygon_union_many};
-pub use glyphs::{GlyphArrangement, GlyphOptions, GlyphPlacements, place_glyphs};
+pub use glyphs::{
+    GlyphArrangement, GlyphBoxOptions, GlyphBoxPlacements, GlyphOptions, GlyphPlacements,
+    place_glyph_boxes, place_glyphs,
+};
 pub use inscribed::{fit_label_in_region, largest_inscribed_rect, principal_axis};
 pub use placement::{
     ElbowOptions, ExteriorPolicy, LabelPlacement, LeaderStrategy, PlacementKind, PlacementStrategy,

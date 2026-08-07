@@ -175,7 +175,13 @@ pub fn largest_inscribed_rect(
 /// Edge-vs-axis-aligned-edge intersection uses strict inequalities so
 /// touching the boundary from inside counts as fitting (which is what a
 /// label inscribed up to the boundary should be).
-fn rect_fits_in_piece(piece: &RegionPiece, cx: f64, cy: f64, hw: f64, hh: f64) -> bool {
+///
+/// Crate-visible because the glyph-box packer is the second consumer: it
+/// uses this as the acceptance test for a randomly thrown box, and as a
+/// `debug_assert!` cross-check on the cheaper band-interval oracle in
+/// [`plotting::glyphs`](crate::plotting::glyphs). Callers relying on the
+/// touching convention above must use *closed* comparisons to agree with it.
+pub(crate) fn rect_fits_in_piece(piece: &RegionPiece, cx: f64, cy: f64, hw: f64, hh: f64) -> bool {
     if hw <= 0.0 || hh <= 0.0 {
         return false;
     }
