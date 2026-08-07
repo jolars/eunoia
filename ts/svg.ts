@@ -28,6 +28,7 @@ import type {
   Layout,
   Point,
   Polygon,
+  Rect,
   Rectangle,
   Region,
   Square,
@@ -440,6 +441,51 @@ export interface ToSvgOptions {
     /** `class` attribute on each circle. Default `"eunoia-glyph"`. */
     className?: string;
   };
+  /**
+   * Pre-computed member-label boxes (from `placeGlyphBoxesForRegions`): one
+   * text box per item, drawn inside its region in the same slot as
+   * {@link ToSvgOptions.glyphs} — above the region fills and strokes, below
+   * region labels. Both may be set at once; discs are drawn first.
+   *
+   * The placer deliberately returns no text, so pass the strings separately
+   * via `labels`. Boxes are strictly interior, so the `viewBox` needs no
+   * expansion.
+   */
+  glyphBoxes?: {
+    /** Diagram-wide box scale (`GlyphBoxPlacements.scale`). */
+    scale: number;
+    /** Placed boxes per combination (`GlyphBoxPlacements.boxes`). */
+    boxes: Record<string, Rect[]>;
+    /**
+     * Member strings per combination, **index-aligned with `boxes`** — the
+     * placer returns a prefix of what you measured, so `labels[combo][i]`
+     * belongs to `boxes[combo][i]`. Omit to emit background chips only.
+     */
+    labels?: Record<string, ReadonlyArray<string>>;
+    /**
+     * The reference font size the boxes were measured at; the rendered size
+     * is `fontSize * scale`. Default {@link ToSvgOptions.labelSize}.
+     */
+    fontSize?: number;
+    /** Text color. Default {@link ToSvgOptions.labelColor}. */
+    color?: string;
+    /** Text weight. Default {@link ToSvgOptions.fontWeight}. */
+    fontWeight?: string | number;
+    /** Text family. Default: inherited from the root `<svg>`. */
+    fontFamily?: string;
+    /**
+     * Background chip behind each label. Off by default — member text over
+     * the (alpha-blended, light) default palette reads fine, and chips add
+     * clutter. Turn it on for saturated palettes. `true` takes the
+     * defaults: the region's own color shifted by `tint` (as glyph discs
+     * are), corners rounded at a quarter of the box's short side.
+     */
+    background?:
+      | boolean
+      | { fill?: string; tint?: number; rx?: number; opacity?: number };
+    /** `class` attribute on each `<text>`. Default `"eunoia-glyph-label"`. */
+    className?: string;
+  };
   /** Leader-line color. Default `"#6b7280"`. */
   leaderColor?: string;
   /** Container (universe) frame stroke color. Default `"#9ca3af"`. */
@@ -809,6 +855,7 @@ interface Resolved {
   nested: Record<string, string[]>;
   placements: Record<string, LabelPlacement>;
   glyphs?: ToSvgOptions["glyphs"];
+  glyphBoxes?: ToSvgOptions["glyphBoxes"];
   interactive: boolean;
   tooltip?: (info: RegionInfo) => string | null | undefined;
   regionAttrs?: (
@@ -873,6 +920,7 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     nested: nestedSets(layout),
     placements: opts.placements ?? {},
     glyphs: opts.glyphs,
+    glyphBoxes: opts.glyphBoxes,
     interactive: opts.interactive ?? false,
     tooltip: opts.tooltip,
     regionAttrs: opts.regionAttrs,
@@ -1027,8 +1075,10 @@ function renderRegions(
       }
     }
   }
-  // Glyphs — above fills and strokes, below labels.
+  // Glyphs — above fills and strokes, below labels. Discs first, so a
+  // "dot behind, name in front" hybrid composes.
   if (o.glyphs) renderGlyphs(parts, o.glyphs, o);
+  if (o.glyphBoxes) renderGlyphBoxes(parts, o.glyphBoxes, o);
   // Labels + leaders.
   for (const r of layout.regions) {
     renderRegionLabel(parts, r, o);
@@ -1070,6 +1120,53 @@ function renderGlyphs(
         `<circle class="${cls}" cx="${p.x}" cy="${p.y}" r="${glyphs.radius}" />`,
       );
     }
+    parts.push("</g>");
+  }
+}
+
+function renderGlyphBoxes(
+  parts: string[],
+  glyphBoxes: NonNullable<ToSvgOptions["glyphBoxes"]>,
+  o: Resolved,
+): void {
+  const cls = glyphBoxes.className ?? "eunoia-glyph-label";
+  // The boxes were measured at this size and packed at `scale`, so this is
+  // exactly the size the text has to render at for the layout to hold.
+  const fontSize = (glyphBoxes.fontSize ?? o.labelSize) * glyphBoxes.scale;
+  if (!(fontSize > 0)) return;
+  const bg =
+    glyphBoxes.background === true ? {} : glyphBoxes.background || undefined;
+  const family = glyphBoxes.fontFamily
+    ? ` font-family="${escAttr(glyphBoxes.fontFamily)}"`
+    : "";
+
+  for (const [combination, boxes] of Object.entries(glyphBoxes.boxes)) {
+    if (boxes.length === 0) continue;
+    const labels = glyphBoxes.labels?.[combination];
+    // Chips borrow the region's color exactly as glyph discs do.
+    const base = combination
+      ? regionFill(combination, o)
+      : COMPLEMENT_GLYPH_COLOR;
+    // `font-size` rides on the group: one attribute instead of N, and it
+    // makes the `scale` contract legible in the output.
+    parts.push(
+      `<g data-glyph-boxes="${escAttr(combination)}" font-size="${fontSize}" fill="${glyphBoxes.color ?? o.labelColor}" font-weight="${glyphBoxes.fontWeight ?? o.fontWeight}"${family} text-anchor="middle" dominant-baseline="central">`,
+    );
+    boxes.forEach((box, i) => {
+      if (bg) {
+        const rx = bg.rx ?? Math.min(box.width, box.height) * 0.25;
+        const opacity =
+          bg.opacity !== undefined ? ` fill-opacity="${bg.opacity}"` : "";
+        parts.push(
+          `<rect class="${cls}-bg" x="${box.x - box.width / 2}" y="${box.y - box.height / 2}" width="${box.width}" height="${box.height}" rx="${rx}" fill="${bg.fill ?? tintColor(base, bg.tint ?? 0.45)}"${opacity} />`,
+        );
+      }
+      const text = labels?.[i];
+      if (text === undefined) return;
+      parts.push(
+        `<text class="${cls}" x="${box.x}" y="${box.y}">${escText(text)}</text>`,
+      );
+    });
     parts.push("</g>");
   }
 }

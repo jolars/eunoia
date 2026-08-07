@@ -400,3 +400,128 @@ test("glyph fill, tint, stroke, opacity, and class are configurable; empty regio
   });
   assert.match(darker, /<g data-glyphs="A" fill="rgb\(64,64,64\)">/);
 });
+
+test("glyph boxes render one text per box, above fills and below labels", () => {
+  const svg = svgBody(regionLayout(), {
+    glyphBoxes: {
+      scale: 1,
+      boxes: {
+        A: [
+          { x: 3, y: 3, width: 2, height: 1 },
+          { x: 7, y: 7, width: 2, height: 1 },
+        ],
+      },
+      labels: { A: ["Ada", "Grace"] },
+    },
+  });
+  const texts = svg.match(/<text class="eunoia-glyph-label"/g) ?? [];
+  assert.equal(texts.length, 2);
+  assert.match(svg, /<text class="eunoia-glyph-label" x="3" y="3">Ada<\/text>/);
+  // Layering: after the region fill path, before the region label text.
+  const boxesAt = svg.indexOf("data-glyph-boxes");
+  assert.ok(svg.indexOf("<path") < boxesAt);
+  assert.ok(boxesAt < svg.lastIndexOf("<text"));
+});
+
+test("glyph box font size is the reference size times the packed scale", () => {
+  const svg = svgBody(regionLayout(), {
+    glyphBoxes: {
+      scale: 0.5,
+      fontSize: 4,
+      boxes: { A: [{ x: 3, y: 3, width: 2, height: 1 }] },
+      labels: { A: ["Ada"] },
+    },
+  });
+  // One `font-size` on the group, not per `<text>`.
+  assert.match(svg, /<g data-glyph-boxes="A" font-size="2"/);
+  assert.ok(!/<text class="eunoia-glyph-label"[^>]*font-size/.test(svg));
+
+  // Omitted, `fontSize` falls back to the diagram's `labelSize`.
+  const fallback = svgBody(regionLayout(), {
+    labelSize: 3,
+    glyphBoxes: {
+      scale: 2,
+      boxes: { A: [{ x: 3, y: 3, width: 2, height: 1 }] },
+      labels: { A: ["Ada"] },
+    },
+  });
+  assert.match(fallback, /<g data-glyph-boxes="A" font-size="6"/);
+});
+
+test("glyph box backgrounds are off by default and opt-in", () => {
+  const opts = {
+    scale: 1,
+    boxes: { A: [{ x: 3, y: 3, width: 2, height: 1 }] },
+    labels: { A: ["Ada"] },
+  };
+  assert.ok(!svgBody(regionLayout(), { glyphBoxes: opts }).includes("<rect"));
+
+  const chips = svgBody(regionLayout(), {
+    colors: { A: "#808080" },
+    glyphBoxes: { ...opts, background: true },
+  });
+  // Same tinted region color the glyph discs derive, `rx` a quarter of the
+  // short side, and the box is emitted corner-anchored.
+  assert.match(
+    chips,
+    /<rect class="eunoia-glyph-label-bg" x="2" y="2.5" width="2" height="1" rx="0.25" fill="rgb\(185,185,185\)" \/>/,
+  );
+
+  const custom = svgBody(regionLayout(), {
+    glyphBoxes: {
+      ...opts,
+      background: { fill: "#ff0000", rx: 0, opacity: 0.5 },
+      className: "member",
+    },
+  });
+  assert.match(
+    custom,
+    /<rect class="member-bg" [^>]*rx="0" fill="#ff0000" fill-opacity="0.5" \/>/,
+  );
+  assert.match(custom, /<text class="member" x="3" y="3">Ada<\/text>/);
+});
+
+test("glyph box labels and combination keys are escaped", () => {
+  const layout = regionLayout();
+  layout.regions[0].combination = "A&B";
+  const svg = svgBody(layout, {
+    glyphBoxes: {
+      scale: 1,
+      boxes: { "A&B": [{ x: 3, y: 3, width: 2, height: 1 }] },
+      labels: { "A&B": ['Ada <3 "Lovelace" & Co'] },
+    },
+  });
+  assert.match(svg, /data-glyph-boxes="A&amp;B"/);
+  assert.match(
+    svg,
+    /<text class="eunoia-glyph-label" x="3" y="3">Ada &lt;3 "Lovelace" &amp; Co<\/text>/,
+  );
+});
+
+test("glyph boxes without labels emit background chips only", () => {
+  const svg = svgBody(regionLayout(), {
+    glyphBoxes: {
+      scale: 1,
+      boxes: { A: [{ x: 3, y: 3, width: 2, height: 1 }], "A&B": [] },
+      background: true,
+    },
+  });
+  assert.ok(!svg.includes('eunoia-glyph-label"'), "no text without labels");
+  assert.match(svg, /<rect class="eunoia-glyph-label-bg"/);
+  assert.ok(
+    !svg.includes('data-glyph-boxes="A&amp;B"'),
+    "empty region emits no group",
+  );
+});
+
+test("glyphs and glyph boxes can both render, discs first", () => {
+  const svg = svgBody(regionLayout(), {
+    glyphs: { radius: 0.5, positions: { A: [{ x: 2, y: 2 }] } },
+    glyphBoxes: {
+      scale: 1,
+      boxes: { A: [{ x: 3, y: 3, width: 2, height: 1 }] },
+      labels: { A: ["Ada"] },
+    },
+  });
+  assert.ok(svg.indexOf("data-glyphs") < svg.indexOf("data-glyph-boxes"));
+});
