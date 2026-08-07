@@ -211,12 +211,51 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
   `#[non_exhaustive]`, so a `max_scale` field defaulting to `1.0` can land
   later without a break if the asymmetry proves annoying in practice.
 
-- [ ] **"+n more" affordance for overflowing regions**. Text boxes are 5-10x
-  wider than tall, so `place_glyph_boxes` populates `unplaced` far more often
-  than the disc packer ever does. The renderer has no way to say "and 3
-  more"; today the caller must add it. Worth a `toSvg` option once there is
-  real usage to shape it. Multi-line (wrapped) measurement is the other half
-  of the answer and already works with no core change.
+- [ ] **Exterior callout for overflowing regions**. Text boxes are 5-10x wider
+  than tall, so `place_glyph_boxes` populates `unplaced` far more often than
+  the disc packer ever does (a region with ample *area* still cannot seat a
+  single row of names). The wanted behaviour mirrors what `place_labels`
+  already does for a label that won't fit: put the names in a box *outside*
+  the diagram with a leader line back to the region. The "+n more" affordance
+  is the degenerate one-line case of this, so design them together rather than
+  separately.
+
+  **Compose it, don't build it.** A callout block is just a big label: measure
+  the leftover names stacked as one `w x h` block and hand that block to
+  `place_labels` as a region's label. Exterior raycast / force-directed
+  placement, leader lines, collision resolution against the other labels, and
+  `placements_bbox` viewport expansion all come for free --- no new solver, no
+  new geometry. That argues for building it in `ts/` first (compose
+  `placeGlyphBoxesForRegions` + `placeLabelsForRegions`) and only pulling it
+  into the core if the other bindings want it.
+
+  **All-or-nothing per region, not "the leftovers".** Splitting a member list
+  across inside-the-region and a box off to the side reads badly: you scan
+  region A, see four names, and get no cue that three more live elsewhere. If
+  a region cannot hold everyone, evict that *whole* region to a callout. The
+  loop is then: pack, evict every region with `unplaced > 0`, repack the
+  survivors. It terminates and cannot thrash --- `scale` is a min over
+  regions, so dropping the binding region only relaxes constraints, the scale
+  monotonically rises, and no previously-fitting region can start failing.
+  `GlyphBoxPlacements::unplaced` is already exactly the input that loop needs,
+  so **this version needs no core change at all**.
+
+  **The hard part is a feedback loop.** A callout appears -> the canvas bbox
+  grows -> the diagram shrinks within it -> measured boxes are relatively
+  larger -> more regions overflow -> more callouts. `place_labels_to_fixed_point`
+  has the same exposure and damps it with a bbox-relative tolerance plus an
+  iteration cap; either reuse that or make eviction a one-shot decision taken
+  before the viewport is finalised.
+
+  **Interactions.** The existing "leader lines crossing interior labels" item
+  gets meaningfully worse --- a callout block is a much bigger obstacle than a
+  single label, and its leader crosses more of the diagram; approach (1) there
+  (tether on the boundary, not the POI) becomes more valuable. Note also that
+  `place_glyphs` never needs any of this, since dots always fit somewhere:
+  this is entirely a consequence of text aspect ratio. Which is the argument
+  against over-engineering it --- wrapped multi-line measurement already works
+  with no core change and closes a good fraction of the gap for free.
+  Surfaced 2026-08-07.
 
 - [ ] **Relaxation pass for the `random` arrangement**. Dart-throwing scatter
   can look locally uneven; a few Lloyd iterations (or a force-directed
