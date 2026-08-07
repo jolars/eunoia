@@ -576,6 +576,102 @@ export interface PlaceGlyphsForRegionsOptions {
   options?: GlyphOptions;
 }
 
+/** Tuning knobs for {@link placeGlyphBoxesForRegions}. All optional. */
+export interface GlyphBoxOptions {
+  /**
+   * Arrangement of boxes. Default `"uniform"`, which here means row/shelf
+   * packing: rows of one shared height, boxes left to right at their own
+   * widths, the block centered on the region's pole of inaccessibility.
+   */
+  arrangement?: GlyphArrangement;
+  /**
+   * Diagram-wide factor applied to every measured box. Omit for the auto
+   * mode: the largest factor in `[minScale, 1]` at which every region holds
+   * all of its items. Pass one to take control — values above `1` are then
+   * honoured — in which case overflowing regions report the shortfall in
+   * [`GlyphBoxPlacements.unplaced`].
+   */
+  scale?: number;
+  /**
+   * Lower end of the auto-scale bracket: the readability floor below which
+   * shrinking the text is worse than dropping items. Clamped to `(0, 1]`,
+   * ignored when `scale` is set. Default `0.35`.
+   */
+  minScale?: number;
+  /**
+   * Breathing room around every box, as a fraction of the **row height**
+   * (the diagram-wide maximum scaled box height — this packer's analogue of
+   * the disc packer's radius). Each box carries a halo of
+   * `0.5 * gap * rowHeight`, so adjacent boxes end up `gap * rowHeight`
+   * apart and every box keeps half that to region boundaries, holes, and
+   * obstacles. The default `0.25` therefore means the same thing as in
+   * {@link GlyphOptions.gap}: here, "a quarter of a line-height apart, half
+   * that from the edge".
+   */
+  gap?: number;
+  /** Seed for the `"random"` arrangement. Default `0`. */
+  seed?: number;
+  /** Pole-of-inaccessibility search precision. Default `0.01`. */
+  precision?: number;
+  /**
+   * `"random"` only: dart throws attempted per box before the piece is
+   * declared full. Default `300`.
+   */
+  maxAttempts?: number;
+  /**
+   * Diagram-wide keep-out boxes, with the same semantics as
+   * {@link GlyphOptions.obstacles} — best-effort, with the scale allowed to
+   * shrink only to half of what it would have been without them. Usually
+   * the measured label boxes, via {@link labelObstacles}. Default: none.
+   */
+  obstacles?: ReadonlyArray<Rect>;
+}
+
+/** Result of {@link placeGlyphBoxesForRegions}. */
+export interface GlyphBoxPlacements {
+  /**
+   * The factor actually used — auto-chosen, or the caller's `scale` echoed
+   * back. `0` when nothing could be placed (degenerate input). Multiply
+   * your reference font size by this to render the text at the size the
+   * boxes were packed at.
+   */
+  scale: number;
+  /**
+   * Placed boxes per region, keyed by canonical combination (e.g. `"A"`,
+   * `"A&B"`, `""` for the complement region).
+   *
+   * **Index-aligned with the input**: `boxes[key]` is a *prefix* of
+   * `sizes[key]`, so `boxes[key][i]` belongs to `sizes[key][i]` — and hence
+   * to your `labels[key][i]`. Each rect is that item's own
+   * `scale * (w, h)`, centered; the halo is not included.
+   */
+  boxes: Record<string, Rect[]>;
+  /**
+   * Per-region item count that did **not** fit. Only present when a region
+   * overflowed. Text boxes are much wider than tall, so this is far more
+   * common than the disc packer's equivalent — see
+   * {@link placeGlyphBoxesForRegions} for what to do about it.
+   */
+  unplaced?: Record<string, number>;
+}
+
+export interface PlaceGlyphBoxesForRegionsOptions {
+  /**
+   * Already-decomposed regions, same shape as
+   * [`PlaceLabelsForRegionsOptions.regions`].
+   */
+  regions: ReadonlyArray<RegionInput>;
+  /**
+   * Measured box per item, keyed by canonical combination (`""` for the
+   * complement region), **in the order you want the items placed** — the
+   * packer returns a prefix. Measure at a reference font size and scale the
+   * result by the returned `scale`.
+   */
+  sizes: Record<string, ReadonlyArray<LabelSize>>;
+  /** Tuning knobs. Defaults to row packing with auto scale. */
+  options?: GlyphBoxOptions;
+}
+
 /**
  * Options for a canonical Venn diagram. Unlike {@link EulerOptions}, there is no
  * `seed`/`optimizer`/`loss`/`tolerance`: the layout is fixed and topological
@@ -1780,6 +1876,165 @@ export function placeGlyphsForRegions(
     positions[k] = pts.map((p) => ({ x: p[0], y: p[1] }));
   }
   const out: GlyphPlacements = { radius: raw.radius, positions };
+  if (raw.unplaced && Object.keys(raw.unplaced).length > 0) {
+    out.unplaced = raw.unplaced;
+  }
+  return out;
+}
+
+/**
+ * Pack per-item text boxes — member names, typically — inside each region.
+ *
+ * The rectangular-footprint sibling of {@link placeGlyphsForRegions}: hand
+ * it the `w × h` box you measured for every item and it returns one rect per
+ * item plus the single diagram-wide `scale` those boxes were packed at.
+ * Re-render your text at `fontSize * scale`.
+ *
+ * Auto-scale only ever *shrinks* (the bracket is `[minScale, 1]`), since you
+ * own the reference font size — deliberately asymmetric with the disc
+ * packer, which grows to fill.
+ *
+ * ## Dropped items
+ *
+ * Text boxes are typically five to ten times wider than tall, so a region
+ * with ample *area* can still fail to seat a row of them. The packer takes
+ * each region's items in order and stops at the first that fits nowhere, so
+ * `boxes[key]` is a prefix of `sizes[key]`: **which** items get dropped is
+ * decided by the order you supply them in. Sort meaningfully, check
+ * `unplaced`, and consider a "+n more" affordance — or measure wrapped,
+ * multi-line boxes, which the packer handles with no special support.
+ *
+ * @example
+ * ```ts
+ * import { placeGlyphBoxesForRegions } from "@jolars/eunoia";
+ *
+ * const members = { A: ["Ada", "Grace"], "A&B": ["Katherine"] };
+ * const sizes = Object.fromEntries(
+ *   Object.entries(members).map(([k, names]) => [k, names.map(measure)]),
+ * );
+ *
+ * const placed = placeGlyphBoxesForRegions({
+ *   regions: layout.regions,          // from euler({ output: "regions" })
+ *   sizes,
+ * });
+ * for (const [combo, boxes] of Object.entries(placed.boxes)) {
+ *   boxes.forEach((box, i) => {
+ *     drawText(members[combo][i], box.x, box.y, fontSize * placed.scale);
+ *   });
+ * }
+ * ```
+ */
+export function placeGlyphBoxesForRegions(
+  options: PlaceGlyphBoxesForRegionsOptions,
+): GlyphBoxPlacements {
+  const { regions, sizes, options: boxOptions } = options;
+  if (!regions || !Array.isArray(regions)) {
+    throw new TypeError(
+      "placeGlyphBoxesForRegions: `regions` must be an array",
+    );
+  }
+  if (!sizes || typeof sizes !== "object") {
+    throw new TypeError(
+      "placeGlyphBoxesForRegions: `sizes` must be an object of region → measured boxes",
+    );
+  }
+
+  const polygonsPayload: Record<
+    string,
+    { outer: [number, number][]; holes: [number, number][][] }[]
+  > = {};
+  for (const r of regions) {
+    polygonsPayload[r.combination] = r.pieces.map(
+      (p: RegionInput["pieces"][number]) => ({
+        outer: p.outer.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        holes: p.holes.map((h: { vertices: ReadonlyArray<Point> }) =>
+          h.vertices.map((v: Point): [number, number] => [v.x, v.y]),
+        ),
+      }),
+    );
+  }
+
+  // Degenerate extents are clamped rather than dropped: an item must keep
+  // its index, since the result is matched back positionally.
+  const sizesPayload: Record<string, [number, number][]> = {};
+  for (const [k, items] of Object.entries(sizes)) {
+    if (!Array.isArray(items)) continue;
+    sizesPayload[k] = items.map((s): [number, number] => [
+      s && Number.isFinite(s.w) && s.w > 0 ? s.w : 0,
+      s && Number.isFinite(s.h) && s.h > 0 ? s.h : 0,
+    ]);
+  }
+
+  let optionsJson: string | undefined;
+  if (boxOptions) {
+    const payload: {
+      arrangement?: "Uniform" | "Random";
+      scale?: number;
+      minScale?: number;
+      gap?: number;
+      seed?: number;
+      precision?: number;
+      maxAttempts?: number;
+      obstacles?: Rect[];
+    } = {};
+    if (boxOptions.arrangement !== undefined) {
+      const mapped = GLYPH_ARRANGEMENT_MAP[boxOptions.arrangement];
+      if (mapped === undefined) {
+        throw new RangeError(
+          `placeGlyphBoxesForRegions: unknown arrangement "${boxOptions.arrangement}"`,
+        );
+      }
+      payload.arrangement = mapped;
+    }
+    if (boxOptions.scale !== undefined) payload.scale = boxOptions.scale;
+    if (boxOptions.minScale !== undefined)
+      payload.minScale = boxOptions.minScale;
+    if (boxOptions.gap !== undefined) payload.gap = boxOptions.gap;
+    if (boxOptions.seed !== undefined) payload.seed = boxOptions.seed;
+    if (boxOptions.precision !== undefined)
+      payload.precision = boxOptions.precision;
+    if (boxOptions.maxAttempts !== undefined)
+      payload.maxAttempts = boxOptions.maxAttempts;
+    if (boxOptions.obstacles !== undefined) {
+      const obstacles: Rect[] = [];
+      for (const r of boxOptions.obstacles) {
+        if (
+          r &&
+          Number.isFinite(r.x) &&
+          Number.isFinite(r.y) &&
+          Number.isFinite(r.width) &&
+          Number.isFinite(r.height) &&
+          r.width > 0 &&
+          r.height > 0
+        ) {
+          obstacles.push({ x: r.x, y: r.y, width: r.width, height: r.height });
+        }
+      }
+      if (obstacles.length > 0) payload.obstacles = obstacles;
+    }
+    optionsJson = JSON.stringify(payload);
+  }
+
+  const json = wasm.place_region_glyph_boxes(
+    JSON.stringify(polygonsPayload),
+    JSON.stringify(sizesPayload),
+    optionsJson,
+  );
+  const raw = JSON.parse(json) as {
+    scale: number;
+    boxes: Record<string, [number, number, number, number][]>;
+    unplaced?: Record<string, number>;
+  };
+  const boxes: Record<string, Rect[]> = {};
+  for (const [k, quads] of Object.entries(raw.boxes)) {
+    boxes[k] = quads.map((q) => ({
+      x: q[0],
+      y: q[1],
+      width: q[2],
+      height: q[3],
+    }));
+  }
+  const out: GlyphBoxPlacements = { scale: raw.scale, boxes };
   if (raw.unplaced && Object.keys(raw.unplaced).length > 0) {
     out.unplaced = raw.unplaced;
   }
