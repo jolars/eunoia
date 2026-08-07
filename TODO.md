@@ -197,12 +197,28 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
   through wasm/capi/ts + a `toSvg` `glyphBoxes` mode. `boxes[key]` is a
   prefix of `sizes[key]`, so drop order is the caller's item order.
 
-- [ ] **Web app doesn't expose member labels**. `place_glyph_boxes` ships
-  across core/wasm/capi/ts/svg but nothing in `web/` calls it: the demo has
-  no per-member name input, so there is no source of member strings to
-  measure. Needs a UI decision (a per-region names textarea? derive
-  placeholder names from the counts?) before it is worth wiring
-  `DiagramSvg.svelte` and `StyleControls.svelte`.
+- [x] **Web app doesn't expose member labels** (done). The UI decision was a
+  per-row roster: `Row.members` is an optional comma/newline-separated string
+  edited on a second line of each combination row in `SpecEditor.svelte`, and
+  the default rows ship with names so the mode demos itself. The glyph knobs
+  outgrew `StyleControls.svelte` and moved to their own collapsed `Glyphs`
+  sidebar section (`GlyphControls.svelte`): the `showGlyphs` checkbox became a
+  `glyphMode` select (`none` / `dots` / `members`) sharing the
+  arrangement/spacing/seed knobs, plus a `memberLabelSize` slider --- its own
+  knob because the packer is shrink-only, so the reference size is a ceiling
+  rather than a hint. `DiagramSvg.svelte` measures the names in a
+  second hidden `<text>` pass inside the existing `data-fit-measure` group,
+  packs them with `placeGlyphBoxesForRegions` under the same `labelObstacles`
+  keep-outs as the disc packer, and renders via the `glyphBoxes` serializer
+  option at a pinned weight of 400 (the Bold toggle belongs to the set names,
+  and measuring at 400 while rendering at 700 would overflow every box).
+  `web/src/lib/members.svelte.ts` holds the glue the core does not provide:
+  roster parsing, order-insensitive matching of a typed `B&A` row to the
+  core's canonical `A&B` region key, and the rune store carrying `unplaced`
+  to the inline overflow note. Member names are Euler-only (Venn is driven by
+  `vennN`, not the rows) and the complement region has no roster. A 500-name
+  budget mirrors `MAX_GLYPHS`. Persisted `showGlyphs` migrates to `glyphMode`
+  in `loadPersisted`.
 
 - [ ] **`max_scale` for glyph boxes** (minor). The auto-scale bracket's upper
   end is hardcoded to `1.0`, so a roomy diagram renders sparse text at the

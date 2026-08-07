@@ -185,6 +185,9 @@ much easier shape to seat.
 Obstacles compose exactly as above: pass `labelObstacles(...)` and the member
 boxes will steer clear of your region labels too.
 
+To see it without writing any code, type names into the per-combination roster
+fields in the [playground](/app/) and set **Glyphs → Draw → Member names**.
+
 ## JavaScript/TypeScript
 
 ```ts

@@ -14,10 +14,12 @@ import type {
 
 const STORAGE_KEY = "eunoia.app.v1";
 
+// Member names ship with the defaults so the "Member names" glyph mode has
+// something to draw the moment it's selected, without the user typing a roster.
 const DEFAULT_ROWS: Row[] = [
-  { input: "A", size: 5 },
-  { input: "B", size: 3 },
-  { input: "A&B", size: 2 },
+  { input: "A", size: 5, members: "Ada, Grace, Barbara, Karen, Ida" },
+  { input: "B", size: 3, members: "Alan, Edsger, Tony" },
+  { input: "A&B", size: 2, members: "Katherine, Hedy" },
 ];
 
 const DEFAULT_STYLE: DiagramStyle = {
@@ -34,10 +36,11 @@ const DEFAULT_STYLE: DiagramStyle = {
   showCounts: false,
   labelPlacement: "raycast",
   labelTether: "boundary",
-  showGlyphs: false,
+  glyphMode: "none",
   glyphArrangement: "uniform",
   glyphGap: 0.25,
   glyphSeed: 0,
+  memberLabelSize: 4,
 };
 
 const DEFAULT_ADVANCED: AdvancedOptions = {
@@ -145,7 +148,13 @@ class AppState {
     if (p.diagramType) this.diagramType = p.diagramType;
     if (p.vennN && p.vennN >= 1 && p.vennN <= 5) this.vennN = p.vennN;
     if (p.style) {
-      this.style = { ...DEFAULT_STYLE, ...p.style };
+      const { showGlyphs, ...style } = p.style;
+      this.style = { ...DEFAULT_STYLE, ...style };
+      // Pre-`glyphMode` blobs carried a `showGlyphs` boolean. Honour it unless
+      // the blob already has the newer field.
+      if (typeof showGlyphs === "boolean" && p.style.glyphMode === undefined) {
+        this.style.glyphMode = showGlyphs ? "dots" : "none";
+      }
       // Drop any persisted font that's no longer one of the bundled stacks,
       // so the picker never lands on a blank/unknown value.
       if (!isKnownFontFamily(this.style.fontFamily)) {

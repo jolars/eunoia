@@ -34,7 +34,17 @@ export interface FitResult {
   metrics: FitMetrics;
 }
 
-export type Row = { input: string; size: number };
+export type Row = {
+  input: string;
+  size: number;
+  /**
+   * Optional member names for this combination, as typed: comma- or
+   * newline-separated. Only used by the `"members"` glyph mode, which measures
+   * each name and packs it inside the region. Independent of `size` — the
+   * packer places as many as fit.
+   */
+  members?: string;
+};
 export type InputType = "exclusive" | "inclusive";
 export type ShapeType =
   | "circle"
@@ -62,6 +72,8 @@ export type LossName =
   | "Stress"
   | "DiagError";
 export type ExportFormat = "svg" | "png" | "pdf" | "json";
+
+export type GlyphMode = "none" | "dots" | "members";
 
 export type LabelPlacementMode =
   | "raycast"
@@ -117,24 +129,41 @@ export interface DiagramStyle {
    */
   labelTether: "poi" | "boundary";
   /**
-   * Draw eulerGlyphs-style unit glyphs: one equally-sized dot per data unit,
-   * packed inside each region. Counts come from the spec's exclusive region
-   * quantities, rounded to integers (plus the complement value inside the
-   * container, when one is fitted).
+   * What to pack inside each region:
+   *
+   * - `"none"` — nothing.
+   * - `"dots"` — eulerGlyphs-style unit glyphs, one equally-sized dot per data
+   *   unit. Counts come from the spec's exclusive region quantities, rounded to
+   *   integers (plus the complement value inside the container, when one is
+   *   fitted).
+   * - `"members"` — the member names typed on the combination rows, measured
+   *   and packed as text boxes at a shared diagram-wide scale.
+   *
+   * The two packers share the arrangement/spacing/seed knobs below.
    */
-  showGlyphs: boolean;
+  glyphMode: GlyphMode;
   /**
-   * Glyph arrangement: `"uniform"` (hex lattice spread across the region,
-   * fully deterministic) or `"random"` (seeded dart-throwing scatter).
+   * Glyph arrangement: `"uniform"` (hex lattice for dots, row/shelf packing for
+   * member names — both fully deterministic) or `"random"` (seeded
+   * dart-throwing scatter).
    */
   glyphArrangement: "uniform" | "random";
   /**
-   * Extra spacing between glyphs as a fraction of the radius (min
-   * center-to-center distance is `2r * (1 + gap)`).
+   * Extra spacing between glyphs as a fraction of the radius for dots (min
+   * center-to-center distance is `2r * (1 + gap)`), or of the row height for
+   * member names.
    */
   glyphGap: number;
   /** Seed for the `"random"` glyph arrangement. */
   glyphSeed: number;
+  /**
+   * Reference font size member names are measured at, in user units. This is a
+   * *ceiling*: `placeGlyphBoxesForRegions` is shrink-only (its auto-scale
+   * brackets `[minScale, 1]`), so the rendered size is `memberLabelSize *
+   * scale`. Kept separate from {@link DiagramStyle.labelSize} so member text
+   * isn't tied to the region-label size.
+   */
+  memberLabelSize: number;
 }
 
 export interface RasterSize {
@@ -184,13 +213,23 @@ export interface ExportSettings {
   vector: VectorSize;
 }
 
+/**
+ * A persisted style blob. Fields may be missing (written by an older build) and
+ * may carry keys the current `DiagramStyle` no longer has — `showGlyphs` was
+ * replaced by `glyphMode`, and `loadPersisted` migrates it.
+ */
+export type PersistedStyle = Partial<DiagramStyle> & {
+  /** Pre-`glyphMode` unit-glyph toggle. */
+  showGlyphs?: boolean;
+};
+
 export interface PersistedState {
   rows: Row[];
   inputType: InputType;
   shapeType: ShapeType;
   diagramType?: DiagramType;
   vennN?: VennSetCount;
-  style: DiagramStyle;
+  style: PersistedStyle;
   advanced: AdvancedOptions;
   exportSettings: ExportSettings;
 }

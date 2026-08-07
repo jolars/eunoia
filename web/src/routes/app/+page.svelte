@@ -5,6 +5,7 @@
   import DiagramSvg from "$lib/components/DiagramSvg.svelte";
   import ExportToolbar from "$lib/components/ExportToolbar.svelte";
   import FitTable from "$lib/components/FitTable.svelte";
+  import GlyphControls from "$lib/components/GlyphControls.svelte";
   import MetricsPanel from "$lib/components/MetricsPanel.svelte";
   import Section from "$lib/components/Section.svelte";
   import SpecEditor from "$lib/components/SpecEditor.svelte";
@@ -126,6 +127,9 @@
         </Section>
         <Section title="Style">
           <StyleControls />
+        </Section>
+        <Section title="Glyphs" open={false}>
+          <GlyphControls />
         </Section>
         <Section title="Advanced" open={false}>
           <AdvancedControls />

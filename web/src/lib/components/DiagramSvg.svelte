@@ -1,5 +1,6 @@
 <script lang="ts">
   import type {
+    GlyphBoxPlacements,
     GlyphPlacements,
     LabelPlacement,
     LabelSize,
@@ -7,6 +8,7 @@
   } from "@jolars/eunoia";
   import {
     labelObstacles,
+    placeGlyphBoxesForRegions,
     placeGlyphsForRegions,
     placeLabelsForRegions,
   } from "@jolars/eunoia";
@@ -17,6 +19,7 @@
     type ToSvgOptions,
     viewBox,
   } from "@jolars/eunoia/svg";
+  import { glyphStatus, memberListsForRegions } from "../members.svelte";
   import { appState } from "../state.svelte";
   import type { DiagramStyle, FitResult } from "../types/diagram";
 
@@ -151,6 +154,17 @@
     }
   });
 
+  // Keep-out boxes for both packers: labels are drawn over the marks, so the
+  // marks steer clear of the boxes we just measured for them. Padded by a
+  // fraction of the font size so nothing kisses the text.
+  let glyphObstacles = $derived(
+    labelObstacles({
+      placements: regionPlacements,
+      sizes: measuredSizes,
+      padding: style.labelSize * 0.15,
+    }),
+  );
+
   // Interactive glyph budget: deriving counts from the spec quantities means a
   // user typing large numbers (say population-scale frequencies) would ask the
   // packer for that many dots. Beyond this the diagram is unreadable anyway,
@@ -161,7 +175,11 @@
   // quantities rounded to integers (plus the complement inside the container,
   // when fitted), packed by the eunoia core with a shared auto-sized radius.
   let glyphPlacements: GlyphPlacements | undefined = $derived.by(() => {
-    if (!style.showGlyphs || !result || result.layout.mode !== "regions")
+    if (
+      style.glyphMode !== "dots" ||
+      !result ||
+      result.layout.mode !== "regions"
+    )
       return undefined;
     const counts: Record<string, number> = {};
     let total = 0;
@@ -194,20 +212,115 @@
           arrangement: style.glyphArrangement,
           gap: style.glyphGap,
           seed: style.glyphSeed,
-          // Labels are drawn over the glyphs, so keep the marks out of the
-          // boxes we just measured for them. Padded by a fraction of the
-          // font size so glyphs don't kiss the text.
-          obstacles: labelObstacles({
-            placements: regionPlacements,
-            sizes: measuredSizes,
-            padding: style.labelSize * 0.15,
-          }),
+          obstacles: glyphObstacles,
         },
       });
     } catch (err) {
       console.warn("[glyphs] placement failed:", err);
       return undefined;
     }
+  });
+
+  // Member names per region, keyed by the region's canonical combination. Rows
+  // are matched by set membership, not by their raw text, since the core
+  // canonicalizes what `buildSets` passes through.
+  let memberLabels: Record<string, string[]> = $derived(
+    style.glyphMode === "members" &&
+      // Venn is driven by `vennN`, not the rows, so the roster fields aren't
+      // even shown there — stale row names must not leak into a Venn layout.
+      appState.diagramType === "euler" &&
+      result &&
+      result.layout.mode === "regions"
+      ? memberListsForRegions(appState.rows, result.layout.regions)
+      : {},
+  );
+
+  // Measuring costs a `<text>` node and a `getBBox()` each, and the packer is
+  // O(n) rows per region — the same argument as MAX_GLYPHS, at the scale text
+  // stops being legible.
+  const MAX_MEMBER_LABELS = 500;
+
+  let memberBudgetExceeded = $derived(
+    Object.values(memberLabels).reduce((n, l) => n + l.length, 0) >
+      MAX_MEMBER_LABELS,
+  );
+
+  // Second measurement pass, mirroring the label one: hidden `<text>` per member
+  // name, read back with getBBox() into per-region arrays in the order the rows
+  // supply them (the packer returns a prefix, so order decides what survives).
+  let memberSizes: Record<string, LabelSize[]> = $state({});
+
+  $effect(() => {
+    void result;
+    void memberLabels;
+    void memberBudgetExceeded;
+    void style.memberLabelSize;
+    void style.fontFamily;
+    void fontsReady;
+    if (!measureContainer || !isRegion || memberBudgetExceeded) {
+      memberSizes = {};
+      return;
+    }
+    const sizes: Record<string, LabelSize[]> = {};
+    const nodes = measureContainer.querySelectorAll<SVGGraphicsElement>(
+      "text[data-fit-member]",
+    );
+    for (const t of Array.from(nodes)) {
+      const combo = t.getAttribute("data-fit-member");
+      if (combo === null) continue;
+      const bb = t.getBBox();
+      const cur = sizes[combo] ?? [];
+      cur.push({ w: bb.width, h: bb.height });
+      sizes[combo] = cur;
+    }
+    memberSizes = sizes;
+  });
+
+  // Member text boxes, packed at a single diagram-wide scale. Shrink-only, so
+  // `style.memberLabelSize` is the ceiling and the rendered size is
+  // `memberLabelSize * placements.scale`.
+  let glyphBoxPlacements: GlyphBoxPlacements | undefined = $derived.by(() => {
+    if (style.glyphMode !== "members" || !result) return undefined;
+    if (result.layout.mode !== "regions") return undefined;
+    if (memberBudgetExceeded) return undefined;
+    if (Object.keys(memberSizes).length === 0) return undefined;
+    try {
+      return placeGlyphBoxesForRegions({
+        regions: result.layout.regions,
+        sizes: memberSizes,
+        options: {
+          arrangement: style.glyphArrangement,
+          gap: style.glyphGap,
+          seed: style.glyphSeed,
+          obstacles: glyphObstacles,
+        },
+      });
+    } catch (err) {
+      console.warn("[glyph boxes] placement failed:", err);
+      return undefined;
+    }
+  });
+
+  // Publish why names were dropped, for the note in StyleControls.
+  $effect(() => {
+    if (style.glyphMode !== "members") {
+      glyphStatus.clear();
+      return;
+    }
+    if (memberBudgetExceeded) {
+      const total = Object.values(memberLabels).reduce(
+        (n, l) => n + l.length,
+        0,
+      );
+      console.warn(
+        `[glyph boxes] skipped: ${total} names exceed the interactive budget of ${MAX_MEMBER_LABELS}`,
+      );
+      glyphStatus.unplaced = {};
+      glyphStatus.skipped = `${total} names exceed the interactive budget of ${MAX_MEMBER_LABELS}.`;
+      return;
+    }
+    glyphStatus.skipped = "";
+    glyphStatus.unplaced = { ...(glyphBoxPlacements?.unplaced ?? {}) };
   });
 
   // The single options object handed to the serializer — the adapter from the
@@ -228,6 +341,19 @@
     labelSizes: measuredSizes,
     complement: result?.complement,
     glyphs: glyphPlacements,
+    // The placer is font-blind, so the strings ride separately; they are
+    // index-aligned with `boxes` because the packer returns a prefix of what we
+    // measured. `renderGlyphBoxes` applies `fontSize * scale` itself, and the
+    // family is inherited from the root `<svg>`.
+    glyphBoxes: glyphBoxPlacements && {
+      ...glyphBoxPlacements,
+      labels: memberLabels,
+      fontSize: style.memberLabelSize,
+      // Regular weight regardless of the Bold toggle, which belongs to the set
+      // names — and which would otherwise render member text heavier than the
+      // 400-weight nodes we measured, overflowing every box.
+      fontWeight: 400,
+    },
   });
 
   let vb = $derived(
@@ -261,6 +387,9 @@
       data-fit-measure
     >
       {#each regions as region}
+        {@const members = memberBudgetExceeded
+          ? []
+          : (memberLabels[region.combination] ?? [])}
         {#each regionTitleLines(region.combination, nested) as title}
           <text
             data-fit-region={region.combination}
@@ -279,6 +408,14 @@
             {fmt(region.totalArea)}
           </text>
         {/if}
+        {#each members as name}
+          <text
+            data-fit-member={region.combination}
+            font-size={style.memberLabelSize}
+          >
+            {name}
+          </text>
+        {/each}
       {/each}
     </g>
   {/if}

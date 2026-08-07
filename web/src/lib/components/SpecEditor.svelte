@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { parseMembers } from "../members.svelte";
   import { appState } from "../state.svelte";
   import type { VennSetCount } from "../types/diagram";
 
@@ -140,29 +141,46 @@
       <div class="block text-xs font-medium text-muted mb-1.5">
         Combinations
       </div>
-      <div class="space-y-1.5">
+      <div class="space-y-2.5">
         {#each appState.rows as row, i (i)}
-          <div class="flex gap-1.5">
-            <input
-              type="text"
-              bind:value={appState.rows[i].input}
-              placeholder="A or A&B"
-              class="flex-1 min-w-0 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <input
-              type="number"
-              bind:value={appState.rows[i].size}
-              min="0"
-              step="0.1"
-              class="w-20 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <button
-              type="button"
-              onclick={() => appState.removeRow(i)}
-              class="px-2 py-1.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-sm"
-              aria-label="Remove row"
-              title="Remove">×</button
-            >
+          {@const memberCount = parseMembers(row.members).length}
+          <div class="space-y-1">
+            <div class="flex gap-1.5">
+              <input
+                type="text"
+                bind:value={appState.rows[i].input}
+                placeholder="A or A&B"
+                class="flex-1 min-w-0 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <input
+                type="number"
+                bind:value={appState.rows[i].size}
+                min="0"
+                step="0.1"
+                class="w-20 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                type="button"
+                onclick={() => appState.removeRow(i)}
+                class="px-2 py-1.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-sm"
+                aria-label="Remove row"
+                title="Remove">×</button
+              >
+            </div>
+            <div class="flex items-center gap-1.5">
+              <input
+                type="text"
+                bind:value={appState.rows[i].members}
+                placeholder="member names, comma separated"
+                aria-label="Member names for {row.input || 'this combination'}"
+                class="flex-1 min-w-0 px-2 py-1 border border-line rounded text-xs text-muted focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              {#if memberCount > 0}
+                <span class="shrink-0 text-xs text-faint tabular-nums">
+                  {memberCount} names
+                </span>
+              {/if}
+            </div>
           </div>
         {/each}
 
@@ -173,6 +191,11 @@
           >+ Add row</button
         >
       </div>
+      <p class="mt-1.5 text-xs text-muted">
+        Names are optional and independent of the size. Set <span
+          class="font-medium">Glyphs → Draw → Member names</span
+        > to draw them inside their region.
+      </p>
     </div>
   {/if}
 
