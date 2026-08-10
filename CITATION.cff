@@ -22,7 +22,7 @@ license: GPL-3.0
 preferred-citation:
   type: conference-paper
   title: >-
-    A Case Study in Fitting Area-Proportional {{Euler}}
+    A Case Study in Fitting Area-Proportional Euler
     Diagrams with Ellipses Using eulerr
   collection-title: Proceedings of international workshop on set visualization and reasoning 2018
   authors:
