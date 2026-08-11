@@ -145,8 +145,8 @@ The four sets here---SE, Treat, Anti-CCP, and DAS28---are clinical variables
 from rheumatoid-arthritis research, taken from one of eulerr's test cases. The
 fitted layout is shown in \autoref{fig:ellipse}. Eunoia reports how well it
 succeeded: here the diagError is $9 \times 10^{-5}$, so the diagram reproduces
-the data essentially exactly. The figure also shows the automatic label placement, which positions
-set labels and region quantities at poles of
+the data essentially exactly. The figure also shows the automatic label
+placement, which positions set labels and region quantities at poles of
 inaccessibility\ [@agafonkin2016] of the region polygons and moves labels that
 do not fit outside the diagram.
 
@@ -251,10 +251,12 @@ area-proportional diagrams with fit diagnostics in their own language.
 
 # AI Usage Disclosure
 
-eulerr was designed, built, and maintained over many years without any help of
-AI. When creating Eunoia, generative AI tools (Claude, Anthropic; Copilot,
-GitHub) have been used to assist in writing parts of the code, documentation,
-and editing this manuscript.
+When creating Eunoia, we used generative AI tools including Claude Code Opus
+4.5, 4.8, and 5.0, Claude Code Fable 5, and GitHub Copilot GPT 5.1 and 5.4. They
+were used to assist with writing code, parts of the documentation, unit tests,
+and reviewing and editing the manuscript. The authors reviewed, modified, and
+validated all AI-assisted content and made the final design and implementation
+decisions.
 
 # Acknowledgements
 
