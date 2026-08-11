@@ -178,20 +178,20 @@ tasks:
 
   paper-figures:
     desc: Regenerate the JOSS paper figures from the npm/ package
-    # Needs a current `npm/` (task build-wasm) plus node and inkscape.
     cmds:
       - node paper/make-figures.mjs
 
   paper-build:
     desc: Build JOSS paper locally
     cmds:
-      - |
-        docker run --rm \
-          --volume $PWD/paper:/data \
-          --user $(id -u):$(id -g) \
-          --env JOURNAL=joss \
-          openjournals/inara
-      - echo "Paper built!"
+      - >
+        docker run --rm
+        -v $PWD/paper:/data
+        -u $(id -u):$(id -g)
+        --env JOURNAL=joss
+        openjournals/inara
+        -o pdf,preprint
+        paper.md
 
   paper-preview:
     desc: Rebuild the JOSS paper on change and open it in zathura
@@ -199,6 +199,9 @@ tasks:
     sources:
       - "paper/paper.md"
       - "paper/paper.bib"
+      - "paper/make-figures.mjs"
+    generates:
+      - "paper/paper.pdf"
     cmds:
       - task: paper-build
       - pgrep -f "zathura.*paper/paper.pdf" || (zathura paper/paper.pdf &)
