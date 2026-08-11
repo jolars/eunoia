@@ -143,6 +143,6 @@ jobs:
           toolchain: 1.88.0
 
       - id: versionary
-        uses: jolars/versionary@v0
+        uses: jolars/versionary@v1
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
