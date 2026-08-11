@@ -3,11 +3,13 @@
 [![Build and
 Test](https://github.com/jolars/eunoia/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/jolars/eunoia/actions/workflows/build-and-test.yml)
 [![Crates.io](https://img.shields.io/crates/v/eunoia.svg?logo=rust)](https://crates.io/crates/eunoia)
-[![npm version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://badge.fury.io/js/@jolars%2Feunoia)
+[![npm
+version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://badge.fury.io/js/@jolars%2Feunoia)
 [![PyPI
 version](https://badge.fury.io/py/eunoia.svg?icon=si%3Apython)](https://badge.fury.io/py/eunoia)
 [![CRAN
 Badge](http://www.r-pkg.org/badges/version/eulerr)](https://cran.r-project.org/package=eulerr)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21471283.svg)](https://doi.org/10.5281/zenodo.21471283)
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
 
 Eunoia is a Rust library for area-proportional **Euler and Venn diagrams**. Give
@@ -59,7 +61,11 @@ fn main() {
     // Swap `Ellipse` for `Circle`, `Square`, or `Rectangle`.
     let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
 
-    println!("{} shapes, loss = {:.2e}", layout.shapes().len(), layout.loss());
+    println!(
+        "{} shapes, loss = {:.2e}",
+        layout.shapes().len(),
+        layout.loss()
+    );
 }
 ```
 
@@ -98,8 +104,8 @@ import { euler, venn } from "@jolars/eunoia";
 // Fit an Euler diagram from set sizes
 const layout = euler({
   sets: { A: 5, B: 2, "A&B": 1 },
-  shape: "circle",        // "circle" | "ellipse" | "square" | "rectangle"
-  output: "shapes",       // "shapes" | "polygons" | "regions"
+  shape: "circle", // "circle" | "ellipse" | "square" | "rectangle"
+  output: "shapes", // "shapes" | "polygons" | "regions"
   inputType: "exclusive", // "exclusive" | "inclusive"
   seed: 42,
 });
@@ -140,9 +146,9 @@ inlined. Call `init()` once before fitting:
 In Observable:
 
 ```js
-eunoia = import("https://esm.sh/@jolars/eunoia/web")
-await eunoia.init()
-layout = eunoia.euler({ sets: { A: 5, B: 2, "A&B": 1 } })
+eunoia = import("https://esm.sh/@jolars/eunoia/web");
+await eunoia.init();
+layout = eunoia.euler({ sets: { A: 5, B: 2, "A&B": 1 } });
 ```
 
 `@jolars/eunoia/svg` is pure JavaScript (no WebAssembly), so it already works
