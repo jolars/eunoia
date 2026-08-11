@@ -65,11 +65,11 @@ an initial layout based on multi-dimensional scaling\ (MDS) is refined in a
 later optimization step that accounts for all overlaps in the layout. This
 approach has since evolved. @frederickson2015's venn.js added a refinement of
 the MDS step, which enables better initial configurations.
-eulerAPE\ [@micallef2014], meanwhile, introduced ellipses for up to three sets,
-which are able to accurately fit a larger number of set combinations. This lets
-the user trade accuracy against legibility: circles are the most familiar and
-often the easiest to read\ [@blake2016], while ellipses can fit configurations
-that circles cannot.
+eulerAPE\ [@micallef2014], meanwhile, introduced ellipses for three-way Euler
+diagrams, which are able to accurately fit a larger number of set combinations.
+This lets the user trade accuracy against legibility: circles are the most
+familiar and often the easiest to read\ [@blake2016], while ellipses can fit
+configurations that circles cannot.
 
 Unlike venneuler, which uses quad-tree approximations for the intersection
 areas, both EulerAPE and venn.js also introduced exact area computations.
@@ -142,13 +142,12 @@ let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
 ```
 
 The four sets here---SE, Treat, Anti-CCP, and DAS28---are clinical variables
-from rheumatoid-arthritis research, taken from one of eulerr's test cases. The
-fitted layout is shown in \autoref{fig:ellipse}. Eunoia reports how well it
-succeeded: here the diagError is $9 \times 10^{-5}$, so the diagram reproduces
-the data essentially exactly. The figure also shows the automatic label
-placement, which positions set labels and region quantities at poles of
-inaccessibility\ [@agafonkin2016] of the region polygons and moves labels that
-do not fit outside the diagram.
+from rheumatoid-arthritis research, taken from @junta2009. The fitted layout is
+shown in \autoref{fig:ellipse}. Eunoia reports how well it succeeded: here the
+diagError is $9 \times 10^{-5}$, which means that the diagram reproduces the
+data essentially exactly. The figure also shows the automatic label placement,
+which positions set labels and region quantities at poles of inaccessibility of
+the region polygons and moves labels that do not fit outside the diagram.
 
 ![A four-set Euler diagram fitted with ellipses, with region quantities shown.
 Eunoia fits it to a diagError of $9 \times 10^{-5}$, an essentially exact
@@ -196,15 +195,15 @@ and $4.5 \times 10^{-2}$ for rectangles, compared to $2.3 \times 10^{-14}$ for
 ellipses.\label{fig:shapes}](images/shape_families.pdf)
 
 Fitting proceeds in two phases, roughly following the approach of
-venneuler\ [@wilkinson2012], venn.js\ [@frederickson2015] and
-eulerr\ [@larsson2018]. The first phase computes an initial layout by
+venneuler\ [@wilkinson2012], venn.js\ [@frederickson2015] and the original
+eulerr package\ [@larsson2018]. The first phase computes an initial layout by
 multidimensional scaling: shapes of fixed size are placed so that their pairwise
 distances approximate the distances required by the pairwise intersections,
 using the relaxed loss suggested by @frederickson2015 for disjoint and contained
 set pairs. The second phase refines all shape parameters to minimize a loss over
-the differences between the fitted and requested region areas; the default loss
-is a normalized sum of squared errors. Region areas for every shape are computed
-analytically---ellipse intersections through a projective-conic
+the differences between the fitted and requested region areas^[the default loss
+is a normalized sum of squared errors]. Region areas for every shape are
+computed analytically---ellipse intersections through a projective-conic
 construction\ [@richtergebert2011] and the resulting overlaps from circular and
 elliptical segments in closed form\ [@eberly2016]---and the smooth losses come
 with exact analytical gradients.
@@ -212,19 +211,21 @@ with exact analytical gradients.
 The default optimizer for the refinement phase is Levenberg--Marquardt, which is
 specially designed to handle the least-squares residuals of the default loss. If
 the loss remains above a threshold, Eunoia runs a fallback strategy, using a
-bounded variant of CMA-ES\ [@hansen1996], which searches for a better basin, and
-a trust-region method polishes the result, keeping whichever solution has the
-lower loss. This two-phase pipeline runs for several random restarts in
-parallel, and for small set counts one restart is seeded with a canonical Venn
-layout, which often leads directly to an exact solution when one exists. Loss
-functions that are not smooth---such as the maximum absolute region error---are
-minimized with derivative-free methods (Nelder--Mead or mesh-adaptive direct
-search) or can optionally be replaced by a smooth surrogate.
+bounded variant of CMA-ES\ [@hansen1996], which searches for a better local
+minimum, and a trust-region method polishes the result, keeping whichever
+solution has the lower loss. This two-phase pipeline runs for several random
+restarts in parallel, and for small set counts one restart is seeded with a
+canonical Venn layout, which often leads directly to an exact solution when one
+exists. Loss functions that are not smooth---such as the maximum absolute region
+error---are minimized with derivative-free methods (Nelder--Mead or
+mesh-adaptive direct search) or can optionally be replaced by a smooth
+surrogate.
 
-The fitted layout is returned with its residuals, loss, and the
-stress\ [@wilkinson2012] and diagError\ [@micallef2014] statistics, so that the
-quality of the diagram can be assessed numerically rather than by eye. A
-plotting module extracts the region polygons through polygon clipping and
+The fitted layout is returned with its residuals, loss, and the stress (a
+venneuler-style normalized least-squares measure) and diagError (the maximum
+absolute difference between requested and fitted region shares) statistics, so
+that the quality of the diagram can be assessed numerically rather than by eye.
+A plotting module extracts the region polygons through polygon clipping and
 computes label positions, which is what the R, Python, Julia, and JavaScript
 packages use for rendering. Because the core has no dependency on any host
 language's runtime, it compiles to WebAssembly, and the [web
@@ -234,29 +235,30 @@ server.
 # Research Impact Statement
 
 Eunoia descends from eulerr, which has been distributed on CRAN since 2016 and
-has been used in at least 600 academic publications, predominantly in the life
-sciences. Since version\ 8.0, eulerr's C++ backend has been replaced by Eunoia,
-which means that all current eulerr users are now also using Eunoia. Other
-packages build on eulerr, and therefore on Eunoia, as a dependency, including
-the Bioconductor genomics packages cola, hicVennDiagram, and seqsetvis and the
-CRAN package RulesTools, which use it to draw the area-proportional diagrams in
-their own analyses. Five other packages, DOTSeq,
-IlluminaHumanMethylationEPICv2manifest, ISAnalytics, overviewR, and
+has been cited in over 700 academic publications^[GoogleScholar, accessed Aug
+11, 2026], predominantly in the life sciences. Since version\ 8.0, eulerr's C++
+backend has been replaced by Eunoia, which means that all current eulerr users
+are now also using Eunoia. Other packages build on eulerr, and therefore on
+Eunoia, as a dependency, including the Bioconductor genomics packages cola,
+hicVennDiagram, and seqsetvis and the CRAN package RulesTools, which use it to
+draw the area-proportional diagrams in their own analyses. Five other packages,
+DOTSeq, IlluminaHumanMethylationEPICv2manifest, ISAnalytics, overviewR, and
 pcutils---the latter two on BioConductor, all take optional dependencies on
 Eunoia through eulerr.
 
 The Python, Julia, and JavaScript packages and the web app extend the same
 underlying library to communities that previously had no access to ellipse-based
-area-proportional diagrams with fit diagnostics in their own language.
+area-proportional diagrams.
 
 # AI Usage Disclosure
 
-When creating Eunoia, we used generative AI tools including Claude Code Opus
-4.5, 4.8, and 5.0, Claude Code Fable 5, and GitHub Copilot GPT 5.1 and 5.4. They
-were used to assist with writing code, parts of the documentation, unit tests,
-and reviewing and editing the manuscript. The authors reviewed, modified, and
-validated all AI-assisted content and made the final design and implementation
-decisions.
+The predecessor eulerr, which Eunoia builds on, was written entirely by the
+first author, without the use of AI. For Eunoia, we used generative AI tools
+including Claude Code Opus 4.5, 4.8, and 5.0, Claude Code Fable 5, and GitHub
+Copilot GPT 5.1 and 5.4. They were used to assist with writing code, parts of
+the documentation, unit tests, and reviewing and editing the manuscript. The
+authors reviewed, modified, and validated all AI-assisted content and made the
+final design and implementation decisions.
 
 # Acknowledgements
 
