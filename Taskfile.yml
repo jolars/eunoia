@@ -47,14 +47,22 @@ tasks:
     cmds:
       - cargo test --workspace -- --ignored
 
-  test-ts:
-    desc: Compile the TS wrapper and run the @jolars/eunoia/svg unit tests
-    # `prepare-package.mjs` recompiles `ts/*.ts` → `npm/*.js` first, so the
-    # tests always run against fresh output. It only needs the (checked-in)
-    # wasm `.d.ts` in `npm/`, not a fresh wasm-pack build. The svg module is
-    # pure/wasm-free, so `node --test` loads `npm/svg.js` directly.
+  build-ts:
+    desc: Compile the TS wrapper into npm/ (no wasm-pack)
+    # `prepare-package.mjs` recompiles `ts/*.ts` → `npm/*.js` and rewrites
+    # `npm/package.json`. It only needs the (already built) wasm `.d.ts` in
+    # `npm/`, so it is cheap enough to run as a dependency of anything that
+    # consumes `npm/` — see `test-ts` and `web-dev`. A full `build-wasm` is
+    # only needed when the Rust side of the bindings changed.
     cmds:
       - node ts/prepare-package.mjs
+
+  test-ts:
+    desc: Compile the TS wrapper and run the @jolars/eunoia/svg unit tests
+    # The svg module is pure/wasm-free, so `node --test` loads `npm/svg.js`
+    # directly against the output `build-ts` just produced.
+    deps: [build-ts]
+    cmds:
       - node --test 'ts/tests/**/*.test.mjs'
 
   coverage:
@@ -96,9 +104,11 @@ tasks:
     # (notably pnpm resolving the `file:../npm` link from web/) can capture
     # the raw wasm-pack output keyed as `eunoia-wasm` instead of
     # `@jolars/eunoia`, silently breaking imports.
+    # It is a `cmds` step rather than a `deps` one because it has to run
+    # *after* wasm-pack, which overwrites `npm/package.json` on its way through.
     cmds:
       - wasm-pack build crates/eunoia-wasm --target bundler --out-dir ../../npm
-      - node ts/prepare-package.mjs
+      - task: build-ts
 
   build-web:
     desc: Build the self-contained browser bundle (@jolars/eunoia/web)
@@ -116,9 +126,14 @@ tasks:
 
   web-dev:
     desc: Start Svelte development server
+    # `build-ts` first: vite resolves `@jolars/eunoia` through the `file:../npm`
+    # link, and a stale `npm/index.js` fails at runtime with a missing-export
+    # SyntaxError rather than anything pointing back at `ts/`. Edits made while
+    # the server is running still need a manual `task build-ts`.
     dir: web
+    deps: [build-ts]
     cmds:
-      - npm run dev
+      - pnpm dev
 
   lighthouse:
     desc: "Lighthouse desktop audit of the docs (perf, a11y, best-practices, SEO). Args: URL=..."
