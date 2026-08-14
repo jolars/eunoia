@@ -1098,14 +1098,23 @@ mod tests {
     fn test_supports_rotation_flags_match_shape_capability() {
         use crate::geometry::shapes::{Ellipse, Rectangle, RotatedRectangle, Square};
 
-        assert!(Circle::SUPPORTS_ROTATION, "circles are rotation-invariant");
-        assert!(Ellipse::SUPPORTS_ROTATION, "ellipses carry an angle");
-        assert!(
-            RotatedRectangle::SUPPORTS_ROTATION,
-            "rotated rectangles carry an angle"
-        );
-        assert!(!Square::SUPPORTS_ROTATION, "squares are axis-aligned");
-        assert!(!Rectangle::SUPPORTS_ROTATION, "rectangles are axis-aligned");
+        // Runtime table rather than bare `assert!(Shape::SUPPORTS_ROTATION)`, so
+        // the check survives constant folding instead of being optimized away.
+        let flags = [
+            ("circle", Circle::SUPPORTS_ROTATION, true),
+            ("ellipse", Ellipse::SUPPORTS_ROTATION, true),
+            (
+                "rotated rectangle",
+                RotatedRectangle::SUPPORTS_ROTATION,
+                true,
+            ),
+            ("square", Square::SUPPORTS_ROTATION, false),
+            ("rectangle", Rectangle::SUPPORTS_ROTATION, false),
+        ];
+
+        for (name, actual, expected) in flags {
+            assert_eq!(actual, expected, "{name}: unexpected SUPPORTS_ROTATION");
+        }
     }
 
     #[test]
