@@ -45,6 +45,24 @@ export type Row = {
    */
   members?: string;
 };
+/**
+ * Per-region annotation for a Venn diagram, keyed by canonical combination.
+ *
+ * Venn geometry is fixed by the set count, so unlike a {@link Row} this carries
+ * no fitting input: the quantity is only ever *drawn* (as a region count, or as
+ * that many unit glyphs), and the names are packed by the `"members"` glyph
+ * mode. See `lib/venn.ts` for the keying.
+ */
+export interface VennRegion {
+  /**
+   * Quantity in this region. `null` — the empty field — means "not entered":
+   * the region gets no count and no dots, rather than a zero.
+   */
+  size: number | null;
+  /** Member names, comma- or newline-separated, exactly like {@link Row.members}. */
+  members: string;
+}
+
 export type InputType = "exclusive" | "inclusive";
 export type ShapeType =
   | "circle"
@@ -229,6 +247,8 @@ export interface PersistedState {
   shapeType: ShapeType;
   diagramType?: DiagramType;
   vennN?: VennSetCount;
+  /** Per-region Venn annotations. Missing in blobs written before they existed. */
+  vennRegions?: Record<string, VennRegion>;
   style: PersistedStyle;
   advanced: AdvancedOptions;
   exportSettings: ExportSettings;

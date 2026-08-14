@@ -296,9 +296,10 @@ Counts and sizes are keyed by the
 - **Counts are yours to supply.** Spec quantities are `f64` areas and are not
   assumed to be cardinalities; pass the integer counts you want visualized
   (usually the same numbers you fed the spec, when those are frequencies).
-- **Member labels are not wired into the web app yet**—the demo has no
-  per-member name input to feed them. The API is complete across Rust, npm,
-  and the C ABI.
+- **Both work on a Venn diagram too.** Venn geometry is topological, so its
+  regions carry no quantities of their own—supply them yourself, as counts for
+  the packer and (with `showCounts`) as `ToSvgOptions.counts` for the printed
+  numbers. The [app](/app/) takes both, plus a roster, per Venn region.
 - A blue-noise (Poisson-disk) sampler for the `random` arrangement, a
   phyllotaxis arrangement, and a relaxation pass for the *box* footprint
   (the dot footprint has one) are on the roadmap.

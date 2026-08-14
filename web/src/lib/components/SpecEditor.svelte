@@ -61,6 +61,57 @@
         ellipses exists).
       </p>
     </div>
+
+    <div>
+      <div class="flex items-baseline justify-between mb-1.5">
+        <div class="block text-xs font-medium text-muted">Regions</div>
+        <button
+          type="button"
+          onclick={() => appState.clearVennRegions()}
+          class="text-xs text-muted hover:text-ink underline decoration-dotted"
+          >Clear</button
+        >
+      </div>
+      <div class="max-h-72 overflow-y-auto space-y-1 pr-1">
+        {#each appState.vennCombos as combo (combo)}
+          {@const memberCount = parseMembers(
+            appState.vennRegions[combo]?.members,
+          ).length}
+          <div class="flex items-center gap-1.5">
+            <span
+              class="w-16 shrink-0 truncate font-mono text-xs text-muted"
+              title={combo}>{combo}</span
+            >
+            <input
+              type="number"
+              bind:value={appState.vennRegions[combo].size}
+              min="0"
+              step="1"
+              placeholder="—"
+              aria-label="Quantity for {combo}"
+              class="w-14 shrink-0 px-1.5 py-1 border border-line rounded text-xs tabular-nums focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <input
+              type="text"
+              bind:value={appState.vennRegions[combo].members}
+              placeholder="names"
+              aria-label="Member names for {combo}"
+              title={memberCount > 0 ? `${memberCount} names` : undefined}
+              class="flex-1 min-w-0 px-1.5 py-1 border border-line rounded text-xs text-muted focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        {/each}
+      </div>
+      <p class="mt-1.5 text-xs text-muted">
+        Venn geometry is fixed by the set count, so these annotate the regions
+        rather than size them. Quantities show with <span class="font-medium"
+          >Style → Region counts</span
+        >
+        or as dots under <span class="font-medium">Glyphs → Draw</span>; names
+        need <span class="font-medium">Glyphs → Draw → Member names</span>. An
+        empty quantity draws nothing.
+      </p>
+    </div>
   {:else}
     <div>
       <div class="block text-xs font-medium text-muted mb-1.5">Input type</div>

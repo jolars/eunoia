@@ -207,6 +207,13 @@
       Legend
     </label>
   </div>
+  {#if appState.style.showCounts && appState.diagramType === "venn"}
+    <p class="text-xs text-muted -mt-2">
+      A Venn is not area-proportional, so its counts are the quantities you
+      enter under <span class="font-medium">Diagram → Regions</span>, not the
+      region areas. Regions left empty show no count.
+    </p>
+  {/if}
 
   <div>
     <label

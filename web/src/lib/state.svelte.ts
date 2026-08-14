@@ -9,8 +9,10 @@ import type {
   PersistedState,
   Row,
   ShapeType,
+  VennRegion,
   VennSetCount,
 } from "./types/diagram";
+import { emptyVennRegions, vennCombinations, vennSetNames } from "./venn";
 
 const STORAGE_KEY = "eunoia.app.v1";
 
@@ -21,6 +23,21 @@ const DEFAULT_ROWS: Row[] = [
   { input: "B", size: 3, members: "Alan, Edsger, Tony" },
   { input: "A&B", size: 2, members: "Katherine, Hedy" },
 ];
+
+// Venn defaults follow the same reasoning as the rows above: the quantity and
+// member columns should do something the moment they are switched on. Every
+// region of the default 3-set diagram is filled in, and each quantity equals
+// its roster length so "Dots" and "Member names" agree.
+const DEFAULT_VENN_REGIONS: Record<string, VennRegion> = {
+  ...emptyVennRegions(),
+  A: { size: 3, members: "Ada, Grace, Barbara" },
+  B: { size: 3, members: "Alan, Edsger, Tony" },
+  C: { size: 2, members: "Katherine, Dorothy" },
+  "A&B": { size: 2, members: "Karen, Ida" },
+  "A&C": { size: 1, members: "Hedy" },
+  "B&C": { size: 1, members: "Donald" },
+  "A&B&C": { size: 1, members: "Margaret" },
+};
 
 const DEFAULT_STYLE: DiagramStyle = {
   palette: "default",
@@ -67,6 +84,11 @@ class AppState {
   shapeType: ShapeType = $state("circle");
   diagramType: DiagramType = $state("euler");
   vennN: VennSetCount = $state(3);
+  // Keyed by canonical combination, and pre-seeded for *every* region of the
+  // largest supported n so the editor can bind straight into it — no
+  // fill-the-gaps pass when `vennN` changes, and switching n back and forth
+  // keeps what was typed.
+  vennRegions: Record<string, VennRegion> = $state({ ...DEFAULT_VENN_REGIONS });
 
   // Style
   style: DiagramStyle = $state({ ...DEFAULT_STYLE });
@@ -87,13 +109,7 @@ class AppState {
   // Derived from the spec (rows / vennN) rather than the fit output, so colors
   // don't shuffle when the seed changes or the fit re-runs.
   setNames: string[] = $derived.by(() => {
-    if (this.diagramType === "venn") {
-      const out: string[] = [];
-      for (let i = 0; i < this.vennN; i++) {
-        out.push(String.fromCharCode(65 + i));
-      }
-      return out;
-    }
+    if (this.diagramType === "venn") return vennSetNames(this.vennN);
     const seen = new Set<string>();
     const out: string[] = [];
     for (const row of this.rows) {
@@ -109,6 +125,16 @@ class AppState {
     return out;
   });
 
+  /** Region keys of the current Venn, in editor order. */
+  vennCombos: string[] = $derived(vennCombinations(this.vennN));
+
+  /** Clear every quantity and roster of the current Venn's regions. */
+  clearVennRegions() {
+    for (const combo of this.vennCombos) {
+      this.vennRegions[combo] = { size: null, members: "" };
+    }
+  }
+
   addRow() {
     this.rows = [...this.rows, { input: "", size: 0 }];
   }
@@ -123,6 +149,7 @@ class AppState {
     this.shapeType = "circle";
     this.diagramType = "euler";
     this.vennN = 3;
+    this.vennRegions = { ...DEFAULT_VENN_REGIONS };
     this.style = { ...DEFAULT_STYLE };
     this.advanced = { ...DEFAULT_ADVANCED };
     this.exportSettings = { ...DEFAULT_EXPORT };
@@ -135,6 +162,7 @@ class AppState {
       shapeType: this.shapeType,
       diagramType: this.diagramType,
       vennN: this.vennN,
+      vennRegions: $state.snapshot(this.vennRegions),
       style: $state.snapshot(this.style),
       advanced: $state.snapshot(this.advanced),
       exportSettings: $state.snapshot(this.exportSettings),
@@ -147,6 +175,12 @@ class AppState {
     if (p.shapeType) this.shapeType = p.shapeType;
     if (p.diagramType) this.diagramType = p.diagramType;
     if (p.vennN && p.vennN >= 1 && p.vennN <= 5) this.vennN = p.vennN;
+    // Over an *empty* key space, not the seeded defaults: a blob written after
+    // the user cleared a region must not resurrect the example data. Older
+    // blobs have no `vennRegions` at all and keep the defaults.
+    if (p.vennRegions) {
+      this.vennRegions = { ...emptyVennRegions(), ...p.vennRegions };
+    }
     if (p.style) {
       const { showGlyphs, ...style } = p.style;
       this.style = { ...DEFAULT_STYLE, ...style };
@@ -182,10 +216,15 @@ export function hydrateFromStorage() {
   }
 }
 
-export function saveToStorage() {
+/**
+ * Persist a state blob. Takes the payload rather than reading `appState`
+ * itself: the caller is an `$effect`, and only a read there registers the
+ * dependencies that should re-trigger a save. See `routes/app/+page.svelte`.
+ */
+export function saveToStorage(state: PersistedState = appState.toPersisted()) {
   if (typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.toPersisted()));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     // ignore quota / serialization errors
   }

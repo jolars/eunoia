@@ -217,6 +217,17 @@ from `placeLabelsForRegions` for exterior labels with leader lines, and the
 below labels; tinted from each region's own color with a finer, darker edge by
 default, tunable via `tint`, `fill`, `stroke`, and `strokeWidth`).
 
+`showCounts` prints each region's own area. When the numbers you want are not
+the geometry — a Venn layout is topological, so its areas are not quantities at
+all — pass `counts`, keyed by canonical combination:
+
+```js
+toSvg(vennLayout, { showCounts: true, counts: { A: 12, "A&B": 4 } });
+```
+
+A supplied `counts` map is authoritative: a region with no entry draws no count,
+which is what lets you annotate only the regions you have numbers for.
+
 `glyphBoxes` renders a `placeGlyphBoxesForRegions` result in the same slot.
 The placer deliberately carries no text, so pass the strings alongside it as
 `labels`, index-aligned with `boxes`:

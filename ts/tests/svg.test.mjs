@@ -164,6 +164,26 @@ test("toSvg renders a region as a path with a label", () => {
   assert.match(svg, />5\.00<\/text>/); // count for totalArea 5
 });
 
+test("counts override the region areas drawn for showCounts", () => {
+  const svg = svgBody(regionLayout(), { showCounts: true, counts: { A: 12 } });
+  assert.match(svg, />12\.0<\/text>/);
+  assert.ok(!svg.includes(">5.00<"));
+});
+
+test("a supplied counts map is authoritative: no entry, no count", () => {
+  // The Venn case: the geometry carries areas, but they are not quantities, so
+  // a region the caller has no number for must draw nothing at all.
+  const svg = svgBody(regionLayout(), { showCounts: true, counts: {} });
+  assert.match(svg, />A<\/text>/);
+  assert.ok(!svg.includes(">5.00<"));
+});
+
+test("counts override the per-set fitted areas in shapes mode", () => {
+  const svg = svgBody(circleLayout(), { showCounts: true, counts: { A: 7 } });
+  assert.match(svg, />7\.00<\/text>/);
+  assert.ok(!svg.includes(">5.00<"));
+});
+
 test("legend is drawn only when requested", () => {
   const without = toSvg(circleLayout(), { padding: 5 });
   assert.ok(!without.includes("<g>"));

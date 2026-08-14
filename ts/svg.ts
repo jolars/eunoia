@@ -377,6 +377,17 @@ export interface ToSvgOptions {
   showLabels?: boolean;
   /** Draw region/set quantity counts. Default `false`. */
   showCounts?: boolean;
+  /**
+   * Quantities to draw for {@link ToSvgOptions.showCounts}, keyed by canonical
+   * combination (`"A"`, `"A&B"`). Omit to use the layout's own numbers — the
+   * region area in `"regions"` mode, the fitted area in `"polygons"` mode.
+   *
+   * Supplying this makes it *authoritative*: a region with no entry draws no
+   * count. That is the point for a Venn layout, whose geometry is topological
+   * rather than area-proportional, so its areas are not quantities at all and
+   * only the regions you have numbers for should show one.
+   */
+  counts?: Record<string, number>;
   /** Count color. Default `"#374151"`. */
   countColor?: string;
   /** Formatter for count values. Default a fixed-precision helper. */
@@ -847,6 +858,7 @@ interface Resolved {
   hasContainer: boolean;
   showLabels: boolean;
   showCounts: boolean;
+  counts?: Record<string, number>;
   formatCount: (v: number) => string;
   legendShow: boolean;
   legendPosition: LegendPosition;
@@ -912,6 +924,7 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     hasContainer: !!layout.container,
     showLabels: opts.showLabels ?? true,
     showCounts: opts.showCounts ?? false,
+    counts: opts.counts,
     formatCount: opts.formatCount ?? defaultFormatCount,
     legendShow: opts.legend?.show ?? false,
     legendPosition: opts.legend?.position ?? "right",
@@ -1171,6 +1184,20 @@ function renderGlyphBoxes(
   }
 }
 
+/**
+ * Quantity to draw for a combination: the caller's number when `counts` was
+ * supplied (and `undefined`, meaning "draw nothing", when that map has no entry
+ * for it), otherwise the layout's own area.
+ */
+function countFor(
+  o: Resolved,
+  combination: string,
+  fallback: number,
+): number | undefined {
+  if (!o.counts) return fallback;
+  return o.counts[combination];
+}
+
 function renderRegionLabel(parts: string[], r: Region, o: Resolved): void {
   const placement = o.placements[r.combination];
   const anchor = placement?.anchor ?? r.labelAnchor;
@@ -1193,10 +1220,12 @@ function renderRegionLabel(parts: string[], r: Region, o: Resolved): void {
     });
   }
   if (o.showCounts) {
+    const count = countFor(o, r.combination, r.totalArea);
+    if (count === undefined) return;
     const fs = o.labelSize * 0.75;
     const y = anchor.y + titleLines.length * o.labelSize;
     parts.push(
-      `<text x="${anchor.x}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(r.totalArea))}</text>`,
+      `<text x="${anchor.x}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(count))}</text>`,
     );
   }
 }
@@ -1303,12 +1332,14 @@ function renderShapes(parts: string[], layout: Layout, o: Resolved): void {
       if (rc) return rc.labelAnchor;
       return null;
     };
-    for (const [combo, area] of Object.entries(fitted)) {
+    // `counts`, when supplied, replaces the fitted areas outright — including
+    // which sets get a number at all.
+    for (const [combo, value] of Object.entries(o.counts ?? fitted)) {
       if (combo.includes("&")) continue;
       const anchor = findAnchor(combo);
       if (!anchor) continue;
       parts.push(
-        `<text x="${anchor.x}" y="${anchor.y + o.labelSize}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(area))}</text>`,
+        `<text x="${anchor.x}" y="${anchor.y + o.labelSize}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(value))}</text>`,
       );
     }
   }

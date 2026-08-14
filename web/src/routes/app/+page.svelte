@@ -89,16 +89,14 @@
 
   let persistTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
-    void appState.rows;
-    void appState.inputType;
-    void appState.shapeType;
-    void appState.diagramType;
-    void appState.vennN;
-    void appState.style;
-    void appState.advanced;
-    void appState.exportSettings;
+    // Building the blob here is what makes the effect fire at all: reading a
+    // state object (`void appState.rows`) subscribes to that field only, not to
+    // the properties inside it, so edits *within* a row, a region, or the style
+    // would never schedule a save. `toPersisted` snapshots every field, and a
+    // snapshot reads through the whole proxy graph.
+    const blob = appState.toPersisted();
     if (persistTimer) clearTimeout(persistTimer);
-    persistTimer = setTimeout(() => saveToStorage(), 300);
+    persistTimer = setTimeout(() => saveToStorage(blob), 300);
   });
 </script>
 

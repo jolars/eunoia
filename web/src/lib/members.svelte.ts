@@ -27,7 +27,7 @@ export function parseMembers(raw: string | undefined): string[] {
  * output key, since the core picks the canonical spelling and the serializer
  * keys everything by that.
  */
-function foldKey(combination: string): string {
+export function foldKey(combination: string): string {
   return combination
     .split("&")
     .map((s) => s.trim())

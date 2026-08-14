@@ -22,6 +22,7 @@
   import { glyphStatus, memberListsForRegions } from "../members.svelte";
   import { appState } from "../state.svelte";
   import type { DiagramStyle, FitResult } from "../types/diagram";
+  import { vennAnnotationsForRegions, vennCombinations } from "../venn";
 
   interface Props {
     result: FitResult | null;
@@ -76,6 +77,35 @@
     return v.toFixed(2);
   }
 
+  // Venn geometry is topological, so its region areas are not quantities: the
+  // numbers and rosters come from the per-region annotations instead, matched
+  // against whatever is being drawn. An Euler fit has none of this — its areas
+  // *are* the quantities, so both stay undefined and the renderer uses the
+  // layout's own numbers and the spec rows.
+  //
+  // With region output that is the fitted region list; with polygon output
+  // (Advanced → Show regions off) only the set outlines exist, and the
+  // serializer draws per-set counts, so the current n's keys stand in.
+  let vennAnnotations = $derived.by(() => {
+    if (appState.diagramType !== "venn" || !result) return undefined;
+    const combinations =
+      result.layout.mode === "regions"
+        ? result.layout.regions.map((r) => r.combination)
+        : vennCombinations(appState.vennN);
+    return vennAnnotationsForRegions(appState.vennRegions, combinations);
+  });
+
+  // Authoritative when present: a Venn region with no quantity entered draws no
+  // count at all (see `ToSvgOptions.counts`).
+  let regionCounts: Record<string, number> | undefined = $derived(
+    vennAnnotations?.counts,
+  );
+
+  function countFor(region: Region): number | undefined {
+    if (!regionCounts) return region.totalArea;
+    return regionCounts[region.combination];
+  }
+
   // Per-region label-fit map. Measure each region's combined label via hidden
   // `<text>` + `getBBox()` (actual rendered dimensions, not a char-width
   // heuristic); the measured sizes feed both `placeLabelsForRegions` (does the
@@ -94,6 +124,7 @@
     void style.fontItalic;
     void style.fontFamily;
     void style.showCounts;
+    void regionCounts;
     void nested;
     void fontsReady;
     if (!measureContainer || !isRegion) {
@@ -183,7 +214,11 @@
       return undefined;
     const counts: Record<string, number> = {};
     let total = 0;
-    for (const [combo, quantity] of Object.entries(result.metrics.target)) {
+    // A Venn's target areas are all 1.0 (the canonical spec is synthetic), so
+    // the entered quantities are the only meaningful counts there.
+    for (const [combo, quantity] of Object.entries(
+      regionCounts ?? result.metrics.target,
+    )) {
       const n = Math.round(quantity);
       if (n > 0) {
         counts[combo] = n;
@@ -224,16 +259,14 @@
   // Member names per region, keyed by the region's canonical combination. Rows
   // are matched by set membership, not by their raw text, since the core
   // canonicalizes what `buildSets` passes through.
-  let memberLabels: Record<string, string[]> = $derived(
-    style.glyphMode === "members" &&
-      // Venn is driven by `vennN`, not the rows, so the roster fields aren't
-      // even shown there — stale row names must not leak into a Venn layout.
-      appState.diagramType === "euler" &&
-      result &&
-      result.layout.mode === "regions"
-      ? memberListsForRegions(appState.rows, result.layout.regions)
-      : {},
-  );
+  let memberLabels: Record<string, string[]> = $derived.by(() => {
+    if (style.glyphMode !== "members") return {};
+    if (!result || result.layout.mode !== "regions") return {};
+    // Venn is driven by `vennN`, not by the rows, so it carries its own
+    // per-region rosters — Euler row names must not leak into it.
+    if (vennAnnotations) return vennAnnotations.members;
+    return memberListsForRegions(appState.rows, result.layout.regions);
+  });
 
   // Measuring costs a `<text>` node and a `getBBox()` each, and the packer is
   // O(n) rows per region — the same argument as MAX_GLYPHS, at the scale text
@@ -335,6 +368,7 @@
     fontWeight,
     fontStyle: fontItalic,
     showCounts: style.showCounts,
+    counts: regionCounts,
     legend: { show: style.showLegend, position: style.legendPosition },
     padding: PADDING,
     placements: regionPlacements,
@@ -401,12 +435,15 @@
           </text>
         {/each}
         {#if style.showCounts}
-          <text
-            data-fit-region={region.combination}
-            font-size={style.labelSize * 0.75}
-          >
-            {fmt(region.totalArea)}
-          </text>
+          {@const count = countFor(region)}
+          {#if count !== undefined}
+            <text
+              data-fit-region={region.combination}
+              font-size={style.labelSize * 0.75}
+            >
+              {fmt(count)}
+            </text>
+          {/if}
         {/if}
         {#each members as name}
           <text

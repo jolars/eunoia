@@ -1,6 +1,18 @@
 <script lang="ts">
-  import { glyphStatus } from "../members.svelte";
+  import { glyphStatus, parseMembers } from "../members.svelte";
   import { appState } from "../state.svelte";
+
+  // Only over the *current* n's regions: entries left behind by a larger n are
+  // not drawn, so they must not silence the "nothing to draw" notes either.
+  const vennEntries = $derived(
+    appState.vennCombos.map((c) => appState.vennRegions[c]),
+  );
+  const hasVennQuantities = $derived(
+    vennEntries.some((e) => e?.size !== null && e?.size !== undefined),
+  );
+  const hasVennMembers = $derived(
+    vennEntries.some((e) => parseMembers(e?.members).length > 0),
+  );
 </script>
 
 <div class="space-y-4">
@@ -23,17 +35,24 @@
         (eulerGlyphs-style). Counts are the region quantities rounded to
         integers; the dot radius is auto-sized so every region fits its count.
       </p>
+      {#if appState.diagramType === "venn" && !hasVennQuantities}
+        <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+          No Venn region quantities entered, so there is nothing to count out in
+          dots. Fill in <span class="font-medium">Diagram → Regions</span>.
+        </p>
+      {/if}
     {:else if appState.style.glyphMode === "members"}
       <p class="text-xs text-muted mt-1">
-        The member names typed on the combination rows, measured and packed
-        inside their region. A single diagram-wide scale is found by shrinking
-        the name size until every region fits, never by growing it, so the size
-        below is a ceiling.
+        The member names typed on the combination rows — or, for a Venn, on its
+        region rows — measured and packed inside their region. A single
+        diagram-wide scale is found by shrinking the name size until every
+        region fits, never by growing it, so the size below is a ceiling.
       </p>
-      {#if appState.diagramType === "venn"}
+      {#if appState.diagramType === "venn" && !hasVennMembers}
         <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
-          Member names come from the Euler combination rows, so there are none
-          to draw in Venn mode.
+          No Venn region names entered. Fill in <span class="font-medium"
+            >Diagram → Regions</span
+          >.
         </p>
       {:else if glyphStatus.skipped}
         <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
