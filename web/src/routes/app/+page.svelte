@@ -162,8 +162,12 @@
             bind={(s) => (svgEl = s)}
           />
         </div>
-        <MetricsPanel metrics={appState.result?.metrics ?? null} />
-        <FitTable metrics={appState.result?.metrics ?? null} />
+        <!-- A canonical Venn diagram is not fitted to the input, so its fit
+             metrics carry no information. -->
+        {#if appState.diagramType !== "venn"}
+          <MetricsPanel metrics={appState.result?.metrics ?? null} />
+          <FitTable metrics={appState.result?.metrics ?? null} />
+        {/if}
       </main>
     </div>
   {/if}
