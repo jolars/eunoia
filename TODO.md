@@ -48,6 +48,95 @@ they're pre-existing behaviour the harness now exposes.
   Circles fit fine (stress consistently `~2e-3`). Worth re-checking after
   any MDS or global-stage redesign.
 
+- [ ] **Rectangle's default optimizer path converges far worse than plain
+  Nelder-Mead**. Rectangles strictly generalise squares, so the achievable
+  rectangle loss is bounded above by the square optimum --- yet the default
+  path routinely fails to reach it. On the issue #133 spec (exclusive
+  `A=35, S=32, U=35, A&S=12, A&U=2, S&U=0, A&S&U=2`), best-of-8-seeds
+  `n_restarts=100` gives `Σ(f-t)²`: default (`CmaEsTrf`) `23.75`,
+  bare `LevenbergMarquardt` `23.75`, `NelderMead` **`1.87`** --- 12.7x worse
+  than derivative-free, and worse than the `Square` optimum (`1.93`) on a
+  strictly richer shape family.
+
+  Systemic, not spec-specific: sweeping the corpus (best-of-4 seeds, default
+  vs `Optimizer::NelderMead`), **8/30 specs have the rectangle default >2x
+  worse than Nelder-Mead** --- `russian_doll` 37382x, `uniform_3_set` 4.3x,
+  `eulerape_3_set` 3.9x, `wilkinson_6_set` 2.8x, `issue93_5_set_kinases`
+  2.7x, `issue54_6_set_full` 2.6x, `four_uniform_interactions` 2.6x,
+  `two_inside_third` 2.2x --- against only 2/30 for `Square`.
+
+  **Not** a gradient bug: `rectangle.rs`'s FD tests validate the analytical
+  gradients in optimizer space. Most likely LM chattering on the
+  piecewise-bilinear (kinked) overlap landscape, compounded by the log-space
+  `[x, y, ln(w·h), ln(w/h)]` encoding and its extra aspect-ratio DOF. Note
+  the missing bounds branch below is a *separate* cause and does not subsume
+  this one. Probed via a throwaway example (deleted after measurement).
+  Surfaced 2026-08-14 from issue #133.
+
+- [ ] **`optimizer_bounds_for` has no branch for 4-parameter shapes
+  (`Rectangle`)**. `fitter/final_layout.rs` matches `params_per_shape` on `3`
+  (circle/square) and `5` (ellipse); `Rectangle` is `4` and falls through to
+  the catch-all, which the function's own doc flags as a placeholder ("new
+  shape kinds should be added here so bounds reflect their geometry").
+  Consequences:
+
+  - Size dims get `±∞` bounds, so the bounded solvers are effectively
+    unbounded for rectangles.
+  - The CMA-ES initial std is taken from the raw parameter magnitude, but
+    those params are in log space: `ln(w·h) ≈ 3.9` for an area-50 rectangle
+    yields `std = 3.9`, i.e. sampling area over `e^±3.9 ≈ ×50`. Wildly
+    over-dispersed.
+  - `radii` is never populated, so `max_radius` collapses to the `1e-6`
+    floor and `pos_scale` ignores shape size entirely.
+
+  Adding a `4 =>` branch (map the shared linear envelope onto `ln w`/`ln h`,
+  then through the sum/difference change of variables; push `w/2`, `h/2` into
+  `radii`) improves `Optimizer::Trf` on the issue #133 spec **28x**
+  (`Σ(f-t)²` `272.7 → 9.54`). It barely moves the default `CmaEsTrf` path
+  (corpus 8/30 → 7/30), so it is a real fix for the explicitly-selected
+  bounded solvers but does *not* address the item above. Probed via a
+  throwaway example (deleted after measurement). Surfaced 2026-08-14 from
+  issue #133.
+
+## Loss / topology follow-ups
+
+- [ ] **The loss has no topology term, so the optimum can be topologically
+  wrong**. Every `LossType` scores only per-region area residuals, so nothing
+  distinguishes "region with target 0 drawn at positive area" (a *false*
+  intersection the data doesn't contain) from an equal-magnitude area error
+  on a region that legitimately exists. Both are just residual.
+
+  Issue #133 is the clean demonstration. The spec has `S&U = 0` while
+  `A&S&U = 2`, i.e. the whole `S∩U` overlap must nest inside `A`:
+
+  - **Square / `sum_squared`**: the global optimum (`Σ(f-t)² = 1.93`) draws
+    `S&U = 0.471` against a target of `0` --- a visible false intersection
+    that is *genuinely optimal* for the objective. Rectangles behave the same.
+  - **Circle / `sum_squared`**: the optimum (`Σ(f-t)² = 4.0`) instead drops
+    `A&S&U` from `2` to `0`, omitting a region that does exist. Confirmed
+    global: an independent pure-Python solver (exact analytic circle areas,
+    validated to `1e-7` against numerical integration, 3000 multistarts)
+    reaches exactly `4.000000`, as do all six eunoia optimizers. Three
+    circles simply cannot represent this spec.
+  - **Ellipse / `sum_squared`** fits it exactly (loss `1.3e-23`).
+  - Under `max_absolute` the effect is worse across the board, which is
+    inherent to minimax: it spreads error evenly rather than concentrating
+    it, so several regions land \~1.4 off instead of one landing 2 off, and
+    the false intersection becomes visible even for ellipses.
+
+  **Plotting is not implicated** and should not be re-investigated: over 160
+  fits, `plot_data` region areas match the fitted areas to `1e-8` for squares
+  and rectangles (exact polygonal decomposition), with only \~`1e-3`
+  inscribed-polygon discretization on curved shapes, erring *downward*.
+  `eunoia-py`'s `_plot.py` renders those rings verbatim with no geometry of
+  its own.
+
+  Next step is to measure what topological correctness costs: the best
+  achievable loss *subject to* no false and no missing regions. If it's cheap
+  (squares going from `1.93` to \~`2.5`), a penalty or lexicographic
+  tie-break on topology is worth adding; if it's expensive, document the
+  trade-off and steer users to ellipses. Surfaced 2026-08-14 from issue #133.
+
 ## MDS architecture follow-ups
 
 - [ ] **Ellipse MDS still warm-starts as a circle**.
