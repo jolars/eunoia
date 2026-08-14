@@ -1328,6 +1328,11 @@ impl BoundsEnvelope {
 ///   bounded to `[radius_floor_frac · max_radius, radius_ceil_mult ·
 ///   max_radius]`. Initial std on x/y is `max(span, max_radius)/2`, on r it's
 ///   `max_radius/2`.
+/// - Rectangle (`params_per_shape == 4`): `[x, y, ln(w·h), ln(w/h)]`. The
+///   half-extents `w/2`, `h/2` are the radius analogue, so the shared linear
+///   envelope applies to those; converting to full extents adds `ln 2`, and
+///   the sum/difference change of variables then maps `[ln w, ln h]` onto
+///   `[s, t] = [ln w + ln h, ln w − ln h]`. The `ln 2` cancels in `t`.
 /// - Ellipse (`params_per_shape == 5`): `[x, y, ln(a), ln(b), angle]`.
 ///   Same x/y bounds; the semi-axis envelope is mapped into log space, so the
 ///   bound width and std are scale-invariant. Angle is unbounded with std
@@ -1359,6 +1364,15 @@ fn optimizer_bounds_for(
         ys.push(initial_param[base + 1]);
         match params_per_shape {
             3 => radii.push(initial_param[base + 2]),
+            4 => {
+                // Rectangle: `s = ln(w·h)`, `t = ln(w/h)`, so
+                // `ln w = (s + t)/2` and `ln h = (s − t)/2`. The half-extents
+                // are the radius analogue used for the position scale.
+                let s = initial_param[base + 2];
+                let t = initial_param[base + 3];
+                radii.push((0.5 * (s + t)).exp() * 0.5);
+                radii.push((0.5 * (s - t)).exp() * 0.5);
+            }
             5 => {
                 // Ellipse semi-axes live in log space (`u = ln(a)`,
                 // `v = ln(b)`); exponentiate to get the linear
@@ -1405,6 +1419,27 @@ fn optimizer_bounds_for(
                 lower.push(env.radius_floor_frac * max_radius);
                 upper.push(env.radius_ceil_mult * max_radius);
                 std_dev.push((max_radius * 0.5).max(1e-6));
+            }
+            4 => {
+                // Rectangle: `s = ln(w) + ln(h)`, `t = ln(w) − ln(h)`.
+                // `max_radius` is a half-extent, so the linear envelope
+                // `[floor·R, ceil·R]` bounds `w/2` and `h/2`; the full
+                // extents are twice that, hence the `2.0 *` inside the logs.
+                let e_lower = (2.0 * env.radius_floor_frac * max_radius).ln();
+                let e_upper = (2.0 * env.radius_ceil_mult * max_radius).ln();
+                // An isotropic std `σ` on `(ln w, ln h)` induces `σ√2` on both
+                // `s` and `t`, which are that basis rotated by 45° and scaled
+                // by `√2`. `σ` matches the ellipse convention (10% of range).
+                let log_std = (e_upper - e_lower) * 0.1 * std::f64::consts::SQRT_2;
+                // s = ln(w) + ln(h)
+                lower.push(2.0 * e_lower);
+                upper.push(2.0 * e_upper);
+                std_dev.push(log_std);
+                // t = ln(w) − ln(h); the `ln 2` offset cancels in the
+                // difference, so this is symmetric about 0.
+                lower.push(e_lower - e_upper);
+                upper.push(e_upper - e_lower);
+                std_dev.push(log_std);
             }
             5 => {
                 // u = ln(a), v = ln(b). Bounds map the linear interval
@@ -1767,6 +1802,90 @@ mod tests {
     use crate::geometry::primitives::Point;
     use crate::geometry::shapes::Circle;
     use crate::spec::{DiagramSpec, DiagramSpecBuilder};
+
+    /// Build the flat optimizer-parameter vector for a list of rectangles.
+    fn rect_params(rects: &[crate::geometry::shapes::Rectangle]) -> Vec<f64> {
+        use crate::geometry::traits::DiagramShape;
+        rects.iter().flat_map(|r| r.to_optimizer_params()).collect()
+    }
+
+    /// Rectangles are `params_per_shape == 4`. Before this branch existed they
+    /// fell through to the catch-all, which left the two size dims unbounded
+    /// and drew the CMA-ES std from the raw log-space magnitude (`ln(w·h)`),
+    /// wildly over-dispersing the global escape. Regression test for #133.
+    #[test]
+    fn test_optimizer_bounds_rectangle_size_dims_are_bounded() {
+        use crate::geometry::shapes::Rectangle;
+
+        let rects = [
+            Rectangle::new(Point::new(0.0, 0.0), 7.0, 7.3),
+            Rectangle::new(Point::new(5.0, 1.0), 6.8, 6.5),
+        ];
+        let params = rect_params(&rects);
+
+        for env in [BoundsEnvelope::CMAES, BoundsEnvelope::LOCAL] {
+            let (lower, upper, std_dev) = optimizer_bounds_for(&params, 4, env);
+            assert_eq!(lower.len(), params.len());
+
+            for shape in 0..rects.len() {
+                for k in 2..4 {
+                    let i = shape * 4 + k;
+                    assert!(
+                        lower[i].is_finite() && upper[i].is_finite(),
+                        "size dim {i} must be bounded, got [{}, {}]",
+                        lower[i],
+                        upper[i]
+                    );
+                    assert!(
+                        lower[i] < params[i] && params[i] < upper[i],
+                        "initial param {i} ({}) must lie strictly inside [{}, {}]",
+                        params[i],
+                        lower[i],
+                        upper[i]
+                    );
+                    // The catch-all produced `std = |ln(w·h)| ≈ 3.9` here,
+                    // i.e. sampling area over a factor of `e^±3.9 ≈ 50`.
+                    assert!(
+                        std_dev[i] > 0.0 && std_dev[i] < 3.0,
+                        "std for dim {i} is over-dispersed: {}",
+                        std_dev[i]
+                    );
+                }
+            }
+        }
+    }
+
+    /// The size envelope lives in log space, so scaling every rectangle by a
+    /// constant must shift the bounds without changing their width or the std.
+    #[test]
+    fn test_optimizer_bounds_rectangle_log_envelope_is_scale_invariant() {
+        use crate::geometry::shapes::Rectangle;
+
+        let small = [Rectangle::new(Point::new(0.0, 0.0), 2.0, 3.0)];
+        let large = [Rectangle::new(Point::new(0.0, 0.0), 200.0, 300.0)];
+
+        let (ls, us, ss) = optimizer_bounds_for(&rect_params(&small), 4, BoundsEnvelope::CMAES);
+        let (ll, ul, sl) = optimizer_bounds_for(&rect_params(&large), 4, BoundsEnvelope::CMAES);
+
+        for k in 2..4 {
+            assert!(
+                ((us[k] - ls[k]) - (ul[k] - ll[k])).abs() < 1e-9,
+                "bound width for dim {k} is not scale-invariant"
+            );
+            assert!(
+                (ss[k] - sl[k]).abs() < 1e-9,
+                "std for dim {k} is not scale-invariant"
+            );
+        }
+        // `t = ln(w/h)` is an aspect ratio: its box is symmetric about 0 and
+        // independent of overall scale, so it must be identical, not merely
+        // the same width.
+        assert!(
+            (ls[3] + us[3]).abs() < 1e-9,
+            "t box must be symmetric about 0"
+        );
+        assert!((ls[3] - ll[3]).abs() < 1e-9 && (us[3] - ul[3]).abs() < 1e-9);
+    }
 
     /// Test helper utilities for final layout testing
     mod helpers {
