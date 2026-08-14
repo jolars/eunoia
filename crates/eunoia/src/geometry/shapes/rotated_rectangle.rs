@@ -494,6 +494,10 @@ impl Polygonize for RotatedRectangle {
 }
 
 impl DiagramShape for RotatedRectangle {
+    // Carries an explicit orientation parameter, which `rotate_shape` advances
+    // alongside the centre.
+    const SUPPORTS_ROTATION: bool = true;
+
     fn compute_exclusive_regions(shapes: &[Self]) -> HashMap<RegionMask, f64> {
         let n_sets = shapes.len();
         let intersections = collect_intersections_rotated_rectangle(shapes, n_sets);

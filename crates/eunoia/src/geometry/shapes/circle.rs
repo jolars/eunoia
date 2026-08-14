@@ -173,6 +173,9 @@ impl Closed for Circle {
 impl DiagramShape for Circle {
     const SUPPORTS_ANALYTIC_GRADIENT: bool = true;
 
+    // Rotation-invariant: rotating a circle is the identity on its geometry.
+    const SUPPORTS_ROTATION: bool = true;
+
     fn compute_exclusive_regions(
         shapes: &[Self],
     ) -> std::collections::HashMap<crate::geometry::diagram::RegionMask, f64> {

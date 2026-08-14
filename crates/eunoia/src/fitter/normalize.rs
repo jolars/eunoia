@@ -496,16 +496,27 @@ where
     let c0 = shapes[idx0].centroid();
     let c1 = shapes[idx1].centroid();
 
-    // Compute rotation angle to make the line horizontal
-    let dx = c1.x() - c0.x();
-    let dy = c1.y() - c0.y();
-    let theta = -dy.atan2(dx); // Negative because we rotate the other way
+    // Rotating the cluster is a gauge fix: the layout's absolute orientation
+    // carries no information, so canonicalising it is free — but only for
+    // shapes that rotate *with* the layout. An axis-aligned shape
+    // (`Square`, `Rectangle`) cannot represent the rotation, so
+    // `rotate_shape` would move its centre while leaving the box
+    // axis-aligned, shearing the configuration and silently changing every
+    // overlap area. There is no gauge freedom to fix for those shapes, so
+    // skip straight to the mirrors (which axis-aligned shapes *can*
+    // represent exactly).
+    if S::SUPPORTS_ROTATION {
+        // Compute rotation angle to make the line horizontal
+        let dx = c1.x() - c0.x();
+        let dy = c1.y() - c0.y();
+        let theta = -dy.atan2(dx); // Negative because we rotate the other way
 
-    // Rotate all shapes in cluster around first shape's centroid
-    if theta.abs() > 1e-10 {
-        let pivot = c0;
-        for &idx in cluster {
-            shapes[idx] = rotate_shape(&shapes[idx], theta, &pivot);
+        // Rotate all shapes in cluster around first shape's centroid
+        if theta.abs() > 1e-10 {
+            let pivot = c0;
+            for &idx in cluster {
+                shapes[idx] = rotate_shape(&shapes[idx], theta, &pivot);
+            }
         }
     }
 
@@ -1038,6 +1049,63 @@ mod tests {
                 "region {mask} changed: {lhs} -> {rhs}"
             );
         }
+    }
+
+    /// Normalisation is a pure re-framing of the layout, so every exclusive
+    /// region area must survive it untouched — for *every* shape kind.
+    ///
+    /// `rotate_cluster` used to rotate each shape's centre unconditionally
+    /// while only advancing an orientation parameter for 5-parameter shapes.
+    /// Axis-aligned `Square`/`Rectangle` therefore had their centres rotated
+    /// out from under their (still axis-aligned) boxes, shearing the
+    /// configuration and silently changing every overlap. On the #133 spec
+    /// that turned an exact rectangle fit into a sum-squared residual of
+    /// 23.75. Regression test for that.
+    ///
+    /// The centres below are deliberately *not* collinear with the x-axis, so
+    /// `rotate_cluster` has a non-trivial angle to apply.
+    #[test]
+    fn test_normalize_preserves_regions_for_all_shape_kinds() {
+        use crate::geometry::shapes::{Ellipse, Rectangle, Square};
+
+        let pts = [
+            Point::new(0.0, 0.0),
+            Point::new(3.0, 2.5),
+            Point::new(1.2, 4.0),
+        ];
+
+        fn check<S: DiagramShape + Clone>(shapes: Vec<S>) {
+            let before = S::compute_exclusive_regions(&shapes);
+            let mut shapes = shapes;
+            normalize_layout(&mut shapes, 0.0);
+            let after = S::compute_exclusive_regions(&shapes);
+            assert_regions_eq(&before, &after);
+        }
+
+        check(pts.iter().map(|&c| Circle::new(c, 2.5)).collect());
+        check(
+            pts.iter()
+                .map(|&c| Ellipse::new(c, 3.0, 2.0, 0.3))
+                .collect(),
+        );
+        check(pts.iter().map(|&c| Square::new(c, 4.4)).collect());
+        check(pts.iter().map(|&c| Rectangle::new(c, 5.2, 3.6)).collect());
+    }
+
+    /// The rotation gauge fix is only sound for shapes that rotate with the
+    /// layout; axis-aligned shapes must opt out.
+    #[test]
+    fn test_supports_rotation_flags_match_shape_capability() {
+        use crate::geometry::shapes::{Ellipse, Rectangle, RotatedRectangle, Square};
+
+        assert!(Circle::SUPPORTS_ROTATION, "circles are rotation-invariant");
+        assert!(Ellipse::SUPPORTS_ROTATION, "ellipses carry an angle");
+        assert!(
+            RotatedRectangle::SUPPORTS_ROTATION,
+            "rotated rectangles carry an angle"
+        );
+        assert!(!Square::SUPPORTS_ROTATION, "squares are axis-aligned");
+        assert!(!Rectangle::SUPPORTS_ROTATION, "rectangles are axis-aligned");
     }
 
     #[test]

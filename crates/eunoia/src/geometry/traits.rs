@@ -122,6 +122,31 @@ pub trait DiagramShape: Closed {
     /// override it.
     const SUPPORTS_ANALYTIC_GRADIENT: bool = false;
 
+    /// Whether an arbitrary rotation of this shape is exactly representable.
+    ///
+    /// True for shapes that are rotation-invariant ([`Circle`]) or that carry
+    /// an explicit orientation parameter ([`Ellipse`], [`RotatedRectangle`]).
+    /// **False for axis-aligned shapes** ([`Square`], [`Rectangle`]): their
+    /// orientation is fixed by construction, so rotating one is a lossy
+    /// operation that silently changes every overlap area.
+    ///
+    /// `normalize` consults this before canonicalising a cluster's
+    /// orientation. Rotation there is a gauge fix — the layout's absolute
+    /// orientation is arbitrary, so rotating it is free. That reasoning only
+    /// holds when the shapes rotate *with* the layout; for an axis-aligned
+    /// shape the orientation is load-bearing, there is no gauge freedom to
+    /// fix, and the rotation must be skipped.
+    ///
+    /// Note this cannot be inferred from [`Self::n_params`]: `Circle` and
+    /// `Square` are both 3-parameter shapes but only `Circle` may be rotated.
+    ///
+    /// [`Circle`]: crate::geometry::shapes::Circle
+    /// [`Ellipse`]: crate::geometry::shapes::Ellipse
+    /// [`RotatedRectangle`]: crate::geometry::shapes::RotatedRectangle
+    /// [`Square`]: crate::geometry::shapes::Square
+    /// [`Rectangle`]: crate::geometry::shapes::Rectangle
+    const SUPPORTS_ROTATION: bool = false;
+
     /// Compute all exclusive regions and their areas from a collection of shapes.
     ///
     /// This method should use exact geometric computation for the shape type.

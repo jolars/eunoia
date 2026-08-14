@@ -1669,6 +1669,10 @@ fn ellipse_vertical_edge_inside_interval(
 impl DiagramShape for Ellipse {
     const SUPPORTS_ANALYTIC_GRADIENT: bool = true;
 
+    // Carries an explicit orientation parameter `φ`, which `rotate_shape`
+    // advances alongside the centre.
+    const SUPPORTS_ROTATION: bool = true;
+
     fn compute_exclusive_regions(shapes: &[Self]) -> std::collections::HashMap<RegionMask, f64> {
         use crate::geometry::diagram::{discover_regions, to_exclusive_areas};
         use std::collections::HashMap;
