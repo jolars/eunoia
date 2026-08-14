@@ -5,6 +5,7 @@
     LabelPlacement,
     LabelSize,
     Region,
+    SetOutline,
   } from "@jolars/eunoia";
   import {
     labelObstacles,
@@ -73,6 +74,17 @@
   // the region label boxes must be measured without their title lines too —
   // otherwise the region placer sizes each box for text that is not there.
   let setLabelsOutside = $derived(style.setLabelMode === "outside");
+  // Per-set silhouettes for the set-label placer. Region output carries them
+  // as `shapeOutlines` (decomposition clips them away, so they ride along
+  // separately); polygon output — Advanced → Show regions off — *is* a list of
+  // set outlines already. Both satisfy `SetOutline`, so the placer takes
+  // either and the mode stays available with regions turned off.
+  let setOutlines: SetOutline[] = $derived.by(() => {
+    if (!result) return [];
+    if (result.layout.mode === "regions") return result.layout.shapeOutlines;
+    if (result.layout.mode === "polygons") return result.layout.polygons;
+    return [];
+  });
   let nested = $derived(
     result && result.layout.mode === "regions" ? nestedSets(result.layout) : {},
   );
@@ -135,7 +147,9 @@
     void nested;
     void fontsReady;
     void setLabelsOutside;
-    if (!measureContainer || !isRegion) {
+    // Region label boxes only exist in region mode, but set names are
+    // measured in either — so bail only when neither pass has anything to do.
+    if (!measureContainer || (!isRegion && !setLabelsOutside)) {
       measuredSizes = {};
       measuredSetSizes = {};
       return;
@@ -218,17 +232,16 @@
   );
 
   // Exterior set names: each hugs its own shape's outline at the angle with
-  // the most free space, no leader line. Needs `shapeOutlines`, which only the
-  // region output mode carries.
+  // the most free space, no leader line.
   let setLabelPlacements: Record<string, LabelPlacement> | undefined =
     $derived.by(() => {
-      if (!setLabelsOutside || !result || result.layout.mode !== "regions") {
+      if (!setLabelsOutside || !result || setOutlines.length === 0) {
         return undefined;
       }
       if (Object.keys(measuredSetSizes).length === 0) return undefined;
       try {
         return placeSetLabels({
-          outlines: result.layout.shapeOutlines,
+          outlines: setOutlines,
           container: result.layout.container,
           sizes: measuredSetSizes,
           strategy: {
@@ -476,7 +489,7 @@
   font-family={style.fontFamily}
   xmlns="http://www.w3.org/2000/svg"
 >
-  {#if result && isRegion}
+  {#if result && (isRegion || setLabelsOutside)}
     <g
       bind:this={measureContainer}
       visibility="hidden"
@@ -520,14 +533,14 @@
         {/each}
       {/each}
       {#if setLabelsOutside}
-        {#each appState.setNames as name}
+        {#each setOutlines as outline}
           <text
-            data-fit-set={name}
+            data-fit-set={outline.label}
             font-size={style.labelSize}
             font-weight={fontWeight}
             font-style={fontItalic}
           >
-            {name}
+            {outline.label}
           </text>
         {/each}
       {/if}
