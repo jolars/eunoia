@@ -48,34 +48,6 @@ they're pre-existing behaviour the harness now exposes.
   Circles fit fine (stress consistently `~2e-3`). Worth re-checking after
   any MDS or global-stage redesign.
 
-- [ ] **Rectangle's default optimizer path converges far worse than plain
-  Nelder-Mead**. Rectangles strictly generalise squares, so the achievable
-  rectangle loss is bounded above by the square optimum --- yet the default
-  path routinely fails to reach it. On the issue #133 spec (exclusive
-  `A=35, S=32, U=35, A&S=12, A&U=2, S&U=0, A&S&U=2`), best-of-8-seeds
-  `n_restarts=100` gives `Σ(f-t)²`: default (`CmaEsTrf`) `23.75`,
-  bare `LevenbergMarquardt` `23.75`, `NelderMead` **`1.87`** --- 12.7x worse
-  than derivative-free, and worse than the `Square` optimum (`1.93`) on a
-  strictly richer shape family.
-
-  Systemic, not spec-specific: sweeping the corpus (best-of-4 seeds, default
-  vs `Optimizer::NelderMead`), **8/30 specs have the rectangle default >2x
-  worse than Nelder-Mead** --- `russian_doll` 37382x, `uniform_3_set` 4.3x,
-  `eulerape_3_set` 3.9x, `wilkinson_6_set` 2.8x, `issue93_5_set_kinases`
-  2.7x, `issue54_6_set_full` 2.6x, `four_uniform_interactions` 2.6x,
-  `two_inside_third` 2.2x --- against only 2/30 for `Square`.
-
-  **Not** a gradient bug: `rectangle.rs`'s FD tests validate the analytical
-  gradients in optimizer space. Most likely LM chattering on the
-  piecewise-bilinear (kinked) overlap landscape, compounded by the log-space
-  `[x, y, ln(w·h), ln(w/h)]` encoding and its extra aspect-ratio DOF.
-
-  Note this is *not* the missing `optimizer_bounds_for` branch fixed in
-  9e4c901: that fix left the default `CmaEsTrf` path bit-identical here
-  (`23.75` before and after) and moved the corpus count only 8/30 → 7/30.
-  The remaining stall is a separate cause. Probed via a throwaway example
-  (deleted after measurement). Surfaced 2026-08-14 from issue #133.
-
 ## Loss / topology follow-ups
 
 - [ ] **The loss has no topology term, so the optimum can be topologically
@@ -87,9 +59,14 @@ they're pre-existing behaviour the harness now exposes.
   Issue #133 is the clean demonstration. The spec has `S&U = 0` while
   `A&S&U = 2`, i.e. the whole `S∩U` overlap must nest inside `A`:
 
-  - **Square / `sum_squared`**: the global optimum (`Σ(f-t)² = 1.93`) draws
-    `S&U = 0.471` against a target of `0` --- a visible false intersection
-    that is *genuinely optimal* for the objective. Rectangles behave the same.
+  - **Square / `sum_squared`**: the optimum (`Σ(f-t)² = 0.82` after 9dc14dd)
+    draws `S&U = 0.354` against a target of `0` --- a visible false
+    intersection that is *genuinely optimal* for the objective.
+  - **Rectangle / `sum_squared`** fits it exactly since 9dc14dd
+    (`3.9e-25`, `S&U = 0`, `A&S&U = 2`). Before that fix rectangles looked
+    like another instance of this item; they were not. Do not assume a
+    topologically wrong optimum is inherent without first checking the
+    fitter actually reached the optimum.
   - **Circle / `sum_squared`**: the optimum (`Σ(f-t)² = 4.0`) instead drops
     `A&S&U` from `2` to `0`, omitting a region that does exist. Confirmed
     global: an independent pure-Python solver (exact analytic circle areas,
@@ -111,9 +88,10 @@ they're pre-existing behaviour the harness now exposes.
 
   Next step is to measure what topological correctness costs: the best
   achievable loss *subject to* no false and no missing regions. If it's cheap
-  (squares going from `1.93` to \~`2.5`), a penalty or lexicographic
+  (squares going from `0.82` to \~`1.5`), a penalty or lexicographic
   tie-break on topology is worth adding; if it's expensive, document the
-  trade-off and steer users to ellipses. Surfaced 2026-08-14 from issue #133.
+  trade-off and steer users to ellipses or rectangles. Surfaced 2026-08-14
+  from issue #133.
 
 ## MDS architecture follow-ups
 
