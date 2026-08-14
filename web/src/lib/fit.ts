@@ -192,6 +192,7 @@ function scaleLayout(layout: Layout, ctx: NormalizationContext): Layout {
       })),
       setAnchors: normSetAnchors(layout.setAnchors, ctx),
       setAnchorRegions: layout.setAnchorRegions,
+      shapeOutlines: layout.shapeOutlines.map(poly),
       ...tail,
     };
   }

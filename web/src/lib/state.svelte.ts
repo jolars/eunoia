@@ -57,6 +57,7 @@ const DEFAULT_STYLE: DiagramStyle = {
   labelSize: 6,
   showCounts: false,
   labelPlacement: "raycast",
+  setLabelMode: "inside",
   labelTether: "boundary",
   glyphMode: "none",
   glyphArrangement: "uniform",

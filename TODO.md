@@ -159,6 +159,18 @@ they're pre-existing behaviour the harness now exposes.
   crossing interior labels" item above --- see there for the detail. Moved
   from `AGENTS.md` "Open work" 2026-05-22.
 
+- [ ] **Nested sets in `place_set_labels`**. The exterior set-label mode
+  guarantees label boxes don't overlap each other, but clearance from the
+  *shapes* is best-effort: a set nested inside a much larger one has a hug ring
+  entirely inside its container, so no candidate angle clears it and the sweep
+  returns the least-bad one (the box then straddles the container's boundary).
+  Options if this proves annoying: fall back to the interior anchor when the
+  best clearance is negative, or relax the hug constraint and let the label
+  escape to the diagram exterior with a leader — which is really asking for a
+  hybrid of `place_set_labels` and `place_labels`, so design the two together
+  rather than bolting a leader onto this mode. Surfaced 2026-08-14 when the
+  mode landed.
+
 - [ ] **`InteriorPolicy::Loose` and `ExteriorPolicy::None` for `place_labels`**.
   Only `InteriorPolicy::Strict` and the `Raycast` / `ForceDirected` exterior
   policies are implemented; `Loose` interior placement and the `None`

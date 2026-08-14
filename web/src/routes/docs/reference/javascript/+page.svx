@@ -72,7 +72,7 @@ which follows the `output` option:
 | ------------ | -------------- | ----------------------------------------------------------------------- |
 | `"shapes"`   | `"shapes"`     | `circles`/`ellipses`/`squares`/`rectangles`, the primitive params.      |
 | `"polygons"` | `"polygons"`   | the shapes **plus** `polygons`, one closed outline per set.             |
-| `"regions"`  | `"regions"`    | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors`.     |
+| `"regions"`  | `"regions"`    | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors` + `shapeOutlines`. |
 
 Every `Layout` also carries:
 
@@ -82,8 +82,11 @@ Every `Layout` also carries:
 - `container`: present only when `complement` was set: `{ x, y, width, height }`.
 
 Each shape and region carries a `labelAnchor` (`{ x, y }`) for interior labels;
-`"regions"` mode adds `setAnchors`. Coordinates are abstract, centered
-units—compute a bounding box for your `viewBox`.
+`"regions"` mode adds `setAnchors` and `shapeOutlines`. The latter is one closed
+ring per set — the set's own silhouette, which region decomposition clips away
+and so cannot be recovered from `regions` without a union pass. Use it for
+seam-free per-set strokes, or to feed `placeSetLabels`. Coordinates are
+abstract, centered units—compute a bounding box for your `viewBox`.
 
 ## `placeLabelsForRegions(options)`
 
@@ -106,6 +109,29 @@ const placements = placeLabelsForRegions({
 a render → measure → re-place loop. The `strategy` knobs (`leader`, `precision`,
 `tether`, `leaderGap`) and that loop are covered in
 [Label Placement](/docs/concepts/label-placement/).
+
+## `placeSetLabels(options)`
+
+Places one label per **set**, just outside that set's own shape and with no
+leader line — the label is adjacent to the thing it names. Returns
+`Record<string, LabelPlacement>` keyed by set name, every entry with
+`kind: "exteriorSet"`.
+
+```js
+import { placeSetLabels } from "@jolars/eunoia";
+
+const setPlacements = placeSetLabels({
+  outlines: layout.shapeOutlines,
+  sizes: { A: { w: 0.4, h: 0.2 }, B: { w: 0.4, h: 0.2 } },
+  strategy: { obstacles: labelObstacles({ placements, sizes, padding: 0.15 }) },
+});
+```
+
+Each label rotates around its shape to the angle with the most clearance to the
+other sets' outlines, the labels already placed, and any `strategy.obstacles`.
+Label boxes never overlap each other; clearance from the shapes is best-effort.
+The knobs (`margin`, `angularSteps`, `obstacles`, `precision`) and the algorithm
+are covered in [Label Placement](/docs/concepts/label-placement/).
 
 ## `placementsBbox(options)`
 
@@ -212,7 +238,9 @@ document.body.innerHTML = toSvg(layout, { showLabels: true });
 
 `ToSvgOptions` covers palettes and per-set color overrides, opacity, strokes,
 label and count rendering, a legend, padding, the `placements`/`labelSizes`
-from `placeLabelsForRegions` for exterior labels with leader lines, and the
+from `placeLabelsForRegions` for exterior labels with leader lines, the
+`setLabelPlacements`/`setLabelSizes` from `placeSetLabels` (which move every set
+name outside its shape and suppress the interior copies), and the
 `glyphs` result from `placeGlyphsForRegions` (rendered above region fills,
 below labels; tinted from each region's own color with a finer, darker edge by
 default, tunable via `tint`, `fill`, `stroke`, and `strokeWidth`).

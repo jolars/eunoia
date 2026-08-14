@@ -11,6 +11,7 @@
     placeGlyphBoxesForRegions,
     placeGlyphsForRegions,
     placeLabelsForRegions,
+    placeSetLabels,
   } from "@jolars/eunoia";
   import {
     nestedSets,
@@ -67,6 +68,11 @@
     result && result.layout.mode === "regions" ? result.layout.regions : [],
   );
   let isRegion = $derived(result?.layout.mode === "regions");
+  // Set names drawn outside their shapes rather than inside the diagram. The
+  // serializer drops the interior copies when `setLabelPlacements` is set, so
+  // the region label boxes must be measured without their title lines too —
+  // otherwise the region placer sizes each box for text that is not there.
+  let setLabelsOutside = $derived(style.setLabelMode === "outside");
   let nested = $derived(
     result && result.layout.mode === "regions" ? nestedSets(result.layout) : {},
   );
@@ -114,6 +120,7 @@
   // rendered in the hidden `<g>` below.
   let measureContainer: SVGGElement | null = $state(null);
   let measuredSizes: Record<string, LabelSize> = $state({});
+  let measuredSetSizes: Record<string, LabelSize> = $state({});
 
   $effect(() => {
     // Re-measure when result changes, font scales, or showCounts toggles.
@@ -127,8 +134,10 @@
     void regionCounts;
     void nested;
     void fontsReady;
+    void setLabelsOutside;
     if (!measureContainer || !isRegion) {
       measuredSizes = {};
+      measuredSetSizes = {};
       return;
     }
     const sizes: Record<string, LabelSize> = {};
@@ -150,6 +159,19 @@
       }
     }
     measuredSizes = sizes;
+
+    const setBoxes: Record<string, LabelSize> = {};
+    const setNodes =
+      measureContainer.querySelectorAll<SVGGraphicsElement>(
+        "text[data-fit-set]",
+      );
+    for (const t of Array.from(setNodes)) {
+      const name = t.getAttribute("data-fit-set");
+      if (name === null) continue;
+      const bb = t.getBBox();
+      setBoxes[name] = { w: bb.width, h: bb.height };
+    }
+    measuredSetSizes = setBoxes;
   });
 
   // Per-region placement from the eunoia core (wasm). Defaults to
@@ -185,16 +207,55 @@
     }
   });
 
-  // Keep-out boxes for both packers: labels are drawn over the marks, so the
-  // marks steer clear of the boxes we just measured for them. Padded by a
-  // fraction of the font size so nothing kisses the text.
-  let glyphObstacles = $derived(
+  // Region-label keep-outs, also handed to the set-label placer so a set name
+  // never lands on a region's quantity.
+  let regionLabelObstacles = $derived(
     labelObstacles({
       placements: regionPlacements,
       sizes: measuredSizes,
       padding: style.labelSize * 0.15,
     }),
   );
+
+  // Exterior set names: each hugs its own shape's outline at the angle with
+  // the most free space, no leader line. Needs `shapeOutlines`, which only the
+  // region output mode carries.
+  let setLabelPlacements: Record<string, LabelPlacement> | undefined =
+    $derived.by(() => {
+      if (!setLabelsOutside || !result || result.layout.mode !== "regions") {
+        return undefined;
+      }
+      if (Object.keys(measuredSetSizes).length === 0) return undefined;
+      try {
+        return placeSetLabels({
+          outlines: result.layout.shapeOutlines,
+          container: result.layout.container,
+          sizes: measuredSetSizes,
+          strategy: {
+            obstacles: regionLabelObstacles,
+            precision: Math.max(0.05, style.labelSize * 0.05),
+          },
+        });
+      } catch (err) {
+        console.warn("[place sets] failed, falling back to interior:", err);
+        return undefined;
+      }
+    });
+
+  // Keep-out boxes for both packers: labels are drawn over the marks, so the
+  // marks steer clear of the boxes we just measured for them. Set names are
+  // outside their own shape but can still overhang a neighbouring region, so
+  // they join the list.
+  let glyphObstacles = $derived([
+    ...regionLabelObstacles,
+    ...(setLabelPlacements
+      ? labelObstacles({
+          placements: setLabelPlacements,
+          sizes: measuredSetSizes,
+          padding: style.labelSize * 0.15,
+        })
+      : []),
+  ]);
 
   // Interactive glyph budget: deriving counts from the spec quantities means a
   // user typing large numbers (say population-scale frequencies) would ask the
@@ -373,6 +434,8 @@
     padding: PADDING,
     placements: regionPlacements,
     labelSizes: measuredSizes,
+    setLabelPlacements,
+    setLabelSizes: measuredSetSizes,
     complement: result?.complement,
     glyphs: glyphPlacements,
     // The placer is font-blind, so the strings ride separately; they are
@@ -424,16 +487,18 @@
         {@const members = memberBudgetExceeded
           ? []
           : (memberLabels[region.combination] ?? [])}
-        {#each regionTitleLines(region.combination, nested) as title}
-          <text
-            data-fit-region={region.combination}
-            font-size={style.labelSize}
-            font-weight={fontWeight}
-            font-style={fontItalic}
-          >
-            {title}
-          </text>
-        {/each}
+        {#if !setLabelsOutside}
+          {#each regionTitleLines(region.combination, nested) as title}
+            <text
+              data-fit-region={region.combination}
+              font-size={style.labelSize}
+              font-weight={fontWeight}
+              font-style={fontItalic}
+            >
+              {title}
+            </text>
+          {/each}
+        {/if}
         {#if style.showCounts}
           {@const count = countFor(region)}
           {#if count !== undefined}
@@ -454,6 +519,18 @@
           </text>
         {/each}
       {/each}
+      {#if setLabelsOutside}
+        {#each appState.setNames as name}
+          <text
+            data-fit-set={name}
+            font-size={style.labelSize}
+            font-weight={fontWeight}
+            font-style={fontItalic}
+          >
+            {name}
+          </text>
+        {/each}
+      {/if}
     </g>
   {/if}
   {#if result}

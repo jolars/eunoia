@@ -17,6 +17,9 @@
 //! - `eunoia_place_labels(*const c_char) -> *mut c_char` — resolve
 //!   collision-aware label positions (and leader-line geometry) for region
 //!   polygons, given caller-measured label box sizes.
+//! - `eunoia_place_set_labels(*const c_char) -> *mut c_char` — resolve
+//!   exterior set-label positions that hug each set's own shape outline
+//!   (no leader line), given caller-measured label box sizes.
 //! - `eunoia_place_glyphs(*const c_char) -> *mut c_char` — pack equally-sized
 //!   circular glyphs (one per data unit, eulerGlyphs-style) inside region
 //!   polygons, given per-region counts.
@@ -69,7 +72,8 @@ use eunoia::loss::LossType;
 use eunoia::plotting::{
     ElbowOptions, ExteriorPolicy, GlyphArrangement, GlyphBoxOptions, GlyphOptions, LeaderStrategy,
     PlacementKind, PlacementStrategy, PlotData, PlotOptions, RegionPiece, RegionPolygons,
-    TetherSource, classify_into_pieces, place_glyph_boxes, place_glyphs, place_labels,
+    SetLabelStrategy, TetherSource, classify_into_pieces, place_glyph_boxes, place_glyphs,
+    place_labels, place_set_labels,
 };
 use eunoia::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
 use eunoia::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer, VennDiagram};
@@ -1061,6 +1065,111 @@ fn place_labels_impl(input: PlaceLabelsInput) -> Result<PlaceLabelsOut, String> 
     Ok(PlaceLabelsOut { placements })
 }
 
+// ============================================================================
+// Set-label placement — JSON contract + impl
+// ============================================================================
+//
+// The sibling of `eunoia_place_labels`, mirroring the WASM `place_set_labels`
+// surface. Keyed by set rather than by region, and it hugs each set's own
+// outline instead of exiting to the diagram border, so it needs the shape
+// outlines (`plot_data.shape_outlines`) rather than the region pieces.
+
+/// Set-label strategy. All fields optional; omitted fields keep the core
+/// defaults (half-line-height margin, 180 candidate angles, no extra
+/// obstacles, `precision = 0.01`).
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct SetLabelStrategyIn {
+    margin: Option<f64>,
+    angular_steps: Option<usize>,
+    obstacles: Option<Vec<RectIn>>,
+    precision: Option<f64>,
+}
+
+/// Input to [`eunoia_place_set_labels`]. `outlines` and `sizes` are keyed by
+/// set name; only sets present in both get a placement. `outlines` values are
+/// closed rings of `[x, y]` pairs — the `shape_outlines` of a `plot_data`
+/// payload.
+#[derive(serde::Deserialize)]
+struct PlaceSetLabelsInput {
+    outlines: BTreeMap<String, Vec<[f64; 2]>>,
+    sizes: BTreeMap<String, [f64; 2]>,
+    #[serde(default)]
+    container: Option<RectIn>,
+    #[serde(default)]
+    strategy: Option<SetLabelStrategyIn>,
+}
+
+/// One resolved set-label placement. `kind` is always `exterior_set`; there is
+/// no leader geometry because the label is adjacent to the shape it names.
+#[derive(Serialize)]
+struct SetPlacementOut {
+    anchor: [f64; 2],
+    kind: &'static str,
+}
+
+/// Success payload for [`eunoia_place_set_labels`]: `set -> SetPlacementOut`.
+#[derive(Serialize)]
+struct PlaceSetLabelsOut {
+    placements: BTreeMap<String, SetPlacementOut>,
+}
+
+fn place_set_labels_impl(input: PlaceSetLabelsInput) -> Result<PlaceSetLabelsOut, String> {
+    let strategy_in = input.strategy.unwrap_or_default();
+    let mut strategy = SetLabelStrategy::default()
+        .margin(strategy_in.margin)
+        .precision(strategy_in.precision.unwrap_or(0.01));
+    if let Some(steps) = strategy_in.angular_steps {
+        strategy = strategy.angular_steps(steps);
+    }
+    if let Some(obstacles) = strategy_in.obstacles {
+        let boxes: Vec<Rectangle> = obstacles
+            .into_iter()
+            .map(|r| Rectangle::try_new(Point::new(r.x, r.y), r.width, r.height))
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("invalid obstacle: {e}"))?;
+        strategy = strategy.obstacles(boxes);
+    }
+
+    let container = input
+        .container
+        .map(|c| Rectangle::try_new(Point::new(c.x, c.y), c.width, c.height))
+        .transpose()
+        .map_err(|e| format!("invalid container: {e}"))?;
+
+    let sizes: HashMap<String, (f64, f64)> = input
+        .sizes
+        .into_iter()
+        .map(|(k, [w, h])| (k, (w, h)))
+        .collect();
+
+    let outlines: HashMap<String, Polygon> = input
+        .outlines
+        .into_iter()
+        .map(|(name, ring)| {
+            (
+                name,
+                Polygon::new(ring.into_iter().map(|p| Point::new(p[0], p[1])).collect()),
+            )
+        })
+        .collect();
+
+    let placements = place_set_labels(&outlines, &sizes, container.as_ref(), &strategy)
+        .into_iter()
+        .map(|(key, p)| {
+            (
+                key,
+                SetPlacementOut {
+                    anchor: [p.anchor.x(), p.anchor.y()],
+                    kind: "exterior_set",
+                },
+            )
+        })
+        .collect();
+
+    Ok(PlaceSetLabelsOut { placements })
+}
+
 /// Glyph options for [`eunoia_place_glyphs`]. All fields optional; omitted
 /// fields keep the core defaults (uniform arrangement, auto radius,
 /// `gap = 0.25`, `seed = 0`, `precision = 0.01`, `max_attempts = 300`, no
@@ -1408,6 +1517,16 @@ pub extern "C" fn eunoia_venn(input: *const c_char) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn eunoia_place_labels(input: *const c_char) -> *mut c_char {
     run(input, place_labels_impl)
+}
+
+/// Resolve exterior set-label positions — one per set, hugging that set's own
+/// shape, with no leader line. `input` is a JSON `PlaceSetLabelsInput` (shape
+/// outlines + caller-measured label sizes + an optional strategy); the success
+/// envelope carries a `placements` map keyed by set name. Free the result with
+/// [`eunoia_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn eunoia_place_set_labels(input: *const c_char) -> *mut c_char {
+    run(input, place_set_labels_impl)
 }
 
 /// Pack equally-sized circular glyphs inside a set of region polygons.
@@ -1910,6 +2029,72 @@ mod tests {
                 v["error"]
             );
         }
+    }
+
+    // ------------------------------------------------------------------------
+    // Set-label placement
+    // ------------------------------------------------------------------------
+
+    /// Shape outlines from a default two-set fit — exactly the
+    /// `{set: [[x, y], ...]}` shape `eunoia_place_set_labels` expects.
+    fn shape_outlines() -> serde_json::Value {
+        let out = call(eunoia_euler, &two_set(""));
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        v["plot_data"]["shape_outlines"].clone()
+    }
+
+    #[test]
+    fn place_set_labels_round_trips() {
+        let input = serde_json::json!({
+            "outlines": shape_outlines(),
+            "sizes": { "A": [0.2, 0.1], "B": [0.2, 0.1] },
+        })
+        .to_string();
+        let out = call(eunoia_place_set_labels, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+
+        for set in ["A", "B"] {
+            let p = &v["placements"][set];
+            assert_eq!(p["kind"], "exterior_set", "set {set}");
+            assert_eq!(p["anchor"].as_array().unwrap().len(), 2);
+            // No leader geometry — the label is adjacent to its shape.
+            assert!(p.get("tether").is_none(), "set {set} should have no tether");
+            assert!(p.get("leader_end").is_none(), "set {set} has no leader end");
+        }
+
+        // The two labels must land on opposite sides: each rotates away from
+        // its neighbour.
+        let ax = v["placements"]["A"]["anchor"][0].as_f64().unwrap();
+        let bx = v["placements"]["B"]["anchor"][0].as_f64().unwrap();
+        assert!(ax < bx, "A's label ({ax}) should sit left of B's ({bx})");
+    }
+
+    #[test]
+    fn place_set_labels_accepts_full_strategy() {
+        let input = serde_json::json!({
+            "outlines": shape_outlines(),
+            "sizes": { "A": [0.2, 0.1], "B": [0.2, 0.1] },
+            "strategy": {
+                "margin": 0.05,
+                "angular_steps": 64,
+                "precision": 0.02,
+                "obstacles": [{ "x": 0.0, "y": 0.0, "width": 0.1, "height": 0.1 }],
+            },
+        })
+        .to_string();
+        let out = call(eunoia_place_set_labels, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["placements"].as_object().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn place_set_labels_reports_bad_input() {
+        let out = call(eunoia_place_set_labels, r#"{"outlines": {}}"#);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], false);
+        assert!(v["error"].as_str().unwrap().contains("sizes"));
     }
 
     // ------------------------------------------------------------------------

@@ -216,6 +216,20 @@
   {/if}
 
   <div>
+    <label for="setLabelMode" class="block text-xs font-medium text-muted mb-1">
+      Set names
+    </label>
+    <select
+      id="setLabelMode"
+      bind:value={appState.style.setLabelMode}
+      class="w-full px-2 py-1.5 text-sm border border-line rounded"
+    >
+      <option value="inside">Inside the shape</option>
+      <option value="outside">Outside, next to the shape</option>
+    </select>
+  </div>
+
+  <div>
     <label
       for="labelPlacement"
       class="block text-xs font-medium text-muted mb-1"

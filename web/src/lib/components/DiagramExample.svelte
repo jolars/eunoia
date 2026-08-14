@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LabelPlacement } from "@jolars/eunoia";
+  import type { LabelPlacement, SetOutline } from "@jolars/eunoia";
   import { leaderPath } from "@jolars/eunoia/svg";
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
@@ -21,6 +21,12 @@
     complement?: number;
     /** Exterior placement strategy. Default `"raycast"`. */
     strategy?: "raycast" | "forceDirected" | "matched";
+    /**
+     * Draw each **set's** name outside its own shape (`placeSetLabels`)
+     * instead of inside the diagram. Single-set region labels are dropped
+     * when this is on, since the exterior set label already names them.
+     */
+    setLabels?: boolean;
     /** RNG seed (lock examples so the chapter renders the same diagram for every reader). */
     seed?: number;
     /** Caption rendered below the diagram. */
@@ -50,6 +56,7 @@
     shape = "ellipse",
     complement,
     strategy = "raycast",
+    setLabels = false,
     seed = 42,
     caption,
     labelSize = 5,
@@ -71,10 +78,12 @@
   let eunoia: typeof import("@jolars/eunoia") | null = $state(null);
 
   let regions: Region[] = $state([]);
+  let outlines: SetOutline[] = $state([]);
   let container: Container | null = $state(null);
   let error: string | null = $state(null);
   let measureContainer: SVGGElement | null = $state(null);
   let measuredSizes: Record<string, { w: number; h: number }> = $state({});
+  let measuredSetSizes: Record<string, { w: number; h: number }> = $state({});
 
   // Set names for color assignment.
   const setNames = $derived(
@@ -142,8 +151,13 @@
 
   function normalise(
     input: Region[],
+    outlinesIn: SetOutline[],
     containerIn: Container | null,
-  ): { regions: Region[]; container: Container | null } {
+  ): {
+    regions: Region[];
+    outlines: SetOutline[];
+    container: Container | null;
+  } {
     let minX = Infinity,
       minY = Infinity,
       maxX = -Infinity,
@@ -158,7 +172,9 @@
         }
       }
     }
-    if (!isFinite(minX)) return { regions: input, container: containerIn };
+    if (!isFinite(minX)) {
+      return { regions: input, outlines: outlinesIn, container: containerIn };
+    }
     const span = Math.max(maxX - minX, maxY - minY) || 1;
     const k = 100 / span;
     const np = (p: Point): Point => ({
@@ -181,7 +197,11 @@
           height: containerIn.height * k,
         }
       : null;
-    return { regions, container: c };
+    const scaledOutlines = outlinesIn.map((o) => ({
+      label: o.label,
+      vertices: o.vertices.map(np),
+    }));
+    return { regions, outlines: scaledOutlines, container: c };
   }
 
   // Fit on mount. After this completes the SVG renders (its `{#if regions}`
@@ -206,9 +226,11 @@
       }
       const norm = normalise(
         layout.regions as Region[],
+        layout.shapeOutlines,
         (layout.container ?? null) as Container | null,
       );
       regions = norm.regions;
+      outlines = norm.outlines;
       container = norm.container;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -221,8 +243,10 @@
   $effect(() => {
     void regions;
     void labelSize;
+    void setLabels;
     if (!measureContainer || regions.length === 0) {
       measuredSizes = {};
+      measuredSetSizes = {};
       return;
     }
     const sizes: Record<string, { w: number; h: number }> = {};
@@ -237,6 +261,19 @@
       sizes[combo] = { w: bb.width, h: bb.height };
     }
     measuredSizes = sizes;
+
+    const setSizes: Record<string, { w: number; h: number }> = {};
+    for (const t of Array.from(
+      measureContainer.querySelectorAll<SVGGraphicsElement>(
+        "text[data-measure-set]",
+      ),
+    )) {
+      const name = t.getAttribute("data-measure-set");
+      if (name === null) continue;
+      const bb = t.getBBox();
+      setSizes[name] = { w: bb.width, h: bb.height };
+    }
+    measuredSetSizes = setSizes;
   });
 
   // Pad each measured size by `padding` on every side before handing the
@@ -269,6 +306,37 @@
     }
   });
 
+  const setPlacements: Record<string, LabelPlacement> = $derived.by(() => {
+    if (!eunoia || !setLabels || outlines.length === 0) return {};
+    if (Object.keys(measuredSetSizes).length === 0) return {};
+    try {
+      return eunoia.placeSetLabels({
+        outlines,
+        // Same padding trick as the region labels: place the padded box, draw
+        // the text at its measured size, so neighbours keep a visible gap.
+        sizes: Object.fromEntries(
+          Object.entries(measuredSetSizes).map(([k, v]) => [
+            k,
+            { w: v.w + 2 * padding, h: v.h + 2 * padding },
+          ]),
+        ),
+        strategy: {
+          // The region labels are already placed, so hand them over as
+          // keep-outs — otherwise a set name can land on a quantity.
+          obstacles: eunoia.labelObstacles({
+            placements,
+            sizes: paddedSizes,
+            padding: 0,
+          }),
+          precision: 0.05,
+        },
+      });
+    } catch (err) {
+      console.warn("[DiagramExample] set-label placement failed", err);
+      return {};
+    }
+  });
+
   const viewBox = $derived.by(() => {
     let minX = Infinity,
       minY = Infinity,
@@ -287,6 +355,12 @@
     }
     for (const [combo, p] of Object.entries(placements)) {
       const s = measuredSizes[combo];
+      if (!s) continue;
+      consume({ x: p.anchor.x - s.w / 2, y: p.anchor.y - s.h / 2 });
+      consume({ x: p.anchor.x + s.w / 2, y: p.anchor.y + s.h / 2 });
+    }
+    for (const [name, p] of Object.entries(setPlacements)) {
+      const s = measuredSetSizes[name];
       if (!s) continue;
       consume({ x: p.anchor.x - s.w / 2, y: p.anchor.y - s.h / 2 });
       consume({ x: p.anchor.x + s.w / 2, y: p.anchor.y + s.h / 2 });
@@ -335,6 +409,11 @@
               >
             {/if}
           {/each}
+          {#if setLabels}
+            {#each setNames as name}
+              <text data-measure-set={name} font-size={labelSize}>{name}</text>
+            {/each}
+          {/if}
         </g>
         {#each regions as region}
           <path
@@ -383,7 +462,7 @@
           />
         {/if}
         {#each regions as region}
-          {#if region.combination !== ""}
+          {#if region.combination !== "" && !(setLabels && !region.combination.includes("&"))}
             {@const p = placements[region.combination]}
             {@const isExterior = p?.kind !== undefined && p.kind !== "interior"}
             {@const anchor = p?.anchor ?? region.labelAnchor}
@@ -409,6 +488,17 @@
               fill="#111827">{region.combination}</text
             >
           {/if}
+        {/each}
+        <!-- Exterior set names: adjacent to their own shape, no leader line. -->
+        {#each Object.entries(setPlacements) as [name, p]}
+          <text
+            x={p.anchor.x}
+            y={p.anchor.y}
+            text-anchor="middle"
+            dominant-baseline="central"
+            font-size={labelSize}
+            fill="#111827">{name}</text
+          >
         {/each}
       </svg>
     {/if}

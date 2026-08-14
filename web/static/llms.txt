@@ -27,7 +27,7 @@ at authors of downstream bindings.
 - [Fitter Pipeline](https://eunoia.bz/docs/concepts/fitter-pipeline/): How region sizes become concrete shapes: spec, preprocess, initial layout, final layout.
 - [Goodness of Fit](https://eunoia.bz/docs/concepts/goodness-of-fit/): The error metrics eunoia reports and how to judge whether a diagram represents the data well.
 - [Complement (Universe/Container)](https://eunoia.bz/docs/concepts/complement/): Fitting a bounding container so the leftover area matches a target "outside the sets" region.
-- [Label Placement](https://eunoia.bz/docs/concepts/label-placement/): How labels are positioned within regions using poles of inaccessibility.
+- [Label Placement](https://eunoia.bz/docs/concepts/label-placement/): How region labels are positioned using poles of inaccessibility, the exterior solvers and leader lines used when a label does not fit, and the set-label mode that puts a set's name just outside its own shape.
 - [Glyphs](https://eunoia.bz/docs/concepts/glyphs/): Packing equally-sized unit glyphs (eulerGlyphs-style dots) inside regions, with uniform or random arrangements.
 
 ## Reference

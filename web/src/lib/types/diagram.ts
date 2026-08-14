@@ -102,6 +102,8 @@ export type LabelPlacementMode =
   | "matched"
   | "elbow";
 
+export type SetLabelMode = "inside" | "outside";
+
 export interface DiagramStyle {
   /** Base fill palette id (see `lib/colors.ts`). Per-set `colors` override it. */
   palette: string;
@@ -149,6 +151,16 @@ export interface DiagramStyle {
    *   the renderer draws shape strokes.
    */
   labelTether: "poi" | "boundary";
+  /**
+   * Where each set's *name* is drawn:
+   *
+   * - `"inside"` (default) — inside the diagram, at the set's own anchor
+   *   (a nested set folds its name into the region that contains it).
+   * - `"outside"` — just outside the set's own shape, hugging the boundary
+   *   at the angle with the most free space, with no leader line. Region
+   *   quantities stay where they are; only the names move out.
+   */
+  setLabelMode: SetLabelMode;
   /**
    * What to pack inside each region:
    *

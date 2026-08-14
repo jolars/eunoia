@@ -409,6 +409,25 @@ export interface ToSvgOptions {
    */
   labelSizes?: Record<string, LabelSize>;
   /**
+   * Pre-computed **set**-label placements keyed by set name (from
+   * `placeSetLabels`): each set's name drawn just outside its own shape, with
+   * no leader line.
+   *
+   * Supplying this changes where set names live. Normally a set name is drawn
+   * inside the diagram — at its shape's anchor in shape/polygon mode, or as a
+   * title line in its region's label box in region mode. With these
+   * placements, names are drawn at the given anchors instead and the interior
+   * copies are suppressed, so nothing is duplicated. Region counts stay where
+   * they were, moving up to fill the space the title line vacated.
+   */
+  setLabelPlacements?: Record<string, LabelPlacement>;
+  /**
+   * Measured set-label sizes keyed by set name, used to expand the `viewBox`
+   * around the exterior set labels. Pair with
+   * {@link ToSvgOptions.setLabelPlacements}.
+   */
+  setLabelSizes?: Record<string, LabelSize>;
+  /**
    * Pre-computed glyph placements (from `placeGlyphsForRegions`): one
    * equally-sized circle per data unit, drawn inside its region — above the
    * region fills and strokes, below labels. Only rendered for region-mode
@@ -543,6 +562,10 @@ export interface ToSvgOptions {
 export interface BoundsOptions {
   placements?: Record<string, LabelPlacement>;
   labelSizes?: Record<string, LabelSize>;
+  /** Set-label placements from `placeSetLabels`, keyed by set name. */
+  setLabelPlacements?: Record<string, LabelPlacement>;
+  /** Measured set-label sizes, keyed by set name. */
+  setLabelSizes?: Record<string, LabelSize>;
 }
 
 // ============================================================================
@@ -759,6 +782,15 @@ export function boundingBox(layout: Layout, opts: BoundsOptions = {}): Bounds {
     consume(labelBox.maxX, labelBox.maxY);
   }
 
+  const setLabelBox = placementsBounds(
+    opts.setLabelPlacements,
+    opts.setLabelSizes,
+  );
+  if (setLabelBox) {
+    consume(setLabelBox.minX, setLabelBox.minY);
+    consume(setLabelBox.maxX, setLabelBox.maxY);
+  }
+
   if (!Number.isFinite(minX)) {
     return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
   }
@@ -866,6 +898,7 @@ interface Resolved {
   setColor: Map<string, string>;
   nested: Record<string, string[]>;
   placements: Record<string, LabelPlacement>;
+  setLabelPlacements?: Record<string, LabelPlacement>;
   glyphs?: ToSvgOptions["glyphs"];
   glyphBoxes?: ToSvgOptions["glyphBoxes"];
   interactive: boolean;
@@ -879,6 +912,8 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
   const bounds = boundingBox(layout, {
     placements: opts.placements,
     labelSizes: opts.labelSizes,
+    setLabelPlacements: opts.setLabelPlacements,
+    setLabelSizes: opts.setLabelSizes,
   });
   const diag =
     Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) || 100;
@@ -932,6 +967,7 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     setColor,
     nested: nestedSets(layout),
     placements: opts.placements ?? {},
+    setLabelPlacements: opts.setLabelPlacements,
     glyphs: opts.glyphs,
     glyphBoxes: opts.glyphBoxes,
     interactive: opts.interactive ?? false,
@@ -1012,6 +1048,10 @@ export function svgBody(layout: Layout, opts: ToSvgOptions = {}): string {
   } else {
     renderShapes(parts, layout, o);
   }
+
+  // Exterior set names, drawn last so they sit above every fill. Both render
+  // paths above suppress their own interior copies when this is set.
+  renderSetLabels(parts, o);
 
   if (o.legendShow && (o.legendLabels.length > 0 || o.hasContainer))
     renderLegend(parts, o);
@@ -1201,7 +1241,12 @@ function countFor(
 function renderRegionLabel(parts: string[], r: Region, o: Resolved): void {
   const placement = o.placements[r.combination];
   const anchor = placement?.anchor ?? r.labelAnchor;
-  const titleLines = regionTitleLines(r.combination, o.nested);
+  // Set names live outside the diagram in set-label mode, so the region box
+  // keeps only its count — and the count moves up into the space the title
+  // line would have taken.
+  const titleLines = o.setLabelPlacements
+    ? []
+    : regionTitleLines(r.combination, o.nested);
   const isExterior =
     placement?.kind !== undefined && placement.kind !== "interior";
 
@@ -1226,6 +1271,23 @@ function renderRegionLabel(parts: string[], r: Region, o: Resolved): void {
     const y = anchor.y + titleLines.length * o.labelSize;
     parts.push(
       `<text x="${anchor.x}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(count))}</text>`,
+    );
+  }
+}
+
+/**
+ * Set names at their exterior placements ({@link ToSvgOptions.setLabelPlacements}).
+ * No-op when the option is absent, and no leader lines are drawn — the whole
+ * point of the mode is that the label sits close enough to its shape not to
+ * need one. Keys are sorted so the emitted markup is stable.
+ */
+function renderSetLabels(parts: string[], o: Resolved): void {
+  if (!o.setLabelPlacements || !o.showLabels) return;
+  for (const name of Object.keys(o.setLabelPlacements).sort()) {
+    const anchor = o.setLabelPlacements[name]?.anchor;
+    if (!anchor) continue;
+    parts.push(
+      `<text x="${anchor.x}" y="${anchor.y}" text-anchor="middle" dominant-baseline="central" font-size="${o.labelSize}" font-weight="${o.fontWeight}" font-style="${o.fontStyle}" fill="${o.labelColor}">${escText(name)}</text>`,
     );
   }
 }
@@ -1303,8 +1365,10 @@ function renderShapes(parts: string[], layout: Layout, o: Resolved): void {
     }
   }
 
-  // Set labels.
-  if (o.showLabels) {
+  // Set labels. Skipped entirely in set-label mode — `renderSetLabels` draws
+  // them at their exterior anchors instead, so drawing them here too would
+  // double them up.
+  if (o.showLabels && !o.setLabelPlacements) {
     const label = (lx: number, ly: number, text: string) =>
       parts.push(
         `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="central" font-size="${o.labelSize}" font-weight="${o.fontWeight}" font-style="${o.fontStyle}" fill="${o.labelColor}">${escText(text)}</text>`,
@@ -1332,6 +1396,9 @@ function renderShapes(parts: string[], layout: Layout, o: Resolved): void {
       if (rc) return rc.labelAnchor;
       return null;
     };
+    // Normally the count sits one line below the set name; in set-label mode
+    // the name has moved outside, so the count takes the anchor itself.
+    const dy = o.setLabelPlacements ? 0 : o.labelSize;
     // `counts`, when supplied, replaces the fitted areas outright — including
     // which sets get a number at all.
     for (const [combo, value] of Object.entries(o.counts ?? fitted)) {
@@ -1339,7 +1406,7 @@ function renderShapes(parts: string[], layout: Layout, o: Resolved): void {
       const anchor = findAnchor(combo);
       if (!anchor) continue;
       parts.push(
-        `<text x="${anchor.x}" y="${anchor.y + o.labelSize}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(value))}</text>`,
+        `<text x="${anchor.x}" y="${anchor.y + dy}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(value))}</text>`,
       );
     }
   }
@@ -1414,4 +1481,5 @@ export type {
   Polygon,
   Region,
   RegionPiece,
+  SetOutline,
 } from "./index.js";

@@ -24,19 +24,20 @@ released exactly once with `eunoia_free`.
 
 ## Exported Symbols
 
-All seven are `extern "C"`. Strings are NUL-terminated UTF-8.
+All eight are `extern "C"`. Strings are NUL-terminated UTF-8.
 
   | Symbol                    | C signature                                   | Returns                         |
   | ------------------------- | --------------------------------------------- | ------------------------------- |
   | `eunoia_euler`            | `char *eunoia_euler(const char *)`            | fitted Euler layout envelope    |
   | `eunoia_venn`             | `char *eunoia_venn(const char *)`             | canonical Venn layout envelope  |
   | `eunoia_place_labels`     | `char *eunoia_place_labels(const char *)`     | label/leader placement envelope |
+  | `eunoia_place_set_labels` | `char *eunoia_place_set_labels(const char *)` | exterior set-label envelope     |
   | `eunoia_place_glyphs`     | `char *eunoia_place_glyphs(const char *)`     | glyph placement envelope        |
   | `eunoia_place_glyph_boxes`| `char *eunoia_place_glyph_boxes(const char *)`| member-label box envelope       |
   | `eunoia_version`          | `char *eunoia_version(void)`                  | crate version string            |
   | `eunoia_free`             | `void eunoia_free(char *)`                    | —                               |
 
-There is no generated C header today—declare the seven prototypes yourself from
+There is no generated C header today—declare the eight prototypes yourself from
 the table above.
 
 ## Building the Library
@@ -218,6 +219,54 @@ success payload is a `placements` map:
 `leader_end`, and `leader_waypoints` appear only for exterior placements that
 need a leader line.
 
+## `eunoia_place_set_labels`
+
+Resolves one label position per **set**, sitting just outside that set's own
+shape with no leader line. The sibling of `eunoia_place_labels`: keyed by set
+name rather than region, and it needs the shape outlines
+(`plot_data.shape_outlines`) rather than the region pieces, because what it hugs
+is the set's own silhouette. See [Label
+placement](/docs/concepts/label-placement/).
+
+```json
+{
+  "outlines": { "A": [[x, y], …], "B": [[x, y], …] },
+  "sizes": { "A": [0.4, 0.2], "B": [0.4, 0.2] },
+  "container": { "x": -2, "y": -1.5, "width": 4, "height": 3 },
+  "strategy": { "margin": 0.05, "angular_steps": 180 }
+}
+```
+
+  | Field       | Type                     | Notes                                                              |
+  | ----------- | ------------------------ | ------------------------------------------------------------------ |
+  | `outlines`  | `set → [[x, y], …]`      | Closed ring per set — `plot_data.shape_outlines` verbatim.         |
+  | `sizes`     | `set → [width, height]`  | Measured label box sizes, in diagram units.                        |
+  | `container` | `{x, y, width, height}`  | Optional; labels that fit inside it are preferred.                 |
+  | `strategy`  | object                   | Optional; omitted fields keep core defaults.                       |
+
+The `strategy` knobs: `margin` is the gap between the outline and the label box
+(default half the label height); `angular_steps` is the number of candidate
+angles swept around each shape (default 180, clamped up to 8); `obstacles` is a
+list of `{x, y, width, height}` keep-out boxes — pass the measured region-label
+boxes so set names avoid the quantities; `precision` is the
+pole-of-inaccessibility precision.
+
+Only sets present in **both** `outlines` and `sizes` get a placement. The
+success payload is a `placements` map keyed by set name:
+
+```json
+{
+  "ok": true,
+  "placements": {
+    "A": { "anchor": [x, y], "kind": "exterior_set" },
+    "B": { "anchor": [x, y], "kind": "exterior_set" }
+  }
+}
+```
+
+`kind` is always `exterior_set`, and there is no leader geometry: the label is
+adjacent to the shape it names, so there is nothing to connect.
+
 ## `eunoia_place_glyphs`
 
 Packs equally-sized circular glyphs—one mark per data unit,
@@ -342,8 +391,8 @@ order, so serialization is deterministic.
 ## Memory Ownership
 
 Every `char *` returned by `eunoia_euler`, `eunoia_venn`, `eunoia_place_labels`,
-`eunoia_place_glyphs`, `eunoia_place_glyph_boxes`, and `eunoia_version` is
-heap-allocated by Rust and **owned by the caller**. Hand
+`eunoia_place_set_labels`, `eunoia_place_glyphs`, `eunoia_place_glyph_boxes`,
+and `eunoia_version` is heap-allocated by Rust and **owned by the caller**. Hand
 it back to `eunoia_free` exactly once. Do not free it with the host's `free()`,
 do not free it twice, and do not read it after freeing—each is undefined
 behavior. Passing `NULL` to `eunoia_free` is safe.

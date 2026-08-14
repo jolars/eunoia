@@ -12,6 +12,9 @@
 //! - Label placement ([`place_labels`]) — every requested region gets a
 //!   position back, interior when the label fits inside the polygon,
 //!   exterior otherwise, with a `tether` so callers can draw a leader line
+//! - Set-label placement ([`place_set_labels`]) — one label per *set*,
+//!   sitting just outside that set's own shape at the angle with the most
+//!   room, close enough to need no leader line
 //! - Glyph placement ([`place_glyphs`]) — equally-sized unit marks packed
 //!   inside each region, eulerGlyphs-style
 //! - Member-label placement ([`place_glyph_boxes`]) — the same packer with a
@@ -24,6 +27,7 @@ mod inscribed;
 mod placement;
 mod plot_data;
 mod regions;
+mod set_labels;
 
 pub use clip::{ClipOperation, polygon_clip, polygon_difference, polygon_union_many};
 pub use glyphs::{
@@ -40,3 +44,4 @@ pub use regions::{
     DEFAULT_SLIVER_THRESHOLD, RegionPiece, RegionPolygons, classify_into_pieces, decompose_regions,
     decompose_regions_with,
 };
+pub use set_labels::{SetLabelStrategy, place_set_labels};

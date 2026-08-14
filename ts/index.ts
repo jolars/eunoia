@@ -142,6 +142,18 @@ export interface RegionPiece {
   area: number;
 }
 
+/**
+ * One set's polygonised shape silhouette: the set name plus a closed ring of
+ * vertices. Structurally a subset of [`Polygon`], so a `Polygon` can be
+ * passed anywhere a `SetOutline` is expected.
+ */
+export interface SetOutline {
+  /** Set name. */
+  label: string;
+  /** Closed ring, in the same coordinates as the fitted shapes. */
+  vertices: Point[];
+}
+
 export interface Region {
   /**
    * The set combination this region belongs to, in canonical form (e.g.
@@ -238,6 +250,17 @@ export type Layout = (
        * coordinate.
        */
       setAnchorRegions: Record<string, string>;
+      /**
+       * Polygonised silhouette of each set's own shape, keyed by set name in
+       * `label`. Region decomposition clips the shapes against one another,
+       * so a set's outline cannot be recovered from `regions` without a
+       * union pass — this carries it directly.
+       *
+       * Two uses: drawing seam-free per-set strokes over the region fills,
+       * and feeding [`placeSetLabels`], which needs each set's own boundary
+       * to hug. Sorted by set name.
+       */
+      shapeOutlines: SetOutline[];
       metrics: Metrics;
     }
 ) & {
@@ -431,7 +454,13 @@ export type PlacementKind =
   | "exteriorRaycast"
   | "exteriorForceDirected"
   | "exteriorElbow"
-  | "exteriorMatched";
+  | "exteriorMatched"
+  /**
+   * Anchor sits just outside its own set's shape, hugging the boundary at
+   * the angle with the most room — produced by [`placeSetLabels`]. Carries
+   * no leader: `tether` and `leaderEnd` are both `undefined`.
+   */
+  | "exteriorSet";
 
 export interface LabelPlacement {
   /** Centre of the label box, in the same coordinates as the regions. */
@@ -773,6 +802,21 @@ function parseAnchors(s: string | undefined | null): Record<string, Point> {
   }
 }
 
+function parseOutlines(s: string | undefined | null): SetOutline[] {
+  if (!s) return [];
+  try {
+    const raw = JSON.parse(s) as Record<string, [number, number][]>;
+    return Object.entries(raw)
+      .map(([label, ring]) => ({
+        label,
+        vertices: ring.map(([x, y]) => ({ x, y })),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  } catch {
+    return [];
+  }
+}
+
 function parseStringRecord(
   s: string | undefined | null,
 ): Record<string, string> {
@@ -994,6 +1038,7 @@ export function euler(options: EulerOptions): Layout {
           regions,
           setAnchors: parseAnchors(result.set_anchors_json),
           setAnchorRegions: parseStringRecord(result.set_anchor_regions_json),
+          shapeOutlines: parseOutlines(result.shape_outlines_json),
           metrics: metricsFromPolygonResult(result),
           ...(container ? { container } : {}),
         };
@@ -1263,6 +1308,7 @@ export function venn(options: VennOptions): Layout {
         regions,
         setAnchors: parseAnchors(result.set_anchors_json),
         setAnchorRegions: parseStringRecord(result.set_anchor_regions_json),
+        shapeOutlines: parseOutlines(result.shape_outlines_json),
         metrics: metricsFromPolygonResult(result),
         ...(container ? { container } : {}),
       };
@@ -1397,7 +1443,8 @@ const PLACEMENT_KIND_MAP: Record<
   | "ExteriorRaycast"
   | "ExteriorForceDirected"
   | "ExteriorElbow"
-  | "ExteriorMatched",
+  | "ExteriorMatched"
+  | "ExteriorSet",
   PlacementKind
 > = {
   Interior: "interior",
@@ -1405,6 +1452,7 @@ const PLACEMENT_KIND_MAP: Record<
   ExteriorForceDirected: "exteriorForceDirected",
   ExteriorElbow: "exteriorElbow",
   ExteriorMatched: "exteriorMatched",
+  ExteriorSet: "exteriorSet",
 };
 
 /**
@@ -1576,6 +1624,194 @@ export function placeLabelsForRegions(
     if (v.leaderEnd)
       placement.leaderEnd = { x: v.leaderEnd[0], y: v.leaderEnd[1] };
     out[k] = placement;
+  }
+  return out;
+}
+
+/** Tuning for [`placeSetLabels`]. Every field is optional. */
+export interface SetLabelStrategy {
+  /**
+   * Gap between the set's outline and the near edge of the label box.
+   * Omit for a per-set default of half the label height.
+   *
+   * This scales with the label's *height*, unlike the margin on
+   * [`PlacementStrategy`]'s leader-line policies, which scales with its
+   * longest side. There the margin decides how far past the whole diagram a
+   * label sits; here the label must read as attached to its shape, and a
+   * width-scaled gap would fling a long set name several radii away.
+   */
+  margin?: number;
+  /**
+   * Number of candidate angles swept around each shape. Default `180` (2°
+   * steps); values under `8` are clamped up. Raising it buys finer slot
+   * selection on crowded diagrams at linear cost.
+   */
+  angularSteps?: number;
+  /**
+   * Extra axis-aligned keep-out boxes the set labels must avoid, in the same
+   * coordinates as the outlines. Pass the measured region-label boxes here —
+   * [`labelObstacles`] builds them from a [`placeLabelsForRegions`] result —
+   * so a set name doesn't land on a region's quantity.
+   */
+  obstacles?: ReadonlyArray<Rect>;
+  /** Polylabel search precision for the ray origin inside each shape. Default `0.01`. */
+  precision?: number;
+}
+
+export interface PlaceSetLabelsOptions {
+  /**
+   * One outline per set. Pass `layout.shapeOutlines` from a `"regions"`
+   * layout, or `layout.polygons` from a `"polygons"` one — both satisfy
+   * this shape.
+   */
+  outlines: ReadonlyArray<SetOutline>;
+  /**
+   * The complement container (universe rectangle), when the spec was built
+   * with a complement. Labels whose box fits inside it are preferred over
+   * ones that spill out.
+   */
+  container?: Container;
+  /** Label dimensions per set, keyed by set name. */
+  sizes: Record<string, LabelSize>;
+  /** Strategy knobs. Omit for the defaults. */
+  strategy?: SetLabelStrategy;
+}
+
+/**
+ * Place one label per set, just outside that set's own shape.
+ *
+ * The sibling of [`placeLabelsForRegions`], and the difference is what each
+ * one labels. That one is keyed by region, and a label that doesn't fit
+ * inside its region is exiled to the diagram border with a leader line back
+ * to it. This one is keyed by set and never leaves its shape's side: the
+ * label sits just outside the set's outline, at the angle around it with the
+ * most free space — close enough that no leader is needed to say what it
+ * names.
+ *
+ * The angle is chosen by sweeping the full circle and keeping the slot whose
+ * label box has the most clearance to the other sets' shapes, the set labels
+ * already placed, and any `strategy.obstacles`. Labels that still collide in
+ * a crowded diagram are separated by the same tangential-push sweep the
+ * raycast exterior policy uses — which for this mode amounts to rotating
+ * them further around their shapes.
+ *
+ * Every placement comes back with `kind: "exteriorSet"` and **no leader**:
+ * `tether`, `leaderEnd`, and `leaderWaypoints` are all empty. Sets missing
+ * from either `outlines` or `sizes`, or carrying a non-finite or
+ * non-positive size, are absent from the result.
+ *
+ * Label boxes are guaranteed not to overlap **each other**. Clearance from
+ * the *shapes* is best-effort: a set nested inside a much larger one, or a
+ * label wide relative to its shape, may have no free angle at all, in which
+ * case the sweep returns the least-bad one.
+ *
+ * @example
+ * ```ts
+ * import { euler, placeSetLabels } from "@jolars/eunoia";
+ *
+ * const layout = euler({ sets: { A: 5, B: 3, "A&B": 1 }, output: "regions" });
+ * const placements = placeSetLabels({
+ *   outlines: layout.shapeOutlines,
+ *   sizes: { A: { w: 0.4, h: 0.2 }, B: { w: 0.4, h: 0.2 } },
+ * });
+ * for (const [set, p] of Object.entries(placements)) {
+ *   drawLabel(set, p.anchor); // no leader line to draw
+ * }
+ * ```
+ */
+export function placeSetLabels(
+  options: PlaceSetLabelsOptions,
+): Record<string, LabelPlacement> {
+  const { outlines, container, sizes, strategy } = options;
+  if (!outlines || !Array.isArray(outlines)) {
+    throw new TypeError("placeSetLabels: `outlines` must be an array");
+  }
+  if (!sizes || typeof sizes !== "object") {
+    throw new TypeError(
+      "placeSetLabels: `sizes` must be an object of set → { w, h }",
+    );
+  }
+
+  const outlinesPayload: Record<string, [number, number][]> = {};
+  for (const o of outlines) {
+    outlinesPayload[o.label] = o.vertices.map((v: Point): [number, number] => [
+      v.x,
+      v.y,
+    ]);
+  }
+
+  const sizesPayload: Record<string, [number, number]> = {};
+  for (const [k, v] of Object.entries(sizes)) {
+    if (
+      v &&
+      Number.isFinite(v.w) &&
+      Number.isFinite(v.h) &&
+      v.w > 0 &&
+      v.h > 0
+    ) {
+      sizesPayload[k] = [v.w, v.h];
+    }
+  }
+
+  const containerJson = container
+    ? JSON.stringify({
+        x: container.x,
+        y: container.y,
+        width: container.width,
+        height: container.height,
+      })
+    : undefined;
+
+  let strategyJson: string | undefined;
+  if (strategy) {
+    const payload: {
+      margin?: number;
+      angularSteps?: number;
+      obstacles?: Rect[];
+      precision?: number;
+    } = {};
+    if (strategy.margin !== undefined) payload.margin = strategy.margin;
+    if (strategy.angularSteps !== undefined)
+      payload.angularSteps = strategy.angularSteps;
+    if (strategy.precision !== undefined)
+      payload.precision = strategy.precision;
+    if (strategy.obstacles !== undefined) {
+      const obstacles: Rect[] = [];
+      for (const r of strategy.obstacles) {
+        if (
+          r &&
+          Number.isFinite(r.x) &&
+          Number.isFinite(r.y) &&
+          Number.isFinite(r.width) &&
+          Number.isFinite(r.height) &&
+          r.width > 0 &&
+          r.height > 0
+        ) {
+          obstacles.push({ x: r.x, y: r.y, width: r.width, height: r.height });
+        }
+      }
+      if (obstacles.length > 0) payload.obstacles = obstacles;
+    }
+    strategyJson = JSON.stringify(payload);
+  }
+
+  const json = wasm.place_set_labels(
+    JSON.stringify(outlinesPayload),
+    containerJson,
+    JSON.stringify(sizesPayload),
+    strategyJson,
+  );
+  const raw = JSON.parse(json) as Record<
+    string,
+    { anchor: [number, number]; kind: "ExteriorSet" }
+  >;
+  const out: Record<string, LabelPlacement> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    out[k] = {
+      anchor: { x: v.anchor[0], y: v.anchor[1] },
+      kind: PLACEMENT_KIND_MAP[v.kind],
+      leaderWaypoints: [],
+    };
   }
   return out;
 }

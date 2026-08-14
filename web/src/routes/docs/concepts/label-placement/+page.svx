@@ -1,6 +1,14 @@
 <script>
 import DiagramExample from "$lib/components/DiagramExample.svelte";
 
+// A calmer spec for the set-label example: every region label fits inside, so
+// the exterior placements on show are the set names and nothing else.
+const THREE_SET_SPEC = {
+  Mammals: 12, Birds: 9, Nocturnal: 7,
+  "Mammals&Birds": 1, "Mammals&Nocturnal": 4, "Birds&Nocturnal": 2,
+  "Mammals&Birds&Nocturnal": 0.6,
+};
+
 const FOUR_SET_SPEC = {
   A: 10, B: 10, C: 10, D: 10,
   "A&B": 4, "A&C": 4, "A&D": 4,
@@ -259,6 +267,97 @@ itself:
   bboxes to the placer and want breathing room between the leader tip and the
   glyphs; leave at `0` when you already pre-pad sizes for the label-vs-label gap
   (the same padding then acts as the leader gap automatically).
+
+## Set Labels: Outside, Next to the Shape
+
+Everything above labels **regions**. A different question is where to put a
+**set's** name, and it has a different answer, because a set name has a shape it
+belongs to rather than a polygon it must fit inside.
+
+By default a set name goes *inside* the diagram: at the pole of inaccessibility
+of the set's exclusive lobe, or — for a set with no exclusive area — folded into
+the largest region that contains it. `place_set_labels` (Rust)/`placeSetLabels`
+(npm) offers the third option: **just outside the set's own shape**, hugging the
+boundary, with **no leader line**. The label is adjacent to the thing it names,
+so nothing needs to be drawn to connect them.
+
+<DiagramExample
+  sets={THREE_SET_SPEC}
+  shape="circle"
+  setLabels
+  labelSize={4}
+  caption="Set names placed outside their own shapes: each rotates around its circle to the angle with the most free space, and needs no leader line to say what it names. The intersection labels come from placeLabelsForRegions as usual — that is where the leaders are from — and their boxes were handed to the set placer as keep-outs."
+/>
+
+The algorithm is a rotation, in three steps:
+
+1. **Hug.** For a candidate angle, the anchor is cast outward from the shape's
+   own POI until the label box clears that shape's outline by `margin` — and no
+   further. The clearance test uses the box's full footprint, width *and*
+   height, so a wide label on a diagonal can't clip a curving boundary with a
+   corner.
+2. **Rotate.** Sweep the angle over the whole circle and keep the one whose
+   label box has the largest clearance to everything else: the other sets'
+   outlines, the set labels already placed, and any `obstacles` you supply.
+   This is what puts a set buried in a cluster on whichever side happens to be
+   open. Ties — the common case for an isolated set, where every side is equally
+   free — break outward, away from the diagram's centre.
+3. **Guard.** If two labels still overlap after the sweep, the same tangential
+   push the `raycast` policy uses separates them. Its push axis is perpendicular
+   to each label's outward direction, so here "push tangentially" *is* "rotate
+   further around the shape"; each pass re-hugs afterwards so a slid label
+   doesn't creep in along the chord.
+
+Sets are placed one at a time in descending shape-area order, each seeing the
+ones before it as obstacles, so the result never depends on map iteration order.
+
+```ts
+import { euler, labelObstacles, placeLabelsForRegions, placeSetLabels } from "@jolars/eunoia";
+
+const layout = euler({ sets, output: "regions" });
+
+// Region quantities first — their boxes become keep-outs for the set names.
+const placements = placeLabelsForRegions({ regions: layout.regions, sizes });
+
+const setPlacements = placeSetLabels({
+  outlines: layout.shapeOutlines,
+  sizes: setSizes,
+  strategy: { obstacles: labelObstacles({ placements, sizes, padding: 1 }) },
+});
+
+for (const [name, p] of Object.entries(setPlacements)) {
+  drawLabel(p.anchor, name); // kind === "exteriorSet"; no leader to draw
+}
+```
+
+`layout.shapeOutlines` is the per-set silhouette, present on `"regions"` and
+`"polygons"` output. Region decomposition clips the shapes against one another,
+so a set's own outline can't be recovered from the region pieces without a union
+pass — the layout carries it directly.
+
+Knobs (defaults in parentheses):
+
+- `margin` *(`0.5 * label_h`)*: gap between the outline and the near edge of the
+  label box. Note this scales with the label's **height**, not its longest side
+  the way the leader-line policies' margin does. There the margin decides how
+  far past the whole diagram a label sits, and scaling with the long side keeps
+  a wide label from crowding the outline. Here the label has to read as
+  *attached* to its shape, and a width-scaled gap would fling a long set name
+  several radii away — the very ambiguity the mode exists to avoid.
+- `angularSteps` *(180, i.e. 2° steps)*: candidate angles per shape. Values under
+  8 are clamped up; raising it buys finer slot selection at linear cost.
+- `obstacles` *(none)*: extra axis-aligned keep-out boxes. This is the hook for
+  everything eunoia can't see — region quantity labels (build them with
+  `labelObstacles`), a title, a legend.
+- `precision` *(0.01)*: polylabel search precision for the ray origin inside
+  each shape.
+
+Two guarantees worth being precise about. Label boxes are guaranteed not to
+overlap **each other** — that is what the guard pass enforces. Clearance from
+the **shapes** is best-effort: a set nested inside a much larger one, or a label
+wide relative to its shape, may have no free angle at all, and the sweep then
+returns the least-bad one. If your diagram has deeply nested sets, the interior
+placement or a leader line will usually read better than this mode.
 
 ## Rendering Recipe
 

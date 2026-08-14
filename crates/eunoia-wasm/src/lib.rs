@@ -852,6 +852,14 @@ fn region_piece_to_wasm(piece: &eunoia::plotting::RegionPiece) -> WasmRegionPiec
 /// anchored to so consumers can pair a set's label with the matching region
 /// without comparing anchor coordinates. Sets that fell back to the bare-shape
 /// POI are omitted.
+///
+/// `shape_outlines_json` is a JSON string mapping set name → a closed ring of
+/// `[x, y]` pairs, computed from `PlotData::shape_outlines`. Region
+/// decomposition clips shapes against each other, so the per-set silhouette
+/// can't be recovered from the region pieces without a union pass — this
+/// carries it directly. Two uses: seam-free per-set strokes drawn over the
+/// region fills, and driving [`place_set_labels`], which needs each set's own
+/// outline to hug.
 #[wasm_bindgen]
 pub struct WasmRegionPolygons {
     regions: Vec<WasmRegion>,
@@ -868,6 +876,7 @@ pub struct WasmRegionPolygons {
     residuals_json: String,
     set_anchors_json: String,
     set_anchor_regions_json: String,
+    shape_outlines_json: String,
 }
 
 #[wasm_bindgen]
@@ -913,6 +922,11 @@ impl WasmRegionPolygons {
     }
 
     #[wasm_bindgen(getter)]
+    pub fn shape_outlines_json(&self) -> String {
+        self.shape_outlines_json.clone()
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn container(&self) -> Option<WasmRectangle> {
         self.container.clone()
     }
@@ -920,6 +934,11 @@ impl WasmRegionPolygons {
 
 type AnchorMap = std::collections::HashMap<String, (f64, f64)>;
 type SetAnchorRegionMap = std::collections::HashMap<String, String>;
+/// Per-set polygonised shape outline, as a closed ring of `[x, y]` pairs.
+/// Mirrors [`eunoia::plotting::PlotData::shape_outlines`]; serialised into
+/// `WasmRegionPolygons::shape_outlines_json` so region-mode callers can drive
+/// [`place_set_labels`] without a second fit.
+type OutlineMap = std::collections::HashMap<String, Vec<[f64; 2]>>;
 
 /// Compute one `(label_x, label_y)` per region (hole-aware), a name → `(x, y)`
 /// map for per-set labels, and a name → region-combo map recording which region
@@ -928,7 +947,7 @@ type SetAnchorRegionMap = std::collections::HashMap<String, String>;
 fn compute_region_label_anchors<S>(
     layout: &eunoia::Layout<S>,
     spec: &eunoia::spec::DiagramSpec,
-) -> (AnchorMap, AnchorMap, SetAnchorRegionMap)
+) -> (AnchorMap, AnchorMap, SetAnchorRegionMap, OutlineMap)
 where
     S: eunoia::geometry::traits::DiagramShape + Polygonize + Copy + 'static,
 {
@@ -943,7 +962,20 @@ where
         .into_iter()
         .map(|(name, p)| (name, (p.x(), p.y())))
         .collect();
-    (region_anchors, set_anchors, plot.set_anchor_regions)
+    let shape_outlines = plot
+        .shape_outlines
+        .into_iter()
+        .map(|(name, poly)| {
+            let ring: Vec<[f64; 2]> = poly.vertices().iter().map(|v| [v.x(), v.y()]).collect();
+            (name, ring)
+        })
+        .collect();
+    (
+        region_anchors,
+        set_anchors,
+        plot.set_anchor_regions,
+        shape_outlines,
+    )
 }
 
 /// Generate a simple test layout for debugging
@@ -1837,7 +1869,7 @@ pub fn generate_region_polygons_circles(
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons.
-    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map, shape_outlines_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -1887,6 +1919,8 @@ pub fn generate_region_polygons_circles(
         set_anchors_json: serde_json::to_string(&set_anchors_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        shape_outlines_json: serde_json::to_string(&shape_outlines_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -1930,7 +1964,7 @@ pub fn generate_region_polygons_ellipses(
     let diagnostics = extract_diagnostics(&layout)?;
 
     // Get region polygons.
-    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map, shape_outlines_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -1981,6 +2015,8 @@ pub fn generate_region_polygons_ellipses(
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        shape_outlines_json: serde_json::to_string(&shape_outlines_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
 
@@ -2022,7 +2058,7 @@ pub fn generate_region_polygons_squares(
         .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
-    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map, shape_outlines_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2069,6 +2105,8 @@ pub fn generate_region_polygons_squares(
         set_anchors_json: serde_json::to_string(&set_anchors_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        shape_outlines_json: serde_json::to_string(&shape_outlines_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -2111,7 +2149,7 @@ pub fn generate_region_polygons_rectangles(
         .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
-    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map, shape_outlines_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2158,6 +2196,8 @@ pub fn generate_region_polygons_rectangles(
         set_anchors_json: serde_json::to_string(&set_anchors_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        shape_outlines_json: serde_json::to_string(&shape_outlines_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -2202,7 +2242,7 @@ pub fn generate_region_polygons_rotated_rectangles(
         .map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let diagnostics = extract_diagnostics(&layout)?;
 
-    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map, shape_outlines_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2249,6 +2289,8 @@ pub fn generate_region_polygons_rotated_rectangles(
         set_anchors_json: serde_json::to_string(&set_anchors_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        shape_outlines_json: serde_json::to_string(&shape_outlines_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -2560,7 +2602,7 @@ where
     let (layout, diagram_spec) = venn.into_layout_and_spec();
     let diagnostics = extract_diagnostics(&layout)?;
 
-    let (region_anchors_map, set_anchors_map, set_anchor_regions_map) =
+    let (region_anchors_map, set_anchors_map, set_anchor_regions_map, shape_outlines_map) =
         compute_region_label_anchors(&layout, &diagram_spec);
     let region_polygons = layout.region_polygons(&diagram_spec, n_vertices);
 
@@ -2607,6 +2649,8 @@ where
         set_anchors_json: serde_json::to_string(&set_anchors_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
         set_anchor_regions_json: serde_json::to_string(&set_anchor_regions_map)
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?,
+        shape_outlines_json: serde_json::to_string(&shape_outlines_map)
             .map_err(|e| JsValue::from_str(&format!("{e}")))?,
     })
 }
@@ -2904,6 +2948,7 @@ pub fn place_region_labels(
             PlacementKind::ExteriorForceDirected => "ExteriorForceDirected",
             PlacementKind::ExteriorElbow => "ExteriorElbow",
             PlacementKind::ExteriorMatched => "ExteriorMatched",
+            PlacementKind::ExteriorSet => "ExteriorSet",
             // `PlacementKind` is `#[non_exhaustive]`; surface unknown future
             // kinds rather than failing to compile when one is added.
             _ => "Unknown",
@@ -2919,6 +2964,152 @@ pub fn place_region_labels(
             },
         );
     }
+
+    serde_json::to_string(&out).map_err(|e| JsValue::from_str(&format!("{e}")))
+}
+
+/// Exterior **set**-label placement — one label per set, hugging that set's
+/// own shape, with no leader line.
+///
+/// The sibling of [`place_region_labels`]. That one is keyed by region and
+/// sends a label that doesn't fit out to the diagram exterior on a leader
+/// line; this one is keyed by set and keeps the label at its shape's side,
+/// rotating around the outline to the angle with the most free space.
+///
+/// `outlines_json` is `{ set: [[x, y], ...] }` — one closed ring per set,
+/// exactly the `shapeOutlines` of a `plot_data` result. `sizes_json` is
+/// `{ set: [w, h] }`. `container_json` is the jointly-fitted complement
+/// container when the spec carried one (`{"x", "y", "width", "height"}`,
+/// centre + extents, matching [`WasmRectangle`]); labels that fit inside it
+/// are preferred over ones that spill out. Pass `None` otherwise.
+///
+/// `strategy_json` is optional — when `None`, the defaults apply. Shape:
+///
+/// ```json
+/// {
+///   "margin": 0.5,
+///   "angularSteps": 180,
+///   "obstacles": [{ "x": 0.0, "y": 0.0, "width": 0.4, "height": 0.2 }],
+///   "precision": 0.01
+/// }
+/// ```
+///
+/// `margin` is the gap between the outline and the near edge of the label
+/// box; omit it for a per-set default of half the label height.
+/// `angularSteps` is the number of candidate angles swept around each shape
+/// (default 180, i.e. 2° steps; values under 8 are clamped up).
+/// `obstacles` are extra keep-out boxes (centre + full extents, the same
+/// convention `place_glyphs` uses) — pass the measured region-label boxes
+/// here so set labels avoid them.
+///
+/// Returns `{ set: { "anchor": [x, y], "kind": "ExteriorSet" } }`. Sets
+/// missing from either input map, or carrying a non-finite / non-positive
+/// size or a degenerate outline, are absent from the result. No `tether`,
+/// `leaderEnd`, or `leaderWaypoints` are emitted: the label is adjacent to
+/// its shape, so there is no leader to draw.
+#[wasm_bindgen]
+pub fn place_set_labels(
+    outlines_json: String,
+    container_json: Option<String>,
+    sizes_json: String,
+    strategy_json: Option<String>,
+) -> Result<String, JsValue> {
+    use eunoia::geometry::primitives::Point;
+    use eunoia::geometry::shapes::{Polygon, Rectangle};
+    use eunoia::plotting::{SetLabelStrategy, place_set_labels as core_place_set_labels};
+
+    #[derive(serde::Deserialize)]
+    struct ContainerJson {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct RectJson {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    }
+
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct StrategyJson {
+        margin: Option<f64>,
+        #[serde(rename = "angularSteps")]
+        angular_steps: Option<usize>,
+        obstacles: Option<Vec<RectJson>>,
+        precision: Option<f64>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct PlacementJson {
+        anchor: [f64; 2],
+        kind: &'static str,
+    }
+
+    let outlines_in: std::collections::HashMap<String, Vec<[f64; 2]>> =
+        serde_json::from_str(&outlines_json)
+            .map_err(|e| JsValue::from_str(&format!("invalid outlines_json: {e}")))?;
+    let sizes: std::collections::HashMap<String, (f64, f64)> = serde_json::from_str(&sizes_json)
+        .map_err(|e| JsValue::from_str(&format!("invalid sizes_json: {e}")))?;
+
+    let container = container_json
+        .as_deref()
+        .map(|s| {
+            serde_json::from_str::<ContainerJson>(s)
+                .map_err(|e| JsValue::from_str(&format!("invalid container_json: {e}")))
+        })
+        .transpose()?
+        .map(|c| Rectangle::new(Point::new(c.x, c.y), c.width, c.height));
+
+    let strategy_in: StrategyJson = match strategy_json.as_deref() {
+        Some(s) => serde_json::from_str(s)
+            .map_err(|e| JsValue::from_str(&format!("invalid strategy_json: {e}")))?,
+        None => StrategyJson::default(),
+    };
+
+    let mut strategy = SetLabelStrategy::default()
+        .margin(strategy_in.margin)
+        .precision(strategy_in.precision.unwrap_or(0.01));
+    if let Some(steps) = strategy_in.angular_steps {
+        strategy = strategy.angular_steps(steps);
+    }
+    if let Some(obstacles) = strategy_in.obstacles {
+        strategy = strategy.obstacles(
+            obstacles
+                .into_iter()
+                .map(|r| Rectangle::new(Point::new(r.x, r.y), r.width, r.height))
+                .collect(),
+        );
+    }
+
+    let outlines: std::collections::HashMap<String, Polygon> = outlines_in
+        .into_iter()
+        .map(|(name, ring)| {
+            (
+                name,
+                Polygon::new(ring.into_iter().map(|p| Point::new(p[0], p[1])).collect()),
+            )
+        })
+        .collect();
+
+    let placements = core_place_set_labels(&outlines, &sizes, container.as_ref(), &strategy);
+
+    let out: std::collections::HashMap<String, PlacementJson> = placements
+        .into_iter()
+        .map(|(key, p)| {
+            (
+                key,
+                PlacementJson {
+                    anchor: [p.anchor.x(), p.anchor.y()],
+                    kind: "ExteriorSet",
+                },
+            )
+        })
+        .collect();
 
     serde_json::to_string(&out).map_err(|e| JsValue::from_str(&format!("{e}")))
 }

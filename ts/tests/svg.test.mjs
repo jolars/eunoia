@@ -545,3 +545,83 @@ test("glyphs and glyph boxes can both render, discs first", () => {
   });
   assert.ok(svg.indexOf("data-glyphs") < svg.indexOf("data-glyph-boxes"));
 });
+
+// ----------------------------------------------------------------------------
+// Exterior set labels (`setLabelPlacements`, from `placeSetLabels`)
+// ----------------------------------------------------------------------------
+
+const setPlacements = {
+  A: { anchor: { x: 30, y: -5 }, kind: "exteriorSet", leaderWaypoints: [] },
+};
+
+test("set labels render at their exterior anchors, with no leader", () => {
+  const svg = svgBody(regionLayout(), { setLabelPlacements: setPlacements });
+  assert.match(svg, /<text x="30" y="-5"[^>]*>A<\/text>/);
+  // The mode's defining property: nothing connects the label to its shape.
+  // `stroke-opacity="0.6"` is emitted only by leader paths.
+  assert.ok(!svg.includes('stroke-opacity="0.6"'), "no leader should be drawn");
+});
+
+test("set-label mode suppresses the interior region title line", () => {
+  const withSetLabels = svgBody(regionLayout(), {
+    setLabelPlacements: setPlacements,
+  });
+  // Exactly one "A" text node — the exterior one, not a duplicate inside the
+  // region's label box at (5, 5).
+  assert.equal(withSetLabels.match(/>A</g).length, 1);
+  assert.ok(!withSetLabels.includes('<text x="5" y="5"'));
+
+  // Without the option the name is drawn inside, at the region anchor.
+  const plain = svgBody(regionLayout(), {});
+  assert.match(plain, /<text x="5" y="5"[^>]*>A<\/text>/);
+});
+
+test("set-label mode suppresses the interior shape label too", () => {
+  const svg = svgBody(circleLayout(), { setLabelPlacements: setPlacements });
+  assert.equal(svg.match(/>A</g).length, 1);
+  assert.match(svg, /<text x="30" y="-5"/);
+});
+
+test("set-label mode lifts the per-set count onto the shape anchor", () => {
+  const at = (svg) =>
+    /<text x="0" y="([-\d.]+)"[^>]*>5.00<\/text>/.exec(svg)[1];
+  // Default: count sits one label-height below the set name.
+  assert.notEqual(at(svgBody(circleLayout(), { showCounts: true })), "0");
+  // Set-label mode: the name has moved out, so the count takes the anchor.
+  assert.equal(
+    at(
+      svgBody(circleLayout(), {
+        showCounts: true,
+        setLabelPlacements: setPlacements,
+      }),
+    ),
+    "0",
+  );
+});
+
+test("set label boxes expand the viewBox", () => {
+  const far = {
+    A: { anchor: { x: 200, y: 0 }, kind: "exteriorSet", leaderWaypoints: [] },
+  };
+  const plain = viewBox(circleLayout(), {});
+  const expanded = viewBox(circleLayout(), {
+    setLabelPlacements: far,
+    setLabelSizes: { A: { w: 20, h: 8 } },
+  });
+  assert.ok(
+    expanded.w > plain.w,
+    `expected a wider viewBox, got ${expanded.w} vs ${plain.w}`,
+  );
+  assert.ok(expanded.x + expanded.w >= 210, "must cover the label's far edge");
+});
+
+test("boundingBox covers set label boxes", () => {
+  const b = boundingBox(circleLayout(), {
+    setLabelPlacements: {
+      A: { anchor: { x: 40, y: 0 }, kind: "exteriorSet", leaderWaypoints: [] },
+    },
+    setLabelSizes: { A: { w: 10, h: 4 } },
+  });
+  assert.equal(b.maxX, 45);
+  assert.equal(b.minX, -10);
+});

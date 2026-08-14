@@ -46,13 +46,16 @@ pub struct LabelPlacement {
     /// Where the placement landed (interior / overflow / exterior).
     pub kind: PlacementKind,
     /// Inside-region point to draw a leader line to. `None` for interior
-    /// placements; `Some` for exterior. Renderers use this to draw the
-    /// tether from `anchor` toward `tether`.
+    /// placements and for [`PlacementKind::ExteriorSet`] (which is adjacent
+    /// to its shape and so needs no leader); `Some` for every other
+    /// exterior kind. Renderers use this to draw the tether from `anchor`
+    /// toward `tether`.
     pub tether: Option<Point>,
     /// Point on the label's bounding box where the leader line should
     /// terminate, so the line stops at the box edge instead of continuing
-    /// through the rendered text. `None` for interior placements (no
-    /// leader); `Some` for exterior. Sits on the AABB of size `(w, h)`
+    /// through the rendered text. `None` for interior placements and for
+    /// [`PlacementKind::ExteriorSet`] (neither draws a leader); `Some` for
+    /// every other exterior kind. Sits on the AABB of size `(w, h)`
     /// centred on `anchor` — the AABB the caller supplied in `sizes`, so
     /// any half-gap padding the caller added is preserved as the visible
     /// gap between the leader tip and the text.
@@ -111,6 +114,12 @@ pub enum PlacementKind {
     /// order-preserving boundary-labeling matcher — emitted by
     /// [`ExteriorPolicy::Matched`]. Straight leader (`tether → leader_end`).
     ExteriorMatched,
+    /// Anchor sits just outside its **own set's shape**, hugging the
+    /// boundary at the angle with the most room — emitted by
+    /// [`place_set_labels`](crate::plotting::place_set_labels). The label is
+    /// adjacent to the shape it names, so it carries **no leader**:
+    /// `tether` and `leader_end` are both `None`.
+    ExteriorSet,
 }
 
 /// Exterior fallback solver to use when a label doesn't fit inside its
@@ -1301,36 +1310,36 @@ enum ExteriorPlan {
 
 /// Axis-aligned bounding box of an already-placed interior label, used by
 /// the exterior solvers to keep leader lines from visually crossing it.
-struct InteriorAabb {
-    xmin: f64,
-    ymin: f64,
-    xmax: f64,
-    ymax: f64,
+pub(super) struct InteriorAabb {
+    pub(super) xmin: f64,
+    pub(super) ymin: f64,
+    pub(super) xmax: f64,
+    pub(super) ymax: f64,
 }
 
 /// In-flight bookkeeping for an exterior label between raycast placement
 /// and collision resolution. The fields after the resolution pass are
 /// re-packed into a [`LabelPlacement`].
-struct ExteriorEntry {
-    key: String,
+pub(super) struct ExteriorEntry {
+    pub(super) key: String,
     /// Combination this label belongs to — used by the force-directed
     /// solver to identify foreign region pieces.
-    combo: Combination,
+    pub(super) combo: Combination,
     /// Mutable: current label-box centre, updated by the resolver.
-    anchor: Point,
+    pub(super) anchor: Point,
     /// Immutable: the raycast position; the force-directed spring pulls
     /// the anchor back toward this point so labels don't drift unboundedly.
-    home: Point,
-    poi: Point,
+    pub(super) home: Point,
+    pub(super) poi: Point,
     /// Unit-length raycast direction; tangent is its 90° rotation, also
     /// the natural "outward" axis the bbox containment force uses.
-    direction: (f64, f64),
+    pub(super) direction: (f64, f64),
     /// Per-label margin around the diagram bbox. The force-directed
     /// solver re-uses this so the polygon-aware solve and the initial
     /// raycast agree on how far outside the bbox a label belongs.
-    margin: f64,
-    w: f64,
-    h: f64,
+    pub(super) margin: f64,
+    pub(super) w: f64,
+    pub(super) h: f64,
 }
 
 /// Iteratively push overlapping exterior label boxes apart along their
@@ -1343,7 +1352,7 @@ struct ExteriorEntry {
 /// the outer iteration: the loop terminates early when neither pass
 /// moves anything, and is capped at `max_iters` to bound worst-case
 /// cost.
-fn resolve_exterior_collisions(
+pub(super) fn resolve_exterior_collisions(
     entries: &mut [ExteriorEntry],
     interior_aabbs: &[InteriorAabb],
     max_iters: usize,
@@ -1746,7 +1755,7 @@ fn polygon_push(center: &Point, buffer: f64, piece: &RegionPiece) -> (f64, f64) 
 }
 
 /// Closest point to `(px, py)` on any ring of `piece` (outer + holes).
-fn closest_point_on_piece(px: f64, py: f64, piece: &RegionPiece) -> (f64, f64) {
+pub(super) fn closest_point_on_piece(px: f64, py: f64, piece: &RegionPiece) -> (f64, f64) {
     let mut best_d2 = f64::INFINITY;
     let mut best = (px, py);
     let mut update_with = |ring: &crate::geometry::shapes::Polygon| {
@@ -2033,7 +2042,7 @@ fn last_vertex_clearance_t(
 /// circle/ellipse the controlling vertex coincides with the ray-exit
 /// point, so the result is still tight; for off-centre or bulging
 /// boundaries the perpendicular slab catches the closer vertex.
-fn raycast_anchor_union(
+pub(super) fn raycast_anchor_union(
     poi: &Point,
     w: f64,
     h: f64,
