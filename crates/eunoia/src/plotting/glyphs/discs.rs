@@ -15,6 +15,7 @@ use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Rectangle;
 use crate::plotting::regions::{RegionPiece, RegionPolygons, poi_with_holes, signed_clearance};
 
+use super::relax::relax_scatter;
 use super::{
     GlyphArrangement, OBSTACLE_SHRINK_FLOOR, PACK, PROBE, PackMode, apportion, clear_of_obstacles,
     fnv1a, obstacles_near, ring_bounds, sanitize_obstacles,
@@ -658,6 +659,11 @@ fn pack_uniform_piece(
 /// Obstacles join the acceptance test for a first pass; under a lenient
 /// [`PackMode`] a second pass without them tops up whatever the first pass
 /// could not place.
+///
+/// Darts guarantee a minimum spacing and nothing more, which reads as lumpy,
+/// so a spreading [`PackMode`] finishes with a [relaxation
+/// pass](super::relax::relax_scatter). It moves centers but places none, so
+/// the feasibility probes skip it.
 fn pack_random_piece(
     piece: &RegionPiece,
     n: usize,
@@ -693,6 +699,9 @@ fn pack_random_piece(
             }
             break;
         }
+    }
+    if ctx.mode.spread {
+        relax_scatter(&mut placed, piece, &local, ctx.spacing(), inset);
     }
     placed
 }
@@ -824,6 +833,53 @@ mod tests {
             }
             assert_invariants(&result, &regions, options.gap);
         }
+    }
+
+    #[test]
+    fn relaxation_evens_out_the_raw_darts() {
+        // Relative spread of the nearest-neighbour distances: the lower, the
+        // more even the scatter.
+        fn nn_spread(points: &[Point]) -> f64 {
+            let nns: Vec<f64> = points
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    points
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .map(|(_, q)| (p.x() - q.x()).hypot(p.y() - q.y()))
+                        .fold(f64::INFINITY, f64::min)
+                })
+                .collect();
+            let mean = nns.iter().sum::<f64>() / nns.len() as f64;
+            let var = nns.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / nns.len() as f64;
+            var.sqrt() / mean
+        }
+
+        let pieces = classify_into_pieces(vec![rect_ring(0.0, 0.0, 10.0, 10.0)]);
+        let piece = &pieces[0];
+        let ctx = |spread| PackCtx {
+            r: 0.4,
+            gap: 0.25,
+            obstacles: &[],
+            mode: PackMode {
+                spread,
+                strict_obstacles: false,
+            },
+        };
+        // The same dart stream both times: the only difference is the pass
+        // that runs after it.
+        let raw = pack_random_piece(piece, 40, 300, ctx(false), &mut StdRng::seed_from_u64(11));
+        let relaxed = pack_random_piece(piece, 40, 300, ctx(true), &mut StdRng::seed_from_u64(11));
+
+        assert_eq!(relaxed.len(), raw.len(), "relaxation must place no glyphs");
+        assert!(
+            nn_spread(&relaxed) < nn_spread(&raw),
+            "relaxation should even the scatter out: {} -> {}",
+            nn_spread(&raw),
+            nn_spread(&relaxed)
+        );
     }
 
     #[test]

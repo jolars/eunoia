@@ -273,20 +273,29 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
   with no core change and closes a good fraction of the gap for free.
   Surfaced 2026-08-07.
 
-- [ ] **Relaxation pass for the `random` arrangement**. Dart-throwing scatter
-  can look locally uneven; a few Lloyd iterations (or a force-directed
-  push-apart using `signed_clearance` as the boundary force) would even it
-  out while keeping determinism (fixed iteration count, seeded start). A
-  Bridson Poisson-disk sampler is the alternative blue-noise upgrade;
-  phyllotaxis is a further arrangement candidate. The uniform mode already
-  spreads deterministically and needs none of this.
+- [ ] **Relaxation pass for the box footprint**. The disc packer's `random`
+  arrangement now finishes with a force-directed relaxation
+  (`plotting/glyphs/relax.rs`): neighbour repulsion plus a `signed_clearance`
+  boundary push, over a fixed sweep count, with every move accepted only if
+  it preserves the packer's own invariants. `pack_random_boxes_piece` gets
+  none of it --- heterogeneous footprints have no single spacing to relax
+  toward, so the force model would have to be per-pair AABB separation and
+  the acceptance test `rect_fits_in_piece`. Worth doing only if the scattered
+  box mode ever looks bad enough in practice to earn the complexity.
+  A Bridson Poisson-disk sampler remains the alternative blue-noise upgrade
+  for the disc packer; phyllotaxis is a further arrangement candidate. The
+  uniform mode already spreads deterministically and needs neither.
 
 - [ ] **Random-packer spatial hash** (perf, only if needed). Dart acceptance
   checks are O(placed) per dart, O(n²) per piece overall --- fine at the
   hundreds-of-glyphs scale the web app caps at (2000), noticeable beyond.
   A uniform grid keyed at cell size `2r(1+gap)` makes it O(1) per dart. The
   box packer's `pack_random_boxes_piece` has the same shape (per-pair AABB
-  separation instead of one squared distance) and would want the same fix.
+  separation instead of one squared distance) and would want the same fix, as
+  do the relaxation pass's neighbour-force and acceptance loops --- those two
+  are now essentially all of that pass's cost (~20ms of an ~85ms random pack
+  at 2200 glyphs; it already caches one `signed_clearance` per point so the
+  sweeps don't re-walk the rings).
 
 - [ ] **Counts-from-spec convenience**. The web app rounds
   `metrics.target` (exclusive quantities) into counts client-side

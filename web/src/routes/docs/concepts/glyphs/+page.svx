@@ -48,7 +48,14 @@ Two arrangements are available; both are deterministic:
   giving the scattered look of the original eulerGlyphs tool. Deterministic
   for a fixed `seed` (default `0`); each region draws from its own
   seed-derived stream, so one region's scatter does not move when another
-  region's count changes.
+  region's count changes. Darts guarantee a *minimum* spacing and nothing
+  more, which reads as lumpy—pairs sitting right at the minimum next to
+  glyph-wide voids—so a force-directed relaxation pass runs afterwards:
+  near neighbors push each other apart and the region boundary pushes
+  inward, over a fixed number of sweeps with no randomness of its own. Every
+  move is accepted only if it keeps the spacing, boundary, and keep-out
+  guarantees intact, so the pass evens the scatter out without ever moving
+  or dropping a glyph it shouldn't.
 
 ## Radius: Auto or Fixed
 
@@ -145,7 +152,9 @@ diagram-wide maximum scaled box height), boxes fill a row left to right at
 their own widths, the run is centered in the space it found, and the block of
 rows is centered on the region's pole of inaccessibility. Text reads in rows,
 and a max-cell grid would let one long name inflate every cell. The `random`
-arrangement throws rectangular darts instead, for the scattered look.
+arrangement throws rectangular darts instead, for the scattered look—without
+the relaxation pass the dot footprint gets, since heterogeneous boxes have no
+single spacing to relax toward.
 
 `gap` works the same way it does for discs, but as a fraction of the **row
 height** rather than of a radius: each box carries a halo of
@@ -290,6 +299,6 @@ Counts and sizes are keyed by the
 - **Member labels are not wired into the web app yet**—the demo has no
   per-member name input to feed them. The API is complete across Rust, npm,
   and the C ABI.
-- A relaxation pass (Lloyd/force-directed) to even out the `random` scatter,
-  a blue-noise (Poisson-disk) upgrade, and a phyllotaxis arrangement are on
-  the roadmap.
+- A blue-noise (Poisson-disk) sampler for the `random` arrangement, a
+  phyllotaxis arrangement, and a relaxation pass for the *box* footprint
+  (the dot footprint has one) are on the roadmap.

@@ -15,9 +15,10 @@
 //!   with the lattice spacing widened as far as the region allows so the
 //!   glyphs spread across it instead of clumping. Fully deterministic.
 //! * [`Random`](GlyphArrangement::Random) — seeded dart throwing with a
-//!   minimum center-to-center spacing, giving the scattered look of the
-//!   original eulerGlyphs tool. Deterministic for a fixed
-//!   [`seed`](GlyphOptions::seed).
+//!   minimum center-to-center spacing, followed by a force-directed
+//!   relaxation that evens out the lumps dart throwing leaves behind. Gives
+//!   the scattered look of the original eulerGlyphs tool. Deterministic for
+//!   a fixed [`seed`](GlyphOptions::seed).
 //!
 //! The glyph radius is a single diagram-wide value — equal glyph size is
 //! what makes counts comparable across regions. Leave
@@ -35,10 +36,11 @@
 //!
 //! # Module layout
 //!
-//! The disc packer lives in [`discs`]; this file holds the pieces both it
-//! and any future footprint mode share — the arrangement enum, the
-//! obstacle primitives, and the apportionment of a region's count across
-//! its disconnected pieces.
+//! The disc packer lives in [`discs`] and the scatter relaxation it runs
+//! afterwards in [`relax`]; this file holds the pieces both they and any
+//! future footprint mode share — the arrangement enum, the obstacle
+//! primitives, and the apportionment of a region's count across its
+//! disconnected pieces.
 
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Rectangle;
@@ -46,6 +48,7 @@ use crate::plotting::regions::RegionPiece;
 
 mod boxes;
 mod discs;
+mod relax;
 mod scan;
 
 pub use boxes::{GlyphBoxOptions, GlyphBoxPlacements, place_glyph_boxes};
@@ -64,8 +67,9 @@ pub enum GlyphArrangement {
     #[default]
     Uniform,
     /// Seeded dart throwing with minimum center-to-center spacing
-    /// `2r * (1 + gap)`. Deterministic for a fixed [`GlyphOptions::seed`];
-    /// each region draws from its own seed-derived stream, so one region's
+    /// `2r * (1 + gap)`, evened out afterwards by a force-directed
+    /// relaxation. Deterministic for a fixed [`GlyphOptions::seed`]; each
+    /// region draws from its own seed-derived stream, so one region's
     /// scatter is stable when another region's count changes.
     Random,
 }
@@ -96,8 +100,11 @@ pub(super) const PACK: PackMode = PackMode {
 /// How a pack treats spacing and obstacles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PackMode {
-    /// Widen the lattice spacing to spread glyphs across the piece. Off for
-    /// feasibility probes, which only count what fits at minimum spacing.
+    /// Spread glyphs across the piece once they all fit — by widening the
+    /// lattice spacing under [`GlyphArrangement::Uniform`], by relaxing the
+    /// scatter under [`GlyphArrangement::Random`]. Off for feasibility
+    /// probes: neither refinement changes what fits, so probing at minimum
+    /// spacing gives the same verdict for less work.
     pub(super) spread: bool,
     /// Reject blocked positions outright instead of falling back to them
     /// when the piece cannot hold its quota without.
