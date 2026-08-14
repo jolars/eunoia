@@ -68,35 +68,13 @@ they're pre-existing behaviour the harness now exposes.
   **Not** a gradient bug: `rectangle.rs`'s FD tests validate the analytical
   gradients in optimizer space. Most likely LM chattering on the
   piecewise-bilinear (kinked) overlap landscape, compounded by the log-space
-  `[x, y, ln(w·h), ln(w/h)]` encoding and its extra aspect-ratio DOF. Note
-  the missing bounds branch below is a *separate* cause and does not subsume
-  this one. Probed via a throwaway example (deleted after measurement).
-  Surfaced 2026-08-14 from issue #133.
+  `[x, y, ln(w·h), ln(w/h)]` encoding and its extra aspect-ratio DOF.
 
-- [ ] **`optimizer_bounds_for` has no branch for 4-parameter shapes
-  (`Rectangle`)**. `fitter/final_layout.rs` matches `params_per_shape` on `3`
-  (circle/square) and `5` (ellipse); `Rectangle` is `4` and falls through to
-  the catch-all, which the function's own doc flags as a placeholder ("new
-  shape kinds should be added here so bounds reflect their geometry").
-  Consequences:
-
-  - Size dims get `±∞` bounds, so the bounded solvers are effectively
-    unbounded for rectangles.
-  - The CMA-ES initial std is taken from the raw parameter magnitude, but
-    those params are in log space: `ln(w·h) ≈ 3.9` for an area-50 rectangle
-    yields `std = 3.9`, i.e. sampling area over `e^±3.9 ≈ ×50`. Wildly
-    over-dispersed.
-  - `radii` is never populated, so `max_radius` collapses to the `1e-6`
-    floor and `pos_scale` ignores shape size entirely.
-
-  Adding a `4 =>` branch (map the shared linear envelope onto `ln w`/`ln h`,
-  then through the sum/difference change of variables; push `w/2`, `h/2` into
-  `radii`) improves `Optimizer::Trf` on the issue #133 spec **28x**
-  (`Σ(f-t)²` `272.7 → 9.54`). It barely moves the default `CmaEsTrf` path
-  (corpus 8/30 → 7/30), so it is a real fix for the explicitly-selected
-  bounded solvers but does *not* address the item above. Probed via a
-  throwaway example (deleted after measurement). Surfaced 2026-08-14 from
-  issue #133.
+  Note this is *not* the missing `optimizer_bounds_for` branch fixed in
+  9e4c901: that fix left the default `CmaEsTrf` path bit-identical here
+  (`23.75` before and after) and moved the corpus count only 8/30 → 7/30.
+  The remaining stall is a separate cause. Probed via a throwaway example
+  (deleted after measurement). Surfaced 2026-08-14 from issue #133.
 
 ## Loss / topology follow-ups
 
