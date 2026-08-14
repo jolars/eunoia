@@ -13,10 +13,22 @@
  * them here matches without a lookup.
  */
 import { foldKey, parseMembers } from "./members.svelte";
-import type { VennRegion } from "./types/diagram";
+import type { VennRegion, VennSetCount } from "./types/diagram";
+
+/**
+ * Every set count the Venn UI offers, in order. It starts at 2 because a
+ * one-set Venn is just a circle, and stops at 5 because no Venn diagram of 6+
+ * ellipses exists.
+ */
+export const VENN_SET_COUNTS: readonly VennSetCount[] = [2, 3, 4, 5];
 
 /** Largest `n` the Venn UI offers; the key space below covers all of `1..=MAX`. */
 export const MAX_VENN_SETS = 5;
+
+/** Guard for set counts arriving from storage or a pasted debug blob. */
+export function isVennSetCount(n: unknown): n is VennSetCount {
+  return VENN_SET_COUNTS.includes(n as VennSetCount);
+}
 
 /** Set names for an `n`-set Venn: `["A", "B", …]`, matching `VennDiagram`. */
 export function vennSetNames(n: number): string[] {

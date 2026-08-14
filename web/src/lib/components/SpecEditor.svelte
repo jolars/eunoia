@@ -1,7 +1,7 @@
 <script lang="ts">
   import { parseMembers } from "../members.svelte";
   import { appState } from "../state.svelte";
-  import type { VennSetCount } from "../types/diagram";
+  import { VENN_SET_COUNTS } from "../venn";
 
   // A complement of `null` (empty input) is the not-yet-entered state, handled
   // separately. A negative or non-finite number is invalid: `runFit` would
@@ -44,12 +44,12 @@
         Number of sets
       </div>
       <div class="flex gap-2">
-        {#each [1, 2, 3, 4, 5] as n}
+        {#each VENN_SET_COUNTS as n}
           <label class="flex items-center cursor-pointer">
             <input
               type="radio"
               bind:group={appState.vennN}
-              value={n as VennSetCount}
+              value={n}
               class="mr-1"
             />
             <span class="text-sm">{n}</span>

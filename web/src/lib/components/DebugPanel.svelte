@@ -8,6 +8,7 @@
     ShapeType,
     VennSetCount,
   } from "../types/diagram";
+  import { isVennSetCount } from "../venn";
 
   interface Repro {
     rows: Row[];
@@ -128,7 +129,7 @@
       if (parsed.inputType) appState.inputType = parsed.inputType;
       if (parsed.shapeType) appState.shapeType = parsed.shapeType;
       if (parsed.diagramType) appState.diagramType = parsed.diagramType;
-      if (parsed.vennN && parsed.vennN >= 1 && parsed.vennN <= 5) {
+      if (isVennSetCount(parsed.vennN)) {
         appState.vennN = parsed.vennN;
       }
       if (parsed.advanced) {

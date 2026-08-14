@@ -71,8 +71,11 @@ export type ShapeType =
   | "rectangle"
   | "rotatedRectangle";
 export type DiagramType = "euler" | "venn";
-/** Set count for canonical Venn diagrams. Limited to the range supported by `VennDiagram::new` (1..=5). */
-export type VennSetCount = 1 | 2 | 3 | 4 | 5;
+/**
+ * Set count for canonical Venn diagrams. The core supports `1..=5`; the app
+ * starts at 2, since a one-set Venn is just a circle.
+ */
+export type VennSetCount = 2 | 3 | 4 | 5;
 export type LegendPosition = "right" | "left" | "top" | "bottom";
 export type OptimizerName =
   | "CmaEsLm"

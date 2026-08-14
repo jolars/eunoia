@@ -12,7 +12,12 @@ import type {
   VennRegion,
   VennSetCount,
 } from "./types/diagram";
-import { emptyVennRegions, vennCombinations, vennSetNames } from "./venn";
+import {
+  emptyVennRegions,
+  isVennSetCount,
+  vennCombinations,
+  vennSetNames,
+} from "./venn";
 
 const STORAGE_KEY = "eunoia.app.v1";
 
@@ -174,7 +179,7 @@ class AppState {
     if (p.inputType) this.inputType = p.inputType;
     if (p.shapeType) this.shapeType = p.shapeType;
     if (p.diagramType) this.diagramType = p.diagramType;
-    if (p.vennN && p.vennN >= 1 && p.vennN <= 5) this.vennN = p.vennN;
+    if (isVennSetCount(p.vennN)) this.vennN = p.vennN;
     // Over an *empty* key space, not the seeded defaults: a blob written after
     // the user cleared a region must not resurrect the example data. Older
     // blobs have no `vennRegions` at all and keep the defaults.
