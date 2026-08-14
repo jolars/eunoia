@@ -56,10 +56,6 @@
           </label>
         {/each}
       </div>
-      <p class="mt-1.5 text-xs text-muted">
-        Canonical ellipse arrangement. Limited to n ≤ 5 (no Venn diagram of 6+
-        ellipses exists).
-      </p>
     </div>
 
     <div>
@@ -102,15 +98,6 @@
           </div>
         {/each}
       </div>
-      <p class="mt-1.5 text-xs text-muted">
-        Venn geometry is fixed by the set count, so these annotate the regions
-        rather than size them. Quantities show with <span class="font-medium"
-          >Style → Region counts</span
-        >
-        or as dots under <span class="font-medium">Glyphs → Draw</span>; names
-        need <span class="font-medium">Glyphs → Draw → Member names</span>. An
-        empty quantity draws nothing.
-      </p>
     </div>
   {:else}
     <div>

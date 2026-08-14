@@ -232,16 +232,6 @@
       <option value="matched">Matched (boundary labeling)</option>
       <option value="elbow">Elbow (columns)</option>
     </select>
-    <p class="text-xs text-muted mt-1">
-      Labels that fit inside their region anchor at the POI. For labels that
-      don't fit, raycast emits a deterministic ray from the diagram centroid
-      through the POI; force-directed adds polygon-aware repulsion so labels
-      avoid both other labels and unrelated regions; matched places labels on a
-      ring that hugs the diagram, spread by their width so they don't overlap,
-      and uncrosses the leaders so they never cross while staying close; elbow
-      stacks labels in left/right columns connected by orthogonal (d3-pie style)
-      leaders.
-    </p>
   </div>
 
   <div>
@@ -256,11 +246,6 @@
       <option value="poi">Region POI (deep inside)</option>
       <option value="boundary">Polygon edge</option>
     </select>
-    <p class="text-xs text-muted mt-1">
-      Where exterior leader lines anchor on the source region. POI is safe with
-      any rendering style; polygon edge looks cleaner when the shape has a
-      visible border (raise the border width above).
-    </p>
   </div>
 
   {#if appState.style.showLegend}
