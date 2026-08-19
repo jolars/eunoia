@@ -45,7 +45,7 @@ Direct Cargo commands are also valid.
 ```sh
 cargo test                         # fast tests for the default core member
 cargo test -p eunoia <substring>   # focused core test
-cargo test --workspace             # all default workspace tests
+cargo test --workspace             # all workspace tests
 task test-ts                       # build TS wrapper and test the pure JS SVG API
 task lint                          # clippy, all targets/features, warnings denied
 task doc                           # rustdoc warnings denied plus doc tests
@@ -101,8 +101,8 @@ DiagramSpec -> preprocess -> Fitter<S> -> Layout<S> -> plotting/output
 - `fitter` chooses the `DiagramShape` at fit time, builds an initial layout,
   refines it across restarts, and normalizes the best result.
 - `geometry` provides composable traits and fitting shapes: `Circle`, `Ellipse`,
-  `Square`, and `Rectangle`. `Polygon` is for output and region extraction, not
-  fitting.
+  `Square`, `Rectangle`, and `RotatedRectangle`. `Polygon` is for output and
+  region extraction, not fitting.
 - `loss` contains the optimization objectives and smooth surrogates.
 - `plotting` extracts region polygons and places region labels, set labels, and
   glyphs.
@@ -115,12 +115,13 @@ Preserve these invariants:
 - External and FFI APIs use geometric parameters. Optimizer parameters are an
   internal representation:
 
-  | Shape     | Geometric           | Optimizer                   |
-  | --------- | ------------------- | --------------------------- |
-  | Circle    | `[x, y, r]`         | identity                    |
-  | Ellipse   | `[x, y, a, b, phi]` | `[x, y, ln(a), ln(b), phi]` |
-  | Square    | `[x, y, side]`      | identity                    |
-  | Rectangle | `[x, y, w, h]`      | `[x, y, ln(w*h), ln(w/h)]`  |
+  | Shape             | Geometric           | Optimizer                       |
+  | ----------------- | ------------------- | ------------------------------- |
+  | Circle            | `[x, y, r]`         | identity                        |
+  | Ellipse           | `[x, y, a, b, phi]` | `[x, y, ln(a), ln(b), phi]`     |
+  | Square            | `[x, y, side]`      | identity                        |
+  | Rectangle         | `[x, y, w, h]`      | `[x, y, ln(w*h), ln(w/h)]`      |
+  | Rotated rectangle | `[x, y, w, h, phi]` | `[x, y, ln(w*h), ln(w/h), phi]` |
 
 - Complement fitting appends the container's four rectangle optimizer parameters
   in the same rectangle encoding.
@@ -188,6 +189,7 @@ tools already enforce.
 ## Releases
 
 Versions are managed by `versionary.jsonc`; the Rust workspace and npm package
-are versioned separately. Pushing a `v*` tag triggers the crate and npm publish
-workflows. Do not hand-edit versions or publish artifacts unless the task is
-explicitly a release.
+are versioned separately. Pushing a `v*` tag triggers the crate publish
+workflow; pushing an `eunoia-npm-v*` tag triggers the npm publish workflow. Do
+not hand-edit versions or publish artifacts unless the task is explicitly a
+release.
