@@ -255,8 +255,8 @@ area-proportional diagrams.
 The predecessor eulerr, which Eunoia builds on, was written entirely by the
 first author, without the use of AI. For Eunoia, we used generative AI tools
 including Claude Code Opus 4.5, 4.8, and 5.0, Claude Code Fable 5, and GitHub
-Copilot GPT 5.1 and 5.4. They were used to assist with writing code, parts of
-the documentation, unit tests, and reviewing and editing the manuscript. The
+Copilot GPT 5.1, 5.4, and 5.6. They were used to assist with writing code, parts
+of the documentation, unit tests, and reviewing and editing the manuscript. The
 authors reviewed, modified, and validated all AI-assisted content and made the
 final design and implementation decisions.
 
