@@ -1,23 +1,23 @@
 # Eunoia contributor guide
 
-Eunoia is a Rust library for area-proportional Euler and Venn diagrams. The
-same core engine is exposed through WebAssembly, a TypeScript package, a C ABI,
-and a statically generated SvelteKit documentation site.
+Eunoia is a Rust library for area-proportional Euler and Venn diagrams. The same
+core engine is exposed through WebAssembly, a TypeScript package, a C ABI, and a
+statically generated SvelteKit documentation site.
 
 Use this file for repository-wide expectations. Prefer the nearest README and
 existing code when you need component-level detail.
 
 ## Repository map
 
-| Path | Purpose |
-| --- | --- |
-| `crates/eunoia/` | Core Rust library and fitting algorithms; default workspace member |
-| `crates/eunoia-wasm/` | Thin `wasm-bindgen` bindings |
-| `crates/eunoia-capi/` | JSON-in/JSON-out C ABI used by Eunoia.jl |
-| `ts/` | High-level TypeScript API and npm build scripts |
-| `npm/` | Generated publishable `@jolars/eunoia` package; gitignored |
-| `web/` | SvelteKit docs and demo app, linked to `npm/` |
-| `paper/` | JOSS paper and generated figures |
+  | Path                  | Purpose                                                            |
+  | --------------------- | ------------------------------------------------------------------ |
+  | `crates/eunoia/`      | Core Rust library and fitting algorithms; default workspace member |
+  | `crates/eunoia-wasm/` | Thin `wasm-bindgen` bindings                                       |
+  | `crates/eunoia-capi/` | JSON-in/JSON-out C ABI used by Eunoia.jl                           |
+  | `ts/`                 | High-level TypeScript API and npm build scripts                    |
+  | `npm/`                | Generated publishable `@jolars/eunoia` package; gitignored         |
+  | `web/`                | SvelteKit docs and demo app, linked to `npm/`                      |
+  | `paper/`              | JOSS paper and generated figures                                   |
 
 The Cargo workspace uses Rust edition 2024 and has an MSRV of 1.88.0. Rust
 modules use `module.rs` plus `module/`; do not introduce `module/mod.rs`.
@@ -37,24 +37,24 @@ modules use `module.rs` plus `module/`; do not introduce `module/mod.rs`.
 
 ## Build and test commands
 
-Tasks are defined in `Taskfile.yml` and run with
-[Task](https://taskfile.dev/). Direct Cargo commands are also valid.
+Tasks are defined in `Taskfile.yml` and run with [Task](https://taskfile.dev/).
+Direct Cargo commands are also valid.
 
 ### Routine validation
 
 ```sh
 cargo test                         # fast tests for the default core member
-cargo test -p eunoia <substring>  # focused core test
-cargo test --workspace            # all default workspace tests
+cargo test -p eunoia <substring>   # focused core test
+cargo test --workspace             # all default workspace tests
 task test-ts                       # build TS wrapper and test the pure JS SVG API
 task lint                          # clippy, all targets/features, warnings denied
 task doc                           # rustdoc warnings denied plus doc tests
 task dev                           # full pre-PR gate
 ```
 
-Run the narrowest relevant checks while iterating. Before handing off a broad
-or cross-layer change, run `task dev` when practical. If a relevant check was
-not run, say which one and why.
+Run the narrowest relevant checks while iterating. Before handing off a broad or
+cross-layer change, run `task dev` when practical. If a relevant check was not
+run, say which one and why.
 
 ### Fitter changes
 
@@ -65,8 +65,8 @@ initialization, optimizers, normalization, clustering, or packing must also run:
 task test-slow
 ```
 
-The ignored suite contains stochastic and regression-quality guardrails that
-the default Cargo test run does not cover. `task dev` runs the smaller
+The ignored suite contains stochastic and regression-quality guardrails that the
+default Cargo test run does not cover. `task dev` runs the smaller
 `corpus_quality` guardrail but is not a substitute for `task test-slow` here.
 
 ### WASM, TypeScript, and web
@@ -111,21 +111,24 @@ DiagramSpec -> preprocess -> Fitter<S> -> Layout<S> -> plotting/output
 Preserve these invariants:
 
 - Shape choice belongs to `Fitter<S>`, not `DiagramSpec`.
+
 - External and FFI APIs use geometric parameters. Optimizer parameters are an
   internal representation:
 
-  | Shape | Geometric | Optimizer |
-  | --- | --- | --- |
-  | Circle | `[x, y, r]` | identity |
-  | Ellipse | `[x, y, a, b, phi]` | `[x, y, ln(a), ln(b), phi]` |
-  | Square | `[x, y, side]` | identity |
-  | Rectangle | `[x, y, w, h]` | `[x, y, ln(w*h), ln(w/h)]` |
+  | Shape     | Geometric           | Optimizer                   |
+  | --------- | ------------------- | --------------------------- |
+  | Circle    | `[x, y, r]`         | identity                    |
+  | Ellipse   | `[x, y, a, b, phi]` | `[x, y, ln(a), ln(b), phi]` |
+  | Square    | `[x, y, side]`      | identity                    |
+  | Rectangle | `[x, y, w, h]`      | `[x, y, ln(w*h), ln(w/h)]`  |
 
-- Complement fitting appends the container's four rectangle optimizer
-  parameters in the same rectangle encoding.
+- Complement fitting appends the container's four rectangle optimizer parameters
+  in the same rectangle encoding.
+
 - The `parallel` feature is intentionally off by default and must remain
   disabled for WASM. The `corpus` feature is internal test/benchmark support,
   not public API.
+
 - `basin` is the sole optimizer dependency. Do not introduce a second optimizer
   stack without an explicit architectural decision.
 
@@ -137,17 +140,17 @@ same change:
 
 1. Core Rust API and tests in `crates/eunoia/`.
 2. WASM enums/signatures and tests in `crates/eunoia-wasm/`.
-3. C API input types, hand-written snake_case token parsers, implementation,
-   and tests in `crates/eunoia-capi/`.
+3. C API input types, hand-written snake_case token parsers, implementation, and
+   tests in `crates/eunoia-capi/`.
 4. TypeScript wrapper and declarations under `ts/`.
 5. The matching bindings documentation under `web/src/routes/docs/bindings/`.
 
 Do not assume serde exposes a new core enum through the C API; those mappings
 are deliberately manual.
 
-The npm package publicly exports `.`, `./svg`, `./web`, and `./trajectory`.
-The raw wasm-bindgen module is runtime backing and is intentionally absent from
-the package `exports` map.
+The npm package publicly exports `.`, `./svg`, `./web`, and `./trajectory`. The
+raw wasm-bindgen module is runtime backing and is intentionally absent from the
+package `exports` map.
 
 ## Documentation site
 
@@ -161,9 +164,9 @@ distinct:
 - `web/src/routes/sitemap.xml/+server.ts` discovers `+page.svelte` and
   `+page.svx` routes automatically. Do not hand-maintain page entries there.
 - `web/static/llms.txt` is hand-curated. When adding, removing, renaming, or
-  substantially re-scoping a docs page, update its link and one-line
-  description and keep it in the correct section. It also contains off-site
-  links that route discovery cannot supply.
+  substantially re-scoping a docs page, update its link and one-line description
+  and keep it in the correct section. It also contains off-site links that route
+  discovery cannot supply.
 
 ## Code review rules
 
@@ -174,8 +177,8 @@ tools already enforce.
   ignored suite and report any stochastic failure with its seed or fixture.
 - Flag a changed core public option when either binding layer, TypeScript, docs,
   or tests are missing. Safe path: update all applicable surfaces together.
-- Flag use of optimizer-encoded shape parameters in an external interface.
-  Safe path: convert at the fitter boundary and expose geometric parameters.
+- Flag use of optimizer-encoded shape parameters in an external interface. Safe
+  path: convert at the fitter boundary and expose geometric parameters.
 - Flag manual edits to generated `npm/` artifacts. Safe path: edit `ts/` or the
   bindings and regenerate with `task build-ts`, `task build-wasm`, or
   `task build-web`.
