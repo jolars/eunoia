@@ -1,218 +1,190 @@
-# Agent instructions
+# Eunoia contributor guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Eunoia is a Rust library for area-proportional Euler and Venn diagrams. The
+same core engine is exposed through WebAssembly, a TypeScript package, a C ABI,
+and a statically generated SvelteKit documentation site.
 
-## What this is
+Use this file for repository-wide expectations. Prefer the nearest README and
+existing code when you need component-level detail.
 
-Eunoia is a Rust library for area-proportional **Euler and Venn diagrams** — a
-ground-up rewrite of the R package [eulerr](https://github.com/jolars/eulerr).
-The core is pure Rust; the same engine ships to JavaScript via WebAssembly and
-powers a SvelteKit web app. Narrative docs: <https://eunoia.bz/docs/>. Rustdoc:
-<https://docs.rs/eunoia/>.
+## Repository map
 
-## Repository layout
+| Path | Purpose |
+| --- | --- |
+| `crates/eunoia/` | Core Rust library and fitting algorithms; default workspace member |
+| `crates/eunoia-wasm/` | Thin `wasm-bindgen` bindings |
+| `crates/eunoia-capi/` | JSON-in/JSON-out C ABI used by Eunoia.jl |
+| `ts/` | High-level TypeScript API and npm build scripts |
+| `npm/` | Generated publishable `@jolars/eunoia` package; gitignored |
+| `web/` | SvelteKit docs and demo app, linked to `npm/` |
+| `paper/` | JOSS paper and generated figures |
 
-This is a **Cargo workspace** plus two JS sub-projects:
+The Cargo workspace uses Rust edition 2024 and has an MSRV of 1.88.0. Rust
+modules use `module.rs` plus `module/`; do not introduce `module/mod.rs`.
 
-| Path                  | Artifact                                                                 |
-| --------------------- | ------------------------------------------------------------------------ |
-| `crates/eunoia/`      | Core library (pure Rust). Default workspace member. The real algorithms. |
-| `crates/eunoia-wasm/` | `wasm-bindgen` surface — a thin, raw binding layer. `publish = false`.   |
-| `crates/eunoia-capi/` | C ABI (JSON in/out `extern "C"`) backing the Julia package. `publish = false`. |
-| `ts/`                 | High-level TypeScript wrapper (`euler()`, `venn()`) + build script.      |
-| `npm/`                | The assembled, publishable `@jolars/eunoia` package (generated, gitignored). |
-| `web/`                | SvelteKit app (Svelte 5, Tailwind 4, rolldown-vite). Links `file:../npm`.|
+## Working agreements
 
-How the JS layers fit together: `eunoia-wasm` is compiled by `wasm-pack` into
-`npm/`, then `ts/prepare-package.mjs` compiles `ts/index.ts` on top and writes
-`npm/package.json` from `ts/package.json`. The npm package exposes only the
-high-level API: `@jolars/eunoia` (default entry), `@jolars/eunoia/svg`, and
-`@jolars/eunoia/web`. The wasm-bindgen surface still ships (it is the runtime
-backing `index.js`) but is intentionally *not* exported — the `exports` map
-encapsulates it, so there is no public `/raw` entry point.
+- Keep changes focused and preserve unrelated work in the worktree.
+- Follow the surrounding code's public API, naming, error-handling, and test
+  patterns before introducing a new abstraction.
+- Do not edit `npm/` by hand. Regenerate it with the appropriate task.
+- Do not add a production dependency unless it is necessary for the requested
+  change; call out the reason and trade-off in the handoff.
+- Use Conventional Commits when proposing commit messages, with scopes such as
+  `fitter`, `geometry`, `ts`, and `web`.
+- Public Rust APIs require rustdoc. CI treats rustdoc warnings as errors; never
+  link a public item to a private item with an intra-doc link.
 
-The default `.` entry is the `--target bundler` build: it `import`s the `.wasm`
-module directly, so it needs a bundler (this is what `web/` relies on via vite).
-The `./web` entry exists for bundler-less consumers (a plain `<script
-type="module">`, Observable, raw-file CDNs): `ts/build-web.mjs` runs a separate
-`wasm-pack --target web` build and esbuild-inlines the wasm (base64) into a
-single self-contained `npm/web.js`, exposing an explicit async `init()` that
-must be awaited once before `euler()`/`venn()`. It is built by `task build-web`
-(and in `publish-npm.yml`), kept off the `build-wasm` hot path since the web app
-uses the `.` entry. `./svg` is pure JS (no wasm) and works from a CDN as-is.
+## Build and test commands
 
-Edition 2024, MSRV pinned to **1.88.0** (in `rust-toolchain.toml` and `devenv.nix`).
-Code uses the `module.rs` + `module/` layout — never `module/mod.rs`.
+Tasks are defined in `Taskfile.yml` and run with
+[Task](https://taskfile.dev/). Direct Cargo commands are also valid.
 
-## Commands
-
-Tasks are defined in `Taskfile.yml` (run via [`task`](https://taskfile.dev),
-available in the devenv shell). The cargo commands underneath work directly too.
+### Routine validation
 
 ```sh
-task dev            # fmt + check + test (+ corpus guardrail) + clippy + doc — pre-PR gate
-cargo test          # fast default tests (workspace, ~1s; corpus guardrail excluded)
-task test-quiet     # cargo test with RUST_LOG=off
-task test-debug     # cargo test with RUST_LOG=debug
-task test-slow      # cargo test --workspace -- --ignored  (slow regression/stochastic)
-task lint           # clippy --workspace --all-targets --all-features -- -D warnings
-task doc            # RUSTDOCFLAGS=-D warnings cargo doc + cargo test --doc (mirrors CI)
-task coverage-open  # llvm-cov HTML report, opened in browser
+cargo test                         # fast tests for the default core member
+cargo test -p eunoia <substring>  # focused core test
+cargo test --workspace            # all default workspace tests
+task test-ts                       # build TS wrapper and test the pure JS SVG API
+task lint                          # clippy, all targets/features, warnings denied
+task doc                           # rustdoc warnings denied plus doc tests
+task dev                           # full pre-PR gate
 ```
 
-- **Run a single test:** `cargo test -p eunoia <test_name_substring>`. For the
-  whole workspace including the wasm crate: `cargo test --workspace`.
-- **Always run `task test-slow` when changing fitting behavior** — many
-  regression and stochastic fit-quality tests are `#[ignore]`d out of the
-  default run, including the `corpus_quality` passes. `task dev` runs the
-  `corpus_quality` subset (~16s) so the pre-PR gate still catches regressions;
-  `task test-slow` adds the rest (issue89/issue28, stochastic, monte-carlo).
-- Tests are fast despite heavy optimization math because
-  `[profile.test.package.eunoia] opt-level = 3` (in root `Cargo.toml`)
-  optimizes the crate under test while keeping `debug_assert!`s live. This drops
-  a `cargo test -p eunoia --lib` run from ~32s to ~2-3s. Don't remove it.
-- **CI fails the build on rustdoc warnings** (`RUSTDOCFLAGS=-D warnings`) —
-  broken or private intra-doc links, etc. `task dev` and `task doc` mirror this,
-  so run one of them before pushing doc changes; a public item must not
-  intra-doc-link (`[`...`]`) to a private item.
+Run the narrowest relevant checks while iterating. Before handing off a broad
+or cross-layer change, run `task dev` when practical. If a relevant check was
+not run, say which one and why.
 
-### WASM / web / profiling
+### Fitter changes
+
+Any change that can affect fitting behavior, geometry calculations, losses,
+initialization, optimizers, normalization, clustering, or packing must also run:
 
 ```sh
-task build-wasm     # wasm-pack build + prepare-package.mjs → regenerates npm/
-task web-dev        # vite dev server in web/
-
-task flamegraph CASE=6set   # CASE = 3circle | 4set | 6set
-task perf-record CASE=...   # perf record
-task samply CASE=... ITERS=200
-task asm FUNC=<path::to::fn>
+task test-slow
 ```
 
-`build-wasm` deliberately bundles the `prepare-package.mjs` step (not a separate
-task) so `npm/` is always self-consistent — `web/` resolves the package via a
-`file:../npm` link and a half-built `npm/` silently breaks its imports. The
-profiling tasks use the custom `profiling` cargo profile (release + full debug
-info). The web app is **statically prerendered** (`adapter-static`).
+The ignored suite contains stochastic and regression-quality guardrails that
+the default Cargo test run does not cover. `task dev` runs the smaller
+`corpus_quality` guardrail but is not a substitute for `task test-slow` here.
 
-## Architecture: the fitting pipeline
+### WASM, TypeScript, and web
 
-The flow is **spec → preprocess → fit → layout**, and it is **shape-agnostic
-until fit time**:
+```sh
+task build-ts       # rebuild high-level TS output in npm/; requires existing wasm types
+task build-wasm     # rebuild bundler-target wasm and then the TS package
+task build-web      # build the self-contained bundler-less browser entry
+task web-dev        # rebuild TS and start the Svelte dev server
+cd web && pnpm check
+cd web && pnpm build
+```
 
-1. **`spec`** — `DiagramSpecBuilder` produces a `DiagramSpec` describing *what*
-   to draw (set sizes + intersections), with no geometry. Input can be
-   `InputType::Exclusive` or `Inclusive`; only the exclusive view is stored, the
-   inclusive view is derived on demand. A `Combination` is a named set of sets.
-   `.complement(area)` opts into "universe" fitting (a bounding container whose
-   leftover area matches a target). `preprocess()` drops empty sets, computes set
-   areas + pairwise relations, and converts combinations to bitmask form
-   (`RegionMask`), yielding the internal `PreprocessedSpec`.
+- Run `task build-wasm` when Rust WASM bindings change.
+- Run `task build-ts` for TypeScript-only changes. While `task web-dev` is
+  running, rerun it manually after edits under `ts/`.
+- Use `pnpm` in `web/`; the pinned package manager is declared in
+  `web/package.json`.
+- The web app imports the default bundler entry. The `./web` entry is for
+  bundler-less consumers and is built separately by `task build-web`.
 
-2. **`fitter`** — `Fitter<'a, S: DiagramShape = Circle>` picks the shape type via
-   its generic parameter at fit time, not in the spec. `fit()` runs a two-phase
-   pipeline, repeated `n_restarts` times (default **10**, mirroring eulerr) in
-   parallel (rayon) keeping the lowest-loss result. **Small-smooth fast path:**
-   for a smooth loss (`LossType::is_smooth`) on an analytic-gradient shape with
-   `n_sets ≤ 3` and no complement, the restart count is auto-reduced (the Venn
-   warm-start already solves restart 0, so extra restarts add nothing — see the
-   `SMALL_SMOOTH_*` consts and `examples/restart_value`); the CMA-ES escape is
-   kept (self-gating, still rescues adversarial small fits). An explicit
-   `n_restarts(_)` opts out.
-   - **Initial layout** (`fitter/initial_layout.rs`): multidimensional scaling
-     (MDS) places fixed-size shapes. Solver selectable via `MdsSolver`
-     (Levenberg-Marquardt by default). Initial positions drawn per-restart
-     (`InitialSampler::Uniform` like eulerr, or `LatinHypercube`).
-   - **Final layout** (`fitter/final_layout.rs`): refines all shape parameters to
-     minimize the loss (default `LossType::SumSquared`, the scale-invariant
-     `Σ(f−t)²/Σt²`). `Optimizer` variants — `LevenbergMarquardt`, `Lbfgs`,
-     `NelderMead`, `Trf` (box-constrained LM), `CmaEsLm`, `CmaEsTrf` — are cycled
-     across restarts via a pool. The default is **`CmaEsTrf`**: plain LM first,
-     then *only if* the loss stays above `cmaes_fallback_threshold` (1e-3) a
-     bounded CMA-ES global escape followed by a box-constrained `Trf`
-     (trust-region-reflective) polish, keeping the lower loss (so easy specs pay
-     no extra wall time). `CmaEsLm` is the same with an unbounded LM polish.
-     Box bounds for the bounded solvers come from `optimizer_bounds_for` under
-     two `BoundsEnvelope`s — a tight `CMAES` cage for the global escape and a
-     wider `LOCAL` cage for the TRF polish. Every optimizer here and in the MDS
-     init runs on the `basin` crate (nalgebra backend) — `basin` is the sole
-     optimizer dependency.
-   - For small set counts a **canonical Venn warm-start** seeds restart 0 (see
-     `venn.rs` and the `VENN_SEED_MAX_SETS_*` consts).
-   - `fitter/clustering.rs` + `packing.rs` handle disjoint sub-diagrams;
-     `fitter/normalize.rs` post-processes the final layout.
-   - Returns `Layout<S>` with the fitted shapes plus fit metrics (loss, fitted
-     areas). `fit_initial_only()` skips refinement (diagnostics).
+## Architecture and invariants
 
-3. **`geometry`** — the shape system, built on composable traits in
-   `geometry/traits.rs`: `Area`, `Centroid`, `Perimeter`, `BoundingBox`,
-   `Distance`, `Closed` (spatial relations), and `DiagramShape` (composes them +
-   exclusive-region computation + parameter conversion). Implementing
-   `DiagramShape` is what makes a type fittable. Shapes implementing it:
-   **Circle, Ellipse, Square, Rectangle** (`geometry/shapes/`). `Polygon` is for
-   output/region extraction, not fitting. `geometry/projective/` holds conic and
-   projective-line math used for ellipse intersections; `geometry/diagram.rs`
-   defines `RegionMask` (a region is identified by which sets it belongs to).
+The core pipeline is:
 
-4. **`loss`** — region-error loss functions, built from C¹-smooth surrogates
-   (`smooth_abs` Huber-style, `smooth_max` logsumexp) so gradient-based
-   optimizers behave. Selected via `LossType`.
+```text
+DiagramSpec -> preprocess -> Fitter<S> -> Layout<S> -> plotting/output
+```
 
-5. **`plotting`** — turns a `Layout` into renderable output: region polygon
-   extraction, clipping (`i_overlay`), **region label placement** via poles of
-   inaccessibility (in-house hole-aware polylabel, with leader-line exterior
-   fallbacks), **set label placement** (`place_set_labels` — a set's name just
-   outside its own shape, rotated to the angle with the most room, no leader),
-   and **glyph placement** (`place_glyphs` — equally-sized unit marks packed per
-   region, eulerGlyphs-style). Always available. Narrative docs:
-   `web/src/routes/docs/concepts/label-placement/` and `concepts/glyphs/`.
+- `spec` describes set sizes and intersections without geometry. Preprocessing
+  stores exclusive regions and converts combinations to `RegionMask`s.
+- `fitter` chooses the `DiagramShape` at fit time, builds an initial layout,
+  refines it across restarts, and normalizes the best result.
+- `geometry` provides composable traits and fitting shapes: `Circle`, `Ellipse`,
+  `Square`, and `Rectangle`. `Polygon` is for output and region extraction, not
+  fitting.
+- `loss` contains the optimization objectives and smooth surrogates.
+- `plotting` extracts region polygons and places region labels, set labels, and
+  glyphs.
+- `venn` provides canonical arrangements independently of the fitter.
 
-6. **`venn`** — canonical n-set Venn diagrams independent of the fitter (circles
-   for n≤3, Wilkinson/Edwards ellipse arrangements for n=4..5).
+Preserve these invariants:
 
-### Shape parameter encodings
+- Shape choice belongs to `Fitter<S>`, not `DiagramSpec`.
+- External and FFI APIs use geometric parameters. Optimizer parameters are an
+  internal representation:
 
-Each `DiagramShape` has two encodings, bridged by `to_params`/`from_params`
-(geometric) and `to_optimizer_params`/`from_optimizer_params` (optimizer).
-External/FFI callers want the **geometric** encoding; the **optimizer** encoding
-is internal to the fitter — the log-space transforms decouple area from aspect
-ratio and give the LM/CMA-ES solvers a better-conditioned Hessian.
+  | Shape | Geometric | Optimizer |
+  | --- | --- | --- |
+  | Circle | `[x, y, r]` | identity |
+  | Ellipse | `[x, y, a, b, phi]` | `[x, y, ln(a), ln(b), phi]` |
+  | Square | `[x, y, side]` | identity |
+  | Rectangle | `[x, y, w, h]` | `[x, y, ln(w*h), ln(w/h)]` |
 
-| Shape     | Geometric         | Optimizer encoding          |
-| --------- | ----------------- | --------------------------- |
-| Circle    | `[x, y, r]`       | identity                    |
-| Ellipse   | `[x, y, a, b, φ]` | `[x, y, ln a, ln b, φ]`     |
-| Square    | `[x, y, side]`    | identity                    |
-| Rectangle | `[x, y, w, h]`    | `[x, y, ln(w·h), ln(w/h)]`  |
+- Complement fitting appends the container's four rectangle optimizer
+  parameters in the same rectangle encoding.
+- The `parallel` feature is intentionally off by default and must remain
+  disabled for WASM. The `corpus` feature is internal test/benchmark support,
+  not public API.
+- `basin` is the sole optimizer dependency. Do not introduce a second optimizer
+  stack without an explicit architectural decision.
 
-The container used for complement fitting carries 4 trailing optimizer params in
-the same `[x, y, ln(w·h), ln(w/h)]` rectangle encoding.
+## Keep public surfaces synchronized
 
-### Cargo features (core crate)
+When a core public option changes—such as a shape, optimizer, loss, MDS solver,
+builder method, or complement behavior—update every applicable surface in the
+same change:
 
-- `parallel` — rayon-parallel restart loop. **Not** a default and intentionally
-  off for wasm (no threads).
-- `corpus` — exposes the shared test fixtures (`test_utils::corpus`) to example
-  binaries and benches outside `cfg(test)`. Internal, not part of the public API.
+1. Core Rust API and tests in `crates/eunoia/`.
+2. WASM enums/signatures and tests in `crates/eunoia-wasm/`.
+3. C API input types, hand-written snake_case token parsers, implementation,
+   and tests in `crates/eunoia-capi/`.
+4. TypeScript wrapper and declarations under `ts/`.
+5. The matching bindings documentation under `web/src/routes/docs/bindings/`.
 
-## Conventions
+Do not assume serde exposes a new core enum through the C API; those mappings
+are deliberately manual.
 
-- **Commits:** Conventional Commits with scopes used in this repo: `(ts)`,
-  `(web)`, `(geometry)`, `(fitter)`, etc. (e.g. `feat(web): …`, `fix(fitter): …`).
-- **Releases** are driven by [versionary](https://github.com/jolars/versionary)
-  (`versionary.jsonc`): the Rust workspace and the `ts`/npm package are versioned
-  separately. Pushing a `v*` tag triggers the crates and npm publish workflows.
-- All code must pass `cargo fmt -- --check` and clippy with `-D warnings`.
-  Pre-commit hooks (rustfmt, clippy, biome for JS/TS) run via devenv git-hooks.
-- **Keep the bindings in sync with the core public API.** When you add or change
-  a public knob in `crates/eunoia/` (a new shape, `Optimizer`/`LossType`/
-  `MdsSolver` variant, builder method, `complement`, etc.), mirror it in **both**
-  binding layers it belongs in: `crates/eunoia-wasm/` (`Wasm*` enums + the
-  `generate_*` signatures) and `crates/eunoia-capi/` (the `parse_*` token maps,
-  input structs, and `euler_impl`/`venn_impl`). The capi enums are hand-mapped
-  snake_case strings (no serde on the core enums), so a new variant is silent
-  until added. Update the matching docs page (`web/src/routes/docs/bindings/`)
-  and add a test in the same commit.
-- The `corpus_quality.rs` / `synthetic_groundtruth.rs` fit-quality tests are the
-  guardrail against fitter regressions; `TODO.md` tracks surfaced fitter issues.
-  `corpus_quality` is `#[ignore]`d (too slow for the default suite) — run it via
-  `task dev` or `task test-slow`; `synthetic_groundtruth` stays in the default run.
+The npm package publicly exports `.`, `./svg`, `./web`, and `./trajectory`.
+The raw wasm-bindgen module is runtime backing and is intentionally absent from
+the package `exports` map.
+
+## Documentation site
+
+Narrative documentation lives in `web/src/routes/docs/**` as `.svx` (mdsvex)
+pages. A page's first `# H1` is its title; do not add YAML frontmatter. A page
+may begin with a `<script>` block for interactive Svelte components.
+
+Files under `web/static/` are served verbatim. Keep the two site indexes
+distinct:
+
+- `web/src/routes/sitemap.xml/+server.ts` discovers `+page.svelte` and
+  `+page.svx` routes automatically. Do not hand-maintain page entries there.
+- `web/static/llms.txt` is hand-curated. When adding, removing, renaming, or
+  substantially re-scoping a docs page, update its link and one-line
+  description and keep it in the correct section. It also contains off-site
+  links that route discovery cannot supply.
+
+## Code review rules
+
+Prioritize behavioral and compatibility risks over formatting that automated
+tools already enforce.
+
+- Flag fitter changes that omit `task test-slow` evidence. Safe path: run the
+  ignored suite and report any stochastic failure with its seed or fixture.
+- Flag a changed core public option when either binding layer, TypeScript, docs,
+  or tests are missing. Safe path: update all applicable surfaces together.
+- Flag use of optimizer-encoded shape parameters in an external interface.
+  Safe path: convert at the fitter boundary and expose geometric parameters.
+- Flag manual edits to generated `npm/` artifacts. Safe path: edit `ts/` or the
+  bindings and regenerate with `task build-ts`, `task build-wasm`, or
+  `task build-web`.
+- Flag docs route changes that leave `web/static/llms.txt` stale. Sitemap edits
+  are normally unnecessary because route discovery is automatic.
+
+## Releases
+
+Versions are managed by `versionary.jsonc`; the Rust workspace and npm package
+are versioned separately. Pushing a `v*` tag triggers the crate and npm publish
+workflows. Do not hand-edit versions or publish artifacts unless the task is
+explicitly a release.
