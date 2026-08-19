@@ -99,7 +99,7 @@ JavaScript, and matplotlib-venn\ [@tretyakov2024] draws two- and three-set
 circle diagrams in Python. nVenn\ [@perezsilva2018] produces quasi-proportional
 diagrams with polygonal set boundaries for any number of sets, and
 Edeap\ [@wybrow2021] fits ellipses for any number of sets in a web application.
-eulerr [@larsson2018] fits both circles and ellipses for any number of sets and
+eulerr\ [@larsson2018] fits both circles and ellipses for any number of sets and
 reports stress and diagError diagnostics.
 
   | Package           | Algorithm                | Shapes                                 | Sets | Language                                  |
