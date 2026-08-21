@@ -17,6 +17,8 @@
 //! - `eunoia_place_labels(*const c_char) -> *mut c_char` — resolve
 //!   collision-aware label positions (and leader-line geometry) for region
 //!   polygons, given caller-measured label box sizes.
+//! - `eunoia_label_boxes(*const c_char) -> *mut c_char` — convert resolved
+//!   label anchors and measured sizes into padded glyph keep-out rectangles.
 //! - `eunoia_place_set_labels(*const c_char) -> *mut c_char` — resolve
 //!   exterior set-label positions that hug each set's own shape outline
 //!   (no leader line), given caller-measured label box sizes.
@@ -70,10 +72,10 @@ use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, RotatedRecta
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
 use eunoia::loss::LossType;
 use eunoia::plotting::{
-    ElbowOptions, ExteriorPolicy, GlyphArrangement, GlyphBoxOptions, GlyphOptions, LeaderStrategy,
-    PlacementKind, PlacementStrategy, PlotData, PlotOptions, RegionPiece, RegionPolygons,
-    SetLabelStrategy, TetherSource, classify_into_pieces, place_glyph_boxes, place_glyphs,
-    place_labels, place_set_labels,
+    ElbowOptions, ExteriorPolicy, GlyphArrangement, GlyphBoxOptions, GlyphOptions, LabelPlacement,
+    LeaderStrategy, PlacementKind, PlacementStrategy, PlotData, PlotOptions, RegionPiece,
+    RegionPolygons, SetLabelStrategy, TetherSource, classify_into_pieces, label_boxes,
+    place_glyph_boxes, place_glyphs, place_labels, place_set_labels,
 };
 use eunoia::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
 use eunoia::{Fitter, InitialSampler, Layout, MdsSolver, Optimizer, VennDiagram};
@@ -1065,6 +1067,65 @@ fn place_labels_impl(input: PlaceLabelsInput) -> Result<PlaceLabelsOut, String> 
     Ok(PlaceLabelsOut { placements })
 }
 
+/// Input to [`eunoia_label_boxes`]. Only the placement anchor is needed; the
+/// remaining fields returned by [`eunoia_place_labels`] are accepted and
+/// ignored by serde.
+#[derive(serde::Deserialize)]
+struct LabelBoxPlacementIn {
+    anchor: [f64; 2],
+}
+
+#[derive(serde::Deserialize)]
+struct LabelBoxesInput {
+    placements: BTreeMap<String, LabelBoxPlacementIn>,
+    sizes: BTreeMap<String, [f64; 2]>,
+    #[serde(default)]
+    padding: f64,
+}
+
+#[derive(Serialize)]
+struct RectOut {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Serialize)]
+struct LabelBoxesOut {
+    boxes: Vec<RectOut>,
+}
+
+fn label_boxes_impl(input: LabelBoxesInput) -> Result<LabelBoxesOut, String> {
+    let placements: HashMap<String, LabelPlacement> = input
+        .placements
+        .into_iter()
+        .map(|(key, placement)| {
+            (
+                key,
+                LabelPlacement::interior(Point::new(placement.anchor[0], placement.anchor[1])),
+            )
+        })
+        .collect();
+    let sizes: HashMap<String, (f64, f64)> = input
+        .sizes
+        .into_iter()
+        .map(|(key, [width, height])| (key, (width, height)))
+        .collect();
+
+    let boxes = label_boxes(&placements, &sizes, input.padding)
+        .into_iter()
+        .map(|rect| RectOut {
+            x: rect.center().x(),
+            y: rect.center().y(),
+            width: rect.width(),
+            height: rect.height(),
+        })
+        .collect();
+
+    Ok(LabelBoxesOut { boxes })
+}
+
 // ============================================================================
 // Set-label placement — JSON contract + impl
 // ============================================================================
@@ -1517,6 +1578,16 @@ pub extern "C" fn eunoia_venn(input: *const c_char) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn eunoia_place_labels(input: *const c_char) -> *mut c_char {
     run(input, place_labels_impl)
+}
+
+/// Convert label placements and caller-measured sizes into padded rectangular
+/// obstacles suitable for the glyph-placement endpoints. The `placements`
+/// object may be passed directly from [`eunoia_place_labels`]. Invalid or
+/// unmatched entries are omitted, matching the core [`label_boxes`] helper.
+/// Free the result with [`eunoia_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn eunoia_label_boxes(input: *const c_char) -> *mut c_char {
+    run(input, label_boxes_impl)
 }
 
 /// Resolve exterior set-label positions — one per set, hugging that set's own
@@ -2029,6 +2100,58 @@ mod tests {
                 v["error"]
             );
         }
+    }
+
+    #[test]
+    fn label_boxes_accept_place_labels_output() {
+        let sizes = serde_json::json!({
+            "A": [0.2, 0.1],
+            "B": [0.3, 0.15],
+            "A&B": [0.1, 0.05],
+        });
+        let placements = call(eunoia_place_labels, &place_input(sizes.clone(), None));
+        let placements: serde_json::Value = serde_json::from_str(&placements).unwrap();
+        let input = serde_json::json!({
+            "placements": placements["placements"],
+            "sizes": sizes,
+            "padding": 0.02,
+        })
+        .to_string();
+
+        let out = call(eunoia_label_boxes, &input);
+        let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(value["ok"], true, "got {value}");
+        let boxes = value["boxes"].as_array().unwrap();
+        assert_eq!(boxes.len(), 3);
+        assert_eq!(boxes[0]["width"], 0.24);
+        assert_eq!(boxes[0]["height"], 0.14);
+    }
+
+    #[test]
+    fn label_boxes_filter_invalid_and_unmatched_entries() {
+        let input = serde_json::json!({
+            "placements": {
+                "A": { "anchor": [1.0, 2.0] },
+                "B": { "anchor": [3.0, 4.0] },
+            },
+            "sizes": {
+                "A": [0.5, 0.25],
+                "B": [0.0, 0.25],
+                "C": [0.5, 0.25],
+            },
+            "padding": -1.0,
+        })
+        .to_string();
+
+        let out = call(eunoia_label_boxes, &input);
+        let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(value["ok"], true, "got {value}");
+        assert_eq!(
+            value["boxes"],
+            serde_json::json!([
+                { "x": 1.0, "y": 2.0, "width": 0.5, "height": 0.25 }
+            ])
+        );
     }
 
     // ------------------------------------------------------------------------
