@@ -302,7 +302,6 @@ impl DiagramSpec {
     ) -> Result<HashMap<Combination, f64>, DiagramError> {
         let mut exclusive: HashMap<Combination, f64> = HashMap::new();
 
-        // Sort combinations by size (process from largest to smallest)
         let mut sorted_combos: Vec<_> = inclusive.keys().collect();
         sorted_combos.sort_by_key(|c| std::cmp::Reverse(c.len()));
 
@@ -310,7 +309,7 @@ impl DiagramSpec {
             let inclusive_area = inclusive[combo];
             let mut exclusive_area = inclusive_area;
 
-            // Subtract exclusive areas of all proper supersets (combinations that contain this one)
+            // Inclusion-exclusion requires proper supersets first.
             for (other_combo, &other_excl) in exclusive.iter() {
                 if other_combo != combo && other_combo.contains_all(combo) {
                     exclusive_area -= other_excl;

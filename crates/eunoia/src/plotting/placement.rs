@@ -1,25 +1,7 @@
 //! Label placement.
 //!
-//! [`place_labels`] is the single entry point: every requested region gets
-//! a [`LabelPlacement`] back, with [`PlacementKind`] telling the renderer
-//! whether the anchor lies inside the region or outside. When a label
-//! doesn't fit inside its region's polygon, the leader strategy selected
-//! by the [`PlacementStrategy`] takes over and positions the label outside
-//! the diagram, returning a `tether` point (and any intermediate
-//! `leader_waypoints`) so the caller can draw a leader line back to the
-//! region.
-//!
-//! The leader strategy ties the *edge type* to the *placement algorithm*
-//! that suits it. [`LeaderStrategy::Straight`] — straight leader lines — is
-//! placed by one of three exterior solvers: [`ExteriorPolicy::Raycast`]
-//! (the default — closed-form anchor along the centroid→POI ray, with
-//! collision resolution), [`ExteriorPolicy::ForceDirected`] (an iterative
-//! spring-and-repulsion solve that's polygon-aware: each label repels both
-//! other labels *and* foreign region pieces, so labels are prevented from
-//! drifting across unrelated regions), and [`ExteriorPolicy::Matched`]
-//! (boundary labeling on a silhouette-hugging slot ring with provably
-//! non-crossing leaders). [`LeaderStrategy::Elbow`] — d3-pie style
-//! orthogonal leaders — uses a standalone column-based placement of its own.
+//! Labels that do not fit inside their regions are placed by the selected
+//! exterior policy and include the geometry needed to draw a leader.
 
 use std::collections::HashMap;
 
@@ -35,9 +17,7 @@ use crate::spec::Combination;
 
 /// Result of placing one label.
 ///
-/// `#[non_exhaustive]`: an output type returned from [`place_labels`]; future
-/// edge types add fields (e.g. richer leader geometry), so it's not
-/// constructed downstream. Match with `..`.
+/// This output is non-exhaustive; downstream matches should use `..`.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct LabelPlacement {
@@ -51,22 +31,9 @@ pub struct LabelPlacement {
     /// exterior kind. Renderers use this to draw the tether from `anchor`
     /// toward `tether`.
     pub tether: Option<Point>,
-    /// Point on the label's bounding box where the leader line should
-    /// terminate, so the line stops at the box edge instead of continuing
-    /// through the rendered text. `None` for interior placements and for
-    /// [`PlacementKind::ExteriorSet`] (neither draws a leader); `Some` for
-    /// every other exterior kind. Sits on the AABB of size `(w, h)`
-    /// centred on `anchor` — the AABB the caller supplied in `sizes`, so
-    /// any half-gap padding the caller added is preserved as the visible
-    /// gap between the leader tip and the text.
+    /// Point where the leader meets the label box. Absent when no leader is drawn.
     pub leader_end: Option<Point>,
-    /// Intermediate vertices of the leader polyline, in draw order, running
-    /// between `tether` and `leader_end`. **Empty** for interior placements
-    /// (no leader) and for straight leaders ([`LeaderStrategy::Straight`]),
-    /// where the leader is the single segment `tether → leader_end`. Future
-    /// edge types (e.g. elbow/orthogonal leaders) populate this with their
-    /// bend joints, so a renderer always draws the leader as the polyline
-    /// `tether → waypoints… → leader_end`.
+    /// Intermediate leader vertices, ordered from `tether` to `leader_end`.
     pub leader_waypoints: Vec<Point>,
 }
 
@@ -74,13 +41,8 @@ impl LabelPlacement {
     /// An [interior](PlacementKind::Interior) placement at `anchor` with no
     /// leader (`tether`/`leader_end` are `None`, `leader_waypoints` empty).
     ///
-    /// This is the forward-compatible constructor for binding authors who
-    /// reconstruct a placement they received from [`place_labels`] in order
-    /// to thread it back through a core helper such as [`placements_bbox`]
-    /// (which only reads `anchor`). Because [`LabelPlacement`] is
-    /// `#[non_exhaustive]`, you cannot build it with a struct literal from
-    /// outside this crate — use this instead. Any fields added in future
-    /// releases get sensible defaults here, so call sites keep compiling.
+    /// Use this constructor instead of a struct literal because
+    /// [`LabelPlacement`] is non-exhaustive.
     pub fn interior(anchor: Point) -> Self {
         Self {
             anchor,
@@ -94,9 +56,7 @@ impl LabelPlacement {
 
 /// Discriminator on [`LabelPlacement`].
 ///
-/// `#[non_exhaustive]`: renderers match on this to decide how to draw a label,
-/// and new placement kinds are actively landing (elbow leaders are a planned
-/// follow-up — see module docs), so downstream matches must carry a `_` arm.
+/// This enum is non-exhaustive; downstream matches must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PlacementKind {
@@ -974,14 +934,7 @@ fn place_elbow_labels(
 /// Returns [`None`] when no placement contributed (empty input, or every
 /// entry was skipped) — distinct from "zero-area bbox".
 ///
-/// # Why callers want this
-///
-/// Renderers and resize loops need to extend the canvas so exterior
-/// labels (which routinely sit well outside the diagram bbox) aren't
-/// clipped. The naive walk is "for each placement, union with `anchor ±
-/// half_label`"; this helper canonicalises it so every binding doesn't
-/// reinvent the loop. Pair with [`crate::Layout::container`] and the
-/// region polygons' own bbox to compute the full canvas extent.
+/// Use this with the diagram bounds when sizing a canvas for exterior labels.
 ///
 /// # Examples
 ///
@@ -1072,12 +1025,8 @@ pub fn placements_bbox(
 
 /// One rectangle per placed label, each grown by `padding` on every side.
 ///
-/// This is the bridge from [`place_labels`] to
-/// [`GlyphOptions::obstacles`](crate::plotting::GlyphOptions::obstacles):
-/// labels are painted over glyphs, so the boxes the caller measured for
-/// [`place_labels`] are exactly the areas glyphs should steer clear of.
-/// Every placement is included, interior and exterior alike — an exterior
-/// box is the one most likely to land on a region that is not its own.
+/// These boxes can be passed to
+/// [`GlyphOptions::obstacles`](crate::plotting::GlyphOptions::obstacles).
 /// Placements with no matching size, or with a degenerate size or anchor,
 /// are skipped; the output is ordered by region key, so it is stable across
 /// runs despite the `HashMap` inputs.

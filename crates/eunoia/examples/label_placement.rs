@@ -1,7 +1,4 @@
-//! Example demonstrating pole of inaccessibility for label placement.
-//!
-//! This example shows how to use the pole_of_inaccessibility method
-//! to find optimal label positions for polygons.
+//! Demonstrates pole-of-inaccessibility label placement.
 //!
 //! Run with: cargo run --example label_placement
 
@@ -11,7 +8,6 @@ use eunoia::geometry::shapes::Polygon;
 fn main() {
     println!("=== Label Placement Example ===\n");
 
-    // Example 1: Square - pole should be near center
     println!("1. Square:");
     let square = Polygon::new(vec![
         Point::new(0.0, 0.0),
@@ -25,7 +21,6 @@ fn main() {
     println!("   Pole:     ({:.2}, {:.2})", pole.x(), pole.y());
     println!("   → Similar positions (symmetric shape)\n");
 
-    // Example 2: L-shape - pole is better than centroid
     println!("2. L-shaped polygon:");
     let l_shape = Polygon::new(vec![
         Point::new(0.0, 0.0),
@@ -41,7 +36,6 @@ fn main() {
     println!("   Pole:     ({:.2}, {:.2})", pole.x(), pole.y());
     println!("   → Pole is in the thick part (better for labels!)\n");
 
-    // Example 3: Rectangle - pole should be at center
     println!("3. Rectangle:");
     let rect = Polygon::new(vec![
         Point::new(0.0, 0.0),
@@ -55,7 +49,6 @@ fn main() {
     println!("   Pole:     ({:.2}, {:.2})", pole.x(), pole.y());
     println!("   → Similar positions (symmetric shape)\n");
 
-    // Example 4: C-shaped polygon
     println!("4. C-shaped polygon:");
     let c_shape = Polygon::new(vec![
         Point::new(0.0, 0.0),

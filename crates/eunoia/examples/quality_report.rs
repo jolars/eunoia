@@ -67,16 +67,10 @@ mod quality_report {
     /// builders must be non-capturing closures (so they coerce to `fn`).
     fn shape_configs<S: DiagramShape + Copy + 'static>() -> Vec<(&'static str, ConfigFn<S>)> {
         vec![
-            // Current default: L-BFGS-only final-stage pool, L-BFGS-only MDS.
             ("default", |f| f),
-            // Mixed pool with NM cycled in (the previous default). Kept as a
-            // sentinel so we can verify NM stays harmful and don't quietly
-            // regress the change.
             ("nm_lbfgs_mix", |f| {
                 f.optimizer_pool(vec![Optimizer::NelderMead, Optimizer::Lbfgs])
             }),
-            // Pure Nelder-Mead final-stage. Tracks how badly NM-only does
-            // (huge ellipse loss) — useful as the lower bound on quality.
             ("neldermead_only", |f| f.optimizer(Optimizer::NelderMead)),
             // Pure MADS (OrthoMADS) final-stage. The candidate derivative-free
             // replacement for Nelder-Mead on non-smooth objectives — paired

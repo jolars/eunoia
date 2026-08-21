@@ -1,18 +1,7 @@
 //! Region decomposition for diagram visualization.
 //!
-//! This module provides utilities for decomposing fitted shapes into
-//! exclusive regions (one per set combination) for plotting.
-//!
-//! # Output structure
-//!
 //! [`RegionPolygons`] stores each region as a list of [`RegionPiece`]s, where
-//! a *piece* is a single connected component with one outer boundary and
-//! zero or more interior holes. Disconnected regions (e.g. an "A only"
-//! region split by other sets cutting across A) produce multiple pieces.
-//!
-//! Outer rings are normalised to **CCW** (positive signed area) and holes
-//! to **CW** (negative signed area) so renderers can draw each piece with
-//! `fill-rule: nonzero` (the SVG default) without further bookkeeping.
+//! each piece has a counterclockwise outer ring and clockwise holes.
 
 use crate::geometry::diagram::{IntersectionPoint, discover_regions};
 use crate::geometry::primitives::Point;
@@ -25,36 +14,8 @@ use std::collections::HashMap;
 /// A connected component of a region: one outer boundary plus zero or more
 /// interior holes (other regions or shapes cutting through this piece).
 ///
-/// Orientation is normalised by the core library so consumers can render
-/// each piece with the SVG default `fill-rule: nonzero` (or any equivalent
-/// nonzero / "even-odd-of-rings" rule) **without classifying rings on their
-/// own side**:
-///
-/// * `outer` — CCW (positive signed area).
-/// * `holes` — CW (negative signed area), each strictly inside `outer`.
-///
-/// Use [`RegionPiece::area`] for the piece's net area (outer minus holes).
-///
-/// # Renderer recipe
-///
-/// SVG: emit one `<path>` per piece with `d` formed by concatenating the
-/// outer ring's `M…Z` and each hole's `M…Z`. Default `fill-rule: nonzero`
-/// fills only the donut/cookie shape because the rings have opposite
-/// winding.
-///
-/// Canvas: `ctx.beginPath()`, walk the outer ring, walk each hole ring,
-/// `ctx.fill()` (Canvas's default fill is also nonzero).
-///
-/// # Construction
-///
-/// `RegionPiece`s are produced by [`decompose_regions`] (and the higher-
-/// level [`crate::Layout::region_polygons`]). Bindings authors should not
-/// build them by hand: the topological classification that maps a flat
-/// list of clipper-output rings to outer/holes pairs is not part of the
-/// public API.
-///
-/// `#[non_exhaustive]`: an output type produced by [`decompose_regions`], not
-/// constructed by downstream callers, so fields can be added non-breakingly.
+/// The outer ring is counterclockwise, and holes are clockwise, so nonzero
+/// fill rules render the piece correctly. This output type is non-exhaustive.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct RegionPiece {
@@ -94,22 +55,14 @@ pub struct RegionPolygons {
 }
 
 impl RegionPolygons {
-    /// Creates a new empty `RegionPolygons` collection.
-    ///
-    /// `pub(crate)` on purpose: the only sound way to populate one is via
-    /// [`decompose_regions`] (or [`crate::Layout::region_polygons`]), which
-    /// guarantees the [`RegionPiece`] orientation and topology contract.
-    /// Hand-built collections would let callers violate those invariants
-    /// silently.
+    /// Creates an empty collection.
     pub(crate) fn new() -> Self {
         Self {
             regions: HashMap::new(),
         }
     }
 
-    /// Adds pieces for a given region. `pub(crate)` to keep the orientation
-    /// contract on [`RegionPiece`] enforceable — production code should use
-    /// [`decompose_regions`].
+    /// Adds pieces for a region.
     pub(crate) fn insert(&mut self, combination: Combination, pieces: Vec<RegionPiece>) {
         self.regions.insert(combination, pieces);
     }

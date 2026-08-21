@@ -20,11 +20,10 @@ pub fn find_clusters<S: Closed>(shapes: &[S]) -> Vec<Vec<usize>> {
         return vec![];
     }
 
-    // Build adjacency matrix based on region overlap (intersection or containment).
     let mut adjacency = vec![vec![false; n]; n];
 
     for i in 0..n {
-        adjacency[i][i] = true; // Each shape is connected to itself
+        adjacency[i][i] = true;
         for j in (i + 1)..n {
             let connected = shapes[i].intersects(&shapes[j])
                 || shapes[i].contains(&shapes[j])
@@ -36,7 +35,6 @@ pub fn find_clusters<S: Closed>(shapes: &[S]) -> Vec<Vec<usize>> {
         }
     }
 
-    // Compute transitive closure (Floyd-Warshall style)
     for k in 0..n {
         for i in 0..n {
             for j in 0..n {
@@ -47,7 +45,6 @@ pub fn find_clusters<S: Closed>(shapes: &[S]) -> Vec<Vec<usize>> {
         }
     }
 
-    // Extract unique clusters
     let mut seen = vec![false; n];
     let mut clusters = Vec::new();
 

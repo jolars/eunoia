@@ -22,85 +22,34 @@ use crate::spec::PreprocessedSpec;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum Optimizer {
-    /// Levenberg-Marquardt with analytic Jacobian. Specialised for the
-    /// sum-of-squares loss `LossType::SumSquared`. When configured with a
-    /// non-LSQ loss, the dispatch falls back to `Lbfgs` for smooth losses
-    /// (RMSE, Stress, …) and to `NelderMead` for non-smooth ones (`Max*`,
-    /// `SumAbsolute`, `DiagError`, `SumAbsoluteRegionError`) — the latter
-    /// produce zero/discontinuous gradients that stall L-BFGS (issue #45).
-    ///
-    /// Uses the existing analytical region-area gradients to assemble a
-    /// per-residual Jacobian (one row per region mask), then approximates
-    /// the Hessian as `JᵀJ`. The Jacobian comes from
-    /// [`crate::geometry::traits::DiagramShape::compute_exclusive_regions_with_gradient`];
-    /// boundary builders for Circle and Ellipse are documented in `CONTRIBUTING.md`.
+    /// Levenberg-Marquardt with an analytic Jacobian for `SumSquared` loss.
+    /// Other smooth losses use L-BFGS, and non-smooth losses use Nelder-Mead.
     LevenbergMarquardt,
-    /// L-BFGS. Used as the non-LSQ fallback under the LM dispatch arm and
-    /// available directly for losses where LM doesn't apply (RMSE, Stress,
-    /// DiagError, …). With analytical gradients it's competitive with LM on
-    /// circles, but ~20 orders of magnitude worse on ellipse median loss in
-    /// `examples/quality_report` — keep it as a fallback, not as a default.
+    /// L-BFGS for smooth losses that are not least-squares problems.
     Lbfgs,
-    /// Nelder-Mead simplex (derivative-free). Last-resort option for losses
-    /// where neither LM nor a meaningful gradient is available; kept mostly
-    /// because the harness still uses it as a quality lower-bound sentinel.
+    /// Derivative-free Nelder-Mead simplex optimization.
     NelderMead,
-    /// OrthoMADS — mesh-adaptive direct search (`basin::Mads`), derivative-free.
+    /// Derivative-free OrthoMADS mesh-adaptive direct search.
     ///
-    /// The non-smooth-objective counterpart to [`Optimizer::NelderMead`]: where
-    /// Nelder-Mead's simplex degenerates on a discontinuous/plateaued landscape
-    /// (all vertices tie, the simplex collapses and stalls), MADS polls a
-    /// shrinking rational mesh and walks down the discontinuity. Targets exactly
-    /// the cost landscapes eunoia hands to the derivative-free path: the
-    /// non-smooth losses (`Max*`, `SumAbsolute`, `DiagError`,
-    /// `SumAbsoluteRegionError`) and the piecewise-C¹ overlap area of shapes
-    /// without an analytic gradient ([`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]
-    /// `= false`, e.g. `RotatedRectangle`).
-    ///
-    /// Budgeted by **cost evaluations**, not iterations: one MADS poll round is
-    /// `O(n)` evaluations, so a fair comparison with Nelder-Mead's
-    /// `max_iterations` iteration cap budgets MADS at
-    /// `max_iterations · (2·n_params + 1)` evals (see the `run_mads` dispatch).
-    ///
-    /// **Not** in any default pool — a benchmark candidate evaluated against
-    /// `NelderMead` via `examples/nonsmooth_bench` and `examples/quality_report`.
-    ///
-    /// [`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]: crate::geometry::traits::DiagramShape::SUPPORTS_ANALYTIC_GRADIENT
+    /// Its budget is measured in cost evaluations and scales each iteration by
+    /// `2 * n_params + 1` to account for a full poll.
     Mads,
-    /// Box-constrained CMA-ES (`basin::BoundedCmaEs`) run on its own, with **no**
-    /// gradient polish — purely derivative-free, unlike [`Optimizer::CmaEsLm`] /
-    /// [`Optimizer::CmaEsTrf`], which always finish with an LM/TRF step. It is
-    /// the global-search half of the derivative-free default pool for shapes
-    /// whose exact overlap area is only piecewise-C¹ (see
-    /// [`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]): Nelder-Mead refines
-    /// locally, this escapes wrong basins, and neither ever evaluates a
-    /// gradient that would chatter at the kinks. Bounds and per-coordinate
-    /// initial std come from `optimizer_bounds_for` under
-    /// `BoundsEnvelope::CMAES`, the same global-escape cage `CmaEs*` use.
-    ///
-    /// [`DiagramShape::SUPPORTS_ANALYTIC_GRADIENT`]: crate::geometry::traits::DiagramShape::SUPPORTS_ANALYTIC_GRADIENT
+    /// Box-constrained, derivative-free CMA-ES without local polishing.
     CmaEs,
-    /// Threshold-fired CMA-ES global escape followed by an **unbounded**
-    /// Levenberg-Marquardt polish. The previous default; [`Optimizer::CmaEsTrf`]
-    /// (bounded TRF polish) is now the [`Fitter`] default, but this remains
-    /// available for the unbounded-polish behaviour.
+    /// Threshold-gated CMA-ES escape followed by unbounded LM polish.
     ///
     /// Each restart runs plain LM first; if the result is at or below
     /// `Fitter::cmaes_fallback_threshold` (default `1e-3` on the default
     /// `SumSquared` loss) the CMA-ES step is skipped entirely
     /// and the LM result is returned.
-    /// Easy specs that LM already crushes pay zero extra wall time.
+    /// Fits below the threshold avoid the global-search cost.
     ///
-    /// When LM stalls above the threshold (e.g. `issue92_3_set_dropped_pair`
-    /// at `1.3e-4`, `eulerape_3_set` at `4.4e-4`, `random_4_set` at
-    /// `8.5e-3` under plain LM), CMA-ES fires: it samples in a feasible
-    /// box around the MDS init (centroid ± span on positions,
+    /// CMA-ES samples in a feasible box around the MDS initialization
+    /// (centroid ± span on positions,
     /// `[eps, k·max_radius]` on radii / semi-axes; angles unbounded) and
     /// hands its best point to the same Levenberg-Marquardt residual
-    /// problem the `LevenbergMarquardt` arm uses, so the analytical
-    /// Jacobian still drives the final tightening. The lower-loss of
-    /// {plain LM, CMA-ES → LM polish} is returned, so the path is
-    /// strictly non-regressing vs `LevenbergMarquardt`.
+    /// problem used by `LevenbergMarquardt`. The lower-loss local or polished
+    /// result is returned.
     ///
     /// Only the LM legs (the up-front guard and the polish) require the
     /// `SumSquared` loss — they build the least-squares residual problem and
@@ -114,13 +63,6 @@ pub enum Optimizer {
     /// this strategy is really "{smooth: L-BFGS, non-smooth: Nelder-Mead},
     /// with a CMA-ES global escape", not literal LM.
     ///
-    /// Cost: when CMA-ES fires, ~λ·max_iters extra function evaluations
-    /// on top of LM, with λ = `4 + floor(3 ln n)` for an n-parameter
-    /// problem and `max_iters = 100`. On `issue91_6_set` (n=30) that's
-    /// ~1400 extra region-area evals per restart. The threshold gate keeps
-    /// this off the easy-spec budget.
-    ///
-    /// [`Fitter`]: crate::Fitter
     CmaEsLm,
     /// Box-constrained Levenberg-Marquardt — trust-region-reflective
     /// (`basin::Trf`). The bounded analog of [`Optimizer::LevenbergMarquardt`]:
@@ -139,38 +81,13 @@ pub enum Optimizer {
     /// `lower = -∞` and `upper = +∞` element-wise, `Trf` reduces exactly to
     /// `LevenbergMarquardt`.
     ///
-    /// Unlike a wrapped global step, this is a purely *local* solver: it
-    /// cannot escape a wrong basin (no CMA-ES stage), so it competes with
-    /// `LevenbergMarquardt` and only beats `CmaEsLm` where parameter bounds —
-    /// not basin escape — are the bottleneck. As with the `LevenbergMarquardt`
-    /// arm, non-`SumSquared` losses fall back to `Lbfgs` (smooth) / `NelderMead`
-    /// (non-smooth) since the least-squares problem doesn't exist for them.
+    /// This is a local solver and cannot escape an incorrect basin.
     Trf,
-    /// [`CmaEsLm`](Optimizer::CmaEsLm) with the post-escape polish swapped from
-    /// unbounded LM to box-constrained [`Trf`](Optimizer::Trf). **Default for
-    /// [`Fitter`].**
+    /// Threshold-gated CMA-ES with bounded TRF polishing.
     ///
-    /// Threshold-fired structure: plain LM first, and if it stalls above
-    /// `cmaes_fallback_threshold` a **bounded TRF retry from the same MDS
-    /// init** is raced against it. LM and TRF reach different basins on a
-    /// handful of specs (TRF closes `three_inside_fourth` seed=1's LM 1.5e-2
-    /// stall to ~3.7e-11; LM finds `gene_sets`'s 5.1e-8 basin TRF can't
-    /// reach from the MDS init), so racing both is what keeps the path
-    /// strictly non-regressing on each spec individually. If the better of
-    /// the two is still above threshold, a bounded CMA-ES global escape
-    /// runs and its best candidate is refined with the same **bounded** TRF
-    /// polish (under `BoundsEnvelope::LOCAL`), so the refinement can't
-    /// wander outside the feasible box. The lowest-loss of {plain LM,
-    /// TRF-from-init, CMA-ES → TRF polish} is returned, so it is strictly
-    /// non-regressing vs `LevenbergMarquardt` like `CmaEsLm`.
+    /// This is the [`crate::Fitter`] default. The lowest-loss result among the
+    /// local fit, bounded retry, and escaped bounded fit is returned.
     ///
-    /// On the `examples/quality_report` sweep this matches `CmaEsLm` on nearly
-    /// every spec, wins a few (ellipse `three_inside_fourth`, rectangle
-    /// `unequal_overlaps`), and trades one small, bound-independent regression
-    /// (circle `issue103`, an intrinsic TRF-vs-LM stopping difference) — a
-    /// net-positive that motivated making it the default.
-    ///
-    /// [`Fitter`]: crate::Fitter
     #[default]
     CmaEsTrf,
 }
@@ -179,17 +96,10 @@ pub enum Optimizer {
 /// [`Optimizer::CmaEsTrf`] when the local baseline is stuck above
 /// `cmaes_fallback_threshold`.
 ///
-/// Internal benchmark knob (not a public `Optimizer` variant): all three
-/// share the identical baseline-race + external polish + non-regression guard
-/// in `run_cmaes_escape`, so the *only* thing that varies is which solver
-/// produces the post-escape seed. The two memetic variants fold an LM inner
-/// (over the existing `BoundedLmDiagramProblem`, Hansen-2011 / DE injection)
-/// into the population loop; the plain variant keeps the local refinement
-/// entirely external. See `examples/quality_report` for the head-to-head.
+/// All variants share the same external polish and result-selection logic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EscapeSolver {
-    /// Plain box-constrained CMA-ES (`basin::BoundedCmaEs`); local refinement
-    /// happens only in the external polish. The historical default.
+    /// Plain box-constrained CMA-ES with external local refinement.
     #[default]
     BoundedCmaEs,
     /// Memetic box-constrained CMA-ES with an LM inner
@@ -203,58 +113,27 @@ pub enum EscapeSolver {
 /// Configuration for final layout optimization.
 #[derive(Debug, Clone)]
 pub(crate) struct FinalLayoutConfig {
-    /// Maximum number of optimization iterations
+    /// Maximum number of optimization iterations.
     pub max_iterations: usize,
-    /// Loss function
+    /// Loss function.
     pub loss_type: crate::loss::LossType,
-    /// Optimizer to use
+    /// Optimizer.
     pub optimizer: Optimizer,
-    /// Cost-change convergence tolerance. Honored by every solver except
-    /// Nelder-Mead:
-    /// - **L-BFGS**: passed as both `tol_grad` and `tol_cost`. Squaring the
-    ///   cost tolerance backfires with central-difference gradients (FD noise
-    ///   floor on cost evals is ~`sqrt(EPSILON) × |cost|`), so both share
-    ///   `config.tolerance`.
-    /// - **Levenberg-Marquardt**: passed as `ftol` (cost-change exit) only.
-    ///   `xtol` and `gtol` use the fixed `1e-6` defaults from the
-    ///   per-knob fields below.
-    /// - **CmaEsLm**: used by the LM step(s) (the up-front guard and the
-    ///   polish) as above; the bounded CMA-ES escape stage itself runs to its
-    ///   fixed generation budget under basin's TolX, so it doesn't read this.
-    /// - **Nelder-Mead**: ignored — no cost-tolerance setter is wired on the
-    ///   `basin::NelderMead` run, so it runs to `max_iterations`.
+    /// Cost-change tolerance for L-BFGS and LM-based solvers.
     ///
-    /// Default `1e-3`, validated against the full 27-spec corpus × 16 seeds
-    /// × {Circle, Ellipse} via the `final_tolerance` bench (zero regressions
-    /// vs. the prior `1e-6`, with up to ~170× wall-time wins on slow ellipse
-    /// specs because LM was previously cost-converged but still grinding the
-    /// `xtol`/`gtol` tail). The LM `xtol`/`gtol` knobs stay at `1e-6` to
-    /// preserve parameter-space precision.
+    /// Nelder-Mead ignores this value. CMA-ES uses its own stopping rule.
     pub tolerance: f64,
-    /// Per-knob LM stopping tolerance overrides. `None` falls back to the
-    /// LM-specific defaults: `xtol = 1e-6`, `ftol = config.tolerance`,
-    /// `gtol = 1e-6`. Only honoured by `Optimizer::LevenbergMarquardt` and
-    /// the LM polish step of `Optimizer::CmaEsLm`; other optimizers ignore
-    /// these.
+    /// Per-knob LM tolerances. `None` uses the solver-specific default.
     pub xtol: Option<f64>,
     pub ftol: Option<f64>,
     pub gtol: Option<f64>,
-    /// Seed used for stochastic operations: simulated annealing, and
-    /// position-perturbation restarts.
+    /// Seed for stochastic operations.
     pub seed: u64,
-    /// Number of optimization restarts from perturbed initial circle layouts.
-    /// Attempt 0 always uses the unperturbed MDS init; attempts `1..n_restarts`
-    /// perturb the circle positions before converting to shape parameters.
-    /// Mirrors eulerr's `n_restarts = 10` strategy.
+    /// Number of optimization restarts. Attempt zero uses the unperturbed layout.
     pub n_restarts: usize,
-    /// Loss threshold above which `Optimizer::CmaEsLm` fires the global
-    /// CMA-ES escape stage. When plain LM lands at or below this value the
-    /// CMA-ES step is skipped entirely, so the easy-spec wall-time cost
-    /// drops to that of `Optimizer::LevenbergMarquardt`. Only the
-    /// `CmaEsLm` arm consults this; other optimizers ignore it.
+    /// Loss threshold above which a `CmaEs*` optimizer runs global search.
     pub cmaes_fallback_threshold: f64,
-    /// Which global-escape solver the `CmaEs*` arms use once the local
-    /// baseline is stuck. Internal benchmark knob; see [`EscapeSolver`].
+    /// Global solver used by `CmaEs*` optimizers.
     pub escape_solver: EscapeSolver,
 }
 
@@ -270,13 +149,6 @@ impl Default for FinalLayoutConfig {
             gtol: None,
             seed: 0xDEAD_BEEF,
             n_restarts: 10,
-            // 1e-3 sits well above the ~1e-20 / ~1e-30 floor LM crushes
-            // easy specs to and well below the ~1e-2 / ~1e-1 plateaus the
-            // hard specs (issue91, issue92, eulerape, …) get stuck on.
-            // Picked empirically from `examples/quality_report`: every
-            // spec where lm_full lands at machine precision sits at or
-            // below 1e-20, every spec where it stalls in a wrong basin
-            // sits at or above 1e-4.
             cmaes_fallback_threshold: 1e-3,
             escape_solver: EscapeSolver::BoundedCmaEs,
         }
@@ -285,13 +157,8 @@ impl Default for FinalLayoutConfig {
 
 /// Optimize the final layout by minimizing region error.
 ///
-/// Runs the configured optimizer up to `config.n_restarts` times — attempt 0
-/// from the unperturbed MDS initial layout, then attempts `1..n_restarts` from
-/// MDS positions perturbed with seeded Gaussian noise. The lowest-loss result
-/// across all restarts is returned. This mirrors eulerr's `n_restarts = 10`
-/// strategy and helps escape topologically wrong basins where a local optimizer
-/// gets stuck (e.g. shapes that should overlap landing disjoint, where the loss
-/// is locally flat — see issue #28).
+/// Attempt zero uses the MDS layout. Later attempts perturb positions with
+/// seeded Gaussian noise. The lowest-loss result is returned.
 ///
 /// Returns the optimized parameters as a flat vector along with the loss.
 pub(crate) fn optimize_layout<S: DiagramShape + Copy + 'static>(
@@ -978,8 +845,7 @@ fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
 /// ([`EscapeSolver::BoundedCmaInject`] / [`EscapeSolver::DeInject`]). Lower
 /// than the plain [`run_bounded_cmaes`] budget (100) because each generation
 /// here *also* runs an inner LM refinement on the best [`MEMETIC_REFINE_K`]
-/// candidates, so the per-generation cost is much higher. First-pass value;
-/// tune from `examples/quality_report` against wall time.
+/// candidates, so the per-generation cost is much higher.
 const MEMETIC_ESCAPE_GENERATIONS: u64 = 60;
 /// Inner LM iteration budget per refinement pass inside the memetic escapes.
 const MEMETIC_INNER_MAX_ITER: u64 = 25;
@@ -1277,18 +1143,14 @@ impl<S: DiagramShape + Copy + 'static> basin::BoxConstraints for BoundedLmDiagra
 /// Width of the per-shape box-bound envelope, in units relative to the
 /// MDS-initialised layout's `max(span, max_radius)` and `max_radius`.
 ///
-/// The two bounded solvers want different widths:
+/// The two bounded solvers require different widths:
 /// - [`CMAES`](Self::CMAES) — a tight box for the CMA-ES *global escape*. The
-///   adaptive boundary penalty and the `with_stds` preconditioning are tuned
-///   around it, and a tight box keeps the global sampling focused. These are
-///   the historical values; do not change them without re-benchmarking the
-///   default (`CmaEsLm`), whose behaviour they define.
+///   adaptive boundary penalty and `with_stds` preconditioning assume this
+///   scale, and a tight box keeps global sampling focused.
 /// - [`LOCAL`](Self::LOCAL) — a wider safety-cage for the bounded *local*
 ///   solve ([`Optimizer::Trf`] and the `CmaEsTrf` polish). A local refinement
 ///   only needs bounds to catch radius/position blow-up, not to constrain a
-///   legitimate optimum; a too-tight cage clips specs whose best fit needs a
-///   shape larger than the tight ceiling (observed as `cmaes_trf` regressions
-///   on `issue103`/`issue114` under the `CMAES` width).
+///   legitimate optimum.
 #[derive(Clone, Copy)]
 struct BoundsEnvelope {
     /// Position half-width as a multiple of `max(span, max_radius)`.
@@ -1300,7 +1162,7 @@ struct BoundsEnvelope {
 }
 
 impl BoundsEnvelope {
-    /// Tight box for CMA-ES global exploration (historical values).
+    /// Tight box for CMA-ES global exploration.
     const CMAES: Self = Self {
         pos_margin_scale: 4.0,
         radius_floor_frac: 1e-6,

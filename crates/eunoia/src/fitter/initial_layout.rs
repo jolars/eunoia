@@ -102,10 +102,7 @@ pub(crate) fn sample_uniform_init(
     n_sets: usize,
     scale: f64,
 ) -> DVector<f64> {
-    // Derive a fresh per-attempt seed from the supplied rng so the sampling
-    // path is identical to the historical behaviour (compute_initial_layout
-    // → run_attempt seeded a local StdRng before drawing 2·n_sets uniforms),
-    // keeping unit-test outputs stable.
+    // A local seed keeps each attempt independent and reproducible.
     let seed: u64 = rng.random();
     let mut local_rng = StdRng::seed_from_u64(seed);
     let mut values = vec![0.0; n_sets * 2];
@@ -194,11 +191,7 @@ pub(crate) fn compute_initial_layout_with_solver(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum MdsSolver {
-    /// Limited-memory BFGS with More-Thuente line search. Gradient-only and
-    /// cheap per iteration. Was the historical default; demoted from default
-    /// after the More-Thuente inner line search was observed to deadlock at
-    /// subset-clamp kinks on certain initial conditions (see
-    /// `MdsSolver::LevenbergMarquardt` doc).
+    /// Limited-memory BFGS with a More-Thuente line search.
     Lbfgs,
     /// Levenberg-Marquardt with the analytic per-pair Jacobian. The MDS
     /// objective `Σ_{i≠j} d_{ij}² / Σ target⁴` is a textbook nonlinear

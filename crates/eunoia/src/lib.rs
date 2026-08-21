@@ -1,13 +1,9 @@
-//! # Eunoia
-//!
 //! A Rust library for creating area-proportional Euler and Venn diagrams.
 //!
-//! Eunoia generates optimal layouts for set visualizations using various geometric shapes
-//! (circles, ellipses, rectangles, squares). The library uses a two-phase optimization
-//! approach:
+//! A fit has two stages:
 //!
-//! 1. **Initial layout**: Multi-dimensional scaling (MDS) to place fixed-size shapes
-//! 2. **Refinement**: Comprehensive optimization to minimize loss functions (RegionError or stress)
+//! 1. Multi-dimensional scaling places fixed-size shapes.
+//! 2. Numerical optimization refines the shapes against the chosen loss.
 //!
 //! ## Example
 //!
@@ -15,7 +11,6 @@
 //! use eunoia::{DiagramSpecBuilder, Fitter, InputType};
 //! use eunoia::geometry::shapes::Circle;
 //!
-//! // Build specification (shape-agnostic)
 //! let spec = DiagramSpecBuilder::new()
 //!     .set("A", 5.0)
 //!     .set("B", 2.0)
@@ -24,7 +19,6 @@
 //!     .build()
 //!     .expect("Failed to build diagram specification");
 //!
-//! // Choose shape type when fitting
 //! let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 //! ```
 
@@ -46,7 +40,6 @@ pub mod plotting;
 #[cfg(any(test, feature = "corpus"))]
 pub mod test_utils;
 
-// Re-export main API types
 pub use error::DiagramError;
 /// Internal global-escape solver selector, exposed only under the `corpus`
 /// feature for `examples/quality_report` (see [`Fitter::escape_solver`]).

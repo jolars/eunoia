@@ -5,9 +5,9 @@ use crate::constants::{MAX_SETS, MAX_SETS_HARD_CAP};
 use crate::error::DiagramError;
 use std::collections::{HashMap, HashSet};
 
-/// Builder for creating diagram specifications with a fluent API.
+/// Fluent builder for diagram specifications.
 ///
-/// The specification is shape-agnostic - the shape type is determined when
+/// The specification is shape-agnostic—the shape type is determined when
 /// fitting the diagram using a `Fitter`, not when building the spec.
 ///
 /// # Examples
@@ -24,7 +24,6 @@ use std::collections::{HashMap, HashSet};
 ///     .build()
 ///     .expect("Failed to build diagram specification");
 ///
-/// // Shape type is chosen when fitting
 /// let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 /// ```
 #[derive(Debug, Clone)]
@@ -56,24 +55,16 @@ impl DiagramSpecBuilder {
 
     /// Adds a single set with the given value.
     ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the set
-    /// * `value` - The size/value for this set
-    ///
     /// # Examples
     ///
     /// ```
     /// use eunoia::DiagramSpecBuilder;
-    ///
-    ///
     /// let builder = DiagramSpecBuilder::new()
     ///     .set("A", 10.0);
     /// ```
     pub fn set(mut self, name: impl Into<String>, value: f64) -> Self {
         let name_string = name.into();
         let combination = Combination::new(&[&name_string]);
-        // Track order of first occurrence
         if !self.set_order.contains(&name_string) {
             self.set_order.push(name_string.clone());
         }
@@ -83,17 +74,10 @@ impl DiagramSpecBuilder {
 
     /// Adds an intersection of multiple sets with the given value.
     ///
-    /// # Arguments
-    ///
-    /// * `sets` - A slice of set names to intersect
-    /// * `value` - The size/value for this intersection
-    ///
     /// # Examples
     ///
     /// ```
     /// use eunoia::DiagramSpecBuilder;
-    ///
-    ///
     /// let builder = DiagramSpecBuilder::new()
     ///     .set("A", 10.0)
     ///     .set("B", 8.0)
@@ -112,16 +96,10 @@ impl DiagramSpecBuilder {
 
     /// Sets how the input values should be interpreted.
     ///
-    /// # Arguments
-    ///
-    /// * `input_type` - Whether values are exclusive or inclusive
-    ///
     /// # Examples
     ///
     /// ```
     /// use eunoia::{DiagramSpecBuilder, InputType};
-    ///
-    ///
     /// let builder = DiagramSpecBuilder::new()
     ///     .input_type(InputType::Exclusive);
     /// ```
@@ -230,8 +208,7 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // For sets that appear in intersections but not as single sets,
-        // implicitly add them with value 0.0 (they exist entirely within intersections)
+        // Intersection-only sets have no exclusive single-set area.
         let mut combinations = self.combinations;
         for set_name in &all_set_names {
             if !single_sets.contains(set_name) {
@@ -241,12 +218,7 @@ impl DiagramSpecBuilder {
             }
         }
 
-        // `set_order` is updated by both `set()` and `intersection()` on
-        // first occurrence, so it already contains every name reachable from
-        // `combinations.keys()`. Cloning preserves first-seen order for a
-        // deterministic `set_names()` — previously we appended unseen names
-        // by iterating `all_set_names` (a `HashSet`), which produced
-        // run-to-run shuffling for intersection-only sets.
+        // Preserve first-seen order rather than the hash set's iteration order.
         let ordered_set_names: Vec<String> = self.set_order.clone();
         debug_assert!(
             ordered_set_names.iter().all(|n| all_set_names.contains(n))
@@ -394,9 +366,6 @@ mod tests {
 
     #[test]
     fn set_names_follow_first_seen_input_order() {
-        // Mix of `set` and `intersection`-only entries. Names must come out
-        // in first-seen order — previously, intersection-only sets were
-        // appended via a `HashSet` walk, which produced run-to-run shuffling.
         let spec = DiagramSpecBuilder::new()
             .set("B", 1.0)
             .intersection(&["B", "D"], 1.0)
@@ -416,8 +385,6 @@ mod tests {
             ]
         );
 
-        // Repeat builds with intersection-only inputs to pin determinism for
-        // the path that previously walked a `HashSet` of names.
         for _ in 0..4 {
             let s = DiagramSpecBuilder::new()
                 .intersection(&["X", "Y"], 1.0)

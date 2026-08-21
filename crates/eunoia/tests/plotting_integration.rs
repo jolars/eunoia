@@ -16,13 +16,10 @@ fn test_region_decomposition_two_sets() {
 
     let layout = Fitter::<Circle>::new(&spec).seed(42).fit().unwrap();
 
-    // Get region polygons using the convenient method
     let regions = layout.region_polygons(&spec, 64);
 
-    // Should have at least A-only, B-only, and A&B regions
     assert!(regions.len() >= 2);
 
-    // Check that total polygon area is close to expected
     let total_area: f64 = regions.areas().values().sum();
     let expected_total: f64 = spec.exclusive_areas().values().sum();
 
@@ -49,7 +46,6 @@ fn test_region_decomposition_three_sets() {
     let layout = Fitter::<Circle>::new(&spec).seed(123).fit().unwrap();
     let regions = layout.region_polygons(&spec, 128);
 
-    // Should have multiple regions
     assert!(regions.len() >= 3);
 
     // Verify each region has pieces with non-degenerate outer rings.
@@ -81,7 +77,6 @@ fn test_region_polygons_with_ellipses() {
 
     assert!(regions.len() >= 2);
 
-    // Check areas are reasonable
     let areas = regions.areas();
     for (_, &area) in areas.iter() {
         assert!(area > 0.0, "All regions should have positive area");

@@ -28,7 +28,7 @@ pub fn skyline_pack(rectangles: &[Rectangle], padding: f64) -> Vec<Rectangle> {
 
     let n = rectangles.len();
 
-    // Sort by area (largest first) for better visual balance
+    // Placing large shapes first improves visual balance.
     let mut indexed_rects: Vec<(usize, &Rectangle)> = rectangles.iter().enumerate().collect();
     indexed_rects.sort_by(|a, b| {
         let area_a = a.1.width() * a.1.height();
@@ -36,12 +36,10 @@ pub fn skyline_pack(rectangles: &[Rectangle], padding: f64) -> Vec<Rectangle> {
         area_b.partial_cmp(&area_a).unwrap()
     });
 
-    // Determine grid dimensions targeting golden ratio
     let cols = ((n as f64).sqrt() * GOLDEN_RATIO.sqrt()).ceil() as usize;
     let cols = cols.max(1);
     let rows = (n as f64 / cols as f64).ceil() as usize;
 
-    // Calculate cell sizes (max width/height in each row/column)
     let mut col_widths = vec![0.0; cols];
     let mut row_heights = vec![0.0; rows];
 
@@ -54,7 +52,6 @@ pub fn skyline_pack(rectangles: &[Rectangle], padding: f64) -> Vec<Rectangle> {
         }
     }
 
-    // Calculate cumulative positions
     let mut col_positions = vec![0.0];
     for &width in &col_widths {
         let last = col_positions.last().unwrap();
@@ -67,7 +64,6 @@ pub fn skyline_pack(rectangles: &[Rectangle], padding: f64) -> Vec<Rectangle> {
         row_positions.push(last + height);
     }
 
-    // Place rectangles in grid
     let mut result = vec![Rectangle::new(Point::new(0.0, 0.0), 0.0, 0.0); n];
 
     for (i, (orig_idx, rect)) in indexed_rects.iter().enumerate() {

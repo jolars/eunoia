@@ -81,27 +81,27 @@ impl<S: DiagramShape + Copy + 'static> Layout<S> {
         self.container.as_ref()
     }
 
-    /// Get the fitted shapes.
+    /// Returns the fitted shapes.
     pub fn shapes(&self) -> &[S] {
         &self.shapes
     }
 
-    /// Get the requested areas.
+    /// Returns the requested areas.
     pub fn requested(&self) -> &HashMap<Combination, f64> {
         &self.requested
     }
 
-    /// Get the actual fitted areas.
+    /// Returns the fitted areas.
     pub fn fitted(&self) -> &HashMap<Combination, f64> {
         &self.fitted
     }
 
-    /// Get the final loss value, computed using the optimizer's objective ([`Layout::loss_type`]).
+    /// Returns the final value of the optimizer's objective.
     pub fn loss(&self) -> f64 {
         self.loss
     }
 
-    /// Get the loss function used by the optimizer.
+    /// Returns the optimizer's loss function.
     pub fn loss_type(&self) -> LossType {
         self.loss_type
     }

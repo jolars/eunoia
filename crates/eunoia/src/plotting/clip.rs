@@ -1,7 +1,4 @@
 //! Polygon clipping operations.
-//!
-//! This module provides a clean wrapper around the i_overlay library for
-//! performing boolean operations on polygons.
 
 use crate::geometry::primitives::Point;
 use crate::geometry::shapes::Polygon;
@@ -12,13 +9,13 @@ use i_overlay::float::single::SingleFloatOverlay;
 /// Polygon clipping operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipOperation {
-    /// Intersection: returns the common area of both polygons.
+    /// The common area of both polygons.
     Intersection,
-    /// Union: returns the combined area of both polygons.
+    /// The combined area of both polygons.
     Union,
-    /// Difference: returns area in first polygon but not in second.
+    /// The area in the first polygon but not the second.
     Difference,
-    /// Symmetric difference: returns areas in either polygon but not in both.
+    /// The area in either polygon but not both.
     Xor,
 }
 
@@ -37,12 +34,6 @@ impl ClipOperation {
 ///
 /// Returns a list of polygons representing the result. Multiple polygons
 /// can result when the operation creates disconnected regions.
-///
-/// # Arguments
-///
-/// * `subject` - The first (subject) polygon
-/// * `clip` - The second (clip) polygon
-/// * `operation` - The clipping operation to perform
 ///
 /// # Examples
 ///
@@ -69,7 +60,6 @@ impl ClipOperation {
 /// assert_eq!(intersection.len(), 1);
 /// ```
 pub fn polygon_clip(subject: &Polygon, clip: &Polygon, operation: ClipOperation) -> Vec<Polygon> {
-    // Handle edge cases
     if subject.vertices().is_empty() {
         match operation {
             ClipOperation::Union => {
@@ -97,15 +87,12 @@ pub fn polygon_clip(subject: &Polygon, clip: &Polygon, operation: ClipOperation)
         }
     }
 
-    // Convert to i_overlay format
     let subject_points: Vec<Point> = subject.vertices().to_vec();
     let clip_points: Vec<Point> = clip.vertices().to_vec();
 
-    // Perform overlay operation
     let result =
         subject_points.overlay(&clip_points, operation.to_overlay_rule(), FillRule::NonZero);
 
-    // Convert back to our Polygon type
     result
         .into_iter()
         .flat_map(|shape| shape.into_iter())
@@ -115,8 +102,6 @@ pub fn polygon_clip(subject: &Polygon, clip: &Polygon, operation: ClipOperation)
 
 /// Clips a list of polygons against a single clip polygon.
 ///
-/// This is a convenience function for clipping multiple subject polygons
-/// against a single clip polygon.
 pub fn polygon_clip_many(
     subjects: &[Polygon],
     clip: &Polygon,
@@ -135,18 +120,8 @@ pub fn polygon_clip_many(
 /// [`crate::plotting::classify_into_pieces`] to recover the
 /// outer-with-holes piece structure.
 ///
-/// # Why a dedicated multi-shape helper
-///
-/// [`polygon_clip`] wraps i_overlay's single-resource overlay path: each
-/// call takes one subject and one clip. Iterating
-/// `polygon_clip(running, &clip, Difference)` over a slice of clips
-/// works as long as the running result is a single-ring polygon, but as
-/// soon as the running result becomes multi-ring (one outer + one hole,
-/// say) the next pairwise call has no way to know which output rings
-/// belong to which input piece — outer/hole pairing is lost.
-/// `polygon_difference` avoids that by handing the full clip set to
-/// i_overlay as one composite resource so a non-zero-fill difference is
-/// computed end-to-end in one pass.
+/// All clips are submitted as one composite resource so outer and hole rings
+/// remain associated throughout the operation.
 ///
 /// # Examples
 ///
@@ -199,14 +174,8 @@ pub fn polygon_clip_many(
 /// [`crate::plotting::classify_into_pieces`] to recover the outer-with-holes
 /// piece structure.
 ///
-/// # Why a dedicated helper
-///
-/// Iterating `polygon_clip_many(running, &next, Union)` works for two
-/// inputs but loses pairing as soon as `running` becomes multi-polygon and
-/// `next` would bridge two existing pieces — the iterative result is
-/// `[A ∪ next, B ∪ next]`, two overlapping polygons instead of the single
-/// connected piece. Handing all rings to i_overlay as a single Contours
-/// resource lets it compute the union end-to-end without that loss.
+/// All rings are submitted in one pass so a polygon that bridges existing
+/// pieces produces one connected result.
 ///
 /// # Examples
 ///

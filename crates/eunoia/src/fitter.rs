@@ -33,70 +33,28 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// Maximum `n_sets` for which the Venn warm-start is attempted under
-/// [`Fitter::<Circle>`]. The canonical Venn is genuinely circular only for
-/// `n ∈ {1, 2, 3}` ([`crate::venn`]); n=4..=5 use Wilkinson/Edwards
-/// ellipse arrangements, so we cap circles slightly above the supported
-/// range and let [`venn_warm_start_params`] return `None` for the
-/// non-circular cases.
+/// Circle Venn warm-start limit; the four-set candidate is rejected by shape conversion.
 const VENN_SEED_MAX_SETS_CIRCLE: usize = 4;
-/// Maximum `n_sets` for which the Venn warm-start is attempted under
-/// [`Fitter::<Ellipse>`]. Matches the n=1..=5 hardcoded arrangements
-/// in [`crate::venn`]; beyond that no clean Venn ellipse exists.
+/// Ellipse Venn warm-start limit.
 const VENN_SEED_MAX_SETS_ELLIPSE: usize = 5;
-/// Maximum `n_sets` for which the Venn warm-start is attempted under
-/// [`Fitter::<Square>`]. Matches the n=1..=3 axis-aligned arrangements in
-/// [`crate::venn`] — n ≥ 4 has no axis-aligned-square Venn (any four
-/// axis-aligned rectangles miss at least one of the `2ⁿ − 1` regions).
+/// Axis-aligned square Venn warm-start limit.
 const VENN_SEED_MAX_SETS_SQUARE: usize = 3;
-/// Maximum `n_sets` for which the Venn warm-start is attempted under
-/// [`Fitter::<Rectangle>`]. Same cap as [`VENN_SEED_MAX_SETS_SQUARE`] — the
-/// Venn topology obstruction at n ≥ 4 applies to any axis-aligned shape
-/// regardless of width/height freedom.
+/// Axis-aligned rectangle Venn warm-start limit.
 const VENN_SEED_MAX_SETS_RECTANGLE: usize = 3;
-/// Maximum `n_sets` for which the Venn warm-start is attempted under
-/// [`Fitter::<RotatedRectangle>`]. Reaches `n = 4`: rotation lifts the
-/// axis-aligned obstruction, so [`crate::venn`] provides a 4-set rotated
-/// arrangement (`VENN_N4`) that the axis-aligned shapes lack.
+/// Rotated rectangle Venn warm-start limit.
 const VENN_SEED_MAX_SETS_ROTATED_RECTANGLE: usize = 4;
 
 /// Upper `n_sets` bound for the "small smooth diagram" fast path.
 ///
-/// At and below this size, a *smooth*-loss fit on an analytic-gradient shape is
-/// already solved by the canonical Venn warm-start at restart 0: the warm-start
-/// lands in the correct basin and the gradient polish refines it, so the full
-/// 10-restart pool buys nothing. The `examples/restart_value` sweep over the
-/// corpus found that for the 3-set specs under the default `SumSquared` loss,
-/// additional restarts help 0/15 and the CMA-ES escape helps 0/15.
-///
-/// The cutoff is firmly between 3 and 4: at n=4 both levers start paying off
-/// (restarts help 2-3/8 specs, the escape 3/8), so the fast path stops here.
-///
-/// Only the *restart count* is trimmed (see [`SMALL_SMOOTH_N_RESTARTS`]); the
-/// default optimizer — including its self-gating CMA-ES escape — is kept, since
-/// the escape costs nothing on the easy path yet still rescues the occasional
-/// adversarial small fit (e.g. an unequal-area 2-set ellipse whose warm-start
-/// would otherwise refine into a disjoint layout, caught by the
-/// `synthetic_groundtruth` property tests).
-///
-/// Crucially the result is loss-dependent — under non-smooth losses
-/// (`SumAbsolute`, `MaxAbsolute`) the same 3-set specs need the full budget — so
-/// the fast path is gated on [`LossType::is_smooth`], not on set count alone.
+/// Only analytic-gradient shapes with smooth losses use the reduced budget.
 const SMALL_SMOOTH_MAX_SETS: usize = 3;
 
-/// Restart count used by the small-smooth fast path (down from the default 10).
-///
-/// For warm-startable specs restart 0 is deterministic, so one restart already
-/// suffices; the extra two are cheap insurance for the non-warm-startable
-/// (disjoint-pair) n≤3 specs whose restart 0 falls back to a random MDS init,
-/// and for smooth losses other than `SumSquared` that the corpus sweep didn't
-/// measure directly. Still a >3× cut from the default budget.
+/// Restart count used by the small-smooth fast path.
 const SMALL_SMOOTH_N_RESTARTS: usize = 3;
 
 /// Fitter for creating diagram layouts from specifications.
 ///
-/// The type parameter `S` determines which shape type will be used (e.g., Circle, Ellipse).
-/// The specification itself is shape-agnostic - the shape type is chosen here.
+/// `S` selects the fitting shape; specifications are shape-agnostic.
 ///
 /// # Examples
 ///
@@ -110,33 +68,19 @@ const SMALL_SMOOTH_N_RESTARTS: usize = 3;
 ///     .build()
 ///     .unwrap();
 ///
-/// // Choose shape type when fitting
 /// let layout = Fitter::<Circle>::new(&spec).fit().unwrap();
 /// ```
 pub struct Fitter<'a, S: DiagramShape = Circle> {
     spec: &'a DiagramSpec,
     max_iterations: usize,
     tolerance: f64,
-    /// Per-knob LM stopping overrides. `None` inherits `tolerance`. Only
-    /// `Optimizer::LevenbergMarquardt` (and the LM polish step inside
-    /// `Optimizer::CmaEsLm`) honours these — other optimizers don't expose
-    /// the underlying knobs separately. See `tolerance` for default
-    /// rationale; per-knob overrides exist for benchmarking / tuning the
-    /// LM stopping behaviour without touching the shared `tolerance`.
+    /// Per-knob LM stopping overrides. `None` uses the shared tolerance.
     xtol: Option<f64>,
     ftol: Option<f64>,
     gtol: Option<f64>,
     seed: Option<u64>,
     loss_type: LossType,
-    /// Pool of final-stage optimizers cycled across outer-loop restarts:
-    /// attempt `i` uses `optimizer_pool[i % optimizer_pool.len()]`. Default
-    /// `[Lbfgs]`. The previous default mixed Nelder-Mead in (`[NelderMead,
-    /// Lbfgs]`) on the theory that NM is faster on small ellipse fits and
-    /// L-BFGS handles the hard ones, but the `examples/quality_report` sweep
-    /// showed NM-only ellipse fits land ~6 orders of magnitude worse on
-    /// median loss than L-BFGS-only with no time advantage at our default
-    /// `n_restarts`, so cycling NM in just dilutes the pool. Best loss across
-    /// attempts still wins.
+    /// Final-stage optimizers, cycled across restarts.
     optimizer_pool: Vec<Optimizer>,
     n_restarts: usize,
     /// Whether the caller set [`Fitter::n_restarts`] explicitly. When `false`,
@@ -153,23 +97,14 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     /// CMA-ES step is skipped, so easy specs pay no extra wall time. Other
     /// optimizers ignore this field.
     cmaes_fallback_threshold: f64,
-    /// Global-escape solver used by the `CmaEs*` arms once the local baseline
-    /// is stuck above `cmaes_fallback_threshold`. Internal benchmark knob (see
-    /// [`final_layout::EscapeSolver`]); the default keeps the historical plain
-    /// `BoundedCmaEs` escape.
+    /// Global solver used after a local fit exceeds the fallback threshold.
     escape_solver: final_layout::EscapeSolver,
     /// Strategy for drawing per-restart MDS initial positions. The default
     /// `Uniform` matches eulerr's `runif`-per-restart behaviour;
     /// `LatinHypercube` stratifies the batch of `n_restarts` draws across
     /// `[0, scale]^(2·n_sets)`.
     initial_sampler: InitialSampler,
-    /// Restart-loop thread count, honoured only when the `parallel` feature is
-    /// on and the target is not wasm. `None` (the default) uses rayon's
-    /// current/global pool — i.e. all logical cores, or whatever
-    /// `RAYON_NUM_THREADS` / a caller-installed pool dictates. `Some(n)` with
-    /// `n >= 1` runs the restarts in a private, scoped pool of `n` threads,
-    /// leaving the caller's global pool untouched. `Some(0)` is treated as
-    /// `None`. See [`Fitter::jobs`].
+    /// Restart thread count; see [`Fitter::jobs`].
     jobs: Option<usize>,
     _shape: std::marker::PhantomData<S>,
 }
@@ -194,102 +129,26 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     pub fn new(spec: &'a DiagramSpec) -> Self {
         Fitter {
             spec,
-            // 200 iters × tolerance 1e-3 tracks eulerr's nlm budget for the
-            // iter cap; the cost tolerance was tuned via the `final_tolerance`
-            // bench (see `crates/eunoia/benches/final_tolerance.rs`). With the
-            // default loss `SumSquared` (scale-invariant SSE — see `LossType`)
-            // the loss magnitude is bounded ~`[0, 1]` regardless of input area
-            // scale, so cost-tolerance behaviour is consistent across specs.
-            // `tolerance` is wired as the LM `ftol` (cost-change exit) and as
-            // L-BFGS' grad+cost tolerance; the LM `xtol`/`gtol` knobs keep
-            // their own fixed `1e-6` defaults so loosening `tolerance` only
-            // shortens the cost-converged tail without trading off
-            // parameter-space precision. The corpus validation pass over all
-            // 27 specs × 16 seeds × {Circle, Ellipse} showed zero regressions
-            // at `tolerance = 1e-3` versus the previous `1e-6`, with up to
-            // ~170× wall-time wins on the slow ellipse specs (`gene_sets`
-            // 91.9 ms → 0.54 ms). Tighten via `Fitter::tolerance(_)` if a
-            // future spec needs a sharper cost tail.
             max_iterations: 200,
             tolerance: 1e-3,
             xtol: None,
             ftol: None,
             gtol: None,
             seed: None,
-            // `SumSquared` is the scale-invariant `Σ(f-t)² / Σt²`. The
-            // bounded-`[0, 1]` magnitude keeps `tolerance` and
-            // `cmaes_fallback_threshold` portable across specs.
             loss_type: LossType::SumSquared,
-            // L-BFGS only. We previously cycled `[NelderMead, Lbfgs]` so each
-            // restart attempt traded off NM's per-call speed against L-BFGS'
-            // basin coverage, but the `examples/quality_report` sweep showed
-            // NM-only ellipse fits land ~6 orders of magnitude worse on median
-            // loss than L-BFGS-only with no wall-time advantage at the default
-            // `n_restarts=10` (NM's per-call speed didn't beat L-BFGS in the
-            // restart-parallelised total). Mixing NM into the pool just
-            // diluted the result. Trust-region landed in the same basins as
-            // L-BFGS but ~10× slower. Levenberg-Marquardt then crushed
-            // L-BFGS in turn (~20 orders of magnitude lower median loss on
-            // ellipses, ~3× faster wall time) — see the `lm_final` row in
-            // `examples/quality_report`.
-            // CMA-ES global escape with a box-constrained TRF polish,
-            // threshold-fired (see `cmaes_fallback_threshold`) so easy specs
-            // pay no extra wall time. Above threshold the path also races a
-            // bounded TRF retry from the same MDS init against plain LM
-            // (closes `three_inside_fourth` seed=1's LM-only 1.5e-2 stall to
-            // ~3.7e-11 — TRF's box reaches a basin unconstrained LM doesn't
-            // from the same seed). If the better of the two is still above
-            // threshold the CMA-ES escape closes specs purely-local solvers
-            // get stuck on (`issue92_3_set_dropped_pair` 1.3e-4 → 1.5e-29,
-            // `random_4_set` 8.5e-3 → 4.1e-3); the bounded TRF polish then
-            // refines inside the feasible box rather than letting unbounded
-            // LM wander. It trades one small, bound-independent regression
-            // (circle `issue103` 4.6e-3 → 4.8e-3, an intrinsic TRF-vs-LM
-            // stopping difference) for net-positive quality elsewhere — see
-            // `Optimizer::CmaEsTrf`. Use `Optimizer::CmaEsLm` for the
-            // previous unbounded-LM-polish path.
-            // Capability-driven default: shapes with analytic region-area
-            // gradients get the gradient-based `CmaEsTrf`; shapes whose exact
-            // overlap area is only piecewise-C¹ (no analytic gradient, e.g.
-            // `RotatedRectangle`) get a genuinely derivative-free pool so a
-            // gradient solver never chatters at the kinks. The default tracks
-            // the shape's real capability and can't drift; explicit
-            // `optimizer` / `optimizer_pool` still override.
+            // Piecewise-smooth area functions require derivative-free solvers.
             optimizer_pool: if S::SUPPORTS_ANALYTIC_GRADIENT {
                 vec![Optimizer::CmaEsTrf]
             } else {
                 vec![Optimizer::NelderMead, Optimizer::CmaEs]
             },
-            // Default loss threshold below which the CMA-ES global stage is
-            // skipped. Consulted by `Optimizer::CmaEsTrf` / `Optimizer::CmaEsLm`.
-            // See `FinalLayoutConfig::cmaes_fallback_threshold` for the
-            // empirical justification of `1e-3`.
             cmaes_fallback_threshold: 1e-3,
-            // Plain box-constrained CMA-ES escape; the memetic inject variants
-            // are opt-in benchmark knobs (see `Fitter::escape_solver`).
             escape_solver: final_layout::EscapeSolver::BoundedCmaEs,
-            // Number of full-pipeline restarts (fresh MDS init + final
-            // optimizer per attempt, lowest-loss attempt kept). Matches
-            // eulerr's `n_restarts = 10`. Each fit does that much work.
             n_restarts: 10,
             n_restarts_explicit: false,
-            // Levenberg-Marquardt for the MDS init. The previous default was
-            // L-BFGS with a More-Thuente line search, which under certain
-            // starting points (e.g. the LHS-induced
-            // `issue71_4_set_extreme_scale` config where one circle fully
-            // contains the others) stalled inside the inner line search at a
-            // subset-clamp kink. LM's trust-region update sidesteps the
-            // line-search stall, and `MdsSolver::LevenbergMarquardt` is already
-            // wired with the analytic per-pair Jacobian. The mix
-            // `initial_solver_pool([LevenbergMarquardt, Lbfgs])` is still
-            // available for experimentation.
+            // Trust-region updates remain stable at subset-clamp kinks.
             initial_solvers: vec![MdsSolver::LevenbergMarquardt],
-            // Independent uniform draws per restart, matching eulerr. See
-            // `initial_sampler` to switch to a stratified Latin-hypercube
-            // design across the `n_restarts` batch.
             initial_sampler: InitialSampler::default(),
-            // Use rayon's current/global pool when parallelism is compiled in;
-            // a no-op otherwise. Callers pin a count via `Fitter::jobs`.
             jobs: None,
             _shape: std::marker::PhantomData,
         }
@@ -499,12 +358,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Set the pool of final-stage optimizers cycled across outer-loop restarts.
     ///
     /// Restart `i` uses `pool[i % pool.len()]`, and the lowest-loss attempt
-    /// across the entire `n_restarts` loop wins. The default pool is
-    /// `[Lbfgs]` (single-solver) — `examples/quality_report` showed NM-only
-    /// ellipse fits land ~6 orders of magnitude worse on median loss with no
-    /// wall-time advantage at the default `n_restarts`, so mixing NM in
-    /// merely diluted the pool. Use this builder to opt back in to a mixed
-    /// pool for experimentation.
+    /// wins.
     ///
     /// Calling [`optimizer`] reduces the pool to a single solver.
     ///
@@ -570,11 +424,8 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
 
     /// Set the number of full-pipeline restarts.
     ///
-    /// Each restart runs the entire fit (fresh MDS initialization + final
-    /// optimization) from an independently seeded random circle layout, and
-    /// the lowest-loss result is kept. Mirrors eulerr's `n_restarts = 10`.
-    /// Higher values give a better chance of finding the global optimum but
-    /// cost proportionally more (10× the work for `n=10`). Set to 1 to
+    /// Each restart uses an independently seeded initial layout. Higher values
+    /// explore more basins at proportional computational cost. Set to one to
     /// disable restarts.
     ///
     /// Calling this pins the count: it opts out of the automatic "small smooth
@@ -631,21 +482,9 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Set the loss threshold above which `Optimizer::CmaEsLm` invokes its
     /// CMA-ES global escape stage.
     ///
-    /// `Optimizer::CmaEsLm` always runs plain Levenberg-Marquardt first; if
-    /// that lands at or below `threshold`, the (expensive) CMA-ES step is
-    /// skipped and the LM result is returned. If LM stalls above
-    /// `threshold` — e.g. on `issue92_3_set_dropped_pair` (1.3e-4 across
-    /// every seed under plain LM) or `eulerape_3_set` (4.4e-4) — CMA-ES
-    /// fires and the lower-loss of {LM, CMA-ES → LM polish} is kept.
-    ///
-    /// Default `1e-3` was picked empirically from `examples/quality_report`:
-    /// every spec where `lm_full` lands at machine precision sits well
-    /// below 1e-20, every spec where it stalls in a wrong basin sits at or
-    /// above 1e-4, so 1e-3 cleanly separates the two populations.
-    /// Tightening (e.g. `1e-6`) makes CMA-ES fire on more specs at higher
-    /// wall-time cost; loosening (e.g. `1e-1`) gives back ~all of LM's
-    /// runtime at the price of leaving the few hard-stuck specs in LM's
-    /// suboptimal basin. Other optimizers ignore this setting.
+    /// Local results at or below `threshold` skip CMA-ES. Lower thresholds
+    /// run global search more often, increasing cost and the chance of escaping
+    /// a poor local basin. Other optimizers ignore this setting.
     ///
     /// # Examples
     ///
@@ -670,12 +509,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Select the global-escape solver the `CmaEs*` arms use once the local
     /// baseline is stuck above [`cmaes_fallback_threshold`].
     ///
-    /// Internal benchmark knob, exposed only under the `corpus` feature (like
-    /// the corpus test fixtures) so `examples/quality_report` can sweep the
-    /// plain [`BoundedCmaEs`] escape against the memetic
-    /// [`BoundedCmaInject`]/[`DeInject`] variants without committing them to
-    /// the stable public API. The default is [`EscapeSolver::BoundedCmaEs`],
-    /// the historical behaviour.
+    /// This corpus-only tuning interface is not part of the stable public API.
     ///
     /// [`cmaes_fallback_threshold`]: Self::cmaes_fallback_threshold
     /// [`BoundedCmaEs`]: final_layout::EscapeSolver::BoundedCmaEs
@@ -1047,27 +881,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             }
         };
 
-        // Precompute the Venn warm-start params (full shape parameters,
-        // already at the spec scale) for slot 0. `None` means slot 0 falls
-        // back to the standard MDS path. Only consulted when `optimize`
-        // is true — the no-optimization branch returns the first MDS init
-        // as-is for diagnostic purposes.
-        //
-        // `venn_warm_start_params` returns `None` (so slot 0 stays on the
-        // MDS path) whenever the canonical Venn isn't applicable: n_sets
-        // outside the per-shape support window (≤ 4 circles, ≤ 5 ellipses),
-        // any disjoint pair in the spec (the Venn topology forces every
-        // region positive, so the optimizer would have to undo the
-        // overlap from a basin with little gradient — see TODO.md), or
-        // shapes where `n_params()` is neither 3 nor 5. In every other
-        // case the warm-start replaces slot 0's random MDS init.
-        //
-        // Empirically this closes `issue92_3_set_dropped_pair` from a
-        // basin LM-on-LM gets stuck in (1.309e-4 across every seed) to
-        // ~1.4e-31 across all seeds, lifts ellipse spec-wins from 18 to
-        // 19 in `examples/quality_report`, and is a no-op on circles
-        // (most circle specs are out of range or already at the optimum).
-        // Cost is ~2% wall time when applicable.
+        // A Venn warm-start occupies slot zero when its topology matches the spec.
         let venn_initial: Option<Vec<f64>> = if optimize && spec.complement.is_none() {
             venn_warm_start_params::<S>(&spec)
         } else {
@@ -1299,32 +1113,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         // mis-split a cluster, and let `pack_clusters` translate genuinely
         // overlapping shapes apart.
         //
-        // No post-normalize sanity assert lives here: a previous version
-        // compared the pre/post exclusive-region map (per-mask) and another
-        // compared total visible area, but both proved unreliable in
-        // practice. `normalize_layout` is rigid (rotation + mirror +
-        // translation), so the geometry is mathematically preserved — but
-        // `compute_exclusive_regions` re-runs quartic conic intersection
-        // on rotated coordinates, and on near-degenerate ellipse fits ULP
-        // drift in the rotated coefficients can shift root classifications
-        // enough that the recomputed region map differs by O(1e-2) of the
-        // total area on `three_inside_fourth`-style "shapes inside one big
-        // shape" geometries. That overlaps the original `intersects`
-        // clustering-bug magnitude (~6.5e-2 × scale) too closely to give a
-        // useful false-positive margin. Coverage of the original bug now
-        // comes structurally from `find_clusters_from_exclusive_regions`
-        // (which uses the same area math the optimizer consumed) plus
-        // end-to-end `diag_error` ceilings in `corpus_quality` and
-        // `synthetic_groundtruth`.
+        // Do not compare recomputed areas after this rigid transform. Near-
+        // degenerate ellipse intersections can change root classifications
+        // under floating-point rotation even though the geometry is preserved.
         let pre_normalize_regions = S::compute_exclusive_regions(&optimized_shapes);
 
-        // Step 4: Normalize the non-empty shapes only (zero shapes would confuse
-        // clustering/packing). We do this before re-assembly.
-        //
-        // Complement specs use the container-aware path: only translate, so
-        // the (axis-aligned) container/shape relationship survives. The
-        // standard rotate/mirror/pack path is reserved for non-complement
-        // specs where the cluster orientation can be freely chosen.
+        // Complement layouts may only translate; rotation would change their
+        // relationship to the axis-aligned container.
         if let Some(container) = optimized_container.as_mut() {
             crate::fitter::normalize::normalize_layout_with_container(
                 &mut optimized_shapes,
@@ -1338,10 +1133,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             );
         }
 
-        // Step 5: Re-assemble full shape list in the ORIGINAL spec set ordering,
-        // inserting zero-parameter placeholders for sets that were pruned by
-        // preprocessing (empty sets). This keeps indexing by set name stable for
-        // downstream consumers (e.g. R bindings).
+        // Restore placeholders for pruned sets so downstream name-based indexing remains stable.
         let zero_params = vec![0.0; params_per_shape];
         let mut shapes: Vec<S> = Vec::with_capacity(self.spec.set_names().len());
         let mut set_to_shape = HashMap::new();
@@ -1354,7 +1146,6 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             set_to_shape.insert(set_name.clone(), original_idx);
         }
 
-        // Create and return the layout
         let layout = Layout::new(
             shapes,
             set_to_shape,
@@ -1434,9 +1225,7 @@ fn decode_param_frame<S: DiagramShape>(
 ///   ([`VENN_SEED_MAX_SETS_CIRCLE`] / [`VENN_SEED_MAX_SETS_ELLIPSE`] /
 ///   [`VENN_SEED_MAX_SETS_SQUARE`] / [`VENN_SEED_MAX_SETS_RECTANGLE`] /
 ///   [`VENN_SEED_MAX_SETS_ROTATED_RECTANGLE`]).
-/// - The spec has any disjoint pair (Venn topology forces every region
-///   open; specs with hard-zero overlaps would start in a wrong topology
-///   the optimizer can't easily escape — see TODO.md).
+/// - The spec has a disjoint pair, which conflicts with Venn topology.
 /// - `S` is not [`Circle`], [`Ellipse`], [`Square`], [`Rectangle`], or
 ///   [`RotatedRectangle`] — the per-shape parameter encoding is hard-coded
 ///   below, and other shapes that happen to share an `n_params()` count

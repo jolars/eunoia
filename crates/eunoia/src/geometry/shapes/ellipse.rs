@@ -1,42 +1,7 @@
 //! Ellipse shape implementation.
 //!
-//! This module provides an ellipse implementation for use in Euler and Venn diagrams.
-//! Ellipses are more flexible than circles and can represent elongated or rotated regions,
-//! making them useful for more accurate area-proportional diagrams.
-//!
-//! # Representation
-//!
-//! An ellipse is defined by:
-//! - **Center point**: The center of the ellipse
-//! - **Semi-major axis** (a): Half the length of the longest diameter
-//! - **Semi-minor axis** (b): Half the length of the shortest diameter  
-//! - **Rotation**: Rotation angle in radians (counterclockwise from x-axis)
-//!
-//! # Area Calculations
-//!
-//! The module provides several specialized area computation methods:
-//!
-//! - **Sector area**: The area swept by a radius from the center through an angle θ
-//! - **Segment area**: The area between the ellipse boundary and a chord connecting two points
-//!
-//! These primitives are essential for computing intersection areas in Euler diagrams.
-//!
-//! # Examples
-//!
-//! ```
-//! use eunoia::geometry::shapes::Ellipse;
-//! use eunoia::geometry::traits::Area;
-//! use eunoia::geometry::primitives::Point;
-//!
-//! // Create an ellipse centered at origin
-//! let ellipse = Ellipse::new(Point::new(0.0, 0.0), 5.0, 3.0, 0.0);
-//!
-//! // Compute total area
-//! let area = ellipse.area();
-//!
-//! // Compute sector area for π/4 radians
-//! let sector = ellipse.sector_area(std::f64::consts::PI / 4.0);
-//! ```
+//! Ellipses use a center, two semi-axis lengths, and a counterclockwise
+//! rotation in radians. Sector and segment areas support intersection math.
 
 use std::f64::consts::PI;
 
@@ -52,18 +17,7 @@ use crate::geometry::traits::{
 
 /// An ellipse defined by center, semi-major and semi-minor axes, and rotation.
 ///
-/// Ellipses are oval-shaped closed curves that generalize circles. They are particularly
-/// useful in Euler diagrams when sets have elongated or directional relationships.
-///
-/// # Representation
-///
-/// The ellipse is represented in standard form with:
-/// - A center point `(h, k)`
-/// - Semi-major axis length `a` (≥ semi-minor axis)
-/// - Semi-minor axis length `b` (> 0)
-/// - Rotation angle `φ` in radians (counterclockwise from the positive x-axis)
-///
-/// The canonical equation in the ellipse's local coordinate system is:
+/// In local coordinates, its boundary satisfies:
 /// ```text
 /// (x/a)² + (y/b)² = 1
 /// ```
@@ -92,7 +46,7 @@ pub struct Ellipse {
     center: Point,
     semi_major: f64,
     semi_minor: f64,
-    rotation: f64, // in radians
+    rotation: f64,
 }
 
 impl Ellipse {
