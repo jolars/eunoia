@@ -87,6 +87,14 @@
     debounce = setTimeout(() => postFit(inputs), 150);
   });
 
+  // The persisted blob survives a hard reload, so a reset needs its own
+  // control; writing straight through means the new defaults stick even if the
+  // page goes away before the debounced save fires.
+  function resetAll() {
+    appState.reset();
+    saveToStorage();
+  }
+
   let persistTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     // Building the blob here is what makes the effect fire at all: reading a
@@ -135,6 +143,12 @@
         <Section title="Debug" open={false}>
           <DebugPanel />
         </Section>
+        <button
+          type="button"
+          onclick={resetAll}
+          class="w-full px-3 py-2 text-xs text-muted border border-line rounded-lg bg-surface hover:bg-inset"
+          >Reset to defaults</button
+        >
       </aside>
 
       <main class="space-y-4">
