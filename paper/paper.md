@@ -58,18 +58,18 @@ numerically\ [@chow2007]. Producing one is therefore an optimization problem
 where we need to choose positions and parameters of the shapes so as to minimize
 the discrepancy between the fitted and requested areas of intersection.
 
-Fitting Euler diagrams has been an active research area, starting roughly with
-the seminal work by @wilkinson2012, who wrote and published venneuler for R.
-venneuler took a principled two-step approach two fitting Euler diagrams, where
-an initial layout based on multi-dimensional scaling\ (MDS) is refined in a
-later optimization step that accounts for all overlaps in the layout. This
-approach has since evolved. @frederickson2015's venn.js added a refinement of
-the MDS step, which enables better initial configurations.
-eulerAPE\ [@micallef2014], meanwhile, introduced ellipses for three-way Euler
-diagrams, which are able to accurately fit a larger number of set combinations.
-This lets the user trade accuracy against legibility: circles are the most
-familiar and often the easiest to read\ [@blake2016], while ellipses can fit
-configurations that circles cannot.
+Fitting Euler diagrams has been an active research area. One of the first and
+most influential contributions was the seminal work by @wilkinson2012, who wrote
+and published venneuler for R. venneuler took a principled two-step approach two
+fitting Euler diagrams, where an initial layout based on multi-dimensional
+scaling\ (MDS) is refined in a later optimization step that accounts for all
+overlaps in the layout. This approach has since evolved. @frederickson2015's
+venn.js added a refinement of the MDS step, which enables better initial
+configurations. eulerAPE\ [@micallef2014], meanwhile, introduced ellipses for
+three-way Euler diagrams, which are able to accurately fit a larger number of
+set combinations. This lets the user trade accuracy against legibility: circles
+are the most familiar and often the easiest to read\ [@blake2016], while
+ellipses can fit configurations that circles cannot.
 
 Unlike venneuler, which uses quad-tree approximations for the intersection
 areas, both EulerAPE and venn.js also introduced exact area computations.
@@ -254,11 +254,11 @@ area-proportional diagrams.
 
 The predecessor eulerr, which Eunoia builds on, was written entirely by the
 first author, without the use of AI. For Eunoia, we used generative AI tools
-including Claude Code Opus 4.5, 4.8, and 5.0, Claude Code Fable 5, and GitHub
-Copilot GPT 5.1, 5.4, and 5.6. They were used to assist with writing code, parts
-of the documentation, unit tests, and reviewing and editing the manuscript. The
-authors reviewed, modified, and validated all AI-assisted content and made the
-final design and implementation decisions.
+including Claude Code Opus (versions 4.5, 4.8, and 5.0); Claude Code Fable 5;
+and GitHub Copilot GPT 5.1 and 5.4; and Codex GPT 5.6-sol. They were used to
+assist with writing code, parts of the documentation, unit tests, and reviewing
+and editing the manuscript. The authors reviewed, modified, and validated all
+AI-assisted content and made the final design and implementation decisions.
 
 # Acknowledgements
 
