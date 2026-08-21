@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.9.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.8.0...eunoia-npm-v1.9.0) (2026-08-21)
+
+### Features
+- **plotting:** add exterior set-label placement ([`1f09e0d`](https://github.com/jolars/eunoia/commit/1f09e0d2588e1eb8ceec7666209f67e9aec1dfd2))
+- **web:** add quantities and glyphs to app ([`b1d8aad`](https://github.com/jolars/eunoia/commit/b1d8aad9d9027e1d9505ee4e0c802f8610ac16bb))
+- **ts:** render member-label glyph boxes in toSvg ([`0a29be2`](https://github.com/jolars/eunoia/commit/0a29be20e856c409ec3c00a23a5f77f6f3b53ff4))
+- **ts:** add placeGlyphBoxesForRegions ([`64c92d0`](https://github.com/jolars/eunoia/commit/64c92d027b16502cae1bbfe5ddc30fee222f4ddf))
+- **ts:** color glyphs from their region and give them edges ([`f41b85d`](https://github.com/jolars/eunoia/commit/f41b85dc272cbc698bf3697bcb940107d0b7e1f2))
+- **plotting:** keep glyphs clear of label boxes ([`eb8c850`](https://github.com/jolars/eunoia/commit/eb8c8502c682bbf609637dd3aba981e1dc6b4e29))
+- add eulerGlyphs-style glyph placement ([`3665c2e`](https://github.com/jolars/eunoia/commit/3665c2ecbd536ec461db418050579708f69a8033))
+
+### Bug Fixes
+- **plotting:** keep glyphs clear of region edges ([`badf54a`](https://github.com/jolars/eunoia/commit/badf54a1d517a012ad7159cded863ddf2a29b9de))
+
+### Dependencies
+- updated eunoia to v1.9.0
+
 ## [1.8.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.7.0...eunoia-npm-v1.8.0) (2026-07-15)
 
 ### Features

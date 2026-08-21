@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.9.0](https://github.com/jolars/eunoia/compare/v1.8.0...v1.9.0) (2026-08-21)
+
+### Features
+- **capi:** expose label obstacle boxes ([`2d12be2`](https://github.com/jolars/eunoia/commit/2d12be2b4dd63386bf2463343d1cbf0663af25c9))
+- **plotting:** add exterior set-label placement ([`1f09e0d`](https://github.com/jolars/eunoia/commit/1f09e0d2588e1eb8ceec7666209f67e9aec1dfd2))
+- **plotting:** relax the random glyph scatter ([`5c4c3b3`](https://github.com/jolars/eunoia/commit/5c4c3b323ada75d356b85af085b19b362198ad37))
+- **web:** expose member labels as glyphs ([`5e47729`](https://github.com/jolars/eunoia/commit/5e477298a397a9d21a45b3529ac8512086fbf0e2))
+- pack member text labels as glyph boxes ([`8950e8b`](https://github.com/jolars/eunoia/commit/8950e8b37098d91847c36b5caee9a917f119d408))
+- **plotting:** keep glyphs clear of label boxes ([`eb8c850`](https://github.com/jolars/eunoia/commit/eb8c8502c682bbf609637dd3aba981e1dc6b4e29))
+- add eulerGlyphs-style glyph placement ([`3665c2e`](https://github.com/jolars/eunoia/commit/3665c2ecbd536ec461db418050579708f69a8033))
+
+### Bug Fixes
+- **plotting:** keep glyphs clear of region edges ([`badf54a`](https://github.com/jolars/eunoia/commit/badf54a1d517a012ad7159cded863ddf2a29b9de))
+- **fitter:** skip cluster rotation for axis-aligned shapes ([`9dc14dd`](https://github.com/jolars/eunoia/commit/9dc14ddc4501adba849a4af8e3bd8bd9264d5bd5)), refs [#133](https://github.com/jolars/eunoia/issues/133)
+- **fitter:** bound rectangle size params in optimizer box ([`9e4c901`](https://github.com/jolars/eunoia/commit/9e4c9015b3e541dd54117071761179a45bf75360)), refs [#133](https://github.com/jolars/eunoia/issues/133)
+
 ## [1.8.0](https://github.com/jolars/eunoia/compare/v1.7.0...v1.8.0) (2026-07-15)
 
 ### Features
