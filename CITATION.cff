@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 title: Eunoia
-version: 0.1.0
-date-released: '2026-05-05'
+version: 1.9.0
+date-released: '2026-08-21'
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
@@ -12,19 +12,22 @@ authors:
     email: johan@jolars.co
     affiliation: University of Copenhagen
     orcid: 'https://orcid.org/0000-0002-4029-5945'
-repository-code: 'https://github.com/jolars/eulerr'
+repository-code: 'https://github.com/jolars/eunoia'
+doi: 10.5281/zenodo.21471283
 keywords:
   - euler diagrams
   - venn diagrams
   - data visualization
   - set visualization
-license: GPL-3.0
+license:
+  - Apache-2.0
+  - MIT
 preferred-citation:
   type: conference-paper
   title: >-
     A Case Study in Fitting Area-Proportional Euler
     Diagrams with Ellipses Using eulerr
-  collection-title: Proceedings of international workshop on set visualization and reasoning 2018
+  collection-title: Proceedings of International Workshop on Set Visualization and Reasoning 2018
   authors:
     - given-names: Johan
       family-names: Larsson
@@ -36,9 +39,9 @@ preferred-citation:
       affiliation: Lund University
   year: 2018
   conference:
-    name: Set visualization and reasoning 2018
+    name: Set Visualization and Reasoning 2018
     city: Edinburgh
-    country: UK
+    country: GB
     date-start: '2018-06-18'
     date-end: '2018-06-18'
   url: 'https://ceur-ws.org/Vol-2116/paper7.pdf'
