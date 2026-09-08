@@ -13,16 +13,16 @@
     "format:check": "prettier --check \"**/*.svelte\""
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.127",
+    "@iconify-json/lucide": "^1.2.129",
     "@iconify-json/simple-icons": "^1.2.94",
-    "@iconify/utils": "^3.1.4",
+    "@iconify/utils": "^3.1.5",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
     "@tsconfig/svelte": "^5.0.6",
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.4.1",
     "d3": "^7.9.0",
     "mdsvex": "^0.12.8",
     "prettier": "^3.9.6",
@@ -44,7 +44,7 @@
     "@jolars/eunoia": "link:../npm",
     "esbuild": "^0.28.2",
     "jspdf": "^4.2.1",
-    "svg2pdf.js": "^2.8.0"
+    "svg2pdf.js": "^2.8.1"
   },
   "pnpm": {
     "overrides": {
