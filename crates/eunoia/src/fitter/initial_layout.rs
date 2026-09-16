@@ -237,36 +237,23 @@ fn run_attempt(
                     target_norm: target_norm(distances),
                 },
             };
-            let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().with_m_capacity(10);
+            let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new()
+                .with_m_capacity(10)
+                .with_absolute_gradient_tolerance(f64::EPSILON.sqrt())
+                .with_absolute_cost_change_tolerance(f64::EPSILON);
             let result = basin::Executor::new(
                 cost_function,
                 solver,
                 basin::LbfgsState::new(initial_param.as_slice().to_vec(), 10),
             )
             .max_iter(200)
-            .terminate_on(basin::GradientTolerance(f64::EPSILON.sqrt()))
-            .terminate_on(basin::CostTolerance::new(f64::EPSILON))
             .run()
             .expect("solver problem is infallible");
             Ok((result.cost(), result.param().clone()))
         }
         MdsSolver::LevenbergMarquardt => {
             let problem = LmMdsProblem::new(distances, relationships, n_sets);
-            // Larger initial damping (`tau = 1.0`) matches the random,
-            // far-from-optimum MDS start (Nielsen's rule); basin's `1e-3`
-            // default assumes a warm `x₀`. `1e-10` relative tolerances are
-            // plenty for a warm-start that the final-stage LM refines — the
-            // previous lm crate's `30·EPS ≈ 7e-15` was near machine precision,
-            // far stricter than this stage needs. `tol_grad` (absolute) is
-            // disabled; the residuals' `1/sqrt(target_norm)` scale makes a
-            // fixed `‖Jᵀr‖∞` bound spec-dependent.
-            let lm_tol = 1e-10;
-            let solver = basin::LevenbergMarquardt::new()
-                .with_tau(1.0)
-                .with_tol_grad(0.0)
-                .with_tol_grad_rel(lm_tol)
-                .with_tol_cost_rel(lm_tol)
-                .with_tol_step_rel(lm_tol);
+            let solver = mds_lm_solver();
             let result = basin::Executor::new(
                 problem,
                 solver,
@@ -299,13 +286,7 @@ pub(crate) fn run_mds_recorded(
     observer: super::recording::FrameRecorder,
 ) -> Result<Vec<f64>, DiagramError> {
     let problem = LmMdsProblem::new(distances, relationships, n_sets);
-    let lm_tol = 1e-10;
-    let solver = basin::LevenbergMarquardt::new()
-        .with_tau(1.0)
-        .with_tol_grad(0.0)
-        .with_tol_grad_rel(lm_tol)
-        .with_tol_cost_rel(lm_tol)
-        .with_tol_step_rel(lm_tol);
+    let solver = mds_lm_solver();
     let result = basin::Executor::new(
         problem,
         solver,
@@ -316,6 +297,19 @@ pub(crate) fn run_mds_recorded(
     .run()
     .expect("solver problem is infallible");
     Ok(result.param().as_slice().to_vec())
+}
+
+/// Share MDS settings with the trajectory recorder so both follow the same path.
+fn mds_lm_solver() -> basin::LevenbergMarquardt<DVector<f64>, DMatrix<f64>> {
+    // Random MDS starts need more damping than the final-stage warm start.
+    // Relative tests avoid coupling convergence to the spec's area scale.
+    let lm_tol = 1e-10;
+    basin::LevenbergMarquardt::new()
+        .with_tau(1.0)
+        .with_absolute_gradient_tolerance(None)
+        .with_gradient_orthogonality_tolerance(lm_tol)
+        .with_relative_model_reduction_tolerance(lm_tol)
+        .with_relative_step_tolerance(lm_tol)
 }
 
 /// `Vec<f64>`-param adapter wrapping [`MdsCost`] for basin's gradient-based

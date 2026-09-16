@@ -104,6 +104,15 @@ These mirror the Rust `Fitter`/`PlotOptions`; the defaults are what you want
 unless you are deliberately exploring. See the [Fitter
 pipeline](/docs/concepts/fitter-pipeline/) chapter for what they do.
 
+For final-layout LM stages, `tolerance` sets the relative model-reduction
+threshold (default `1e-3`), and `ftol` overrides it. The test checks both actual and
+predicted reduction. `xtol` bounds the relative attempted step (default
+`1e-6`), and `gtol` bounds residual/Jacobian-column orthogonality (default
+`1e-8`). Zero disables the corresponding LM test. TRF uses `gtol` as an
+absolute scaled-gradient threshold instead; it ignores `xtol` and `ftol`.
+L-BFGS uses `tolerance` for its absolute gradient-norm and cost-change tests.
+All four values must be finite and nonnegative; invalid values return an error.
+
 Success response (abridged):
 
 ```json

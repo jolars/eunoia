@@ -391,25 +391,7 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
 ) -> Result<(DVector<f64>, f64), DiagramError> {
     match LmDiagramProblem::<S>::new(spec, params_per_shape, config.loss_type) {
         Ok(problem) => {
-            // Convergence uses LM's three MINPACK-style solver-internal tests,
-            // mirroring the `levenberg-marquardt` crate's `gtol`/`ftol`/`xtol`:
-            //   - `tol_grad_rel` (gtol): cosine of the angle between `r` and the
-            //     Jacobian columns, `max_j |gⱼ|/(‖J·,ⱼ‖·‖r‖) ≤ gtol`;
-            //   - `ftol`: relative cost reduction with the *predicted*-reduction
-            //     guard (`actred ≤ ftol·f AND prered ≤ ftol·f`), which bails
-            //     stuck wrong-basin restarts without truncating productive-but-
-            //     slow ones (the framework `RelativeCostTolerance` lacks `prered`
-            //     and stops short — e.g. `three_set_triple_only`'s 3.3e-2
-            //     settling point before it refines to 3.3e-3);
-            //   - `xtol`: relative step `‖Δx‖ ≤ xtol·‖x‖`.
-            // The absolute `tol_grad` is disabled — the residuals' `1/√Σtᵢ²`
-            // normalisation makes `‖Jᵀr‖_∞` scale-dependent (a fixed bound
-            // over-iterates small-area specs and stops large-area ones early).
-            let solver = basin::LevenbergMarquardt::new()
-                .with_tol_grad(0.0)
-                .with_tol_grad_rel(config.gtol.unwrap_or(1e-8))
-                .with_tol_cost_rel(config.ftol.unwrap_or(config.tolerance))
-                .with_tol_step_rel(config.xtol.unwrap_or(1e-6));
+            let solver = lm_solver(config);
             let result = basin::Executor::new(
                 problem,
                 solver,
@@ -466,11 +448,7 @@ pub(crate) fn run_lm_recorded<S: DiagramShape + Copy + 'static>(
                 "trajectory recording requires the SumSquared loss".to_string(),
             )
         })?;
-    let solver = basin::LevenbergMarquardt::new()
-        .with_tol_grad(0.0)
-        .with_tol_grad_rel(config.gtol.unwrap_or(1e-8))
-        .with_tol_cost_rel(config.ftol.unwrap_or(config.tolerance))
-        .with_tol_step_rel(config.xtol.unwrap_or(1e-6));
+    let solver = lm_solver(config);
     let result = basin::Executor::new(
         problem,
         solver,
@@ -537,7 +515,9 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
             // primary stop here. We still thread `config.gtol` through for
             // parity with the LM dispatch.
             let solver = basin::Trf::<DVector<f64>, DMatrix<f64>>::new()
-                .with_tol_grad(config.gtol.unwrap_or(1e-8));
+                .with_absolute_scaled_gradient_tolerance(optional_lm_tolerance(
+                    config.gtol.unwrap_or(1e-8),
+                ));
             let result = basin::Executor::new(problem, solver, basin::NllsState::new(x0))
                 .max_iter(config.max_iterations.max(1) as u64)
                 .run()
@@ -736,13 +716,12 @@ fn run_mads<S: DiagramShape + Copy + 'static>(
         .saturating_mul(2 * n_params + 1)
         .max(1) as u64;
     let state = basin::MadsState::new(initial_param.as_slice().to_vec());
-    // Poll-size floor must lie in `(0, Δ₀=1)`; `config.tolerance` is the natural
-    // convergence knob and defaults to `1e-6` (= `basin::Mads`'s own default, so
-    // default behaviour is unchanged). Clamp to stay strictly inside the range.
+    // The poll-size floor must lie in `(0, Δ₀=1)`, so clamp the fitter's
+    // tolerance to stay strictly inside that range.
     let min_poll_size = config.tolerance.clamp(1e-12, 0.5);
-    let solver = basin::Mads::new().with_min_poll_size(min_poll_size);
+    let solver = basin::Mads::new().with_minimum_poll_size(min_poll_size);
     let result = basin::Executor::new(cost_function, solver, state)
-        .terminate_on(basin::MaxCostEvals(max_evals))
+        .max_cost_evals(max_evals)
         .run()
         .expect("solver problem is infallible");
     Ok((DVector::from_vec(result.param().clone()), result.cost()))
@@ -776,11 +755,12 @@ fn run_lbfgs<S: DiagramShape + Copy + 'static>(
         },
     };
     let x0 = initial_param.as_slice().to_vec();
-    let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new().with_m_capacity(10);
+    let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new()
+        .with_m_capacity(10)
+        .with_absolute_gradient_tolerance(config.tolerance)
+        .with_absolute_cost_change_tolerance(config.tolerance);
     let result = basin::Executor::new(cost_function, solver, basin::LbfgsState::new(x0, 10))
         .max_iter(config.max_iterations.max(1) as u64)
-        .terminate_on(basin::GradientTolerance(config.tolerance))
-        .terminate_on(basin::CostTolerance::new(config.tolerance))
         .run()
         .expect("solver problem is infallible");
     (DVector::from_vec(result.param().clone()), result.cost())
@@ -853,16 +833,23 @@ const MEMETIC_INNER_MAX_ITER: u64 = 25;
 /// escapes (Hansen-2011 / DE injection `k`).
 const MEMETIC_REFINE_K: usize = 1;
 
-/// Inner LM solver shared by both memetic escapes, configured to mirror the
-/// final-stage LM tolerances in [`run_lm_or_lbfgs`].
-fn memetic_inner_lm(
-    config: &FinalLayoutConfig,
-) -> basin::LevenbergMarquardt<DVector<f64>, DMatrix<f64>> {
+/// Preserve Eunoia's zero-disables convention under Basin's optional tolerances.
+fn optional_lm_tolerance(tolerance: f64) -> Option<f64> {
+    (tolerance != 0.0).then_some(tolerance)
+}
+
+/// Share convergence settings across final fitting, recording, and memetic escapes.
+fn lm_solver(config: &FinalLayoutConfig) -> basin::LevenbergMarquardt<DVector<f64>, DMatrix<f64>> {
+    // Residual normalization makes an absolute gradient threshold scale-dependent.
+    // The model-reduction test also checks predicted progress, so a rejected
+    // step cannot falsely satisfy an ordinary cost-change convergence test.
     basin::LevenbergMarquardt::<DVector<f64>, DMatrix<f64>>::new()
-        .with_tol_grad(0.0)
-        .with_tol_grad_rel(config.gtol.unwrap_or(1e-8))
-        .with_tol_cost_rel(config.ftol.unwrap_or(config.tolerance))
-        .with_tol_step_rel(config.xtol.unwrap_or(1e-6))
+        .with_absolute_gradient_tolerance(None)
+        .with_gradient_orthogonality_tolerance(optional_lm_tolerance(config.gtol.unwrap_or(1e-8)))
+        .with_relative_model_reduction_tolerance(optional_lm_tolerance(
+            config.ftol.unwrap_or(config.tolerance),
+        ))
+        .with_relative_step_tolerance(optional_lm_tolerance(config.xtol.unwrap_or(1e-6)))
 }
 
 /// Finite surrogate half-width for the ellipse angle's `±∞` box bound when DE
@@ -928,7 +915,7 @@ fn run_bounded_cma_inject<S: DiagramShape + Copy + 'static>(
     let cma = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::new(
         config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
     );
-    let solver = basin::BoundedCmaInject::with_inner_solver(cma, memetic_inner_lm(config))
+    let solver = basin::BoundedCmaInject::with_inner_solver(cma, lm_solver(config))
         .with_k(MEMETIC_REFINE_K)
         .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
     let state = basin::CmaEsState::<DVector<f64>, DMatrix<f64>>::new(initial_param.clone(), 1.0)
@@ -988,7 +975,7 @@ fn run_de_inject<S: DiagramShape + Copy + 'static>(
     let pop_size = (2 * initial_param.len()).clamp(16, 48);
     let de = basin::De::<f64>::new(config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15))
         .with_pop_size(pop_size);
-    let solver = basin::DeInject::with_inner_solver(de, memetic_inner_lm(config))
+    let solver = basin::DeInject::with_inner_solver(de, lm_solver(config))
         .with_k(MEMETIC_REFINE_K)
         .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
     let state = basin::BasicPopulationState::<DVector<f64>, f64>::with_size(pop_size);
@@ -3266,6 +3253,40 @@ mod tests {
                 max_abs_diff < 1e-9 + 1e-8 * max_abs,
                 "n={n} seed={seed} loss={loss_type:?}: |2·Jᵀ·r − ∇L| = {max_abs_diff:.3e} (max |∇L| = {max_abs:.3e})"
             );
+        }
+    }
+
+    #[test]
+    fn lm_zero_tolerances_disable_convergence() {
+        let circles = [
+            Circle::new(Point::new(0.0, 0.0), 1.0),
+            Circle::new(Point::new(3.0, 0.0), 1.0),
+        ];
+        let spec = spec_from_circles(&circles);
+        let params = DVector::from_vec(flat_params(&circles));
+
+        // Exercise both the shared cost tolerance and an explicit ftol override.
+        for (tolerance, ftol) in [(0.0, None), (1.0, Some(0.0))] {
+            let config = FinalLayoutConfig {
+                tolerance,
+                ftol,
+                xtol: Some(0.0),
+                gtol: Some(0.0),
+                ..Default::default()
+            };
+            let problem =
+                LmDiagramProblem::<Circle>::new(&spec, Circle::n_params(), config.loss_type)
+                    .unwrap();
+            // Disable the separate safeguard so an accidental exact-zero
+            // convergence check cannot hide behind numerical no-progress.
+            let solver = lm_solver(&config).with_no_progress_check(false);
+            let result =
+                basin::Executor::new(problem, solver, basin::NllsState::new(params.clone()))
+                    .max_iter(2)
+                    .run()
+                    .unwrap();
+            assert_eq!(result.reason, basin::TerminationReason::MaxIter);
+            assert_eq!(result.iter(), 2);
         }
     }
 

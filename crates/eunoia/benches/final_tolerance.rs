@@ -1,26 +1,14 @@
 //! Sweep LM stopping tolerance across representative specs.
 //!
-//! Profiling (`perf record` on `examples/fit_profile`) showed that ~58% of
-//! total wall time during a fit is spent inside the `levenberg-marquardt`
-//! crate's QR factorization and diagonal-solve, called once per LM
-//! trust-region iteration. The exact-conic geometry that does the actual
-//! "useful" work is only ~6% of self-time. So per-iteration cost is largely
-//! fixed, but iteration *count* is tunable via `Fitter::tolerance` (which
-//! feeds `with_ftol` / `with_xtol` / `with_gtol` of LM identically).
+//! Basin's LM uses three independent stopping tests: model reduction (`ftol`),
+//! relative attempted step (`xtol`), and gradient orthogonality (`gtol`).
+//! `Fitter::tolerance` controls only `ftol`; the other defaults are `xtol=1e-6`
+//! and `gtol=1e-8`. This bench has four groups:
 //!
-//! The `levenberg-marquardt` crate exposes three independent stopping
-//! criteria — `ftol` (cost-change), `xtol` (parameter-change), `gtol`
-//! (gradient ∞-norm) — plus `patience` (iteration cap). Different specs
-//! likely trip different knobs first: a converging fit usually trips
-//! `ftol` or `xtol`, a stalled basin trips `patience`. This bench has
-//! four groups:
-//!
-//!   - `joint`: sweeps `Fitter::tolerance(_)` (the existing knob, ties
-//!     all three to one value) — the baseline you'd actually ship with.
-//!   - `xtol`, `ftol`, `gtol`: per-knob sweeps via the new
-//!     `Fitter::xtol/ftol/gtol(_)` overrides, with the other two pinned
-//!     at the default `1e-6`. Reveals which knob is actually load-bearing
-//!     on each spec.
+//!   - `tolerance`: sweeps `Fitter::tolerance(_)`, keeping the step and
+//!     orthogonality defaults, as a downstream user would.
+//!   - `xtol`, `ftol`, `gtol`: per-knob sweeps with the non-swept tests at
+//!     `ftol=1e-6`, `xtol=1e-6`, and `gtol=1e-8`.
 //!
 //! All groups are pinned to `Optimizer::LevenbergMarquardt` (no CmaEsLm
 //! wrapper) and `n_restarts=1` to isolate the LM stopping signal — the
@@ -31,7 +19,7 @@
 //!      16 seeds. Fast. Spots which knob (if any) actually changes
 //!      quality on the probe specs.
 //!   2. **corpus validation** — the *full 27-spec corpus* × candidate
-//!      joint tolerances ({1e-3, 1e-4, 1e-6 default}) × 16 seeds at the
+//!      cost tolerances ({1e-3 default, 1e-4, 1e-6}) × 16 seeds at the
 //!      production `n_restarts=10`. This is the regression check: a
 //!      looser tolerance is only safe to ship if good-rate holds across
 //!      the whole corpus, not just the probe set. ~1-2 minutes.
@@ -58,7 +46,7 @@ const QUALITY_SEEDS: [u64; 16] = [1, 2, 3, 7, 13, 17, 23, 29, 31, 37, 41, 42, 47
 const TOLERANCES: [(f64, &str); 5] = [
     (1e-3, "1e-3"),
     (1e-4, "1e-4"),
-    (1e-6, "1e-6_default"),
+    (1e-6, "1e-6"),
     (1e-8, "1e-8"),
     (1e-10, "1e-10"),
 ];
@@ -127,9 +115,8 @@ fn issue28_six_set() -> DiagramSpec {
 /// Which LM knob a sweep value should bind to.
 #[derive(Copy, Clone)]
 enum Knob {
-    /// `Fitter::tolerance(_)` — ties xtol/ftol/gtol to one value (current
-    /// public API).
-    Joint,
+    /// `Fitter::tolerance(_)` sets the default for the cost-reduction test.
+    Tolerance,
     Xtol,
     Ftol,
     Gtol,
@@ -138,7 +125,7 @@ enum Knob {
 impl Knob {
     fn label(self) -> &'static str {
         match self {
-            Knob::Joint => "joint",
+            Knob::Tolerance => "tolerance",
             Knob::Xtol => "xtol",
             Knob::Ftol => "ftol",
             Knob::Gtol => "gtol",
@@ -150,9 +137,7 @@ const BASELINE_TOL: f64 = 1e-6;
 
 fn apply_tol_circle(fitter: Fitter<'_, Circle>, knob: Knob, tol: f64) -> Fitter<'_, Circle> {
     match knob {
-        Knob::Joint => fitter.tolerance(tol),
-        // For per-knob sweeps, the other two knobs are pinned at the default
-        // `1e-6` via `tolerance(_)`; the per-knob setter then overrides one.
+        Knob::Tolerance => fitter.tolerance(tol),
         Knob::Xtol => fitter.tolerance(BASELINE_TOL).xtol(tol),
         Knob::Ftol => fitter.tolerance(BASELINE_TOL).ftol(tol),
         Knob::Gtol => fitter.tolerance(BASELINE_TOL).gtol(tol),
@@ -161,7 +146,7 @@ fn apply_tol_circle(fitter: Fitter<'_, Circle>, knob: Knob, tol: f64) -> Fitter<
 
 fn apply_tol_ellipse(fitter: Fitter<'_, Ellipse>, knob: Knob, tol: f64) -> Fitter<'_, Ellipse> {
     match knob {
-        Knob::Joint => fitter.tolerance(tol),
+        Knob::Tolerance => fitter.tolerance(tol),
         Knob::Xtol => fitter.tolerance(BASELINE_TOL).xtol(tol),
         Knob::Ftol => fitter.tolerance(BASELINE_TOL).ftol(tol),
         Knob::Gtol => fitter.tolerance(BASELINE_TOL).gtol(tol),
@@ -229,7 +214,7 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-const KNOBS: [Knob; 4] = [Knob::Joint, Knob::Xtol, Knob::Ftol, Knob::Gtol];
+const KNOBS: [Knob; 4] = [Knob::Tolerance, Knob::Xtol, Knob::Ftol, Knob::Gtol];
 
 fn bench_tolerance(c: &mut Criterion) {
     for knob in KNOBS {
@@ -257,7 +242,7 @@ fn bench_tolerance(c: &mut Criterion) {
 /// looser tolerance is only a win if `diag_error` doesn't degrade.
 fn quality_report(_c: &mut Criterion) {
     println!(
-        "\n=== LM tolerance quality report (n_restarts=1, {} seeds; non-swept knobs at {:.0e}) ===",
+        "\n=== LM tolerance quality report (n_restarts=1, {} seeds; non-swept ftol={:.0e}, xtol=1e-6, gtol=1e-8) ===",
         QUALITY_SEEDS.len(),
         BASELINE_TOL,
     );
@@ -312,13 +297,13 @@ fn quality_report(_c: &mut Criterion) {
     }
 }
 
-/// Candidate joint-tolerance values to validate across the full corpus.
+/// Candidate cost-tolerance values to validate across the full corpus.
 /// Limited on purpose: the probe pass varies all 5 values × 4 knobs ×
-/// 4 specs to spot the candidates worth scaling up. Only the joint
+/// 4 specs to spot the candidates worth scaling up. Only the
 /// `Fitter::tolerance` setter is consulted here because that's the public
 /// API a downstream user would tune; per-knob overrides are diagnostic.
 const CORPUS_CANDIDATES: [(f64, &str); 3] =
-    [(1e-3, "1e-3"), (1e-4, "1e-4"), (1e-6, "1e-6_default")];
+    [(1e-3, "1e-3_default"), (1e-4, "1e-4"), (1e-6, "1e-6")];
 
 /// Median runtime in ms across seeds for one (config, spec, shape) cell.
 fn median_ms_circle(spec: &DiagramSpec, tol: f64) -> Option<(f64, f64, usize)> {

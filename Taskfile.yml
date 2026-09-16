@@ -65,6 +65,12 @@ tasks:
     cmds:
       - node --test 'ts/tests/**/*.test.mjs'
 
+  test-wasm:
+    desc: Build WASM and test the TypeScript fitting API
+    deps: [build-wasm]
+    cmds:
+      - node --experimental-wasm-modules --test 'ts/tests-wasm/*.test.mjs'
+
   coverage:
     desc: Generate code coverage report
     cmds:

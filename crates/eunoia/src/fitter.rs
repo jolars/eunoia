@@ -74,7 +74,7 @@ pub struct Fitter<'a, S: DiagramShape = Circle> {
     spec: &'a DiagramSpec,
     max_iterations: usize,
     tolerance: f64,
-    /// Per-knob LM stopping overrides. `None` uses the shared tolerance.
+    /// Per-knob LM stopping overrides. `None` uses the corresponding default.
     xtol: Option<f64>,
     ftol: Option<f64>,
     gtol: Option<f64>,
@@ -256,14 +256,22 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Set the cost-change convergence tolerance for the final-stage
     /// optimizer.
     ///
-    /// - **Levenberg-Marquardt** (incl. the LM polish step of
-    ///   [`Optimizer::CmaEsLm`]): wired as `with_ftol`, the relative-cost
-    ///   exit. The LM parameter-change (`xtol`) and gradient (`gtol`) knobs
-    ///   keep their own fixed `1e-6` defaults; override them independently
-    ///   via [`xtol`] / [`gtol`].
-    /// - **L-BFGS**: wired as both `tol_grad` and `tol_cost`.
-    /// - **Nelder-Mead**: no tolerance setter is exposed, so it runs until
-    ///   `max_iterations`.
+    /// - **Levenberg-Marquardt**, including the LM stages of
+    ///   [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsTrf`]: sets the relative
+    ///   model-reduction tolerance (`ftol`). The parameter-change (`xtol`)
+    ///   and gradient-orthogonality (`gtol`) tolerances keep their own
+    ///   defaults of `1e-6` and `1e-8`, respectively. Zero disables the cost
+    ///   test. Override the three tests independently via [`xtol`], [`ftol`],
+    ///   and [`gtol`].
+    /// - **L-BFGS**: sets both the absolute gradient-norm and absolute
+    ///   cost-change tolerances.
+    /// - **MADS**: sets the minimum poll size, clamped to `[1e-12, 0.5]`.
+    /// - **TRF**, **CMA-ES**, and **Nelder-Mead**: this setting has no effect.
+    ///
+    /// All tolerances must be finite and nonnegative. [`fit`](Self::fit),
+    /// [`fit_initial_only`](Self::fit_initial_only), and
+    /// [`fit_recording`](Self::fit_recording) return an error for invalid
+    /// values, including invalid per-test overrides.
     ///
     /// The default is `1e-3`, chosen to maximise the timing win on
     /// cost-converged fits without regressing the corpus (validated across
@@ -272,6 +280,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// tail; loosen it (e.g. `1e-2`) for even faster coarse fits.
     ///
     /// [`xtol`]: Self::xtol
+    /// [`ftol`]: Self::ftol
     /// [`gtol`]: Self::gtol
     ///
     /// # Examples
@@ -292,13 +301,12 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
-    /// Override the LM parameter-change tolerance (`with_xtol`).
+    /// Override the LM relative attempted-step tolerance.
     ///
-    /// Only honoured by [`Optimizer::LevenbergMarquardt`] and the LM polish
-    /// step of [`Optimizer::CmaEsLm`]. `None` (the default) uses the fixed
-    /// LM `xtol` default of `1e-6` — independent of [`tolerance`], which
-    /// targets only the LM `ftol` (cost) knob. LM stops when
-    /// `‖Δp‖ ≤ xtol·‖p‖`.
+    /// Applies to [`Optimizer::LevenbergMarquardt`] and the LM stages of
+    /// [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsTrf`]. The default is
+    /// `1e-6`, independent of [`tolerance`]. LM stops when the unscaled
+    /// optimizer step satisfies `‖Δp‖ ≤ xtol·‖p‖`. Zero disables this test.
     ///
     /// [`tolerance`]: Self::tolerance
     pub fn xtol(mut self, xtol: f64) -> Self {
@@ -306,12 +314,13 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
-    /// Override the LM cost-change tolerance (`with_ftol`).
+    /// Override the LM relative model-reduction tolerance.
     ///
-    /// Only honoured by [`Optimizer::LevenbergMarquardt`] and the LM polish
-    /// step of [`Optimizer::CmaEsLm`]. `None` (the default) inherits
-    /// [`tolerance`] (the unified cost-tolerance setter). LM stops when
-    /// relative cost change drops below `ftol`.
+    /// Applies to [`Optimizer::LevenbergMarquardt`] and the LM stages of
+    /// [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsTrf`]. Defaults to
+    /// [`tolerance`]. LM stops when both the actual and predicted cost
+    /// reductions are small relative to the current cost and their gain
+    /// ratio is at most two. Zero disables this test.
     ///
     /// [`tolerance`]: Self::tolerance
     pub fn ftol(mut self, ftol: f64) -> Self {
@@ -319,13 +328,16 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
-    /// Override the LM gradient tolerance (`with_gtol`).
+    /// Override the LM gradient-orthogonality or TRF scaled-gradient tolerance.
     ///
-    /// Only honoured by [`Optimizer::LevenbergMarquardt`] and the LM polish
-    /// step of [`Optimizer::CmaEsLm`]. `None` (the default) uses the fixed
-    /// LM `gtol` default of `1e-6` — independent of [`tolerance`], which
-    /// targets only the LM `ftol` (cost) knob. LM stops when the ∞-norm of
-    /// `Jᵀr` drops below `gtol`.
+    /// Defaults to `1e-8`, independent of [`tolerance`]. In final-layout LM
+    /// solves, this bounds the absolute cosine between the residual and each
+    /// Jacobian column: `max_j |(Jᵀr)_j| / (‖J_j‖ · ‖r‖) ≤ gtol`.
+    /// It is invariant to residual scaling.
+    ///
+    /// In [`Optimizer::Trf`] and the TRF stages of [`Optimizer::CmaEsTrf`],
+    /// the same value bounds the infinity norm of the Coleman-Li scaled
+    /// gradient instead. Zero disables either test.
     ///
     /// [`tolerance`]: Self::tolerance
     pub fn gtol(mut self, gtol: f64) -> Self {
@@ -609,6 +621,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     pub fn fit_recording(self) -> Result<recording::FitRecording<S>, DiagramError> {
         use recording::{FitRecording, FrameRecorder, RawFrame, RecordedFrame, Stage};
 
+        self.validate_tolerances()?;
         let spec = self.spec.preprocess()?;
         let n_sets = spec.n_sets;
         if n_sets == 0 {
@@ -751,7 +764,28 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             && n_sets <= SMALL_SMOOTH_MAX_SETS
     }
 
+    fn validate_tolerances(&self) -> Result<(), DiagramError> {
+        // Basin's setters assert on invalid values. Return an error before
+        // reaching them so binding callers can recover without a WASM trap.
+        for (name, value) in [
+            ("tolerance", Some(self.tolerance)),
+            ("xtol", self.xtol),
+            ("ftol", self.ftol),
+            ("gtol", self.gtol),
+        ] {
+            if let Some(value) = value
+                && (!value.is_finite() || value < 0.0)
+            {
+                return Err(DiagramError::InvalidCombination(format!(
+                    "{name} must be finite and nonnegative, got {value}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn fit_with_optimization(self, optimize: bool) -> Result<Layout<S>, DiagramError> {
+        self.validate_tolerances()?;
         // Both solver pools are indexed `pool[i % pool.len()]` per restart, so
         // an empty pool has nothing to select. Each attempt picks its
         // optimizer eagerly even when `optimize` is false (the initial-only
@@ -2324,6 +2358,41 @@ mod tests {
             "expected InvalidCombination for multi-cluster + complement, got {:?}",
             result.map(|_| "Ok(_layout)")
         );
+    }
+
+    #[test]
+    fn invalid_tolerances_return_errors_on_all_fit_paths() {
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 10.0)
+            .set("B", 8.0)
+            .intersection(&["A", "B"], 2.0)
+            .build()
+            .unwrap();
+
+        for name in ["tolerance", "xtol", "ftol", "gtol"] {
+            for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
+                let fitter = || {
+                    let fitter = Fitter::<Circle>::new(&spec);
+                    match name {
+                        "tolerance" => fitter.tolerance(value),
+                        "xtol" => fitter.xtol(value),
+                        "ftol" => fitter.ftol(value),
+                        _ => fitter.gtol(value),
+                    }
+                };
+                for error in [
+                    fitter().fit_initial_only().unwrap_err(),
+                    fitter().fit().unwrap_err(),
+                    fitter().fit_recording().unwrap_err(),
+                ] {
+                    assert!(error.to_string().contains(name), "{error}");
+                    assert!(
+                        error.to_string().contains("finite and nonnegative"),
+                        "{error}"
+                    );
+                }
+            }
+        }
     }
 
     /// An empty solver pool is reported by `fit()` / `fit_initial_only()`

@@ -1840,6 +1840,24 @@ mod tests {
     }
 
     #[test]
+    fn invalid_fitting_tolerances_are_reported() {
+        for name in ["tolerance", "xtol", "ftol", "gtol"] {
+            let input = two_set(&format!(r#", "{name}": -1"#));
+            let response: serde_json::Value =
+                serde_json::from_str(&call(eunoia_euler, &input)).unwrap();
+            assert_eq!(response["ok"], false);
+            let error = response["error"].as_str().unwrap();
+            assert!(error.contains(name), "{error}");
+            assert!(error.contains("finite and nonnegative"), "{error}");
+        }
+
+        let input = two_set(r#", "tolerance": 0, "xtol": 0, "ftol": 0, "gtol": 0"#);
+        let response: serde_json::Value =
+            serde_json::from_str(&call(eunoia_euler, &input)).unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+    }
+
+    #[test]
     fn euler_loss_type_is_honored() {
         // A plain non-default loss and a smooth loss with explicit eps both fit.
         for extra in [

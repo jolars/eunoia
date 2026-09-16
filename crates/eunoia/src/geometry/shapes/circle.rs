@@ -470,7 +470,9 @@ pub(crate) fn distance_for_overlap(
     // at the bracket midpoint. `state.param` tracks the incumbent minimiser,
     // so the final value is the best distance found.
     let solver = match tol {
-        Some(t) => basin::Brent::with_tol(t, 1e-12),
+        Some(t) => basin::Brent::new()
+            .with_relative_position_tolerance(t)
+            .with_absolute_position_tolerance(1e-12),
         None => basin::Brent::new(),
     };
     let x0 = 0.5 * (min_distance + max_distance);

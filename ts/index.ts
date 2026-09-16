@@ -286,7 +286,12 @@ export interface EulerOptions {
   optimizer?: Optimizer;
   /** Loss function. Defaults to the optimizer's preferred loss. */
   loss?: LossType;
-  /** Optimizer convergence tolerance. */
+  /**
+   * Optimizer convergence tolerance. Must be finite and nonnegative.
+   * Defaults to 1e-3. For final-layout LM, controls relative model reduction;
+   * zero disables that test. For L-BFGS, controls the absolute gradient
+   * norm and cost change. Does not affect TRF, CMA-ES, or Nelder-Mead stages.
+   */
   tolerance?: number;
   /**
    * Number of random restarts of the two-phase fit; the lowest-loss attempt is
@@ -999,7 +1004,6 @@ export function euler(options: EulerOptions): Layout {
   if (loss !== undefined && lossArg === undefined) {
     throw new RangeError(`euler: unknown loss "${loss}"`);
   }
-  const tolArg = tolerance && tolerance > 0 ? tolerance : undefined;
   const restartsArg =
     restarts && restarts > 0 ? Math.max(1, Math.floor(restarts)) : undefined;
   const nVerts = Math.max(3, Math.floor(polygonVertices));
@@ -1023,7 +1027,7 @@ export function euler(options: EulerOptions): Layout {
         seedArg,
         optimizerArg,
         lossArg,
-        tolArg,
+        tolerance,
         restartsArg,
         complement,
       );
@@ -1065,7 +1069,7 @@ export function euler(options: EulerOptions): Layout {
       seedArg,
       optimizerArg,
       lossArg,
-      tolArg,
+      tolerance,
       restartsArg,
       complement,
     );

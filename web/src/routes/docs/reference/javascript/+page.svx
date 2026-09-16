@@ -27,7 +27,7 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 | `seed`            | `number \| bigint`                                               | —              | RNG seed for reproducible fits.                                    |
 | `optimizer`       | `Optimizer`                                                       | core default   | Optimization algorithm (see below).                               |
 | `loss`            | `LossType`                                                       | optimizer's    | Region-error loss function.                                       |
-| `tolerance`       | `number`                                                         | —              | Optimizer convergence tolerance.                                  |
+| `tolerance`       | `number`                                                         | `1e-3`         | Finite, nonnegative convergence tolerance; see below.               |
 | `restarts`        | `number`                                                        | `10`           | Random restarts of the two-phase fit; lowest loss is kept.        |
 | `polygonVertices` | `number`                                                        | `256`          | Vertices per polygon outline (`"polygons"`/`"regions"`).           |
 | `complement`      | `number`                                                        | —              | Items outside every set; fits a bounding container. See [Complement](/docs/concepts/complement/). |
@@ -39,6 +39,13 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 `"stress"`, `"diagError"`. The defaults match the Rust core and are what you
 want unless you are deliberately exploring; see the
 [Fitter Pipeline](/docs/concepts/fitter-pipeline/) chapter.
+
+For final-layout LM stages, `tolerance` controls relative model reduction:
+both the actual and predicted cost reductions must be small before this test
+stops the solver.
+Zero disables that test. For L-BFGS, it controls the absolute gradient norm
+and cost change. TRF, CMA-ES, and Nelder-Mead stages ignore this option.
+Invalid tolerances throw an error.
 
 ## `venn(options)`
 
