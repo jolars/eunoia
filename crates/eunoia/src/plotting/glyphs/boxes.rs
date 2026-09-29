@@ -41,7 +41,7 @@ use crate::plotting::regions::{RegionPiece, RegionPolygons, poi_with_holes};
 
 use super::scan::{PieceScan, subtract_range};
 use super::{
-    GlyphArrangement, OBSTACLE_SHRINK_FLOOR, PACK, PROBE, PackMode, apportion,
+    GlyphArrangement, OBSTACLE_SHRINK_FLOOR, ObstaclePolicy, PACK, PROBE, PackMode, apportion,
     box_clear_of_obstacles, fnv1a, obstacles_near, sanitize_obstacles,
 };
 
@@ -86,16 +86,21 @@ pub struct GlyphBoxOptions {
     pub max_attempts: u32,
     /// Axis-aligned keep-out boxes, with the same semantics as
     /// [`GlyphOptions::obstacles`](super::GlyphOptions::obstacles): a
-    /// diagram-wide list that boxes keep their halo clear of, best-effort,
-    /// with the scale allowed to shrink only to half of what it would have
-    /// been without them.
+    /// diagram-wide list that boxes keep their halo clear of, according to
+    /// [`obstacle_policy`](Self::obstacle_policy). The scale can shrink only
+    /// to half of what it would have been without them, and never below
+    /// [`min_scale`](Self::min_scale) in automatic mode.
     pub obstacles: Vec<Rectangle>,
+    /// Whether obstacle clearance is required. Defaults to
+    /// [`ObstaclePolicy::BestEffort`]. [`ObstaclePolicy::Strict`] keeps the
+    /// existing size floors and reports any shortfall in `unplaced`.
+    pub obstacle_policy: ObstaclePolicy,
 }
 
 impl Default for GlyphBoxOptions {
     /// [`GlyphArrangement::Uniform`], auto scale, `min_scale = 0.35`,
     /// `gap = 0.25`, `seed = 0`, `precision = 0.01`, `max_attempts = 300`,
-    /// no obstacles.
+    /// no obstacles, best-effort policy.
     fn default() -> Self {
         Self {
             arrangement: GlyphArrangement::default(),
@@ -106,6 +111,7 @@ impl Default for GlyphBoxOptions {
             precision: 0.01,
             max_attempts: 300,
             obstacles: Vec::new(),
+            obstacle_policy: ObstaclePolicy::default(),
         }
     }
 }
@@ -151,6 +157,12 @@ impl GlyphBoxOptions {
     /// Sets [`max_attempts`](Self::max_attempts) and returns `self`.
     pub fn max_attempts(mut self, max_attempts: u32) -> Self {
         self.max_attempts = max_attempts;
+        self
+    }
+
+    /// Sets [`obstacle_policy`](Self::obstacle_policy) and returns `self`.
+    pub fn obstacle_policy(mut self, obstacle_policy: ObstaclePolicy) -> Self {
+        self.obstacle_policy = obstacle_policy;
         self
     }
 
@@ -201,8 +213,10 @@ pub struct GlyphBoxPlacements {
 /// box, so relative text sizes are preserved and the caller can recover the
 /// font size to render at. Every placed box keeps a halo of
 /// `0.5 * gap * row_height` to the region boundary (outer ring and holes),
-/// to every other box in the region, and — best-effort — to
-/// [`obstacles`](GlyphBoxOptions::obstacles).
+/// to every other box in the region, and to
+/// [`obstacles`](GlyphBoxOptions::obstacles) according to
+/// [`obstacle_policy`](GlyphBoxOptions::obstacle_policy). Strict obstacles
+/// can cause omissions even in automatic mode; the size floors still apply.
 ///
 /// # Dropped items
 ///
@@ -332,7 +346,10 @@ pub fn place_glyph_boxes(
         row_h: scale * h1,
         gap,
         obstacles: &obstacles,
-        mode: PACK,
+        mode: PackMode {
+            strict_obstacles: options.obstacle_policy == ObstaclePolicy::Strict,
+            ..PACK
+        },
     };
     let mut boxes = HashMap::new();
     let mut unplaced = HashMap::new();
@@ -1232,6 +1249,124 @@ mod tests {
     }
 
     #[test]
+    fn strict_obstacles_report_blocked_boxes_without_collapsing_scale() {
+        let regions = RegionPolygons::from_map(HashMap::from([
+            (
+                Combination::new(&["A"]),
+                classify_into_pieces(vec![rect_ring(0.0, 0.0, 2.0, 2.0)]),
+            ),
+            (
+                Combination::new(&["B"]),
+                classify_into_pieces(vec![rect_ring(10.0, 0.0, 20.0, 10.0)]),
+            ),
+        ]));
+        let sizes = sizes(&[
+            ("A", uniform_sizes(3, 0.5, 0.2)),
+            ("B", uniform_sizes(6, 1.0, 0.2)),
+        ]);
+        let obstacles = [Rectangle::new(Point::new(1.0, 1.0), 2.0, 2.0)];
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            for scale in [None, Some(1.0)] {
+                for gap in [0.0, 0.25] {
+                    let options = GlyphBoxOptions::default()
+                        .arrangement(arrangement)
+                        .scale(scale)
+                        .gap(gap);
+                    let free = place_glyph_boxes(&regions, &sizes, &options);
+                    let options = options.obstacles(obstacles);
+                    let soft = place_glyph_boxes(&regions, &sizes, &options);
+                    assert!(soft.unplaced.is_empty());
+                    assert_eq!(
+                        soft,
+                        place_glyph_boxes(
+                            &regions,
+                            &sizes,
+                            &options.clone().obstacle_policy(ObstaclePolicy::BestEffort)
+                        )
+                    );
+                    let strict = place_glyph_boxes(
+                        &regions,
+                        &sizes,
+                        &options.obstacle_policy(ObstaclePolicy::Strict),
+                    );
+                    assert_eq!(strict.scale, soft.scale);
+                    assert!(strict.scale >= OBSTACLE_SHRINK_FLOOR * free.scale - 1e-12);
+                    assert!(strict.scale >= 0.35);
+                    assert!(
+                        strict.boxes["A"].is_empty(),
+                        "{arrangement:?}, {scale:?}, gap={gap}"
+                    );
+                    assert_eq!(strict.unplaced["A"], 3);
+                    assert_eq!(strict.boxes["B"].len(), 6);
+                    assert!(!strict.unplaced.contains_key("B"));
+                    let halo = halo_of(&strict, 0.2, gap);
+                    assert_inside_region(&strict, &regions, halo, "strict blocked");
+                    assert_no_overlap(&strict, halo, "strict blocked");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn strict_obstacles_keep_a_partial_prefix_of_boxes() {
+        let regions = boxed_region(0.0, 0.0, 4.0, 4.0);
+        let obstacles = [Rectangle::new(Point::new(1.5, 2.0), 3.0, 4.0)];
+        let items: Vec<_> = (0..40).map(|i| (0.5 + i as f64 * 0.005, 0.2)).collect();
+        let sizes = sizes(&[("A", items.clone())]);
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            for scale in [None, Some(1.0)] {
+                for gap in [0.0, 0.25] {
+                    let options = GlyphBoxOptions::default()
+                        .arrangement(arrangement)
+                        .scale(scale)
+                        .gap(gap)
+                        .min_scale(0.8)
+                        .obstacles(obstacles)
+                        .obstacle_policy(ObstaclePolicy::Strict);
+                    let result = place_glyph_boxes(&regions, &sizes, &options);
+                    let placed = &result.boxes["A"];
+                    assert!(
+                        !placed.is_empty() && placed.len() < items.len(),
+                        "{arrangement:?}, {scale:?}, gap={gap}: {}",
+                        placed.len()
+                    );
+                    assert_eq!(result.unplaced["A"], items.len() - placed.len());
+                    let halo = halo_of(&result, 0.2, gap);
+                    for (r, &(w, h)) in placed.iter().zip(&items) {
+                        assert_eq!(r.width(), result.scale * w);
+                        assert_eq!(r.height(), result.scale * h);
+                        assert!(r.center().x() - 0.5 * r.width() >= 3.0 + halo - 1e-9);
+                    }
+                    assert_inside_region(&result, &regions, halo, "strict partial");
+                    assert_no_overlap(&result, halo, "strict partial");
+                    assert_eq!(result, place_glyph_boxes(&regions, &sizes, &options));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn strict_policy_preserves_overflow_without_obstacles() {
+        let regions = boxed_region(0.0, 0.0, 4.0, 4.0);
+        let sizes = sizes(&[("A", uniform_sizes(200, 0.5, 0.2))]);
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            let options = GlyphBoxOptions::default()
+                .arrangement(arrangement)
+                .scale(1.0);
+            let plain = place_glyph_boxes(&regions, &sizes, &options);
+            assert!(plain.unplaced["A"] > 0);
+            assert_eq!(
+                plain,
+                place_glyph_boxes(
+                    &regions,
+                    &sizes,
+                    &options.obstacle_policy(ObstaclePolicy::Strict)
+                )
+            );
+        }
+    }
+
+    #[test]
     fn empty_obstacles_match_no_obstacles() {
         let regions = two_set_regions();
         let sizes = sizes(&[
@@ -1242,7 +1377,8 @@ mod tests {
             let plain = GlyphBoxOptions::default().arrangement(arrangement);
             let empty = GlyphBoxOptions::default()
                 .arrangement(arrangement)
-                .obstacles([]);
+                .obstacles([])
+                .obstacle_policy(ObstaclePolicy::Strict);
             assert_eq!(
                 place_glyph_boxes(&regions, &sizes, &plain),
                 place_glyph_boxes(&regions, &sizes, &empty),
@@ -1286,6 +1422,14 @@ mod tests {
                 &options,
             );
             assert!(result.unplaced.is_empty(), "{arrangement:?}");
+            assert_eq!(
+                result,
+                place_glyph_boxes(
+                    &regions,
+                    &sizes(&[("A", uniform_sizes(6, 1.5, 0.6))]),
+                    &options.clone().obstacle_policy(ObstaclePolicy::Strict),
+                )
+            );
             let halo = halo_of(&result, 0.6, options.gap);
             for (i, r) in result.boxes["A"].iter().enumerate() {
                 let d = box_rect_separation(

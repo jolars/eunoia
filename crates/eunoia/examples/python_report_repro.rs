@@ -15,7 +15,7 @@ use eunoia::geometry::primitives::Point;
 use eunoia::geometry::shapes::{Circle, Ellipse, Polygon, Rectangle, RotatedRectangle, Square};
 use eunoia::geometry::traits::{DiagramShape, Polygonize};
 use eunoia::plotting::{
-    GlyphBoxOptions, GlyphOptions, PlacementStrategy, RegionPolygons, TetherSource,
+    GlyphBoxOptions, GlyphOptions, ObstaclePolicy, PlacementStrategy, RegionPolygons, TetherSource,
     classify_into_pieces, place_glyph_boxes, place_glyphs, place_labels,
 };
 use eunoia::spec::DiagramSpec;
@@ -40,36 +40,42 @@ fn overlaps(a: &Rectangle, b: &Rectangle) -> bool {
 }
 
 fn obstacles() {
-    println!("Item 1: label obstacles are best-effort");
+    println!("Item 1: best-effort and strict label obstacles");
     let regions = square_region(2.0);
     // A label covering the region makes honoring it incompatible with placing
     // any members. This isolates the final packer's obstacle fallback.
     let label = Rectangle::new(Point::new(1.0, 1.0), 2.0, 2.0);
     let sizes = HashMap::from([("A".into(), vec![(0.5, 0.2); 3])]);
-    let placed = place_glyph_boxes(
-        &regions,
-        &sizes,
-        &GlyphBoxOptions::default().obstacles([label]),
-    );
-    let boxes = &placed.boxes["A"];
-    println!(
-        "  boxes: scale={:.3}, placed={}, overlapping_label={}, unplaced={}",
-        placed.scale,
-        boxes.len(),
-        boxes.iter().filter(|b| overlaps(b, &label)).count(),
-        placed.unplaced.get("A").copied().unwrap_or(0),
-    );
+    for policy in [ObstaclePolicy::BestEffort, ObstaclePolicy::Strict] {
+        let placed = place_glyph_boxes(
+            &regions,
+            &sizes,
+            &GlyphBoxOptions::default()
+                .obstacles([label])
+                .obstacle_policy(policy),
+        );
+        let boxes = &placed.boxes["A"];
+        println!(
+            "  {policy:?} boxes: scale={:.3}, placed={}, overlapping_label={}, unplaced={}",
+            placed.scale,
+            boxes.len(),
+            boxes.iter().filter(|b| overlaps(b, &label)).count(),
+            placed.unplaced.get("A").copied().unwrap_or(0),
+        );
 
-    let dots = place_glyphs(
-        &regions,
-        &HashMap::from([("A".into(), 3)]),
-        &GlyphOptions::default().obstacles([label]),
-    );
-    println!(
-        "  dots: placed={} beneath the same label, unplaced={}",
-        dots.positions.get("A").map_or(0, Vec::len),
-        dots.unplaced.get("A").copied().unwrap_or(0),
-    );
+        let dots = place_glyphs(
+            &regions,
+            &HashMap::from([("A".into(), 3)]),
+            &GlyphOptions::default()
+                .obstacles([label])
+                .obstacle_policy(policy),
+        );
+        println!(
+            "  {policy:?} dots: placed={} beneath the same label, unplaced={}",
+            dots.positions.get("A").map_or(0, Vec::len),
+            dots.unplaced.get("A").copied().unwrap_or(0),
+        );
+    }
 
     // An over-wide label must go outside, exposing the supported tether modes.
     let label_sizes = HashMap::from([("A".into(), (3.0, 0.2))]);

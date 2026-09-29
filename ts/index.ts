@@ -531,6 +531,14 @@ export interface PlaceLabelsForRegionsOptions {
  */
 export type GlyphArrangement = "uniform" | "random";
 
+/**
+ * How glyph and member-label packing handles obstacles.
+ * `"bestEffort"` (default) allows overlap when items do not fit.
+ * `"strict"` requires clearance and reports any shortfall in `unplaced`.
+ * Both policies retain the usual automatic sizing floors.
+ */
+export type ObstaclePolicy = "bestEffort" | "strict";
+
 /** Tuning knobs for [`placeGlyphsForRegions`]. All optional. */
 export interface GlyphOptions {
   /** Arrangement of glyph centers. Default `"uniform"`. */
@@ -567,12 +575,15 @@ export interface GlyphOptions {
    * boxes — see {@link labelObstacles}, which builds them from a
    * [`placeLabelsForRegions`] result.
    *
-   * Clearance is a strong preference, not a guarantee: the auto radius
-   * shrinks to honour the boxes, but not below half the radius it would
-   * have chosen without them, so one cramped region cannot shrink every
-   * glyph in the diagram. Degenerate boxes are ignored. Default: none.
+   * The auto radius shrinks to honor the boxes, but not below half the
+   * radius chosen without them. The default `"bestEffort"` obstacle policy
+   * allows overlap if glyphs still do not fit. `"strict"` requires clearance
+   * and reports overflow in `unplaced`, even in auto mode. Degenerate boxes
+   * are ignored. Default: none.
    */
   obstacles?: ReadonlyArray<Rect>;
+  /** Obstacle clearance policy. Default `"bestEffort"`. */
+  obstaclePolicy?: ObstaclePolicy;
 }
 
 /** Result of [`placeGlyphsForRegions`]. */
@@ -589,8 +600,9 @@ export interface GlyphPlacements {
    */
   positions: Record<string, Point[]>;
   /**
-   * Per-region count that did **not** fit at the used radius. Only present
-   * when a fixed radius overflowed a region (or the input was degenerate).
+   * Per-region count that did **not** fit at the used radius. Can be present
+   * in either sizing mode, including when strict obstacles prevent placement
+   * at the automatic radius floor.
    */
   unplaced?: Record<string, number>;
 }
@@ -654,11 +666,14 @@ export interface GlyphBoxOptions {
   maxAttempts?: number;
   /**
    * Diagram-wide keep-out boxes, with the same semantics as
-   * {@link GlyphOptions.obstacles} — best-effort, with the scale allowed to
-   * shrink only to half of what it would have been without them. Usually
-   * the measured label boxes, via {@link labelObstacles}. Default: none.
+   * {@link GlyphOptions.obstacles}, governed by `obstaclePolicy`. Automatic
+   * scale stays at least half of what it would have been without obstacles
+   * and at least `minScale`. Usually the measured label boxes, via
+   * {@link labelObstacles}. Default: none.
    */
   obstacles?: ReadonlyArray<Rect>;
+  /** Obstacle clearance policy. Default `"bestEffort"`. */
+  obstaclePolicy?: ObstaclePolicy;
 }
 
 /** Result of {@link placeGlyphBoxesForRegions}. */
@@ -1989,6 +2004,11 @@ export function labelObstacles(options: LabelObstaclesOptions): Rect[] {
   return out;
 }
 
+const OBSTACLE_POLICY_MAP: Record<ObstaclePolicy, "BestEffort" | "Strict"> = {
+  bestEffort: "BestEffort",
+  strict: "Strict",
+};
+
 const GLYPH_ARRANGEMENT_MAP: Record<GlyphArrangement, "Uniform" | "Random"> = {
   uniform: "Uniform",
   random: "Random",
@@ -2064,6 +2084,7 @@ export function placeGlyphsForRegions(
       precision?: number;
       maxAttempts?: number;
       obstacles?: Rect[];
+      obstaclePolicy?: "BestEffort" | "Strict";
     } = {};
     if (glyphOptions.arrangement !== undefined) {
       const mapped = GLYPH_ARRANGEMENT_MAP[glyphOptions.arrangement];
@@ -2081,6 +2102,14 @@ export function placeGlyphsForRegions(
       payload.precision = glyphOptions.precision;
     if (glyphOptions.maxAttempts !== undefined)
       payload.maxAttempts = glyphOptions.maxAttempts;
+    if (glyphOptions.obstaclePolicy !== undefined) {
+      if (!Object.hasOwn(OBSTACLE_POLICY_MAP, glyphOptions.obstaclePolicy)) {
+        throw new RangeError(
+          `placeGlyphsForRegions: unknown obstaclePolicy "${glyphOptions.obstaclePolicy}"`,
+        );
+      }
+      payload.obstaclePolicy = OBSTACLE_POLICY_MAP[glyphOptions.obstaclePolicy];
+    }
     if (glyphOptions.obstacles !== undefined) {
       const obstacles: Rect[] = [];
       for (const r of glyphOptions.obstacles) {
@@ -2216,6 +2245,7 @@ export function placeGlyphBoxesForRegions(
       precision?: number;
       maxAttempts?: number;
       obstacles?: Rect[];
+      obstaclePolicy?: "BestEffort" | "Strict";
     } = {};
     if (boxOptions.arrangement !== undefined) {
       const mapped = GLYPH_ARRANGEMENT_MAP[boxOptions.arrangement];
@@ -2235,6 +2265,14 @@ export function placeGlyphBoxesForRegions(
       payload.precision = boxOptions.precision;
     if (boxOptions.maxAttempts !== undefined)
       payload.maxAttempts = boxOptions.maxAttempts;
+    if (boxOptions.obstaclePolicy !== undefined) {
+      if (!Object.hasOwn(OBSTACLE_POLICY_MAP, boxOptions.obstaclePolicy)) {
+        throw new RangeError(
+          `placeGlyphBoxesForRegions: unknown obstaclePolicy "${boxOptions.obstaclePolicy}"`,
+        );
+      }
+      payload.obstaclePolicy = OBSTACLE_POLICY_MAP[boxOptions.obstaclePolicy];
+    }
     if (boxOptions.obstacles !== undefined) {
       const obstacles: Rect[] = [];
       for (const r of boxOptions.obstacles) {

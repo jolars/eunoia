@@ -21,10 +21,10 @@ diagram and per-region counts. You get back:
 - `radius`: the one glyph radius used diagram-wide. Equal glyph size is what
   makes counts comparable across regions, so there is deliberately no
   per-region radius.
-- `positions`: a `{ combination → [point, …] }` map of glyph centers, exactly
+- `positions`: a `{ combination → [point, …] }` map of glyph centers, up to
   `counts[combination]` per region.
-- `unplaced`: per-region shortfall, only populated when you fixed the radius
-  yourself and a region could not hold its count.
+- `unplaced`: per-region shortfall. Check it with either sizing mode; strict
+  obstacles can prevent placement even at the automatic radius floor.
 
 Every center keeps a clearance of at least `radius * (1 + gap)` to the region
 boundary (outer ring **and** holes), and centers within a region stay at
@@ -92,6 +92,7 @@ const glyphs = placeGlyphsForRegions({
   counts,
   options: {
     obstacles: labelObstacles({ placements, sizes, padding: 0.15 }),
+    obstaclePolicy: "strict",
   },
 });
 ```
@@ -104,13 +105,25 @@ what is painted over what. You can add boxes of your own for a legend, a
 title, or anything else drawn on top.
 
 The list also feeds the auto-radius bisection, since a keep-out box shrinks a
-region's usable capacity. Clearance is a strong preference rather than a hard
-guarantee: the radius is allowed to shrink only to half of what it would have
-been without obstacles, and a region that still cannot fit its count packs
-into its box rather than dropping marks. Without that floor, one small region
-whose label nearly fills it would shrink every glyph in the diagram to a dot.
+region's usable capacity. The radius can shrink only to half of what it would
+have been without obstacles. Without that floor, one small region whose label
+nearly fills it would shrink every glyph in the diagram to a dot.
+
+`obstaclePolicy` decides what happens when items still do not fit:
+
+- `"bestEffort"` (default) prefers clear positions but permits overlap.
+- `"strict"` requires clearance for every returned glyph and reports the
+  rest in `unplaced`. This also holds after random scatter relaxation.
+
+Both policies keep the same sizing floors. Strict mode can therefore leave a
+region empty. Check `unplaced` and show a callout or omission warning when
+needed; the packing algorithm does not create these for you. In Rust, use
+`.obstacle_policy(ObstaclePolicy::Strict)` on either options type. The C API
+uses `"obstacle_policy": "strict"` (default `"best_effort"`); the raw WASM
+JSON uses `"obstaclePolicy": "Strict"` (default `"BestEffort"`).
+
 Boxes with a non-positive or non-finite extent (an empty label measures
-exactly `0 x 0`) are ignored.
+exactly `0 x 0`) are ignored under both policies.
 
 ## Member Labels
 
@@ -191,8 +204,11 @@ therefore decided by the order you supply them in: sort meaningfully
 pass those—the packer needs no special support for it, and a two-line box is a
 much easier shape to seat.
 
-Obstacles compose exactly as above: pass `labelObstacles(...)` and the member
-boxes will steer clear of your region labels too.
+Obstacles compose exactly as above: pass `labelObstacles(...)` and select
+`obstaclePolicy: "strict"` to require clearance around region labels. The
+automatic scale stays at least half of its obstacle-free value and at least
+`minScale`; items that do not fit are reported in `unplaced`. The returned
+boxes remain a prefix of the input under either policy.
 
 To see it without writing any code, type names into the per-combination roster
 fields in the [playground](/app/) and set **Glyphs → Draw → Member names**.

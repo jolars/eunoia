@@ -17,8 +17,8 @@ use crate::plotting::regions::{RegionPiece, RegionPolygons, poi_with_holes, sign
 
 use super::relax::relax_scatter;
 use super::{
-    GlyphArrangement, OBSTACLE_SHRINK_FLOOR, PACK, PROBE, PackMode, apportion, clear_of_obstacles,
-    fnv1a, obstacles_near, ring_bounds, sanitize_obstacles,
+    GlyphArrangement, OBSTACLE_SHRINK_FLOOR, ObstaclePolicy, PACK, PROBE, PackMode, apportion,
+    clear_of_obstacles, fnv1a, obstacles_near, ring_bounds, sanitize_obstacles,
 };
 
 /// Configuration bundle for [`place_glyphs`].
@@ -63,19 +63,24 @@ pub struct GlyphOptions {
     /// what is painted over what, and an exterior label box can land on a
     /// region that is not its own.
     ///
-    /// Clearance is a strong preference, not a guarantee. Boxes tighten the
-    /// auto-radius bisection, but only down to half the radius that would
-    /// have been chosen without them; below that floor a region packs into
-    /// its boxes rather than let one cramped region shrink every glyph in the
-    /// diagram. Degenerate boxes (non-finite, or with a non-positive extent)
-    /// are ignored. Empty by default, in which case placement is bit-for-bit
-    /// what it was before obstacles existed.
+    /// Boxes tighten the auto-radius bisection, but only down to half the
+    /// radius that would have been chosen without them, so one cramped
+    /// region cannot shrink every glyph in the diagram. The default
+    /// [`ObstaclePolicy::BestEffort`] allows overlap when the glyphs still
+    /// do not fit. [`ObstaclePolicy::Strict`] requires clearance and reports
+    /// the shortfall in [`GlyphPlacements::unplaced`], even in auto mode.
+    /// Degenerate boxes (non-finite, or with a non-positive extent) are
+    /// ignored. Empty by default.
     pub obstacles: Vec<Rectangle>,
+    /// Whether obstacle clearance is required. Defaults to
+    /// [`ObstaclePolicy::BestEffort`]. [`ObstaclePolicy::Strict`] keeps the
+    /// existing size floors and reports any shortfall in `unplaced`.
+    pub obstacle_policy: ObstaclePolicy,
 }
 
 impl Default for GlyphOptions {
     /// [`GlyphArrangement::Uniform`], auto radius, `gap = 0.25`, `seed = 0`,
-    /// `precision = 0.01`, `max_attempts = 300`, no obstacles.
+    /// `precision = 0.01`, `max_attempts = 300`, no obstacles, best-effort policy.
     fn default() -> Self {
         Self {
             arrangement: GlyphArrangement::default(),
@@ -85,6 +90,7 @@ impl Default for GlyphOptions {
             precision: 0.01,
             max_attempts: 300,
             obstacles: Vec::new(),
+            obstacle_policy: ObstaclePolicy::default(),
         }
     }
 }
@@ -127,6 +133,12 @@ impl GlyphOptions {
         self
     }
 
+    /// Sets [`obstacle_policy`](Self::obstacle_policy) and returns `self`.
+    pub fn obstacle_policy(mut self, obstacle_policy: ObstaclePolicy) -> Self {
+        self.obstacle_policy = obstacle_policy;
+        self
+    }
+
     /// Sets [`obstacles`](Self::obstacles) and returns `self`.
     pub fn obstacles(mut self, obstacles: impl IntoIterator<Item = Rectangle>) -> Self {
         self.obstacles = obstacles.into_iter().collect();
@@ -141,7 +153,7 @@ impl GlyphOptions {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct GlyphPlacements {
-    /// The radius actually used — the auto-chosen feasible radius, or the
+    /// The radius actually used — the auto-chosen radius, or the
     /// caller's [`GlyphOptions::radius`] echoed back. `0.0` when no region
     /// could hold any glyph (degenerate input).
     pub radius: f64,
@@ -150,9 +162,9 @@ pub struct GlyphPlacements {
     /// complement region). Regions absent from the counts input, or with a
     /// count of zero, are omitted.
     pub positions: HashMap<String, Vec<Point>>,
-    /// Per-region count that did **not** fit at the used radius. Empty in
-    /// auto-radius mode unless the input is degenerate; populated in
-    /// fixed-radius mode when a region overflows.
+    /// Per-region count that did **not** fit at the used radius. Can be
+    /// populated in either sizing mode, including when strict obstacles
+    /// prevent placement at the automatic radius floor.
     pub unplaced: HashMap<String, usize>,
 }
 
@@ -174,9 +186,9 @@ pub struct GlyphPlacements {
 /// proportionally to their net areas (largest-remainder rounding).
 ///
 /// [`GlyphOptions::obstacles`] adds keep-out boxes at the same clearance.
-/// Unlike the boundary and spacing invariants above, that clearance is
-/// best-effort: see the field docs for the radius floor that bounds how far
-/// one cramped region may shrink the whole diagram.
+/// Clearance follows [`GlyphOptions::obstacle_policy`]: best-effort by
+/// default, or required in strict mode. Both policies retain the radius
+/// floor that bounds how far one cramped region may shrink the whole diagram.
 ///
 /// # Examples
 ///
@@ -280,7 +292,10 @@ pub fn place_glyphs(
             r: radius,
             gap,
             obstacles: &obstacles,
-            mode: PACK,
+            mode: PackMode {
+                strict_obstacles: options.obstacle_policy == ObstaclePolicy::Strict,
+                ..PACK
+            },
         };
         let placed = pack_region(pieces, *n, options, key, ctx);
         if placed.len() < *n {
@@ -611,9 +626,13 @@ fn pack_uniform_piece(
     let at_min = hex_valid_cells(piece, anchor, s_min, inset, &local, Some(n));
     let honoring = at_min.free.len() >= n;
     if !honoring && ctx.mode.strict_obstacles {
-        // The probe's verdict: this piece cannot hold its quota clear of the
-        // obstacles at this radius.
-        return at_min.free;
+        // Probes only need a count; final placements retain the usual anchor
+        // order even when strict packing cannot fill the quota.
+        return if ctx.mode.spread {
+            take_cells(at_min, n, anchor, true)
+        } else {
+            at_min.free
+        };
     }
     // Cells the piece may actually use, given whether it is honouring.
     let available =
@@ -976,6 +995,102 @@ mod tests {
     }
 
     #[test]
+    fn strict_obstacles_report_blocked_glyphs_without_collapsing_radius() {
+        let regions = RegionPolygons::from_map(HashMap::from([
+            (
+                Combination::new(&["A"]),
+                classify_into_pieces(vec![rect_ring(0.0, 0.0, 2.0, 2.0)]),
+            ),
+            (
+                Combination::new(&["B"]),
+                classify_into_pieces(vec![rect_ring(10.0, 0.0, 20.0, 10.0)]),
+            ),
+        ]));
+        let counts = counts(&[("A", 3), ("B", 6)]);
+        let obstacles = [Rectangle::new(Point::new(1.0, 1.0), 2.0, 2.0)];
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            for radius in [None, Some(0.2)] {
+                let options = GlyphOptions::default()
+                    .arrangement(arrangement)
+                    .radius(radius);
+                let free = place_glyphs(&regions, &counts, &options);
+                let options = options.obstacles(obstacles);
+                let soft = place_glyphs(&regions, &counts, &options);
+                assert!(soft.unplaced.is_empty());
+                assert_eq!(
+                    soft,
+                    place_glyphs(
+                        &regions,
+                        &counts,
+                        &options.clone().obstacle_policy(ObstaclePolicy::BestEffort)
+                    )
+                );
+                let strict = place_glyphs(
+                    &regions,
+                    &counts,
+                    &options.obstacle_policy(ObstaclePolicy::Strict),
+                );
+                assert_eq!(strict.radius, soft.radius);
+                assert!(strict.radius >= OBSTACLE_SHRINK_FLOOR * free.radius - 1e-12);
+                assert!(
+                    strict.positions["A"].is_empty(),
+                    "{arrangement:?}, {radius:?}"
+                );
+                assert_eq!(strict.unplaced["A"], 3);
+                assert_eq!(strict.positions["B"].len(), 6);
+                assert!(!strict.unplaced.contains_key("B"));
+                assert_clear_of_obstacles(&strict, &obstacles, 0.25, "strict blocked");
+                assert_invariants(&strict, &regions, 0.25);
+            }
+        }
+    }
+
+    #[test]
+    fn strict_obstacles_keep_partial_glyphs_clear_after_spreading() {
+        let regions = boxed_region(0.0, 0.0, 4.0, 4.0);
+        let obstacles = [Rectangle::new(Point::new(1.75, 2.0), 3.5, 4.0)];
+        let counts = counts(&[("A", 30)]);
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            for radius in [None, Some(0.15)] {
+                let options = GlyphOptions::default()
+                    .arrangement(arrangement)
+                    .radius(radius)
+                    .obstacles(obstacles)
+                    .obstacle_policy(ObstaclePolicy::Strict);
+                let result = place_glyphs(&regions, &counts, &options);
+                let placed = result.positions["A"].len();
+                assert!(
+                    placed > 0 && placed < 30,
+                    "{arrangement:?}, {radius:?}: {placed}"
+                );
+                assert_eq!(result.unplaced["A"], 30 - placed);
+                assert_clear_of_obstacles(&result, &obstacles, options.gap, "strict partial");
+                assert_invariants(&result, &regions, options.gap);
+                assert_eq!(result, place_glyphs(&regions, &counts, &options));
+            }
+        }
+    }
+
+    #[test]
+    fn strict_policy_preserves_overflow_without_obstacles() {
+        let regions = boxed_region(0.0, 0.0, 4.0, 4.0);
+        let counts = counts(&[("A", 100)]);
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            let options = GlyphOptions::default().arrangement(arrangement).radius(0.5);
+            let plain = place_glyphs(&regions, &counts, &options);
+            assert!(plain.unplaced["A"] > 0);
+            assert_eq!(
+                plain,
+                place_glyphs(
+                    &regions,
+                    &counts,
+                    &options.obstacle_policy(ObstaclePolicy::Strict)
+                )
+            );
+        }
+    }
+
+    #[test]
     fn empty_obstacles_match_no_obstacles() {
         let regions = two_set_regions();
         let counts = counts(&[("A", 10), ("B", 6), ("A&B", 2)]);
@@ -983,7 +1098,8 @@ mod tests {
             let plain = GlyphOptions::default().arrangement(arrangement);
             let empty = GlyphOptions::default()
                 .arrangement(arrangement)
-                .obstacles([]);
+                .obstacles([])
+                .obstacle_policy(ObstaclePolicy::Strict);
             assert_eq!(
                 place_glyphs(&regions, &counts, &plain),
                 place_glyphs(&regions, &counts, &empty),
@@ -1055,6 +1171,14 @@ mod tests {
                 .obstacles(obstacles.clone());
             let result = place_glyphs(&regions, &counts, &options);
             assert!(result.unplaced.is_empty(), "{arrangement:?}");
+            assert_eq!(
+                result,
+                place_glyphs(
+                    &regions,
+                    &counts,
+                    &options.clone().obstacle_policy(ObstaclePolicy::Strict),
+                )
+            );
             for (key, n) in &counts {
                 assert_eq!(result.positions[key].len(), *n, "{arrangement:?}");
             }

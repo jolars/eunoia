@@ -311,8 +311,11 @@ and `max_attempts` (default `300`) only affect `"random"`; `precision`
 array of keep-out boxes `{"x", "y", "width", "height"}` (center plus full
 extents, like `container` on `eunoia_place_labels`) that glyph centers clear
 by `r * (1 + gap)`—usually the caller's measured label boxes, since labels
-are drawn over glyphs. Degenerate boxes are ignored rather than rejected, and
-the clearance is best-effort; see [Glyphs](/docs/concepts/glyphs/#label-keep-out).
+are drawn over glyphs. Degenerate boxes are ignored rather than rejected.
+`obstacle_policy` is `"best_effort"` (default, permits overlap when glyphs do
+not fit) or `"strict"` (requires clearance and reports overflow in `unplaced`).
+Both preserve the automatic radius floor of half the radius chosen without
+obstacles; see [Glyphs](/docs/concepts/glyphs/#label-keep-out).
 
 Only regions present in both `regions` and `counts`, with a positive count, get
 glyphs. The success payload carries the diagram-wide radius and the center
@@ -327,9 +330,9 @@ points:
 }
 ```
 
-`unplaced` is only present when a fixed `radius` overflowed a region (the auto
-mode sizes the radius so everything fits); it maps each overflowing region to
-the count that did not fit.
+`unplaced` maps each overflowing region to the count that did not fit. It can
+be present in either sizing mode, including when strict obstacles block
+placement at the automatic radius floor.
 
 ## `eunoia_place_glyph_boxes`
 
@@ -361,8 +364,11 @@ centered on the region's pole of inaccessibility) or `"random"` (seeded
 rectangular dart throwing); `scale` fixes the diagram-wide box factor (omit for
 the auto mode); `min_scale` (default `0.35`) is the lower end of the auto
 bracket; `gap` (default `0.25`) is breathing room as a fraction of the **row
-height**, not of a radius; `seed`, `max_attempts`, `precision`, and `obstacles`
-behave exactly as in `eunoia_place_glyphs`.
+height**, not of a radius; `seed`, `max_attempts`, `precision`, `obstacles`,
+and `obstacle_policy` behave exactly as in `eunoia_place_glyphs`. Strict
+obstacles preserve both `min_scale` and the floor of half the obstacle-free
+scale; items that still do not fit are reported in `unplaced`. The returned
+boxes remain a prefix of the input.
 
 The success payload carries the diagram-wide scale and one `[cx, cy, w, h]`
 quad—center plus full extents—per placed item:

@@ -3189,6 +3189,17 @@ pub fn placements_bbox(
         .map_err(|e| JsValue::from_str(&format!("{e}")))
 }
 
+fn glyph_obstacle_policy(value: Option<&str>) -> Result<eunoia::plotting::ObstaclePolicy, JsValue> {
+    use eunoia::plotting::ObstaclePolicy;
+    match value {
+        None | Some("BestEffort") => Ok(ObstaclePolicy::BestEffort),
+        Some("Strict") => Ok(ObstaclePolicy::Strict),
+        Some(other) => Err(JsValue::from_str(&format!(
+            "invalid options.obstaclePolicy '{other}' (expected 'BestEffort' or 'Strict')"
+        ))),
+    }
+}
+
 /// Glyph placement on already-decomposed region polygons (no re-fit):
 /// equally-sized circular marks, one per data unit, packed inside each
 /// region (eulerGlyphs-style).
@@ -3213,6 +3224,7 @@ pub fn placements_bbox(
 ///   "seed": 0,
 ///   "precision": 0.01,
 ///   "maxAttempts": 300,
+///   "obstaclePolicy": "BestEffort" | "Strict",
 ///   "obstacles": [{ "x": 0.0, "y": 0.0, "width": 0.4, "height": 0.2 }]
 /// }
 /// ```
@@ -3229,10 +3241,15 @@ pub fn placements_bbox(
 /// `obstacles` are diagram-wide keep-out boxes (center + full extents, the
 /// same shape as the container elsewhere in this API) that glyph centers
 /// clear by `r * (1 + gap)` — typically the caller's measured label boxes,
-/// since labels are painted over glyphs. Clearance is best-effort: the
-/// auto-radius shrinks to honour them but not below half the radius it would
-/// have chosen without, so one cramped region cannot shrink the whole
-/// diagram. Degenerate boxes are ignored.
+/// since labels are painted over glyphs. The auto-radius shrinks to honor
+/// them but not below half the radius it would have chosen without, so one
+/// cramped region cannot shrink the whole diagram. Degenerate boxes are
+/// ignored.
+///
+/// `obstaclePolicy` defaults to `"BestEffort"`, which permits overlap when
+/// glyphs do not fit. `"Strict"` requires clearance and reports any shortfall
+/// in `unplaced`, including in automatic mode. Both policies retain the
+/// automatic radius floor of half the radius chosen without obstacles.
 ///
 /// Returns a JSON object `{ "radius": r, "positions": { combination:
 /// [[x, y], ...] }, "unplaced"?: { combination: count } }`. `unplaced` is
@@ -3281,6 +3298,8 @@ pub fn place_region_glyphs(
         /// Keep-out boxes; degenerate ones are dropped by the core rather
         /// than rejected, so an empty label's `0 x 0` box is harmless.
         obstacles: Option<Vec<RectJson>>,
+        #[serde(rename = "obstaclePolicy")]
+        obstacle_policy: Option<String>,
     }
 
     #[derive(serde::Serialize)]
@@ -3312,6 +3331,9 @@ pub fn place_region_glyphs(
         }
     };
     let mut options = GlyphOptions::default()
+        .obstacle_policy(glyph_obstacle_policy(
+            options_in.obstacle_policy.as_deref(),
+        )?)
         .arrangement(arrangement)
         .radius(options_in.radius);
     if let Some(gap) = options_in.gap {
@@ -3395,12 +3417,15 @@ pub fn place_region_glyphs(
 /// `options_json` is optional:
 /// `{ "arrangement": "Uniform" | "Random", "scale": 0.8, "minScale": 0.35,
 /// "gap": 0.25, "seed": 0, "precision": 0.01, "maxAttempts": 300,
+/// "obstaclePolicy": "BestEffort" | "Strict",
 /// "obstacles": [{ "x": .., "y": .., "width": .., "height": .. }] }`.
 /// Omit `scale` for the auto mode, which bisects for the largest factor in
 /// `[minScale, 1.0]` at which every region holds all of its items — it only
 /// ever shrinks, since the caller owns the reference font size. `gap` is a
-/// fraction of the row height, and `obstacles` are best-effort keep-outs
-/// exactly as in `place_region_glyphs`.
+/// fraction of the row height. `obstacles` and `obstaclePolicy` behave as in
+/// `place_region_glyphs`: `"BestEffort"` (default) allows overlap;
+/// `"Strict"` requires clearance and reports overflow in `unplaced` while
+/// preserving the size floors, even in automatic mode.
 ///
 /// Returns `{ "scale": k, "boxes": { combination: [[cx, cy, w, h], ...] },
 /// "unplaced"?: { combination: count } }`. `unplaced` is omitted when every
@@ -3449,6 +3474,8 @@ pub fn place_region_glyph_boxes(
         #[serde(rename = "maxAttempts")]
         max_attempts: Option<u32>,
         obstacles: Option<Vec<RectJson>>,
+        #[serde(rename = "obstaclePolicy")]
+        obstacle_policy: Option<String>,
     }
 
     #[derive(serde::Serialize)]
@@ -3482,6 +3509,9 @@ pub fn place_region_glyph_boxes(
         }
     };
     let mut options = GlyphBoxOptions::default()
+        .obstacle_policy(glyph_obstacle_policy(
+            options_in.obstacle_policy.as_deref(),
+        )?)
         .arrangement(arrangement)
         .scale(options_in.scale);
     if let Some(min_scale) = options_in.min_scale {

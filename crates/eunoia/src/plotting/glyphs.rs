@@ -54,6 +54,20 @@ mod scan;
 pub use boxes::{GlyphBoxOptions, GlyphBoxPlacements, place_glyph_boxes};
 pub use discs::{GlyphOptions, GlyphPlacements, place_glyphs};
 
+/// How glyph and member-label packing handles obstacle clearance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ObstaclePolicy {
+    /// Prefer clear positions, but allow overlap when the items do not fit.
+    #[default]
+    BestEffort,
+    /// Require obstacle clearance and report any shortfall in `unplaced`.
+    ///
+    /// Automatic sizing keeps its usual floors. Strict clearance does not
+    /// guarantee that every item will be placed, even with automatic sizing.
+    Strict,
+}
+
 /// How glyph centers are arranged within a region.
 ///
 /// `#[non_exhaustive]`: further arrangements (e.g. phyllotaxis) are natural
@@ -78,8 +92,8 @@ pub enum GlyphArrangement {
 /// allowed to give away. A label box inscribed in a small region can leave
 /// only a hairline annulus behind, and the feasibility predicate is a
 /// conjunction over every region — without a floor, one cramped region would
-/// shrink every glyph in the diagram to a dot. At the floor the cramped
-/// region packs into its box instead (see [`GlyphOptions::obstacles`]).
+/// shrink every glyph in the diagram to a dot. At the floor, the obstacle
+/// policy decides whether to overlap or report unplaced items.
 pub(super) const OBSTACLE_SHRINK_FLOOR: f64 = 0.5;
 
 /// Feasibility probing: minimum spacing (the spread refinement changes no
@@ -194,9 +208,13 @@ pub(super) fn box_clear_of_obstacles(
     obstacles: &[Rectangle],
     clearance: f64,
 ) -> bool {
-    obstacles
-        .iter()
-        .all(|rect| box_rect_separation(cx, cy, w, h, rect) >= clearance)
+    obstacles.iter().all(|rect| {
+        // Distance alone is zero for both touching and overlapping boxes.
+        // With no padding, the separating-axis check still rejects overlap.
+        let separated = (cx - rect.center().x()).abs() >= 0.5 * (w + rect.width())
+            || (cy - rect.center().y()).abs() >= 0.5 * (h + rect.height());
+        separated && box_rect_separation(cx, cy, w, h, rect) >= clearance
+    })
 }
 
 /// Drops obstacles that cannot describe a keep-out area. An empty label

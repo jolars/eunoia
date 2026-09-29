@@ -73,8 +73,8 @@ use eunoia::geometry::traits::{DiagramShape, Polygonize};
 use eunoia::loss::LossType;
 use eunoia::plotting::{
     ElbowOptions, ExteriorPolicy, GlyphArrangement, GlyphBoxOptions, GlyphOptions, LabelPlacement,
-    LeaderStrategy, PlacementKind, PlacementStrategy, PlotData, PlotOptions, RegionPiece,
-    RegionPolygons, SetLabelStrategy, TetherSource, classify_into_pieces, label_boxes,
+    LeaderStrategy, ObstaclePolicy, PlacementKind, PlacementStrategy, PlotData, PlotOptions,
+    RegionPiece, RegionPolygons, SetLabelStrategy, TetherSource, classify_into_pieces, label_boxes,
     place_glyph_boxes, place_glyphs, place_labels, place_set_labels,
 };
 use eunoia::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
@@ -1237,6 +1237,8 @@ fn place_set_labels_impl(input: PlaceSetLabelsInput) -> Result<PlaceSetLabelsOut
 /// obstacles). `arrangement` is `"uniform"` (default) or `"random"`.
 /// `obstacles` are diagram-wide keep-out boxes (usually the caller's measured
 /// label boxes); degenerate ones are ignored rather than rejected.
+/// `obstacle_policy` is `"best_effort"` (default) or `"strict"`. Strict
+/// clearance preserves size floors and reports any shortfall in `unplaced`.
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
 struct GlyphOptionsIn {
@@ -1247,6 +1249,7 @@ struct GlyphOptionsIn {
     precision: Option<f64>,
     max_attempts: Option<u32>,
     obstacles: Option<Vec<RectIn>>,
+    obstacle_policy: Option<String>,
 }
 
 /// Input to [`eunoia_place_glyphs`]. `regions` and `counts` are keyed by
@@ -1262,13 +1265,23 @@ struct PlaceGlyphsInput {
 
 /// Success payload for [`eunoia_place_glyphs`]: the diagram-wide glyph
 /// radius, glyph center points per combination, and any per-combination
-/// shortfall (only populated when a fixed radius overflows a region).
+/// shortfall, including strict obstacle overflow in automatic mode.
 #[derive(Serialize)]
 struct PlaceGlyphsOut {
     radius: f64,
     positions: BTreeMap<String, Vec<[f64; 2]>>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     unplaced: BTreeMap<String, u64>,
+}
+
+fn obstacle_policy_from_input(value: Option<&str>) -> Result<ObstaclePolicy, String> {
+    match value {
+        None | Some("best_effort") => Ok(ObstaclePolicy::BestEffort),
+        Some("strict") => Ok(ObstaclePolicy::Strict),
+        Some(other) => Err(format!(
+            "invalid obstacle_policy '{other}' (want best_effort|strict)"
+        )),
+    }
 }
 
 /// Resolve an optional [`GlyphOptionsIn`] into core [`GlyphOptions`],
@@ -1286,6 +1299,9 @@ fn glyph_options_from_input(options: Option<GlyphOptionsIn>) -> Result<GlyphOpti
         }
     };
     let mut out = GlyphOptions::default()
+        .obstacle_policy(obstacle_policy_from_input(
+            options.obstacle_policy.as_deref(),
+        )?)
         .arrangement(arrangement)
         .radius(options.radius);
     if let Some(gap) = options.gap {
@@ -1368,7 +1384,7 @@ fn place_glyphs_impl(input: PlaceGlyphsInput) -> Result<PlaceGlyphsOut, String> 
 /// scale, `min_scale = 0.35`, `gap = 0.25`, `seed = 0`, `precision = 0.01`,
 /// `max_attempts = 300`, no obstacles). `arrangement` is `"uniform"`
 /// (default) or `"random"`. `gap` is a fraction of the row height, not of a
-/// radius; `obstacles` behave exactly as in [`GlyphOptionsIn`].
+/// radius; `obstacles` and `obstacle_policy` behave as in [`GlyphOptionsIn`].
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
 struct GlyphBoxOptionsIn {
@@ -1380,6 +1396,7 @@ struct GlyphBoxOptionsIn {
     precision: Option<f64>,
     max_attempts: Option<u32>,
     obstacles: Option<Vec<RectIn>>,
+    obstacle_policy: Option<String>,
 }
 
 /// Input to [`eunoia_place_glyph_boxes`]. `regions` and `sizes` are keyed by
@@ -1422,6 +1439,9 @@ fn glyph_box_options_from_input(
         }
     };
     let mut out = GlyphBoxOptions::default()
+        .obstacle_policy(obstacle_policy_from_input(
+            options.obstacle_policy.as_deref(),
+        )?)
         .arrangement(arrangement)
         .scale(options.scale);
     if let Some(min_scale) = options.min_scale {
@@ -2241,6 +2261,63 @@ mod tests {
     // ------------------------------------------------------------------------
     // Glyph placement
     // ------------------------------------------------------------------------
+
+    #[test]
+    fn glyph_obstacle_policies_round_trip() {
+        for boxes in [false, true] {
+            let (func, output) = if boxes {
+                (
+                    eunoia_place_glyph_boxes as extern "C" fn(*const c_char) -> *mut c_char,
+                    "boxes",
+                )
+            } else {
+                (
+                    eunoia_place_glyphs as extern "C" fn(*const c_char) -> *mut c_char,
+                    "positions",
+                )
+            };
+            for arrangement in ["uniform", "random"] {
+                for fixed in [false, true] {
+                    let mut input = serde_json::json!({
+                        "regions": {"A": [{"outer": [[0, 0], [2, 0], [2, 2], [0, 2]], "holes": []}]},
+                        "counts": {"A": 3},
+                        "sizes": {"A": [[0.5, 0.2], [0.5, 0.2], [0.5, 0.2]]},
+                        "options": {"arrangement": arrangement, "obstacles": [{"x": 1, "y": 1, "width": 2, "height": 2}]},
+                    });
+                    if fixed {
+                        input["options"][if boxes { "scale" } else { "radius" }] =
+                            serde_json::json!(if boxes { 0.5 } else { 0.2 });
+                    }
+                    let plain: serde_json::Value =
+                        serde_json::from_str(&call(func, &input.to_string())).unwrap();
+                    assert_eq!(plain["ok"], true, "{plain}");
+                    assert_eq!(plain[output]["A"].as_array().unwrap().len(), 3);
+                    input["options"]["obstacle_policy"] = serde_json::json!("best_effort");
+                    let soft: serde_json::Value =
+                        serde_json::from_str(&call(func, &input.to_string())).unwrap();
+                    assert_eq!(plain, soft);
+                    input["options"]["obstacle_policy"] = serde_json::json!("strict");
+                    let strict: serde_json::Value =
+                        serde_json::from_str(&call(func, &input.to_string())).unwrap();
+                    assert_eq!(strict["ok"], true, "{strict}");
+                    assert!(strict[output]["A"].as_array().unwrap().is_empty());
+                    assert_eq!(strict["unplaced"]["A"], 3);
+                    for invalid in ["Strict", "bestEffort", "unknown"] {
+                        input["options"]["obstacle_policy"] = serde_json::json!(invalid);
+                        let bad: serde_json::Value =
+                            serde_json::from_str(&call(func, &input.to_string())).unwrap();
+                        assert_eq!(bad["ok"], false);
+                        assert!(
+                            bad["error"]
+                                .as_str()
+                                .unwrap()
+                                .contains("invalid obstacle_policy")
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn place_glyphs_round_trips() {

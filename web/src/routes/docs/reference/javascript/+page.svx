@@ -172,6 +172,11 @@ result straight to the SVG serializer via `ToSvgOptions.glyphs`.
 plus full extents) that glyph centers steer clear of—see
 [Label keep-out](/docs/concepts/glyphs/#label-keep-out).
 
+Set `options.obstaclePolicy` to `"strict"` to require obstacle clearance and
+report overflow in `unplaced`, including with automatic sizing. The default
+`"bestEffort"` permits overlap when the glyphs do not fit. Both policies keep
+the automatic radius floor of half the radius chosen without obstacles.
+
 ## `placeGlyphBoxesForRegions(options)`
 
 Packs per-item text boxes—member names—inside each region. The
@@ -203,7 +208,10 @@ size—deliberately asymmetric with the disc packer, which grows to fill.
 `boxes[combo]` is a **prefix** of `sizes[combo]`, so `boxes[combo][i]` belongs
 to your `labels[combo][i]`. Pass the result plus the strings to the SVG
 serializer via `ToSvgOptions.glyphBoxes`. `options.obstacles` takes the same
-keep-out boxes as `placeGlyphsForRegions`. See
+keep-out boxes as `placeGlyphsForRegions`, and `options.obstaclePolicy` accepts
+`"bestEffort"` (default) or `"strict"`. Strict mode reports overflow while
+preserving `minScale`, the floor of half the obstacle-free scale, and input
+order. See
 [Member labels](/docs/concepts/glyphs/#member-labels).
 
 ## `labelObstacles(options)`

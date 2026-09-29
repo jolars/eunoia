@@ -29,19 +29,14 @@ are in the sibling [eunoia-py TODO](../eunoia-py/TODO.md).
   | 6: Font-dependent omissions                    | Expected when measured widths differ. Python should expose omissions clearly and verify that measurement matches rendering; core receives only boxes.                                                                                   |
   | 7: Hidden Plotly title                         | Python's `_plotly._finalize_layout` sets the top margin to zero.                                                                                                                                                                        |
 
-- [ ] **Offer strict label obstacles for member and glyph packing (item 1).**
-  `GlyphBoxOptions::obstacles` and `GlyphOptions::obstacles` are documented
-  as best-effort. In `plotting/glyphs.rs`, `PROBE` honors obstacles, but
-  `PACK` does not require them. The scale/radius floor can make a strict
-  packing infeasible, after which the final packer uses blocked positions.
-  This is a core policy limitation, not evidence that Python forgot the
-  label boxes. The example covers a `2 x 2` region with a label box: all
-  three member boxes overlap it at scale `0.5`, and `unplaced` is empty.
-  Dots behave similarly. Add an explicit strict policy that reports overflow
-  instead of drawing over labels, retaining the existing behavior where
-  compatibility requires it. Cover both arrangements and both packers.
-  Python can then show a callout or an omission warning without sacrificing
-  label readability.
+- [x] **Offer strict label obstacles for member and glyph packing (item 1).**
+  Both options types now accept `ObstaclePolicy::Strict`, which requires
+  obstacle clearance and reports overflow in `unplaced`. `BestEffort`
+  remains the default. Size floors, final spreading, and the member-box
+  prefix contract are preserved. The policy is exposed through WASM, C,
+  and TypeScript, with coverage for both arrangements and both packers,
+  including zero-padding boxes. The example compares both policies.
+  Python adoption and visible overflow handling remain a separate follow-up.
 
 - [ ] **Offer balanced rows for packed member names (item 4).**
   `pack_rows_piece` in `plotting/glyphs/boxes.rs` tries row counts upward
