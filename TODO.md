@@ -1,5 +1,76 @@
 # TODO
 
+## Python 0.6.0 report: core follow-ups
+
+Triaged from `epost-att-lv9vlQ.html` against core commit `4e9b5fc`. The
+standalone [Rust example](crates/eunoia/examples/python_report_repro.rs) uses
+synthetic measured boxes and the exclusive counts derived from the original
+membership data in [issue #133](https://github.com/jolars/eunoia/issues/133):
+`A=35, S=32, U=35, A&S=12, A&U=2, S&U=0, A&S&U=2`, where `A/S/U` denote
+Atorvastatin, Simvastatin, and Sunitinib. These are **exclusive region counts**,
+not total set sizes. Fitting uses the issue's seed 0 and an explicit budget of
+10 restarts.
+
+```sh
+cargo run -p eunoia --release --example python_report_repro
+```
+
+The example prints measurements; it does not assert that today's shortcomings
+must persist. Python rendering follow-ups and a script that generates figures
+are in the sibling [eunoia-py TODO](../eunoia-py/TODO.md).
+
+  | Report item                                    | Ownership and finding                                                                                                                                                                                                                   |
+  | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | 1: Labels, members, and leaders overlap        | Core obstacle fallback permits label/member overlap. Boundary tethers already exist; choosing them when members are shown belongs in Python.                                                                                            |
+  | 2: Relative font sizes change with figure size | Python controls font sizes and their ratio. Core's automatic scale ceiling is the existing `max_scale` follow-up below.                                                                                                                 |
+  | 3: Tall lists and exterior overlaps            | Python composes and measures list blocks. In the synthetic long-list reproduction, all four core calls returned non-overlapping supplied boxes, but final rendered text overlapped. Fix the renderer's measurement/viewport loop first. |
+  | 4: Long rows and whole groups disappearing     | Core chooses the first row count that fits and returns only a prefix of the input. Both policies are reproduced below. Font defaults and list columns belong in Python.                                                                 |
+  | 5: Missing triple intersection                 | Core fitting loses the region in this circle fit. This is the existing topology follow-up below. Python must also report members whose region has no geometry.                                                                          |
+  | 6: Font-dependent omissions                    | Expected when measured widths differ. Python should expose omissions clearly and verify that measurement matches rendering; core receives only boxes.                                                                                   |
+  | 7: Hidden Plotly title                         | Python's `_plotly._finalize_layout` sets the top margin to zero.                                                                                                                                                                        |
+
+- [ ] **Offer strict label obstacles for member and glyph packing (item 1).**
+  `GlyphBoxOptions::obstacles` and `GlyphOptions::obstacles` are documented
+  as best-effort. In `plotting/glyphs.rs`, `PROBE` honors obstacles, but
+  `PACK` does not require them. The scale/radius floor can make a strict
+  packing infeasible, after which the final packer uses blocked positions.
+  This is a core policy limitation, not evidence that Python forgot the
+  label boxes. The example covers a `2 x 2` region with a label box: all
+  three member boxes overlap it at scale `0.5`, and `unplaced` is empty.
+  Dots behave similarly. Add an explicit strict policy that reports overflow
+  instead of drawing over labels, retaining the existing behavior where
+  compatibility requires it. Cover both arrangements and both packers.
+  Python can then show a callout or an omission warning without sacrificing
+  label readability.
+
+- [ ] **Offer balanced rows for packed member names (item 4).**
+  `pack_rows_piece` in `plotting/glyphs/boxes.rs` tries row counts upward
+  and returns the first complete packing. With twelve `2 x 0.5` boxes, the
+  example uses two rows occupying height `1.125` in a `20 x 20` region, then
+  one row occupying height `0.5` in a `40 x 40` region. Scale stays `1.0` in
+  both. This reproduces the horizontal strips despite ample vertical space.
+  Consider a target block aspect ratio or configurable row/column limit,
+  preserving reading order, boundary clearance, and obstacle constraints.
+  This is separate from allowing larger fonts: changing row balance alone
+  need not increase the feasible scale. Multicolumn `mode="list"` remains a
+  renderer concern.
+
+- [ ] **Decide how to support partial packing beyond an oversized name (item
+  4).** The existing prefix contract intentionally stops at the first item
+  that fits nowhere. In a `2 x 2` region, input sizes
+  `[(7, 0.3), (0.4, 0.3), (0.4, 0.3)]` place nothing at the default scale
+  floor `0.35`; moving the wide item last places the two short names. This
+  explains how an entire group can disappear, but the report lacks the exact
+  input for its three-name case. An optional packing mode that skips
+  oversized items would need explicit input indices in its output; silently
+  returning a subset would break consumers that zip boxes with names.
+  Alternatively, preserve the contract and compose whole-region callouts in
+  the renderer, as described below. Establish the desired behavior before
+  changing the API.
+
+Any new public packing option must be mirrored through WASM, C, TypeScript,
+tests, and binding docs, then exposed by eunoia-py separately.
+
 ## Surfaced fitter issues (regressions to investigate)
 
 The corpus / proptest surfaced these. None were introduced by the harness;
@@ -8,8 +79,8 @@ they're pre-existing behaviour the harness now exposes.
 - [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. The corpus
   ceiling is tightened to `3e-2` (was `5e-2`) since this basin is a
   deterministic floor across most master seeds. There are at least two
-  distinct local minima: - **basin A** (loss `7.786e-3`, diag `2.606e-2`)
-  --- reached by \~13/16 `QUALITY_SEEDS` master seeds at default
+  distinct local minima: - **basin A** (loss `7.786e-3`, diag `2.606e-2`) ---
+  reached by \~13/16 `QUALITY_SEEDS` master seeds at default
   `n_restarts=10`. - **basin B** (loss `4.335e-3`, diag `1.147e-2`) ---
   reached by the other \~3/16. An even slightly better basin (loss
   `4.086e-3`) shows up at `n_restarts ≥ 40` but only as the global-min,
@@ -51,47 +122,57 @@ they're pre-existing behaviour the harness now exposes.
 ## Loss / topology follow-ups
 
 - [ ] **The loss has no topology term, so the optimum can be topologically
-  wrong**. Every `LossType` scores only per-region area residuals, so nothing
-  distinguishes "region with target 0 drawn at positive area" (a *false*
-  intersection the data doesn't contain) from an equal-magnitude area error
-  on a region that legitimately exists. Both are just residual.
+  wrong**. Every `LossType` scores only per-region area residuals, so
+  nothing distinguishes "region with target 0 drawn at positive area" (a
+  *false* intersection the data doesn't contain) from an equal-magnitude
+  area error on a region that legitimately exists. Both are just residual.
 
   Issue #133 is the clean demonstration. The spec has `S&U = 0` while
   `A&S&U = 2`, i.e. the whole `S∩U` overlap must nest inside `A`:
 
   - **Square / `sum_squared`**: the optimum (`Σ(f-t)² = 0.82` after 9dc14dd)
-    draws `S&U = 0.354` against a target of `0` --- a visible false
-    intersection that is *genuinely optimal* for the objective.
-  - **Rectangle / `sum_squared`** fits it exactly since 9dc14dd
-    (`3.9e-25`, `S&U = 0`, `A&S&U = 2`). Before that fix rectangles looked
-    like another instance of this item; they were not. Do not assume a
-    topologically wrong optimum is inherent without first checking the
-    fitter actually reached the optimum.
+    draws `S&U = 0.354` against a target of `0` --- a visible false intersection
+    that is *genuinely optimal* for the objective.
+  - **Rectangle / `sum_squared`** fits it exactly since 9dc14dd (`3.9e-25`,
+    `S&U = 0`, `A&S&U = 2`). Before that fix rectangles looked like another
+    instance of this item; they were not. Do not assume a topologically wrong
+    optimum is inherent without first checking the fitter actually reached the
+    optimum.
   - **Circle / `sum_squared`**: the optimum (`Σ(f-t)² = 4.0`) instead drops
     `A&S&U` from `2` to `0`, omitting a region that does exist. Confirmed
     global: an independent pure-Python solver (exact analytic circle areas,
-    validated to `1e-7` against numerical integration, 3000 multistarts)
-    reaches exactly `4.000000`, as do all six eunoia optimizers. Three
-    circles simply cannot represent this spec.
+    validated to `1e-7` against numerical integration, 3000 multistarts) reaches
+    exactly `4.000000`, as do all six eunoia optimizers. Three circles simply
+    cannot represent this spec.
   - **Ellipse / `sum_squared`** fits it exactly (loss `1.3e-23`).
-  - Under `max_absolute` the effect is worse across the board, which is
-    inherent to minimax: it spreads error evenly rather than concentrating
-    it, so several regions land \~1.4 off instead of one landing 2 off, and
-    the false intersection becomes visible even for ellipses.
+  - Under `max_absolute` the effect is worse across the board, which is inherent
+    to minimax: it spreads error evenly rather than concentrating it, so several
+    regions land \~1.4 off instead of one landing 2 off, and the false
+    intersection becomes visible even for ellipses.
 
   **Plotting is not implicated** and should not be re-investigated: over 160
   fits, `plot_data` region areas match the fitted areas to `1e-8` for squares
   and rectangles (exact polygonal decomposition), with only \~`1e-3`
   inscribed-polygon discretization on curved shapes, erring *downward*.
-  `eunoia-py`'s `_plot.py` renders those rings verbatim with no geometry of
-  its own.
+  `eunoia-py`'s `_plot.py` renders those rings verbatim with no geometry of its
+  own.
 
   Next step is to measure what topological correctness costs: the best
   achievable loss *subject to* no false and no missing regions. If it's cheap
-  (squares going from `0.82` to \~`1.5`), a penalty or lexicographic
-  tie-break on topology is worth adding; if it's expensive, document the
-  trade-off and steer users to ellipses or rectangles. Surfaced 2026-08-14
-  from issue #133.
+  (squares going from `0.82` to \~`1.5`), a penalty or lexicographic tie-break
+  on topology is worth adding; if it's expensive, document the trade-off and
+  steer users to ellipses or rectangles. Surfaced 2026-08-14 from issue #133.
+
+  **Python report item 5:** `python_report_repro` now retains a runnable
+  reproduction of the same topology: circles fit the triple target `2` as `0`,
+  with raw squared residual sum `4`, and no triple polygon. Even tiny
+  `0.01 x 0.01` member boxes cannot restore missing geometry. Ellipses and
+  rectangles fit the triple as `2` and place both names. Squares and rotated
+  rectangles retain a positive triple but have nonzero residuals in this run.
+  `Layout::loss()` is normalized; compare `raw_sse` in the example with the
+  unnormalized objectives quoted above. This single seed does not establish
+  global optimality. The low-level packer intentionally ignores absent region
+  keys, so the Python omission diagnostic is a separate renderer follow-up.
 
 ## MDS architecture follow-ups
 
@@ -121,55 +202,33 @@ they're pre-existing behaviour the harness now exposes.
 
 ## Label placement follow-ups
 
-- [ ] **Leader lines crossing interior labels**. Exterior label leaders run from
-  `LabelPlacement.tether` (the region's POI, deep inside the region) to the
-  exterior anchor, which means a leader can visually cross other regions'
-  interior labels. Most visible in dense n=4+ ellipse diagrams where several
-  exterior labels' rays sweep across the central interior labels. Three
-  approaches, increasing in effort:
+- [x] **Leader lines crossing interior labels**. Raycast and ForceDirected now
+  apply `leader_avoidance_push` against interior label boxes; both have
+  regression tests in `plotting/placement.rs`. This does not cover packed
+  member boxes, which Python places afterward. Report item 1's default
+  leaders still traverse their source region; select a boundary tether
+  first. Boundary attachment alone does not guarantee clearance from members
+  in other regions. General routing around arbitrary member boxes remains a
+  possible extension, pending a reproduction that still crosses members with
+  boundary tethers.
 
-  1. **Move the tether to the polygon boundary** --- set the tether to the first
-     ray-vs-region-boundary intersection (the point where the ray *exits* the
-     region) instead of the POI. The leader then lives entirely outside the
-     region; eliminates most leader-vs-interior-label crossings since interior
-     labels also sit at POIs inside their regions. Cheap --- one ray-vs-polygon
-     intersection per exterior label, reusing the scan in
-     `last_vertex_clearance_t`. Already noted under `AGENTS.md` "Future
-     Considerations" as "Exterior leader-line entry-point refinement".
-
-  2. **Add leader-vs-interior-label repulsion to ForceDirected**. Treat each
-     leader as a line segment; when an interior label's AABB intersects the
-     segment, push the exterior anchor tangentially until the segment clears.
-     Moderate effort; only affects ForceDirected. Some tension with existing
-     forces --- convergence not guaranteed but a few extra iterations usually
-     settle it.
-
-  3. **Route leaders as polylines around obstacles**. Most general; works for
-     both Raycast and ForceDirected. Highest effort and changes the visual idiom
-     from "straight ray" to "polyline". Skip unless bent leaders are explicitly
-     desired.
-
-     Recommendation: do (1) first --- cheap, on the existing TODO, removes the
-     common case. Reach for (2) only if real diagrams still show crossings after
-     (1). Surfaced 2026-05-11 during the union-polygon raycast refinement.
-
-- [ ] **Leader-line entry-point refinement**. Start the leader at the first
-  ray--region-boundary intersection (where the ray exits the region) rather
-  than at the POI. This is exactly approach (1) of the "Leader lines
-  crossing interior labels" item above --- see there for the detail. Moved
-  from `AGENTS.md` "Open work" 2026-05-22.
+- [x] **Leader-line entry-point refinement**. Implemented as
+  `TetherSource::Boundary`; `Poi` remains the default. The report example
+  shows the tether moving from `(1, 1)` to `(1, 2)` for a `2 x 2` region.
+  Python already exposes this as
+  `labels={"placement": {"tether": "boundary"}}`.
 
 - [ ] **Nested sets in `place_set_labels`**. The exterior set-label mode
   guarantees label boxes don't overlap each other, but clearance from the
-  *shapes* is best-effort: a set nested inside a much larger one has a hug ring
-  entirely inside its container, so no candidate angle clears it and the sweep
-  returns the least-bad one (the box then straddles the container's boundary).
-  Options if this proves annoying: fall back to the interior anchor when the
-  best clearance is negative, or relax the hug constraint and let the label
-  escape to the diagram exterior with a leader — which is really asking for a
-  hybrid of `place_set_labels` and `place_labels`, so design the two together
-  rather than bolting a leader onto this mode. Surfaced 2026-08-14 when the
-  mode landed.
+  *shapes* is best-effort: a set nested inside a much larger one has a hug
+  ring entirely inside its container, so no candidate angle clears it and
+  the sweep returns the least-bad one (the box then straddles the
+  container's boundary). Options if this proves annoying: fall back to the
+  interior anchor when the best clearance is negative, or relax the hug
+  constraint and let the label escape to the diagram exterior with a leader
+  — which is really asking for a hybrid of `place_set_labels` and
+  `place_labels`, so design the two together rather than bolting a leader
+  onto this mode. Surfaced 2026-08-14 when the mode landed.
 
 - [ ] **`InteriorPolicy::Loose` and `ExteriorPolicy::None` for `place_labels`**.
   Only `InteriorPolicy::Strict` and the `Raycast` / `ForceDirected` exterior
@@ -180,27 +239,27 @@ they're pre-existing behaviour the harness now exposes.
 ## Glyph placement follow-ups
 
 `place_glyphs` shipped across core/wasm/capi/ts/web (eulerGlyphs-style unit
-marks packed per region, `plotting/glyphs.rs`): uniform (hex lattice, spread
-by spacing bisection) and random (seeded dart-throwing) arrangements, a
+marks packed per region, `plotting/glyphs.rs`): uniform (hex lattice, spread by
+spacing bisection) and random (seeded dart-throwing) arrangements, a
 diagram-wide radius auto-sized by feasibility bisection, and a `gap` knob
-padding both glyph-vs-glyph spacing and the boundary inset. These are the
-loose ends that work deliberately deferred. Surfaced 2026-08-06.
+padding both glyph-vs-glyph spacing and the boundary inset. These are the loose
+ends that work deliberately deferred. Surfaced 2026-08-06.
 
-- [x] **Label keep-out**. Done: `GlyphOptions::obstacles` takes a
-  diagram-wide list of axis-aligned keep-out boxes (`label_boxes` /
-  `labelObstacles` build them from a `place_labels` result), mirrored through
-  wasm/capi/ts and wired into the web app. Lattice cells and darts within
-  `r * (1 + gap)` of a box are rejected, the lattice anchor escapes a blocked
-  pole of inaccessibility, and the auto-radius bisection probes with the
-  boxes applied. Two deliberate softenings: the obstacle-aware radius is
-  floored at half the obstacle-blind one, and a region that still cannot fit
-  packs into its box rather than reporting a shortfall --- otherwise one
-  small region whose label nearly fills it would shrink every glyph in the
+- [x] **Label keep-out**. Done: `GlyphOptions::obstacles` takes a diagram-wide
+  list of axis-aligned keep-out boxes (`label_boxes` / `labelObstacles`
+  build them from a `place_labels` result), mirrored through wasm/capi/ts
+  and wired into the web app. Lattice cells and darts within `r * (1 + gap)`
+  of a box are rejected, the lattice anchor escapes a blocked pole of
+  inaccessibility, and the auto-radius bisection probes with the boxes
+  applied. Two deliberate softenings: the obstacle-aware radius is floored
+  at half the obstacle-blind one, and a region that still cannot fit packs
+  into its box rather than reporting a shortfall --- otherwise one small
+  region whose label nearly fills it would shrink every glyph in the
   diagram.
 
-- [x] **Member text labels as glyphs**. Done: `place_glyph_boxes` is a
-  sibling entry point taking per-item measured `(w, h)` boxes instead of
-  counts, with a single diagram-wide `scale` bisected in `[min_scale, 1.0]`
+- [x] **Member text labels as glyphs**. Done: `place_glyph_boxes` is a sibling
+  entry point taking per-item measured `(w, h)` boxes instead of counts,
+  with a single diagram-wide `scale` bisected in `[min_scale, 1.0]`
   (shrink-only --- the caller owns the reference font size). The uniform
   arrangement packs rows over a new exact scan-line band oracle
   (`plotting/glyphs/scan.rs`); the random one throws rectangular darts. The
@@ -210,43 +269,48 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
   prefix of `sizes[key]`, so drop order is the caller's item order.
 
 - [x] **Web app doesn't expose member labels** (done). The UI decision was a
-  per-row roster: `Row.members` is an optional comma/newline-separated string
-  edited on a second line of each combination row in `SpecEditor.svelte`, and
-  the default rows ship with names so the mode demos itself. The glyph knobs
-  outgrew `StyleControls.svelte` and moved to their own collapsed `Glyphs`
-  sidebar section (`GlyphControls.svelte`): the `showGlyphs` checkbox became a
-  `glyphMode` select (`none` / `dots` / `members`) sharing the
-  arrangement/spacing/seed knobs, plus a `memberLabelSize` slider --- its own
-  knob because the packer is shrink-only, so the reference size is a ceiling
-  rather than a hint. `DiagramSvg.svelte` measures the names in a
-  second hidden `<text>` pass inside the existing `data-fit-measure` group,
-  packs them with `placeGlyphBoxesForRegions` under the same `labelObstacles`
-  keep-outs as the disc packer, and renders via the `glyphBoxes` serializer
-  option at a pinned weight of 400 (the Bold toggle belongs to the set names,
-  and measuring at 400 while rendering at 700 would overflow every box).
+  per-row roster: `Row.members` is an optional comma/newline-separated
+  string edited on a second line of each combination row in
+  `SpecEditor.svelte`, and the default rows ship with names so the mode
+  demos itself. The glyph knobs outgrew `StyleControls.svelte` and moved to
+  their own collapsed `Glyphs` sidebar section (`GlyphControls.svelte`): the
+  `showGlyphs` checkbox became a `glyphMode` select (`none` / `dots` /
+  `members`) sharing the arrangement/spacing/seed knobs, plus a
+  `memberLabelSize` slider --- its own knob because the packer is
+  shrink-only, so the reference size is a ceiling rather than a hint.
+  `DiagramSvg.svelte` measures the names in a second hidden `<text>` pass
+  inside the existing `data-fit-measure` group, packs them with
+  `placeGlyphBoxesForRegions` under the same `labelObstacles` keep-outs as
+  the disc packer, and renders via the `glyphBoxes` serializer option at a
+  pinned weight of 400 (the Bold toggle belongs to the set names, and
+  measuring at 400 while rendering at 700 would overflow every box).
   `web/src/lib/members.svelte.ts` holds the glue the core does not provide:
   roster parsing, order-insensitive matching of a typed `B&A` row to the
   core's canonical `A&B` region key, and the rune store carrying `unplaced`
-  to the inline overflow note. Member names are Euler-only (Venn is driven by
-  `vennN`, not the rows) and the complement region has no roster. A 500-name
-  budget mirrors `MAX_GLYPHS`. Persisted `showGlyphs` migrates to `glyphMode`
-  in `loadPersisted`.
+  to the inline overflow note. Member names are Euler-only (Venn is driven
+  by `vennN`, not the rows) and the complement region has no roster. A
+  500-name budget mirrors `MAX_GLYPHS`. Persisted `showGlyphs` migrates to
+  `glyphMode` in `loadPersisted`.
 
 - [ ] **`max_scale` for glyph boxes** (minor). The auto-scale bracket's upper
   end is hardcoded to `1.0`, so a roomy diagram renders sparse text at the
   caller's reference size rather than growing to fill --- deliberately
   asymmetric with `place_glyphs`, which does grow. `GlyphBoxOptions` is
   `#[non_exhaustive]`, so a `max_scale` field defaulting to `1.0` can land
-  later without a break if the asymmetry proves annoying in practice.
+  later without a break if the asymmetry proves annoying in practice. Python
+  report items 2/4 demonstrate this behavior; `python_report_repro` prints
+  scale `1.0` for both roomy fixtures. Explicit `.scale(k)` already permits
+  `k > 1`; the missing capability is automatic growth. Python owns reference
+  font sizes, the label/member size ratio, and readability floors.
 
 - [ ] **Exterior callout for overflowing regions**. Text boxes are 5-10x wider
   than tall, so `place_glyph_boxes` populates `unplaced` far more often than
   the disc packer ever does (a region with ample *area* still cannot seat a
   single row of names). The wanted behaviour mirrors what `place_labels`
   already does for a label that won't fit: put the names in a box *outside*
-  the diagram with a leader line back to the region. The "+n more" affordance
-  is the degenerate one-line case of this, so design them together rather than
-  separately.
+  the diagram with a leader line back to the region. The "+n more"
+  affordance is the degenerate one-line case of this, so design them
+  together rather than separately.
 
   **Compose it, don't build it.** A callout block is just a big label: measure
   the leftover names stacked as one `w x h` block and hand that block to
@@ -259,19 +323,19 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
 
   **All-or-nothing per region, not "the leftovers".** Splitting a member list
   across inside-the-region and a box off to the side reads badly: you scan
-  region A, see four names, and get no cue that three more live elsewhere. If
-  a region cannot hold everyone, evict that *whole* region to a callout. The
-  loop is then: pack, evict every region with `unplaced > 0`, repack the
-  survivors. It terminates and cannot thrash --- `scale` is a min over
-  regions, so dropping the binding region only relaxes constraints, the scale
-  monotonically rises, and no previously-fitting region can start failing.
+  region A, see four names, and get no cue that three more live elsewhere. If a
+  region cannot hold everyone, evict that *whole* region to a callout. The loop
+  is then: pack, evict every region with `unplaced > 0`, repack the survivors.
+  It terminates and cannot thrash --- `scale` is a min over regions, so dropping
+  the binding region only relaxes constraints, the scale monotonically rises,
+  and no previously-fitting region can start failing.
   `GlyphBoxPlacements::unplaced` is already exactly the input that loop needs,
   so **this version needs no core change at all**.
 
   **The hard part is a feedback loop.** A callout appears -> the canvas bbox
-  grows -> the diagram shrinks within it -> measured boxes are relatively
-  larger -> more regions overflow -> more callouts. `place_labels_to_fixed_point`
-  has the same exposure and damps it with a bbox-relative tolerance plus an
+  grows -> the diagram shrinks within it -> measured boxes are relatively larger
+  -> more regions overflow -> more callouts. `place_labels_to_fixed_point` has
+  the same exposure and damps it with a bbox-relative tolerance plus an
   iteration cap; either reuse that or make eviction a one-shot decision taken
   before the viewport is finalised.
 
@@ -279,41 +343,42 @@ loose ends that work deliberately deferred. Surfaced 2026-08-06.
   gets meaningfully worse --- a callout block is a much bigger obstacle than a
   single label, and its leader crosses more of the diagram; approach (1) there
   (tether on the boundary, not the POI) becomes more valuable. Note also that
-  `place_glyphs` never needs any of this, since dots always fit somewhere:
-  this is entirely a consequence of text aspect ratio. Which is the argument
-  against over-engineering it --- wrapped multi-line measurement already works
-  with no core change and closes a good fraction of the gap for free.
-  Surfaced 2026-08-07.
+  `place_glyphs` never needs any of this, since dots always fit somewhere: this
+  is entirely a consequence of text aspect ratio. Which is the argument against
+  over-engineering it --- wrapped multi-line measurement already works with no
+  core change and closes a good fraction of the gap for free. Surfaced
+  2026-08-07.
 
 - [ ] **Relaxation pass for the box footprint**. The disc packer's `random`
   arrangement now finishes with a force-directed relaxation
-  (`plotting/glyphs/relax.rs`): neighbour repulsion plus a `signed_clearance`
-  boundary push, over a fixed sweep count, with every move accepted only if
-  it preserves the packer's own invariants. `pack_random_boxes_piece` gets
-  none of it --- heterogeneous footprints have no single spacing to relax
-  toward, so the force model would have to be per-pair AABB separation and
-  the acceptance test `rect_fits_in_piece`. Worth doing only if the scattered
-  box mode ever looks bad enough in practice to earn the complexity.
-  A Bridson Poisson-disk sampler remains the alternative blue-noise upgrade
-  for the disc packer; phyllotaxis is a further arrangement candidate. The
-  uniform mode already spreads deterministically and needs neither.
+  (`plotting/glyphs/relax.rs`): neighbour repulsion plus a
+  `signed_clearance` boundary push, over a fixed sweep count, with every
+  move accepted only if it preserves the packer's own invariants.
+  `pack_random_boxes_piece` gets none of it --- heterogeneous footprints
+  have no single spacing to relax toward, so the force model would have to
+  be per-pair AABB separation and the acceptance test `rect_fits_in_piece`.
+  Worth doing only if the scattered box mode ever looks bad enough in
+  practice to earn the complexity. A Bridson Poisson-disk sampler remains
+  the alternative blue-noise upgrade for the disc packer; phyllotaxis is a
+  further arrangement candidate. The uniform mode already spreads
+  deterministically and needs neither.
 
 - [ ] **Random-packer spatial hash** (perf, only if needed). Dart acceptance
   checks are O(placed) per dart, O(n²) per piece overall --- fine at the
-  hundreds-of-glyphs scale the web app caps at (2000), noticeable beyond.
-  A uniform grid keyed at cell size `2r(1+gap)` makes it O(1) per dart. The
+  hundreds-of-glyphs scale the web app caps at (2000), noticeable beyond. A
+  uniform grid keyed at cell size `2r(1+gap)` makes it O(1) per dart. The
   box packer's `pack_random_boxes_piece` has the same shape (per-pair AABB
-  separation instead of one squared distance) and would want the same fix, as
-  do the relaxation pass's neighbour-force and acceptance loops --- those two
-  are now essentially all of that pass's cost (~20ms of an ~85ms random pack
-  at 2200 glyphs; it already caches one `signed_clearance` per point so the
-  sweeps don't re-walk the rings).
+  separation instead of one squared distance) and would want the same fix,
+  as do the relaxation pass's neighbour-force and acceptance loops --- those
+  two are now essentially all of that pass's cost (~20ms of an ~85ms random
+  pack at 2200 glyphs; it already caches one `signed_clearance` per point so
+  the sweeps don't re-walk the rings).
 
-- [ ] **Counts-from-spec convenience**. The web app rounds
-  `metrics.target` (exclusive quantities) into counts client-side
-  (`DiagramSvg.svelte`); the same convenience could ship in the TS wrapper
-  (e.g. `glyphCountsFromLayout(layout)`) so other consumers don't re-derive
-  it. Core stays counts-only --- spec quantities are `f64` areas, not
+- [ ] **Counts-from-spec convenience**. The web app rounds `metrics.target`
+  (exclusive quantities) into counts client-side (`DiagramSvg.svelte`); the
+  same convenience could ship in the TS wrapper (e.g.
+  `glyphCountsFromLayout(layout)`) so other consumers don't re-derive it.
+  Core stays counts-only --- spec quantities are `f64` areas, not
   cardinalities, so the rounding policy belongs to the caller.
 
 ## RotatedRectangle follow-ups
