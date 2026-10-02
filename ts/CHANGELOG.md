@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.9.1](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.9.0...eunoia-npm-v1.9.1) (2026-10-02)
+
+### Bug Fixes
+
+- **ts:** render complement regions white ([`e7f462b`](https://github.com/jolars/eunoia/commit/e7f462b61b8980d7a144b0603a460fdad88f569b))
+
 ## [1.9.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.8.0...eunoia-npm-v1.9.0) (2026-08-21)
 
 ### Features
