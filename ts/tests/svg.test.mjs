@@ -164,6 +164,20 @@ test("toSvg renders a region as a path with a label", () => {
   assert.match(svg, />5\.00<\/text>/); // count for totalArea 5
 });
 
+test("complement region stays white with a nonwhite palette", () => {
+  const layout = regionLayout();
+  layout.container = { x: 5, y: 5, width: 20, height: 20 };
+  layout.regions.push({
+    ...layout.regions[0],
+    combination: "",
+    totalArea: 10,
+  });
+
+  const svg = svgBody(layout, { palette: "okabe-ito", interactive: true });
+  assert.match(svg, /<path [^>]*fill="#999999"[^>]*data-combination="A"/);
+  assert.match(svg, /<path [^>]*fill="#ffffff"[^>]*data-combination=""/);
+});
+
 test("counts override the region areas drawn for showCounts", () => {
   const svg = svgBody(regionLayout(), { showCounts: true, counts: { A: 12 } });
   assert.match(svg, />12\.0<\/text>/);

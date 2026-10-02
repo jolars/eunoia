@@ -1001,6 +1001,7 @@ function interactiveMarkup(
 }
 
 function regionFill(combination: string, o: Resolved): string {
+  if (combination === "") return "#ffffff";
   const sets = setsOf(combination);
   const fallback = defaultColorFor(0, o.palette);
   if (sets.length === 1) return o.setColor.get(sets[0]) || fallback;
