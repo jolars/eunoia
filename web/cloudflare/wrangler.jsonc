@@ -1,0 +1,10 @@
+{
+  "name": "eunoia-markdown",
+  "main": "./markdown-worker.js",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "route": {
+    "pattern": "eunoia.bz/*",
+    "zone_name": "eunoia.bz"
+  }
+}

@@ -64,6 +64,10 @@ jobs:
         run: pnpm run build
         working-directory: web
 
+      - name: Test Markdown negotiation
+        run: pnpm run test:markdown
+        working-directory: web
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:

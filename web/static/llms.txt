@@ -1,5 +1,8 @@
 # Eunoia
 
+Send `Accept: text/markdown` to any page URL on this site for its Markdown
+representation. Browser requests continue to receive HTML.
+
 > Eunoia is a Rust library for area-proportional Euler and Venn diagrams: given
 > the sizes of sets and their intersections, it fits shapes (circles, ellipses,
 > squares, rectangles) whose areas match those sizes as closely as possible. The

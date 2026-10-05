@@ -6,9 +6,10 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-markdown.mjs",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test:markdown": "node --test scripts/markdown.test.mjs",
     "format": "prettier --write \"**/*.svelte\"",
     "format:check": "prettier --check \"**/*.svelte\""
   },
