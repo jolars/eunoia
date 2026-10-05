@@ -26,43 +26,61 @@ test("Markdown negotiation respects disabled media ranges", () => {
 });
 
 test("Worker serves Markdown for an explicit request and HTML by default", async () => {
-  const originalFetch = globalThis.fetch;
   const requested = [];
-  globalThis.fetch = async (request) => {
-    const url = typeof request === "string" ? request : request.url;
-    requested.push(url);
-    return url.includes("_agent_markdown")
-      ? new Response("# Shapes\n", {
-          headers: { "Content-Type": "text/plain" },
-        })
-      : new Response("<h1>Shapes</h1>", {
-          headers: { "Content-Type": "text/html", Vary: "Accept-Encoding" },
-        });
+  const env = {
+    ASSETS: {
+      async fetch(request) {
+        requested.push(request.url);
+        return request.url.includes("_agent_markdown")
+          ? new Response("# Shapes\n", {
+              headers: { "Content-Type": "text/plain" },
+            })
+          : new Response("<h1>Shapes</h1>", {
+              headers: { "Content-Type": "text/html", Vary: "Accept-Encoding" },
+            });
+      },
+    },
   };
-  try {
-    const markdown = await worker.fetch(
-      new Request("https://eunoia.bz/docs/concepts/shapes/", {
-        headers: { Accept: "text/markdown" },
-      }),
-    );
-    assert.equal(
-      markdown.headers.get("Content-Type"),
-      "text/markdown; charset=utf-8",
-    );
-    assert.equal(markdown.headers.get("Vary"), "Accept");
-    assert.equal(await markdown.text(), "# Shapes\n");
-    assert.equal(
-      requested[0],
-      "https://eunoia.bz/_agent_markdown/docs/concepts/shapes/index.txt",
-    );
+  const markdown = await worker.fetch(
+    new Request("https://eunoia.bz/docs/concepts/shapes/", {
+      headers: { Accept: "text/markdown" },
+    }),
+    env,
+  );
+  assert.equal(
+    markdown.headers.get("Content-Type"),
+    "text/markdown; charset=utf-8",
+  );
+  assert.equal(markdown.headers.get("Vary"), "Accept");
+  assert.equal(await markdown.text(), "# Shapes\n");
+  assert.equal(
+    requested[0],
+    "https://eunoia.bz/_agent_markdown/docs/concepts/shapes/index.txt",
+  );
 
-    const html = await worker.fetch(
-      new Request("https://eunoia.bz/docs/concepts/shapes/"),
-    );
-    assert.equal(html.headers.get("Content-Type"), "text/html");
-    assert.equal(html.headers.get("Vary"), "Accept-Encoding, Accept");
-    assert.equal(await html.text(), "<h1>Shapes</h1>");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const html = await worker.fetch(
+    new Request("https://eunoia.bz/docs/concepts/shapes/"),
+    env,
+  );
+  assert.equal(html.headers.get("Content-Type"), "text/html");
+  assert.equal(html.headers.get("Vary"), "Accept-Encoding, Accept");
+  assert.equal(await html.text(), "<h1>Shapes</h1>");
+});
+
+test("Worker serves non-page assets from its asset binding", async () => {
+  const requested = [];
+  const env = {
+    ASSETS: {
+      async fetch(request) {
+        requested.push(request.url);
+        return new Response("asset", { status: 200 });
+      },
+    },
+  };
+  const response = await worker.fetch(
+    new Request("https://eunoia.bz/_app/example.js"),
+    env,
+  );
+  assert.equal(await response.text(), "asset");
+  assert.deepEqual(requested, ["https://eunoia.bz/_app/example.js"]);
 });

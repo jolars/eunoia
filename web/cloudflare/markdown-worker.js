@@ -37,15 +37,15 @@ function varyAccept(headers) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const route = pagePath(url.pathname);
     if (route === null || !["GET", "HEAD"].includes(request.method))
-      return fetch(request);
+      return env.ASSETS.fetch(request);
 
     if (wantsMarkdown(request.headers.get("Accept"))) {
       const markdownUrl = new URL(`${markdownRoot}${route}/index.txt`, url);
-      const markdown = await fetch(
+      const markdown = await env.ASSETS.fetch(
         new Request(markdownUrl, { method: request.method }),
       );
       if (markdown.ok) {
@@ -59,7 +59,7 @@ export default {
       }
     }
 
-    const html = await fetch(request);
+    const html = await env.ASSETS.fetch(request);
     const headers = new Headers(html.headers);
     varyAccept(headers);
     return new Response(request.method === "HEAD" ? null : html.body, {
