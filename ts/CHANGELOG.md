@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.10.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.9.0...eunoia-npm-v1.10.0) (2026-10-07)
+
+### Features
+
+- **plotting:** add strict obstacle packing ([`50ae0f0`](https://github.com/jolars/eunoia/commit/50ae0f00ed6ff8b09aa4e96e60e62afdc142bb86)), refs [#133](https://github.com/jolars/eunoia/issues/133)
+
+### Bug Fixes
+
+- **ts:** render complement regions white ([`e7f462b`](https://github.com/jolars/eunoia/commit/e7f462b61b8980d7a144b0603a460fdad88f569b))
+
+### Dependencies
+
+- updated eunoia to v1.10.0
+
 ## [1.9.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.8.0...eunoia-npm-v1.9.0) (2026-08-21)
 
 ### Features
