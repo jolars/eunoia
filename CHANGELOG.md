@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/jolars/eunoia/compare/v1.9.0...v1.10.0) (2026-10-07)
+
+### Features
+
+- **web:** deploy site with Cloudflare Workers ([`4c5c410`](https://github.com/jolars/eunoia/commit/4c5c410b1c0ac1b08a2efe588f3c1e14127cfcf5))
+- **web:** serve markdown to agents ([`b3f1282`](https://github.com/jolars/eunoia/commit/b3f1282b7f69f1192645b82043b632ac18054ca8))
+- **plotting:** add strict obstacle packing ([`50ae0f0`](https://github.com/jolars/eunoia/commit/50ae0f00ed6ff8b09aa4e96e60e62afdc142bb86)), refs [#133](https://github.com/jolars/eunoia/issues/133)
+
+### Bug Fixes
+
+- **web:** restore compatible framework versions ([`7a3997c`](https://github.com/jolars/eunoia/commit/7a3997c3757f5a737c67cfca06ee528844389989))
+
 ## [1.9.0](https://github.com/jolars/eunoia/compare/v1.8.0...v1.9.0) (2026-08-21)
 
 ### Features
