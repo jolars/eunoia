@@ -18,6 +18,14 @@ updates:
     directory: "/web"
     schedule:
       interval: "weekly"
+    # These major upgrades require a coordinated framework migration.
+    ignore:
+      - dependency-name: "@sveltejs/adapter-static"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@sveltejs/kit"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       npm:
         patterns:
