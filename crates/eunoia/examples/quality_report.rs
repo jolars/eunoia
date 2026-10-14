@@ -1,7 +1,7 @@
 //! Aggregate quality-report binary.
 //!
-//! Sweeps a list of named [`Fitter`] configurations × the 27-spec corpus ×
-//! `QUALITY_SEEDS` (16 seeds) × {Circle, Ellipse, Square} and reports the
+//! Sweeps named [`Fitter`] configurations across the shared corpus,
+//! `QUALITY_SEEDS` (16 seeds), and all five fitting shapes, and reports the
 //! *loss being minimized* (not `diag_error`) as the primary metric, with
 //! `diag_error` and runtime as secondary diagnostics.
 //!
@@ -16,6 +16,8 @@
 //!
 //! ```text
 //! cargo run --release --example quality_report --features corpus
+//! cargo run --release --example quality_report --features corpus -- --config default
+//! cargo run --release --example quality_report --features corpus -- --config default --shape rotated_rectangle
 //! ```
 //!
 //! Markdown is printed to stdout; JSON is written to
@@ -46,7 +48,7 @@ mod quality_report {
     use std::path::PathBuf;
     use std::time::Instant;
 
-    use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, Square};
+    use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, RotatedRectangle, Square};
     use eunoia::geometry::traits::DiagramShape;
     use eunoia::loss::LossType;
     use eunoia::test_utils::corpus::{CorpusEntry, Fittable, QUALITY_SEEDS, all};
@@ -54,8 +56,17 @@ mod quality_report {
 
     /// Common-across-configs description. Things that vary across configs
     /// (final-stage optimizer, MDS solver pool) are listed per config.
-    const COMMON_CONFIG: &str = "n_restarts=10, max_iterations=200, tolerance=1e-6, loss=SumSquared \
-         (Fitter default after dropping NM from the optimizer pool)";
+    const COMMON_CONFIG: &str = "Fitter defaults: n_restarts<=10 (reduced for small smooth fits), \
+         max_iterations=200, tolerance=1e-3, loss=SumSquared; default optimizer=CmaEsTrf \
+         for analytic-gradient shapes, [NelderMead, CmaEs] otherwise";
+
+    const SHAPES: [&str; 5] = [
+        "circle",
+        "ellipse",
+        "square",
+        "rectangle",
+        "rotated_rectangle",
+    ];
 
     /// Type of a config-builder closure: takes a fresh `Fitter` and applies
     /// the config's builder calls. Non-capturing so it coerces to `fn`.
@@ -66,6 +77,15 @@ mod quality_report {
     /// the JSON snapshot. To add a config, append a `(name, builder)` pair;
     /// builders must be non-capturing closures (so they coerce to `fn`).
     fn shape_configs<S: DiagramShape + Copy + 'static>() -> Vec<(&'static str, ConfigFn<S>)> {
+        // Gradient-based refinements cannot consume this shape's region areas.
+        if !S::SUPPORTS_ANALYTIC_GRADIENT {
+            return vec![
+                ("default", |f| f),
+                ("neldermead_only", |f| f.optimizer(Optimizer::NelderMead)),
+                ("cmaes_only", |f| f.optimizer(Optimizer::CmaEs)),
+                ("mads_only", |f| f.optimizer(Optimizer::Mads)),
+            ];
+        }
         vec![
             ("default", |f| f),
             ("nm_lbfgs_mix", |f| {
@@ -201,13 +221,47 @@ mod quality_report {
     }
 
     pub fn run() {
-        let circle_configs = shape_configs::<Circle>();
-        let ellipse_configs = shape_configs::<Ellipse>();
-        let square_configs = shape_configs::<Square>();
-        let rectangle_configs = shape_configs::<Rectangle>();
+        let mut shape_filter = None;
+        let mut config_filter = None;
+        let mut args = env::args().skip(1);
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--shape" | "--config" => {
+                    let value = args.next().unwrap_or_else(|| {
+                        eprintln!("{arg} requires a name");
+                        std::process::exit(2);
+                    });
+                    if arg == "--shape" {
+                        shape_filter = Some(value);
+                    } else {
+                        config_filter = Some(value);
+                    }
+                }
+                "--help" | "-h" => {
+                    println!("Usage: quality_report [--config NAME] [--shape NAME]");
+                    println!("Shapes: {}", SHAPES.join(", "));
+                    return;
+                }
+                _ => {
+                    eprintln!("Unknown argument: {arg}");
+                    std::process::exit(2);
+                }
+            }
+        }
+        if let Some(shape) = &shape_filter {
+            if !SHAPES.contains(&shape.as_str()) {
+                eprintln!(
+                    "Unknown shape: {shape}; expected one of {}",
+                    SHAPES.join(", ")
+                );
+                std::process::exit(2);
+            }
+        }
         eprintln!(
-            "Running quality sweep: {} configs × 4 shapes × 27 specs × {} seeds.",
-            circle_configs.len(),
+            "Running quality sweep: config={}, shape={}, {} specs × {} seeds.",
+            config_filter.as_deref().unwrap_or("all"),
+            shape_filter.as_deref().unwrap_or("all"),
+            all().len(),
             QUALITY_SEEDS.len()
         );
         eprintln!("Common config: {COMMON_CONFIG}");
@@ -215,54 +269,47 @@ mod quality_report {
 
         let mut all_rows: Vec<Row> = Vec::new();
 
-        for (cfg_name, cfg_fn) in &circle_configs {
-            eprintln!("== config: {cfg_name} | shape: circle ==");
-            run_config::<Circle>(
-                cfg_name,
-                *cfg_fn,
-                "circle",
-                |e| e.fittable_circle,
-                &mut all_rows,
-            );
-            eprintln!();
+        macro_rules! sweep {
+            ($shape:ty, $name:literal, $fittable:ident) => {
+                if shape_filter.as_deref().is_none_or(|s| s == $name) {
+                    for (cfg_name, cfg_fn) in shape_configs::<$shape>() {
+                        if config_filter.as_deref().is_none_or(|c| c == cfg_name) {
+                            eprintln!("== config: {cfg_name} | shape: {} ==", $name);
+                            run_config::<$shape>(
+                                cfg_name,
+                                cfg_fn,
+                                $name,
+                                |e| e.$fittable,
+                                &mut all_rows,
+                            );
+                            eprintln!();
+                        }
+                    }
+                }
+            };
         }
-        for (cfg_name, cfg_fn) in &ellipse_configs {
-            eprintln!("== config: {cfg_name} | shape: ellipse ==");
-            run_config::<Ellipse>(
-                cfg_name,
-                *cfg_fn,
-                "ellipse",
-                |e| e.fittable_ellipse,
-                &mut all_rows,
-            );
-            eprintln!();
-        }
-        for (cfg_name, cfg_fn) in &square_configs {
-            eprintln!("== config: {cfg_name} | shape: square ==");
-            run_config::<Square>(
-                cfg_name,
-                *cfg_fn,
-                "square",
-                |e| e.fittable_square,
-                &mut all_rows,
-            );
-            eprintln!();
-        }
-        for (cfg_name, cfg_fn) in &rectangle_configs {
-            eprintln!("== config: {cfg_name} | shape: rectangle ==");
-            run_config::<Rectangle>(
-                cfg_name,
-                *cfg_fn,
-                "rectangle",
-                |e| e.fittable_rectangle,
-                &mut all_rows,
-            );
-            eprintln!();
+        sweep!(Circle, "circle", fittable_circle);
+        sweep!(Ellipse, "ellipse", fittable_ellipse);
+        sweep!(Square, "square", fittable_square);
+        sweep!(Rectangle, "rectangle", fittable_rectangle);
+        sweep!(
+            RotatedRectangle,
+            "rotated_rectangle",
+            fittable_rotated_rectangle
+        );
+        if all_rows.is_empty() {
+            eprintln!("No configurations matched the selected shape and config");
+            std::process::exit(2);
         }
 
         let active_loss = active_loss_or_die(&all_rows);
 
-        let config_names: Vec<&'static str> = circle_configs.iter().map(|(n, _)| *n).collect();
+        let mut config_names = Vec::new();
+        for row in &all_rows {
+            if !config_names.contains(&row.config) {
+                config_names.push(row.config);
+            }
+        }
 
         let md = render_markdown(&all_rows, &config_names, active_loss);
         print!("{md}");
@@ -563,8 +610,15 @@ mod quality_report {
         let _ = writeln!(s, "- Configs swept: `{}`", config_names.join("`, `"));
         let _ = writeln!(s);
 
-        for &shape in &["circle", "ellipse", "square", "rectangle"] {
-            render_shape_block(&mut s, rows, config_names, shape, active_loss);
+        for shape in SHAPES {
+            let configs: Vec<_> = config_names
+                .iter()
+                .copied()
+                .filter(|cfg| rows.iter().any(|r| r.config == *cfg && r.shape == shape))
+                .collect();
+            if !configs.is_empty() {
+                render_shape_block(&mut s, rows, &configs, shape, active_loss);
+            }
         }
 
         s
@@ -858,7 +912,10 @@ mod quality_report {
             s.push_str("    {\n");
             let _ = writeln!(s, "      \"name\": {},", json_str(cfg));
             s.push_str("      \"shapes\": [\n");
-            let shapes = ["circle", "ellipse", "square"];
+            let shapes: Vec<_> = SHAPES
+                .into_iter()
+                .filter(|shape| rows.iter().any(|r| r.config == cfg && r.shape == *shape))
+                .collect();
             for (si, &shape) in shapes.iter().enumerate() {
                 let last_shape = si + 1 == shapes.len();
                 write_shape_json(&mut s, rows, cfg, shape, last_shape);

@@ -363,14 +363,17 @@ analytic gradient and the capability-driven default pool routes it to
   rotation in. The landing-page `HeroWidget` keeps its curated
   circle/ellipse/square/ rectangle subset (live slider re-fits stay fast).
 
-- [ ] **No quality-harness coverage** (near-term, actionable). `quality_report`
-  (`crates/eunoia/examples/quality_report.rs`), `corpus_quality`, and
-  `synthetic_groundtruth` run Circle/Ellipse/Square/Rectangle but not
-  `RotatedRectangle` (and `corpus.rs` has no per-shape treatment for it).
-  There is therefore no regression guardrail and no benchmark of the
-  derivative-free fit quality versus the gradient-based shapes. Add a
-  `RotatedRectangle` config to `quality_report` and a corpus ceiling before
-  relying on the shape's fit quality; treat the numbers as the baseline.
+- [x] **Quality-harness coverage** (done). `quality_report`, `corpus_quality`,
+  and `synthetic_groundtruth` now include `RotatedRectangle`. The report
+  benchmarks default, Nelder--Mead, CMA-ES, and MADS configurations for it,
+  includes all five shapes in Markdown and JSON, and accepts `--config` and
+  `--shape` filters. The initial default sweep (2026-10-14, 30 specs × 16
+  seeds × 5 shapes) completed without fit errors. Rotated rectangles had
+  median SumSquared loss `4.75e-5`; the worst `diag_error` was `8.90e-2`
+  on `issue44_4_set_inclusive`. `corpus.rs` records per-spec ceilings with
+  headroom over this baseline. The synthetic test checks recovery of 50
+  deterministic, nondegenerate rotated-rectangle configurations, with the
+  existing `5e-2` diagnostic-error limit.
 
 - [ ] **Fit quality may motivate corner-rounding**. The shape is fitted
   derivative-free by design (no analytic gradient). If the quality harness

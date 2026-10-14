@@ -1,9 +1,9 @@
 //! Static-corpus fit-quality regression test.
 //!
-//! Iterates the 17-spec corpus in [`crate::test_utils::corpus`] across
+//! Iterates the shared corpus in [`crate::test_utils::corpus`] across
 //! [`TEST_SEEDS`] and asserts each fit produces a `diag_error` within a
-//! permissive per-spec ceiling. Three test functions (one per shape) so a
-//! contributor can run circles only during local iteration.
+//! permissive per-spec ceiling. Separate test functions per shape let
+//! contributors run circles only during local iteration.
 //!
 //! All failures are collected into a single panic at the end of each test
 //! so a single run surfaces the full picture rather than failing fast.
@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod tests {
     use crate::Fitter;
-    use crate::geometry::shapes::{Circle, Ellipse, Square};
+    use crate::geometry::shapes::{Circle, Ellipse, RotatedRectangle, Square};
     use crate::geometry::traits::DiagramShape;
     use crate::test_utils::corpus::{CorpusEntry, Fittable, TEST_SEEDS, all};
 
@@ -41,8 +41,8 @@ mod tests {
             .collect();
 
         // Each (spec, seed) fit is independent and deterministic, so fan the
-        // loop out across cores. cargo runs the three per-shape tests
-        // concurrently, but that only saturates three cores while each test
+        // loop out across cores. cargo runs the per-shape tests
+        // concurrently, but that only saturates a few cores while each test
         // does ~80 sequential fits — the inner loop is where the wall time
         // lives. A shared work-stealing counter keeps the very uneven per-spec
         // costs balanced; results are re-sorted into corpus order afterwards so
@@ -217,12 +217,11 @@ mod tests {
         Box::leak(s.into_boxed_str())
     }
 
-    // The three corpus passes are the fit-quality guardrail, but each runs the
-    // full corpus × seeds — too slow for the default suite even parallelized
-    // (~16 s combined). `#[ignore]`d like the other fit-quality regressions
-    // (issue89, issue28, the stochastic ones) so plain `cargo test` stays sub-
-    // second; run them via `task test-slow` or `cargo test -- --include-ignored`
-    // (the `task dev` pre-PR gate does the latter).
+    // The corpus passes are the fit-quality guardrail, but each runs the
+    // full corpus × seeds, including expensive derivative-free fits. Keep them
+    // out of the fast default suite like the other fit-quality regressions.
+    // Run them via `task test-slow` or `cargo test -- --include-ignored`;
+    // the `task dev` pre-PR gate includes these corpus tests.
     #[test]
     #[ignore = "slow fit-quality guardrail; run via `task test-slow`"]
     fn corpus_circles_diag_error() {
@@ -239,5 +238,15 @@ mod tests {
     #[ignore = "slow fit-quality guardrail; run via `task test-slow`"]
     fn corpus_squares_diag_error() {
         run::<Square>("square", |e| e.ceiling_square(), |e| e.fittable_square);
+    }
+
+    #[test]
+    #[ignore = "slow fit-quality guardrail; run via `task test-slow`"]
+    fn corpus_rotated_rectangles_diag_error() {
+        run::<RotatedRectangle>(
+            "rotated_rectangle",
+            |e| e.ceiling_rotated_rectangle(),
+            |e| e.fittable_rotated_rectangle,
+        );
     }
 }

@@ -22,7 +22,7 @@ mod tests {
     use crate::Fitter;
     use crate::geometry::diagram::{RegionMask, mask_to_indices};
     use crate::geometry::primitives::Point;
-    use crate::geometry::shapes::{Circle, Ellipse};
+    use crate::geometry::shapes::{Circle, Ellipse, RotatedRectangle};
     use crate::geometry::traits::DiagramShape;
     use crate::spec::{Combination, DiagramSpec, DiagramSpecBuilder, InputType};
 
@@ -79,6 +79,24 @@ mod tests {
                 .prop_map(|(x, y, a, ratio, theta)| {
                     let b = a / ratio;
                     Ellipse::new(Point::new(x, y), a, b, theta)
+                }),
+            n_range,
+        )
+    }
+
+    fn arbitrary_rotated_rectangles(
+        n_range: RangeInclusive<usize>,
+    ) -> impl Strategy<Value = Vec<RotatedRectangle>> {
+        prop::collection::vec(
+            (
+                0.0_f64..50.0,
+                0.0_f64..50.0,
+                8.0_f64..30.0,
+                1.0_f64..4.0,
+                0.0_f64..std::f64::consts::PI,
+            )
+                .prop_map(|(x, y, width, ratio, theta)| {
+                    RotatedRectangle::new(Point::new(x, y), width, width / ratio, theta)
                 }),
             n_range,
         )
@@ -231,11 +249,11 @@ mod tests {
         })
     }
 
-    /// Proptest config shared by both recovery tests. A **deterministic**
+    /// Proptest config shared by the recovery tests. A **deterministic**
     /// RNG (see [`deterministic_runner`]) is used instead of the macro's
-    /// per-run entropy seed: this proptest lives in the default `cargo test`
-    /// run, and a fixed seed means the same 50 configurations are explored
-    /// on every machine and every CI run, so the fitter can no longer flake
+    /// per-run entropy seed. A fixed seed means each test explores the same
+    /// configurations on every machine and every invocation, so the fitter
+    /// can no longer flake
     /// the suite by drawing an unlucky local-minimum layout on one run but
     /// not the next. Tightening `MAX_DIAG_ERROR` or widening the case count
     /// is still the lever for catching fitter regressions; the seed is
@@ -288,6 +306,29 @@ mod tests {
                 prop_assert!(
                     best_diag.is_finite() && best_diag <= MAX_DIAG_ERROR,
                     "ellipses diag_error = {best_diag:?} (best of {} seeds), expected <= {MAX_DIAG_ERROR}; \
+                     spec_areas={:?}, fitted_areas={:?}",
+                    FIT_SEEDS.len(),
+                    spec.exclusive_areas(),
+                    best_fitted,
+                );
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    #[ignore = "slow derivative-free recovery guardrail; run via `task test-slow`"]
+    fn rotated_rectangles_recover_from_their_own_areas() {
+        deterministic_runner()
+            .run(&arbitrary_rotated_rectangles(2..=3), |shapes| {
+                let Some(spec) = spec_from_shapes(&shapes) else {
+                    return Err(TestCaseError::reject("degenerate rotated rectangles"));
+                };
+
+                let (best_diag, best_fitted) = best_fit::<RotatedRectangle>(&spec, &FIT_SEEDS)?;
+                prop_assert!(
+                    best_diag.is_finite() && best_diag <= MAX_DIAG_ERROR,
+                    "rotated rectangles diag_error = {best_diag:?} (best of {} seeds), expected <= {MAX_DIAG_ERROR}; \
                      spec_areas={:?}, fitted_areas={:?}",
                     FIT_SEEDS.len(),
                     spec.exclusive_areas(),
