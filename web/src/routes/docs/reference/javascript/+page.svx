@@ -205,6 +205,14 @@ Omit `options.scale` to auto-fit. Auto-scale only ever *shrinks* (the bracket
 is `[minScale, 1]`, default floor `0.35`), since you own the reference font
 size—deliberately asymmetric with the disc packer, which grows to fill.
 
+Set `options.targetAspectRatio` to a positive width-to-height ratio to
+balance uniform rows. For example, `1` favors a roughly square occupied
+block, including its halo. The packer maximizes the placed prefix before
+choosing the closest candidate ratio, keeping boundary, hole, and obstacle
+clearance. This preference does not change automatic scale selection.
+Omitted, non-positive, or non-finite values keep the first complete packing;
+`"random"` ignores it. Raw WASM JSON uses the same `targetAspectRatio` name.
+
 `boxes[combo]` is a **prefix** of `sizes[combo]`, so `boxes[combo][i]` belongs
 to your `labels[combo][i]`. Pass the result plus the strings to the SVG
 serializer via `ToSvgOptions.glyphBoxes`. `options.obstacles` takes the same

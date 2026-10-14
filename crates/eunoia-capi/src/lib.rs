@@ -1385,10 +1385,13 @@ fn place_glyphs_impl(input: PlaceGlyphsInput) -> Result<PlaceGlyphsOut, String> 
 /// `max_attempts = 300`, no obstacles). `arrangement` is `"uniform"`
 /// (default) or `"random"`. `gap` is a fraction of the row height, not of a
 /// radius; `obstacles` and `obstacle_policy` behave as in [`GlyphOptionsIn`].
+/// `target_aspect_ratio` optionally balances uniform rows toward a positive
+/// width-to-height ratio, without changing automatic scale selection.
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
 struct GlyphBoxOptionsIn {
     arrangement: Option<String>,
+    target_aspect_ratio: Option<f64>,
     scale: Option<f64>,
     min_scale: Option<f64>,
     gap: Option<f64>,
@@ -1443,6 +1446,7 @@ fn glyph_box_options_from_input(
             options.obstacle_policy.as_deref(),
         )?)
         .arrangement(arrangement)
+        .target_aspect_ratio(options.target_aspect_ratio)
         .scale(options.scale);
     if let Some(min_scale) = options.min_scale {
         out = out.min_scale(min_scale);
@@ -2493,6 +2497,61 @@ mod tests {
         let boxes = v["boxes"]["A"].as_array().unwrap();
         assert_eq!(boxes.len(), 3);
         assert!((boxes[0][2].as_f64().unwrap() - 0.05).abs() < 1e-12);
+    }
+
+    #[test]
+    fn place_glyph_boxes_target_aspect_ratio_balances_rows() {
+        for (side, default_rows) in [(20.0, 2), (40.0, 1)] {
+            let mut input = serde_json::json!({
+                "regions": { "A": [{
+                    "outer": [[0.0, 0.0], [side, 0.0], [side, side], [0.0, side]],
+                    "holes": [],
+                }] },
+                "sizes": { "A": box_sizes(12, 2.0, 0.5) },
+                "options": {},
+            });
+            let place = |input: &serde_json::Value| -> serde_json::Value {
+                serde_json::from_str(&call(eunoia_place_glyph_boxes, &input.to_string())).unwrap()
+            };
+            let rows = |result: &serde_json::Value| {
+                let mut ys: Vec<_> = result["boxes"]["A"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|b| b[1].as_f64().unwrap())
+                    .collect();
+                ys.sort_by(f64::total_cmp);
+                ys.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+                ys.len()
+            };
+            let baseline = place(&input);
+            assert_eq!(rows(&baseline), default_rows);
+            input["options"]["target_aspect_ratio"] = serde_json::json!(1.0);
+            let balanced = place(&input);
+            assert_eq!(balanced["ok"], true);
+            assert_eq!(balanced["scale"], baseline["scale"]);
+            assert_eq!(balanced["boxes"]["A"].as_array().unwrap().len(), 12);
+            assert!(balanced.get("unplaced").is_none());
+            assert_eq!(rows(&balanced), 6);
+            for disabled in [0.0, -1.0] {
+                input["options"]["target_aspect_ratio"] = serde_json::json!(disabled);
+                assert_eq!(place(&input), baseline);
+            }
+            input["options"] = serde_json::json!({ "arrangement": "random", "seed": 3 });
+            let random = place(&input);
+            input["options"]["target_aspect_ratio"] = serde_json::json!(1.0);
+            assert_eq!(place(&input), random);
+            input["options"] = serde_json::json!({
+                "target_aspect_ratio": 1.0,
+                "obstacle_policy": "strict",
+                "obstacles": [{ "x": side / 2.0, "y": side / 2.0,
+                    "width": side, "height": side }],
+            });
+            let blocked = place(&input);
+            assert_eq!(blocked["ok"], true);
+            assert_eq!(blocked["unplaced"]["A"], 12);
+            assert!(blocked["boxes"]["A"].as_array().unwrap().is_empty());
+        }
     }
 
     #[test]

@@ -18,9 +18,9 @@
 //!   centered on the region's pole of inaccessibility. Text reads in rows,
 //!   and a max-cell grid would let one long name inflate every cell.
 //! * **There is no spread refinement.** Row pitch is fixed by the row
-//!   height, so [`PROBE`] and [`PACK`] differ only in how strictly they
-//!   treat obstacles, and agree bit-for-bit when there are none. Whatever
-//!   the feasibility bisection accepted, the final pass reproduces.
+//!   height. An optional target aspect ratio balances rows at the chosen
+//!   scale in the final pass, retaining the feasibility packing as a
+//!   fallback so balancing cannot drop items that already fit.
 //!
 //! Feasibility is not *provably* monotone in `k` — shrinking re-phases the
 //! row block against the piece's concavities, so a smaller `k` can in
@@ -52,6 +52,15 @@ pub struct GlyphBoxOptions {
     /// Arrangement of boxes within each region. Defaults to
     /// [`GlyphArrangement::Uniform`], here meaning row/shelf packing.
     pub arrangement: GlyphArrangement,
+    /// Preferred width-to-height ratio of each piece's occupied block,
+    /// including its halo. Applies only to [`GlyphArrangement::Uniform`].
+    /// For example, `Some(1.0)` favors a roughly square block of rows.
+    /// The packer first maximizes the placed prefix, then chooses the
+    /// closest ratio among its candidates, preserving boundary and obstacle
+    /// clearance. This is a preference, not a constraint, and does not
+    /// change automatic scale selection. `None` (default), non-positive,
+    /// and non-finite values retain the first complete row packing.
+    pub target_aspect_ratio: Option<f64>,
     /// Diagram-wide factor applied to every measured box. `None` (default)
     /// bisects for the largest factor in `[min_scale, 1.0]` at which every
     /// region holds all of its items. Set it explicitly to take control —
@@ -100,10 +109,11 @@ pub struct GlyphBoxOptions {
 impl Default for GlyphBoxOptions {
     /// [`GlyphArrangement::Uniform`], auto scale, `min_scale = 0.35`,
     /// `gap = 0.25`, `seed = 0`, `precision = 0.01`, `max_attempts = 300`,
-    /// no obstacles, best-effort policy.
+    /// no target aspect ratio, no obstacles, best-effort policy.
     fn default() -> Self {
         Self {
             arrangement: GlyphArrangement::default(),
+            target_aspect_ratio: None,
             scale: None,
             min_scale: 0.35,
             gap: 0.25,
@@ -120,6 +130,13 @@ impl GlyphBoxOptions {
     /// Sets [`arrangement`](Self::arrangement) and returns `self`.
     pub fn arrangement(mut self, arrangement: GlyphArrangement) -> Self {
         self.arrangement = arrangement;
+        self
+    }
+
+    /// Sets [`target_aspect_ratio`](Self::target_aspect_ratio) and returns
+    /// `self`. Accepts a bare `f64` or `None`.
+    pub fn target_aspect_ratio(mut self, ratio: impl Into<Option<f64>>) -> Self {
+        self.target_aspect_ratio = ratio.into();
         self
     }
 
@@ -354,7 +371,31 @@ pub fn place_glyph_boxes(
     let mut boxes = HashMap::new();
     let mut unplaced = HashMap::new();
     for region in &work {
-        let placed = pack_boxes_region(region, options, ctx);
+        let mut placed = pack_boxes_region(region, options, ctx);
+        if region.scans.len() > 1
+            && options.arrangement == GlyphArrangement::Uniform
+            && options
+                .target_aspect_ratio
+                .is_some_and(|r| r.is_finite() && r > 0.0)
+        {
+            // Balancing can change a piece's placed prefix and hence the
+            // items offered to later pieces. Retain the region-wide
+            // feasibility packing if those changed offers lose capacity.
+            let fallback = pack_boxes_region(
+                region,
+                options,
+                BoxCtx {
+                    mode: PackMode {
+                        spread: false,
+                        ..ctx.mode
+                    },
+                    ..ctx
+                },
+            );
+            if fallback.len() > placed.len() {
+                placed = fallback;
+            }
+        }
         if placed.len() < region.items.len() {
             unplaced.insert(region.key.clone(), region.items.len() - placed.len());
         }
@@ -561,7 +602,15 @@ fn pack_boxes_region(
         let Some(scan) = scan else { continue };
         let offered = &scaled[out.len()..(out.len() + budget).min(scaled.len())];
         let placed = match options.arrangement {
-            GlyphArrangement::Uniform => pack_rows_piece(scan, offered, options.precision, ctx),
+            GlyphArrangement::Uniform => pack_rows_piece(
+                scan,
+                offered,
+                options.precision,
+                options
+                    .target_aspect_ratio
+                    .filter(|r| ctx.mode.spread && r.is_finite() && *r > 0.0),
+                ctx,
+            ),
             GlyphArrangement::Random => {
                 pack_random_boxes_piece(scan, offered, options.max_attempts, ctx, &mut rng)
             }
@@ -587,11 +636,13 @@ fn pack_boxes_region(
 /// than dropping every item.
 ///
 /// Consumes `items` in order and stops at the first that fits nowhere, so
-/// the result is a prefix.
+/// the result is a prefix. When a target ratio is supplied, also try
+/// width-balanced rows and prefer the closest ratio at the same count.
 fn pack_rows_piece(
     scan: &PieceScan<'_>,
     items: &[(f64, f64)],
     precision: f64,
+    target_ratio: Option<f64>,
     ctx: BoxCtx<'_>,
 ) -> Vec<Rectangle> {
     if items.is_empty() {
@@ -622,14 +673,21 @@ fn pack_rows_piece(
         }
         let obstacles: &[Rectangle] = if honor_obstacles { &local } else { &[] };
         let anchor_y = escape_obstacles_y(poi.y(), scan, obstacles, ctx);
+        let mut pass_best = best.clone();
         let mut stalled = 0usize;
         for rows in 1..=max_rows {
-            let attempt = fill_rows(scan, items, anchor_x, anchor_y, rows, obstacles, ctx);
+            let plan = RowPlan {
+                anchor: Point::new(anchor_x, anchor_y),
+                rows,
+                width: f64::INFINITY,
+            };
+            let attempt = fill_rows(scan, items, plan, obstacles, ctx);
             if attempt.len() == items.len() {
-                return attempt;
+                pass_best = attempt;
+                break;
             }
-            if attempt.len() > best.len() {
-                best = attempt;
+            if attempt.len() > pass_best.len() {
+                pass_best = attempt;
                 stalled = 0;
             } else {
                 stalled += 1;
@@ -638,8 +696,95 @@ fn pack_rows_piece(
                 }
             }
         }
+        if let Some(ratio) = target_ratio {
+            let mut score = block_aspect_error(&pass_best, halo, ratio);
+            for rows in 1..=max_rows {
+                let plan = RowPlan {
+                    anchor: Point::new(anchor_x, anchor_y),
+                    rows,
+                    width: balanced_row_width(items, rows, halo),
+                };
+                let attempt = fill_rows(scan, items, plan, obstacles, ctx);
+                let error = block_aspect_error(&attempt, halo, ratio);
+                if attempt.len() > pass_best.len()
+                    || (attempt.len() == pass_best.len() && error < score)
+                {
+                    pass_best = attempt;
+                    score = error;
+                }
+            }
+        }
+        if pass_best.len() == items.len() {
+            return pass_best;
+        }
+        if pass_best.len() > best.len() {
+            best = pass_best;
+        }
     }
     best
+}
+
+/// The narrowest shelf width whose greedy partition needs at most `rows`.
+/// Keeping the upper bound feasible avoids losing an item to rounding at
+/// a row break, and allows heterogeneous names to share balanced rows.
+fn balanced_row_width(items: &[(f64, f64)], rows: usize, halo: f64) -> f64 {
+    let widths = || items.iter().map(|&(w, _)| w + 2.0 * halo);
+    let mut lo = widths().fold(0.0_f64, f64::max);
+    let mut hi: f64 = widths().sum();
+    for _ in 0..24 {
+        let mid = 0.5 * (lo + hi);
+        let mut used = 0.0;
+        let mut needed = 1;
+        for width in widths() {
+            if used + width > mid {
+                needed += 1;
+                used = 0.0;
+            }
+            used += width;
+        }
+        if needed <= rows {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    hi
+}
+
+/// Log distance treats reciprocal distortions of the target equally.
+fn block_aspect_error(boxes: &[Rectangle], halo: f64, ratio: f64) -> f64 {
+    if boxes.is_empty() {
+        return f64::INFINITY;
+    }
+    let bounds = boxes.iter().fold(
+        (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ),
+        |(left, right, bottom, top), b| {
+            (
+                left.min(b.center().x() - 0.5 * b.width()),
+                right.max(b.center().x() + 0.5 * b.width()),
+                bottom.min(b.center().y() - 0.5 * b.height()),
+                top.max(b.center().y() + 0.5 * b.height()),
+            )
+        },
+    );
+    let width = bounds.1 - bounds.0 + 2.0 * halo;
+    let height = bounds.3 - bounds.2 + 2.0 * halo;
+    if width <= 0.0 || height <= 0.0 {
+        return f64::INFINITY;
+    }
+    (width.ln() - height.ln() - ratio.ln()).abs()
+}
+
+#[derive(Clone, Copy)]
+struct RowPlan {
+    anchor: Point,
+    rows: usize,
+    width: f64,
 }
 
 /// Lays `items` into `rows` bands centered on `anchor_y`, taking them in
@@ -647,9 +792,7 @@ fn pack_rows_piece(
 fn fill_rows(
     scan: &PieceScan<'_>,
     items: &[(f64, f64)],
-    anchor_x: f64,
-    anchor_y: f64,
-    rows: usize,
+    plan: RowPlan,
     obstacles: &[Rectangle],
     ctx: BoxCtx<'_>,
 ) -> Vec<Rectangle> {
@@ -658,11 +801,11 @@ fn fill_rows(
     let half_pitch = 0.5 * pitch;
     let mut out: Vec<Rectangle> = Vec::with_capacity(items.len());
 
-    for j in 0..rows {
+    for j in 0..plan.rows {
         if out.len() == items.len() {
             break;
         }
-        let cy = anchor_y + (j as f64 - 0.5 * (rows as f64 - 1.0)) * pitch;
+        let cy = plan.anchor.y() + (j as f64 - 0.5 * (plan.rows as f64 - 1.0)) * pitch;
         let (yb, yt) = (cy - half_pitch, cy + half_pitch);
         let mut intervals = scan.band_intervals(yb, yt);
         if intervals.is_empty() {
@@ -675,11 +818,12 @@ fn fill_rows(
         // of inaccessibility instead of pinning to a region's leftmost lobe.
         // A no-op in the common single-interval case.
         intervals.sort_by(|a, b| {
-            let da = (0.5 * (a.0 + a.1) - anchor_x).abs();
-            let db = (0.5 * (b.0 + b.1) - anchor_x).abs();
+            let da = (0.5 * (a.0 + a.1) - plan.anchor.x()).abs();
+            let db = (0.5 * (b.0 + b.1) - plan.anchor.x()).abs();
             da.total_cmp(&db).then(a.0.total_cmp(&b.0))
         });
 
+        let mut row_width = 0.0;
         for (lo, hi) in intervals {
             if out.len() == items.len() {
                 break;
@@ -690,7 +834,7 @@ fn fill_rows(
             let mut taken = 0usize;
             while out.len() + taken < items.len() {
                 let need = items[out.len() + taken].0 + 2.0 * halo;
-                if lo + consumed + need > hi {
+                if lo + consumed + need > hi || row_width + consumed + need > plan.width {
                     break;
                 }
                 consumed += need;
@@ -699,6 +843,7 @@ fn fill_rows(
             if taken == 0 {
                 continue;
             }
+            row_width += consumed;
             // Center the run within the interval.
             let mut x = lo + 0.5 * (hi - lo - consumed);
             for _ in 0..taken {
@@ -986,6 +1131,145 @@ mod tests {
         for (r, (w, h)) in result.boxes["A"].iter().zip(&items) {
             assert!((r.width() - result.scale * w).abs() < 1e-12);
             assert!((r.height() - result.scale * h).abs() < 1e-12);
+        }
+    }
+
+    fn row_count(boxes: &[Rectangle]) -> usize {
+        let mut ys: Vec<_> = boxes.iter().map(|b| b.center().y()).collect();
+        ys.sort_by(f64::total_cmp);
+        ys.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+        ys.len()
+    }
+
+    #[test]
+    fn target_aspect_ratio_balances_the_reported_horizontal_strips() {
+        let sizes = sizes(&[("A", uniform_sizes(12, 2.0, 0.5))]);
+        for (side, default_rows) in [(20.0, 2), (40.0, 1)] {
+            let regions = boxed_region(0.0, 0.0, side, side);
+            let options = GlyphBoxOptions::default();
+            let default = place_glyph_boxes(&regions, &sizes, &options);
+            assert_eq!(row_count(&default.boxes["A"]), default_rows);
+            for (ratio, expected_rows) in [(0.25, 12), (1.0, 6), (4.0, 3)] {
+                let result = place_glyph_boxes(
+                    &regions,
+                    &sizes,
+                    &options.clone().target_aspect_ratio(ratio),
+                );
+                assert_eq!(result.scale, 1.0);
+                assert!(result.unplaced.is_empty());
+                assert_eq!(result.boxes["A"].len(), 12);
+                assert_eq!(row_count(&result.boxes["A"]), expected_rows);
+                let halo = halo_of(&result, 0.5, options.gap);
+                assert_inside_region(&result, &regions, halo, "balanced report");
+                assert_no_overlap(&result, halo, "balanced report");
+                assert!(result.boxes["A"].windows(2).all(|pair| {
+                    pair[0].center().y() < pair[1].center().y()
+                        || (pair[0].center().y() == pair[1].center().y()
+                            && pair[0].center().x() < pair[1].center().x())
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn balanced_rows_preserve_heterogeneous_sizes_and_clearance() {
+        let regions = RegionPolygons::from_map(HashMap::from([(
+            Combination::new(&["A"]),
+            classify_into_pieces(vec![
+                rect_ring(0.0, 0.0, 10.0, 10.0),
+                rect_ring(3.0, 3.0, 7.0, 7.0),
+                rect_ring(12.0, 0.0, 16.0, 6.0),
+            ]),
+        )]));
+        let items: Vec<_> = (0..40).map(|i| (0.4 + i as f64 * 0.03, 0.4)).collect();
+        let sizes = sizes(&[("A", items.clone())]);
+        let obstacle = Rectangle::new(Point::new(1.5, 2.0), 2.0, 2.0);
+        for scale in [None, Some(1.0)] {
+            for gap in [0.0, 0.25] {
+                let plain = GlyphBoxOptions::default()
+                    .scale(scale)
+                    .gap(gap)
+                    .obstacles([obstacle])
+                    .obstacle_policy(ObstaclePolicy::Strict);
+                let baseline = place_glyph_boxes(&regions, &sizes, &plain);
+                for ratio in [0.25, 1.0, 4.0] {
+                    let options = plain.clone().target_aspect_ratio(ratio);
+                    let result = place_glyph_boxes(&regions, &sizes, &options);
+                    assert_eq!(result.scale, baseline.scale);
+                    assert!(result.boxes["A"].len() >= baseline.boxes["A"].len());
+                    let halo = halo_of(&result, 0.4, gap);
+                    assert_inside_region(&result, &regions, halo, "balanced holes");
+                    assert_no_overlap(&result, halo, "balanced holes");
+                    for (b, &(w, h)) in result.boxes["A"].iter().zip(&items) {
+                        assert_eq!(b.width(), result.scale * w);
+                        assert_eq!(b.height(), result.scale * h);
+                        assert!(
+                            (b.center().x() - obstacle.center().x()).abs()
+                                >= 0.5 * (b.width() + obstacle.width()) + halo - 1e-9
+                                || (b.center().y() - obstacle.center().y()).abs()
+                                    >= 0.5 * (b.height() + obstacle.height()) + halo - 1e-9
+                        );
+                    }
+                    assert_eq!(result, place_glyph_boxes(&regions, &sizes, &options));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn aspect_preference_keeps_feasible_rows_and_overflow_prefixes() {
+        for (width, height) in [(40.0, 0.7), (2.0, 2.0)] {
+            let regions = boxed_region(0.0, 0.0, width, height);
+            let items = if width > 2.0 {
+                uniform_sizes(12, 2.0, 0.5)
+            } else {
+                vec![(0.4, 0.3), (7.0, 0.3), (0.5, 0.3)]
+            };
+            let sizes = sizes(&[("A", items.clone())]);
+            let options = GlyphBoxOptions::default().target_aspect_ratio(1.0);
+            let result = place_glyph_boxes(&regions, &sizes, &options);
+            if width > 2.0 {
+                assert!(result.unplaced.is_empty());
+                assert_eq!(row_count(&result.boxes["A"]), 1);
+                assert_eq!(result.scale, 1.0);
+            } else {
+                assert_eq!(result.boxes["A"].len(), 1);
+                assert_eq!(result.unplaced["A"], 2);
+                assert_eq!(result.boxes["A"][0].width(), result.scale * items[0].0);
+                assert_eq!(result.scale, options.min_scale);
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_aspect_ratios_and_random_arrangement_keep_existing_layouts() {
+        let regions = boxed_region(0.0, 0.0, 10.0, 10.0);
+        let sizes = sizes(&[("A", uniform_sizes(12, 1.0, 0.5))]);
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            let options = GlyphBoxOptions::default().arrangement(arrangement);
+            let baseline = place_glyph_boxes(&regions, &sizes, &options);
+            for ratio in [
+                None,
+                Some(0.0),
+                Some(-1.0),
+                Some(f64::NAN),
+                Some(f64::INFINITY),
+            ] {
+                assert_eq!(
+                    baseline,
+                    place_glyph_boxes(
+                        &regions,
+                        &sizes,
+                        &options.clone().target_aspect_ratio(ratio)
+                    )
+                );
+            }
+            if arrangement == GlyphArrangement::Random {
+                assert_eq!(
+                    baseline,
+                    place_glyph_boxes(&regions, &sizes, &options.target_aspect_ratio(1.0))
+                );
+            }
         }
     }
 

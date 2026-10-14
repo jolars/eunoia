@@ -96,29 +96,35 @@ fn obstacles() {
 }
 
 fn rows_and_scale() {
-    println!("Items 2/4: fewest rows and shrink-only automatic scale");
+    println!("Items 2/4: optional balanced rows and shrink-only automatic scale");
     let sizes = HashMap::from([("A".into(), vec![(2.0, 0.5); 12])]);
     for side in [20.0, 40.0] {
-        let placed = place_glyph_boxes(&square_region(side), &sizes, &GlyphBoxOptions::default());
-        let boxes = &placed.boxes["A"];
-        let mut ys: Vec<_> = boxes.iter().map(|b| b.center().y()).collect();
-        ys.sort_by(f64::total_cmp);
-        ys.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-        let bottom = boxes
-            .iter()
-            .map(|b| b.center().y() - b.height() / 2.0)
-            .fold(f64::INFINITY, f64::min);
-        let top = boxes
-            .iter()
-            .map(|b| b.center().y() + b.height() / 2.0)
-            .fold(f64::NEG_INFINITY, f64::max);
-        println!(
-            "  {side}x{side}: scale={:.3}, placed={}, rows={}, occupied_height={:.3}",
-            placed.scale,
-            boxes.len(),
-            ys.len(),
-            top - bottom,
-        );
+        for target in [None, Some(1.0)] {
+            let placed = place_glyph_boxes(
+                &square_region(side),
+                &sizes,
+                &GlyphBoxOptions::default().target_aspect_ratio(target),
+            );
+            let boxes = &placed.boxes["A"];
+            let mut ys: Vec<_> = boxes.iter().map(|b| b.center().y()).collect();
+            ys.sort_by(f64::total_cmp);
+            ys.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+            let bottom = boxes
+                .iter()
+                .map(|b| b.center().y() - b.height() / 2.0)
+                .fold(f64::INFINITY, f64::min);
+            let top = boxes
+                .iter()
+                .map(|b| b.center().y() + b.height() / 2.0)
+                .fold(f64::NEG_INFINITY, f64::max);
+            println!(
+                "  {side}x{side}, target={target:?}: scale={:.3}, placed={}, rows={}, occupied_height={:.3}",
+                placed.scale,
+                boxes.len(),
+                ys.len(),
+                top - bottom,
+            );
+        }
     }
 }
 

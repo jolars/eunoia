@@ -169,6 +169,19 @@ arrangement throws rectangular darts instead, for the scattered look—without
 the relaxation pass the dot footprint gets, since heterogeneous boxes have no
 single spacing to relax toward.
 
+By default, uniform packing returns the first row count that holds every
+item, which can produce horizontal strips in roomy regions. Set
+`options.targetAspectRatio: 1` in JavaScript or
+`GlyphBoxOptions::default().target_aspect_ratio(1.0)` in Rust to favor a
+roughly square occupied block. Larger ratios favor wider blocks, and smaller
+ratios favor taller ones. The ratio includes the block's halo. The packer
+balances measured widths while preserving input order, prioritizing the
+placed prefix and clearance over the preferred ratio. It keeps the automatic
+scale selection, so balancing rows does not enlarge fonts. Omit the option
+to retain the default. Non-positive or non-finite values disable it, and the
+random arrangement ignores it. This option controls rows of packed boxes;
+renderers still compose columns for list displays.
+
 `gap` works the same way it does for discs, but as a fraction of the **row
 height** rather than of a radius: each box carries a halo of
 `0.5 * gap * rowHeight`, so adjacent boxes end up `gap * rowHeight` apart and

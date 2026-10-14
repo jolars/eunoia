@@ -38,17 +38,15 @@ are in the sibling [eunoia-py TODO](../eunoia-py/TODO.md).
   including zero-padding boxes. The example compares both policies.
   Python adoption and visible overflow handling remain a separate follow-up.
 
-- [ ] **Offer balanced rows for packed member names (item 4).**
-  `pack_rows_piece` in `plotting/glyphs/boxes.rs` tries row counts upward
-  and returns the first complete packing. With twelve `2 x 0.5` boxes, the
-  example uses two rows occupying height `1.125` in a `20 x 20` region, then
-  one row occupying height `0.5` in a `40 x 40` region. Scale stays `1.0` in
-  both. This reproduces the horizontal strips despite ample vertical space.
-  Consider a target block aspect ratio or configurable row/column limit,
-  preserving reading order, boundary clearance, and obstacle constraints.
-  This is separate from allowing larger fonts: changing row balance alone
-  need not increase the feasible scale. Multicolumn `mode="list"` remains a
-  renderer concern.
+- [x] **Offer balanced rows for packed member names (item 4).**
+  `GlyphBoxOptions::target_aspect_ratio` optionally balances measured widths
+  toward a preferred block width-to-height ratio, preserving input order,
+  boundary clearance, obstacle policy, and the prefix contract. The default
+  still returns the first complete row packing. With twelve `2 x 0.5` boxes,
+  a target of `1.0` uses six rows in both `20 x 20` and `40 x 40` regions,
+  occupying height `3.625` at the unchanged automatic scale `1.0`. The example
+  compares both modes. WASM, C, TypeScript, tests, and docs expose the option.
+  Python adoption and multicolumn `mode="list"` remain renderer follow-ups.
 
 - [ ] **Decide how to support partial packing beyond an oversized name (item
   4).** The existing prefix contract intentionally stops at the first item

@@ -3426,6 +3426,10 @@ pub fn place_region_glyphs(
 /// `place_region_glyphs`: `"BestEffort"` (default) allows overlap;
 /// `"Strict"` requires clearance and reports overflow in `unplaced` while
 /// preserving the size floors, even in automatic mode.
+/// Set `targetAspectRatio` to a positive width-to-height ratio (e.g. `1.0`)
+/// to balance uniform rows at the selected scale. It is a preference after
+/// maximizing the placed prefix; omitted, non-positive, or non-finite values
+/// retain the first complete packing. Ignored for `"Random"`.
 ///
 /// Returns `{ "scale": k, "boxes": { combination: [[cx, cy, w, h], ...] },
 /// "unplaced"?: { combination: count } }`. `unplaced` is omitted when every
@@ -3464,6 +3468,8 @@ pub fn place_region_glyph_boxes(
     struct OptionsJson {
         /// `"Uniform"` (default, row/shelf packing) or `"Random"`.
         arrangement: Option<String>,
+        #[serde(rename = "targetAspectRatio")]
+        target_aspect_ratio: Option<f64>,
         /// Diagram-wide box scale; omit for the auto (bisection) mode.
         scale: Option<f64>,
         #[serde(rename = "minScale")]
@@ -3513,6 +3519,7 @@ pub fn place_region_glyph_boxes(
             options_in.obstacle_policy.as_deref(),
         )?)
         .arrangement(arrangement)
+        .target_aspect_ratio(options_in.target_aspect_ratio)
         .scale(options_in.scale);
     if let Some(min_scale) = options_in.min_scale {
         options = options.min_scale(min_scale);

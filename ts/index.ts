@@ -631,6 +631,15 @@ export interface GlyphBoxOptions {
    */
   arrangement?: GlyphArrangement;
   /**
+   * Preferred width-to-height ratio of each piece's occupied block,
+   * including its halo. For example, `1` favors roughly square rows.
+   * Uniform arrangement only: maximizes the placed prefix before choosing
+   * the closest candidate ratio, preserving clearance. This preference
+   * does not change automatic scale selection. Omitted, non-positive, or
+   * non-finite values retain the first complete packing.
+   */
+  targetAspectRatio?: number;
+  /**
    * Diagram-wide factor applied to every measured box. Omit for the auto
    * mode: the largest factor in `[minScale, 1]` at which every region holds
    * all of its items. Pass one to take control — values above `1` are then
@@ -2238,6 +2247,7 @@ export function placeGlyphBoxesForRegions(
   if (boxOptions) {
     const payload: {
       arrangement?: "Uniform" | "Random";
+      targetAspectRatio?: number;
       scale?: number;
       minScale?: number;
       gap?: number;
@@ -2257,6 +2267,11 @@ export function placeGlyphBoxesForRegions(
       payload.arrangement = mapped;
     }
     if (boxOptions.scale !== undefined) payload.scale = boxOptions.scale;
+    if (
+      boxOptions.targetAspectRatio !== undefined &&
+      Number.isFinite(boxOptions.targetAspectRatio)
+    )
+      payload.targetAspectRatio = boxOptions.targetAspectRatio;
     if (boxOptions.minScale !== undefined)
       payload.minScale = boxOptions.minScale;
     if (boxOptions.gap !== undefined) payload.gap = boxOptions.gap;
