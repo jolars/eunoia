@@ -5,8 +5,9 @@ representation. Browser requests continue to receive HTML.
 
 > Eunoia is a Rust library for area-proportional Euler and Venn diagrams: given
 > the sizes of sets and their intersections, it fits shapes (circles, ellipses,
-> squares, rectangles) whose areas match those sizes as closely as possible. The
-> pure-Rust core ships to JavaScript via WebAssembly (`@jolars/eunoia`), to
+> squares, axis-aligned rectangles, and rotated rectangles) whose areas match
+> those sizes as closely as possible. The pure-Rust core ships to JavaScript
+> via WebAssembly (`@jolars/eunoia`), to
 > Python (`eunoia`), and to Julia (`Eunoia.jl`), and is the engine behind a
 > ground-up rewrite of the R package eulerr.
 
@@ -26,7 +27,7 @@ at authors of downstream bindings.
 
 ## Concepts
 
-- [Shapes](https://eunoia.bz/docs/concepts/shapes/): The shape types eunoia can fit (circle, ellipse, square, rectangle) and when each is appropriate.
+- [Shapes](https://eunoia.bz/docs/concepts/shapes/): The five shape types eunoia can fit (circle, ellipse, square, rectangle, and rotated rectangle), their canonical Venn limits, and when each is appropriate.
 - [Fitter Pipeline](https://eunoia.bz/docs/concepts/fitter-pipeline/): How region sizes become concrete shapes: spec, preprocess, initial layout, final layout.
 - [Goodness of Fit](https://eunoia.bz/docs/concepts/goodness-of-fit/): The error metrics eunoia reports and how to judge whether a diagram represents the data well.
 - [Complement (Universe/Container)](https://eunoia.bz/docs/concepts/complement/): Fitting a bounding container so the leftover area matches a target "outside the sets" region.

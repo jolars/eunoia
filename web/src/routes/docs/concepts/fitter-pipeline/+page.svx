@@ -14,8 +14,9 @@ const THREE_SET_SPEC = {
 # Fitter Pipeline
 
 Fitting a diagram turns a set of region sizes into concrete shapes
-(circles, ellipses, squares, or rectangles) whose overlaps reproduce
-those sizes as closely as possible. Eunoia runs this in four stages.
+(circles, ellipses, squares, axis-aligned rectangles, or rotated
+rectangles) whose overlaps reproduce those sizes as closely as possible.
+Eunoia runs this in four stages.
 
 The widget below records a real fit of a three-set spec and lets you
 play it back step by step. **Initial layout** runs the MDS stage: the
@@ -59,6 +60,10 @@ and shift to tighten the fit. The optimizer and the loss are both
 selectable; circles and ellipses use analytical gradients where the
 loss allows, and a global-escape stage can kick in when a plain local
 solve stalls on a hard layout.
+
+Rotated rectangles use exact polygon clipping for their overlap areas.
+Because those areas have kinks when edges enter or leave an intersection,
+the default optimizer pool uses derivative-free Nelder–Mead and CMA-ES.
 
 A single fit actually runs this two-phase pipeline several times (ten by
 default) from independent random starts and keeps the lowest-loss

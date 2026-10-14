@@ -1,5 +1,13 @@
 //! A Rust library for creating area-proportional Euler and Venn diagrams.
 //!
+//! Fit with [`Circle`](geometry::shapes::Circle),
+//! [`Ellipse`](geometry::shapes::Ellipse),
+//! [`Square`](geometry::shapes::Square),
+//! [`Rectangle`](geometry::shapes::Rectangle), or
+//! [`RotatedRectangle`](geometry::shapes::RotatedRectangle) by choosing the
+//! shape type on [`Fitter`]. Rectangles are axis-aligned; rotated rectangles
+//! add an orientation angle and use derivative-free fitting.
+//!
 //! A fit has two stages:
 //!
 //! 1. Multi-dimensional scaling places fixed-size shapes.

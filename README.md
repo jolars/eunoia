@@ -24,12 +24,13 @@ built to power bindings across many languages.
 
 ## Highlights
 
-- **Four shape families**: fit with circles, ellipses, squares, or rectangles;
-  the engine is shape-agnostic until fit time.
+- **Five shape families**: fit with circles, ellipses, squares, axis-aligned
+  rectangles, or rotated rectangles; the engine is shape-agnostic until fit time.
 - **Robust fitting**: MDS initialization followed by a global/local optimization
   pipeline (LM, CMA-ES, trust-region) that mirrors and improves on eulerr.
-- **Venn diagrams too**: canonical n-set Venn arrangements (circles for n≤3,
-  ellipses for n=4-5) independent of the fitter.
+- **Venn diagrams too**: canonical arrangements for up to three sets with
+  circles, squares, or rectangles, four with rotated rectangles, and five with
+  ellipses, independent of the fitter.
 - **Renderable output**: region polygon extraction, clipping, and automatic
   label placement, ready to draw as SVG.
 - **Many targets**: pure Rust core that ships to JavaScript via WebAssembly and
@@ -58,7 +59,7 @@ fn main() {
         .build()
         .unwrap();
 
-    // Swap `Ellipse` for `Circle`, `Square`, or `Rectangle`.
+    // Swap `Ellipse` for `Circle`, `Square`, `Rectangle`, or `RotatedRectangle`.
     let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
 
     println!(
@@ -104,7 +105,7 @@ import { euler, venn } from "@jolars/eunoia";
 // Fit an Euler diagram from set sizes
 const layout = euler({
   sets: { A: 5, B: 2, "A&B": 1 },
-  shape: "circle", // "circle" | "ellipse" | "square" | "rectangle"
+  shape: "circle", // "circle" | "ellipse" | "square" | "rectangle" | "rotatedRectangle"
   output: "shapes", // "shapes" | "polygons" | "regions"
   inputType: "exclusive", // "exclusive" | "inclusive"
   seed: 42,

@@ -91,9 +91,18 @@ use eunoia::geometry::shapes::Ellipse;
 let layout = Fitter::<Ellipse>::new(&spec).fit().expect("fit");
 ```
 
-`Circle`, `Ellipse`, `Square`, and `Rectangle` all live in
+`Circle`, `Ellipse`, `Square`, `Rectangle`, and `RotatedRectangle` all live in
 `eunoia::geometry::shapes`. Ellipses have more freedom than circles and often fit
 three or more sets noticeably better; see [Shapes](/docs/concepts/shapes/).
+
+Rotated rectangles add an orientation angle to the width and height and use
+derivative-free fitting:
+
+```rust
+use eunoia::geometry::shapes::RotatedRectangle;
+
+let layout = Fitter::<RotatedRectangle>::new(&spec).fit().expect("fit");
+```
 
 ## Regions for Rendering
 

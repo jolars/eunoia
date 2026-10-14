@@ -738,18 +738,17 @@ export interface PlaceGlyphBoxesForRegionsOptions {
 export interface VennOptions {
   /**
    * Number of sets in the Venn diagram. The valid range depends on `shape`:
-   * `"ellipse"` supports `1 ≤ n ≤ 5`, while `"circle"`, `"square"`,
-   * `"rectangle"`, and `"rotatedRectangle"` support `1 ≤ n ≤ 3` (equal-sized
-   * axis-aligned/round shapes cannot open all `2ⁿ − 1` regions beyond three
-   * sets).
+   * `"ellipse"` supports `1 ≤ n ≤ 5`, `"rotatedRectangle"` supports
+   * `1 ≤ n ≤ 4`, and `"circle"`, `"square"`, and `"rectangle"` support
+   * `1 ≤ n ≤ 3`.
    */
   n: number;
   /**
    * Shape primitive for the canonical layout. Default `"ellipse"` — the only
    * shape that covers all of `n ∈ 1..=5`. `"circle"` gives the classic one-,
-   * two-, and three-circle diagrams; `"square"` / `"rectangle"` /
-   * `"rotatedRectangle"` are box-based (the rotated variant uses φ = 0
-   * footprints). All non-ellipse shapes cap at `n = 3`.
+   * two-, and three-circle diagrams. `"square"` and `"rectangle"` are
+   * axis-aligned and cap at three sets; `"rotatedRectangle"` adds a rotated
+   * four-set arrangement.
    */
   shape?: ShapeType;
   /** Output mode: polygon outlines per set, or exclusive regions. Default `"polygons"`. */
@@ -1246,8 +1245,9 @@ export function euler(options: EulerOptions): Layout {
  *
  * The shape defaults to `"ellipse"` (the only shape covering all of
  * `n ∈ 1..=5`). `"circle"` gives the classic one-, two-, and three-circle
- * diagrams; `"square"` and `"rectangle"` are axis-aligned. Every non-ellipse
- * shape caps at `n = 3` and throws a `RangeError` above that.
+ * diagrams; `"square"` and `"rectangle"` are axis-aligned and cap at three
+ * sets. `"rotatedRectangle"` supports up to four sets. Counts outside a
+ * shape's range throw a `RangeError`.
  *
  * No fitting is performed — the layout is hardcoded. Loss-style metrics in
  * the returned `Layout` are computed against a synthetic spec where every
@@ -1261,7 +1261,7 @@ export function venn(options: VennOptions): Layout {
     polygonVertices = 256,
     complement,
   } = options;
-  const maxN = shape === "ellipse" ? 5 : 3;
+  const maxN = shape === "ellipse" ? 5 : shape === "rotatedRectangle" ? 4 : 3;
   if (!Number.isInteger(n) || n < 1 || n > maxN) {
     throw new RangeError(
       `venn: \`n\` must be an integer in 1..=${maxN} for shape "${shape}"`,

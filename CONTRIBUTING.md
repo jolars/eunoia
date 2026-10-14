@@ -203,6 +203,7 @@ eunoia/
 │   │   │   │   │   ├── ellipse.rs
 │   │   │   │   │   ├── square.rs
 │   │   │   │   │   ├── rectangle.rs
+│   │   │   │   │   ├── rotated_rectangle.rs
 │   │   │   │   │   └── polygon.rs   # Region output, not a fittable shape
 │   │   │   │   ├── operations.rs
 │   │   │   │   ├── operations/
@@ -238,7 +239,7 @@ The geometry module is organized into clear sub-modules:
   - `Closed`: Trait for closed shapes (spatial relations)
   - `DiagramShape`: Trait for diagram shapes (adds optimization methods)
 - **`shapes/`**: Closed shape implementations (Circle, Ellipse, Square,
-  Rectangle; Polygon is for region output, not fitting)
+  Rectangle, RotatedRectangle; Polygon is for region output, not fitting)
 - **`projective/`**: Projective-geometry helpers (conics, used for ellipse
   intersections)
 - **`operations/`**: Geometric algorithms
@@ -257,7 +258,7 @@ The geometry module is organized into clear sub-modules:
 
 We welcome contributions in these areas:
 
-- **New shapes**: rotated rectangles, triangle implementations
+- **New shapes**: triangles and other geometric primitives
 - **Polygon utilities**: Shape conversion, intersection splitting
 - **Label placement**: Poles of inaccessibility, centroid calculations
 - **Documentation**: Examples, tutorials, API docs

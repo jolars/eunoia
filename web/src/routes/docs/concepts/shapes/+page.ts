@@ -3,6 +3,6 @@ export function load() {
   return {
     title: "Shapes",
     description:
-      "The fittable shapes in Eunoia (circles, ellipses, squares, and rectangles) and when each best reproduces a set of region sizes.",
+      "The five fittable shapes in Eunoia (circles, ellipses, squares, rectangles, and rotated rectangles), their Venn limits, and when to use each.",
   };
 }

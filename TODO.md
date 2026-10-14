@@ -389,6 +389,10 @@ analytic gradient and the capability-driven default pool routes it to
   returned layout. Unused shape arrays and polygons in `shapes` mode stay
   inside the result until `result.free()` drops them, avoiding getter clones.
 
-- [ ] **Narrative docs**. <https://eunoia.bz/docs/> and the rustdoc/README shape
-  lists don't mention `RotatedRectangle`. Add it once the web UI and quality
-  baseline land.
+- [x] **Narrative docs** (done). README and core rustdoc list all five fitting
+  shapes. The Shapes page covers rotated-rectangle parameters, derivative-free
+  fitting, an interactive example, and the four-set canonical Venn limit.
+  Language quickstarts, the JavaScript reference, C ABI Venn docs, page metadata,
+  and `llms.txt` are updated. The TypeScript `venn()` range check now accepts
+  four sets for `"rotatedRectangle"`, with regression tests for both output modes
+  and rejection of five sets.

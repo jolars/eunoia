@@ -1,5 +1,9 @@
 //! Shape implementations for Euler and Venn diagrams.
 //!
+//! The fittable shapes are [`Circle`], [`Ellipse`], [`Square`], [`Rectangle`],
+//! and [`RotatedRectangle`]. [`Polygon`] represents outlines and extracted
+//! regions rather than a fitting primitive.
+//!
 //! This module defines composable traits for geometric operations and diagram shapes.
 //! The trait system is decomposed to allow code reuse across different geometric types:
 //!

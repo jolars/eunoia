@@ -44,7 +44,7 @@ single set (`A`) or sets joined with `&` (`"A&B"`). Values are *disjoint*
 `fit` carries the fitted geometry and fit statistics:
 
 ```r
-fit$shapes # data frame of fitted circle/ellipse parameters
+fit$shapes # data frame of fitted geometry for the selected shape
 fit$stress # goodness-of-fit (venneuler-style)
 fit$diagError # largest single-region error
 ```
@@ -56,9 +56,11 @@ fit <- euler(c(A = 5, B = 3, "A&B" = 1.5), shape = "ellipse")
 plot(fit)
 ```
 
-`shape` is one of `"circle"` (default), `"ellipse"`, `"square"`, or
-`"rectangle"`. Ellipses are more flexible and often fit three or more sets
-noticeably better; see [Shapes](/docs/concepts/shapes/).
+`shape` is one of `"circle"` (default), `"ellipse"`, `"square"`,
+`"rectangle"`, or `"rotated_rectangle"`. Ellipses are more flexible and often
+fit three or more sets noticeably better. Rotated rectangles add an angle to
+the width and height and use derivative-free fitting; see
+[Shapes](/docs/concepts/shapes/).
 
 ## Customize the Plot
 
@@ -81,7 +83,11 @@ regardless of size), use `venn()`:
 ```r
 plot(venn(c("A", "B", "C"))) # three-set Venn
 plot(venn(3)) # same, by set count
+plot(venn(4, shape = "rotated_rectangle"))
 ```
+
+`venn()` defaults to ellipses, supporting up to five sets. Rotated rectangles
+support up to four sets.
 
 ## Next Steps
 

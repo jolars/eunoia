@@ -8,8 +8,8 @@ const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
 
 `@jolars/eunoia` is the WebAssembly build of the eunoia engine. You hand it set
 sizes, it fits an area-proportional Euler (or canonical Venn) diagram, and hands
-back plain JavaScript objects (circles, ellipses, polygons, or per-region
-pieces) that you draw however you like (SVG, Canvas, D3).
+back plain JavaScript objects describing the fitted shapes, polygons, or
+per-region pieces that you draw however you like (SVG, Canvas, D3).
 
 <DiagramExample
   sets={TWO_SET_SPEC}
@@ -97,7 +97,7 @@ union discriminated on `mode`:
 
 | `output`               | You get                                                                | Use it when                                      |
 | ---------------------- | ---------------------------------------------------------------------- | ------------------------------------------------ |
-| `"shapes"` *(default)* | `circles`/`ellipses`/`squares`/`rectangles`, the primitive params      | drawing native `<circle>`/`<ellipse>`/`<rect>`   |
+| `"shapes"` *(default)* | The selected shape's geometric parameters                              | drawing native SVG shapes                       |
 | `"polygons"`           | the shapes **plus** `polygons`, one closed outline per set             | filling/stroking exact set outlines as `<path>`  |
 | `"regions"`            | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors`     | per-region fills, coloring, label placement      |
 
@@ -106,8 +106,9 @@ See [Goodness of Fit](/docs/concepts/goodness-of-fit/) for what those mean.
 
 ## Render to SVG
 
-In `"shapes"` mode the fields map straight onto SVG attributes. Coordinates are
-in abstract, centered units, so compute a bounding box and use it as the
+In `"shapes"` mode the fields give the geometry for native SVG elements.
+Ellipses and rotated rectangles also need a rotation transform. Coordinates
+are in abstract, centered units, so compute a bounding box and use it as the
 `viewBox`:
 
 ```js
@@ -167,8 +168,14 @@ document.body.innerHTML = toSvg(layout, { showLabels: true });
 Because it never touches WebAssembly or the DOM, `./svg` works in server-side
 rendering and from a CDN as-is.
 
+For rotated rectangles, request `output: "polygons"` or `output: "regions"`
+when using the bundled serializer.
+
 `ellipses` carry `semiMajor`, `semiMinor`, and a `rotation` (radians);
 `squares`/`rectangles` carry `side` or `width`/`height` centered on `x`, `y`.
+`rotatedRectangles` carry `width`, `height`, and `rotation` in radians,
+counterclockwise from the positive x-axis. Width and height follow the
+rectangle's local axes before rotation.
 
 For exact overlap shading rather than translucent stacking, switch to
 `output: "regions"`, give each region its own fill from its `combination`, and
@@ -180,11 +187,18 @@ derived.
 
 ```js
 euler({ sets: { A: 5, B: 3, "A&B": 1.5 }, shape: "ellipse" });
+
+const boxes = euler({
+  sets: { A: 5, B: 3, "A&B": 1.5 },
+  shape: "rotatedRectangle",
+  output: "polygons",
+});
 ```
 
-`shape` is one of `"circle"`, `"ellipse"`, `"square"`, `"rectangle"`. Ellipses
-have more freedom than circles and often fit three or more sets noticeably
-better; see [Shapes](/docs/concepts/shapes/).
+`shape` is one of `"circle"`, `"ellipse"`, `"square"`, `"rectangle"`, or
+`"rotatedRectangle"`. Ellipses have more freedom than circles and often fit
+three or more sets noticeably better. Rotated rectangles let straight-edged
+boxes turn and use derivative-free fitting; see [Shapes](/docs/concepts/shapes/).
 
 ## Venn Diagrams
 
@@ -200,11 +214,12 @@ layout.polygons; // one outline per set; output defaults to "polygons"
 
 Pick the shape with `shape`. `"ellipse"` (default) is the only one that
 reaches `n = 5`; `"circle"` gives the classic 1–3-circle diagrams, and
-`"square"`/`"rectangle"` are axis-aligned. The non-ellipse shapes cap at
-`n = 3`:
+`"square"`/`"rectangle"` are axis-aligned and support up to three sets.
+`"rotatedRectangle"` supports up to four:
 
 ```js
 venn({ n: 3, shape: "circle" }); // classic three-circle Venn
+venn({ n: 4, shape: "rotatedRectangle" });
 ```
 
 ## Labels

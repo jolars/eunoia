@@ -171,8 +171,9 @@ Lays out a canonical n-set Venn diagram—a fixed template, *not* proportional
   | `shape`      | string          | `"circle"`   | Same shape tokens as `eunoia_euler`.                                    |
   | `complement` | number          | —            | Frames the diagram with a bounding container (surfaced as `container`). |
 
-The response is the same `LayoutOut` envelope as `eunoia_euler`. Circles cover n
-≤ 3; ellipse arrangements (Wilkinson/Edwards) reach n = 4–5.
+The response is the same `LayoutOut` envelope as `eunoia_euler`. Circles,
+squares, and axis-aligned rectangles support up to three sets; rotated
+rectangles support up to four, and ellipses support up to five.
 
 ## `eunoia_place_labels`
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LabelPlacement, SetOutline } from "@jolars/eunoia";
+  import type { LabelPlacement, SetOutline, ShapeType } from "@jolars/eunoia";
   import { leaderPath } from "@jolars/eunoia/svg";
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
@@ -12,7 +12,7 @@
     /** Default `"exclusive"`. */
     inputType?: "exclusive" | "inclusive";
     /** Shape primitive to fit. Default `"ellipse"` since most chapter examples use n>=3. */
-    shape?: "circle" | "ellipse" | "square" | "rectangle";
+    shape?: ShapeType;
     /**
      * Universe complement — the area outside every named set. When set, the
      * fitter jointly solves for a bounding container, drawn here as a dashed

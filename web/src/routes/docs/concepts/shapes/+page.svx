@@ -33,13 +33,15 @@ overlap) but carries no geometry. Geometry only appears at **fit
 time**, when you pick a shape primitive and the fitter solves for the
 position and size of one such shape per set so that the overlaps
 reproduce the requested areas as closely as possible. The same spec can
-therefore be drawn with any of four primitives:
+therefore be drawn with any of five primitives:
 
 - **Circle:** the default, simplest, and fastest.
-- **Ellipse:** the most expressive, and the only primitive that scales
-  to four- and five-set Venn diagrams.
+- **Ellipse:** flexible in size and orientation, with canonical Venn
+  diagrams for up to five sets.
 - **Square** and **Rectangle:** axis-aligned, for a layout-board look
   and exact, rotation-free regions.
+- **Rotated rectangle:** a rectangle that can turn, with exact polygon
+  overlaps and canonical Venn diagrams for up to four sets.
 
 Every primitive is area-true: the fitter never distorts a shape's
 reported area to improve a fit. What differs between them is how many
@@ -69,9 +71,9 @@ An ellipse is `[x, y, a, b, φ]`: a center, two semi-axes, and a
 rotation angle, giving five degrees of freedom per set. The extra two
 parameters let a set stretch and turn, which is what you need when the
 pairwise overlaps are lopsided enough that no arrangement of round discs
-can satisfy them. Ellipses are also the only primitive that reaches
-beyond three sets: eunoia ships canonical four- and five-set Venn
-arrangements (the Wilkinson and Edwards ellipse layouts) for them.
+can satisfy them. Eunoia ships canonical four- and five-set Venn
+arrangements (the Wilkinson and Edwards ellipse layouts) for ellipses.
+They are the only supported primitive with a canonical five-set Venn.
 
 That freedom comes at a cost: more free parameters mean a rougher loss
 surface, so ellipse fits benefit from more restarts and lean more often
@@ -119,6 +121,31 @@ size that a fixed aspect ratio is too constraining.
   caption="A two-set spec with unequal sizes fitted with rectangles."
 />
 
+## Rotated Rectangle
+
+A rotated rectangle is `[x, y, w, h, φ]`: a center, a width, a height,
+and a rotation angle in radians, giving five degrees of freedom per set.
+The width and height describe the rectangle's local axes; `φ` turns
+those axes counterclockwise from the positive x-axis. This lets each
+box turn to adjust its overlaps while keeping straight edges.
+
+Intersections of rotated rectangles are convex polygons. Eunoia clips
+the corners and edges to compute their areas exactly, without sampling
+the boundary. Those areas have kinks as edges enter or leave an
+intersection, so the fitter uses derivative-free Nelder–Mead and
+CMA-ES by default. More restarts can help with difficult layouts.
+
+Rotation also makes a true four-set Venn arrangement possible. Eunoia
+provides canonical rotated-rectangle Venn layouts for one through four
+sets; the axis-aligned rectangle stops at three.
+
+<DiagramExample
+  sets={FOUR_SET_SPEC}
+  shape="rotatedRectangle"
+  seed={3}
+  caption="The four-set spec fitted with rectangles that can turn as well as stretch."
+/>
+
 ## Choosing a Shape
 
 A few rules of thumb:
@@ -128,52 +155,61 @@ A few rules of thumb:
   metrics](/docs/concepts/goodness-of-fit/). If a three-set fit is poor,
   the overlaps are probably too lopsided for circles, and ellipses will
   do better.
-- **Four or five sets:** use ellipses. They are the only primitive
-  expressive enough to realize these layouts, and the only one with
-  canonical Venn arrangements that far.
+- **Four-set Venn diagrams:** use ellipses or rotated rectangles.
+  Both provide canonical arrangements with every intersection present.
+- **Five-set Venn diagrams:** use ellipses, the only supported primitive
+  with a canonical arrangement for five sets.
 - **A grid or layout-board look, or exact rotation-free regions:** use
   squares or rectangles. Pick rectangles when the sets vary enough in
   size that a fixed aspect ratio would be too constraining.
+- **Straight edges with freedom to turn:** use rotated rectangles.
+  Check the fit metrics and increase restarts if the default fit is poor.
 
 The canonical Venn support per primitive sets a hard ceiling on set
 count for true Venn diagrams:
 
-| Shape     | Parameters         | Degrees of freedom | Canonical Venn |
-| --------- | ------------------ | ------------------ | -------------- |
-| Circle    | `[x, y, r]`        | 3                  | up to 3 sets   |
-| Ellipse   | `[x, y, a, b, φ]`  | 5                  | up to 5 sets   |
-| Square    | `[x, y, side]`     | 3                  | up to 3 sets   |
-| Rectangle | `[x, y, w, h]`     | 4                  | up to 3 sets   |
+| Shape             | Parameters         | Degrees of freedom | Canonical Venn |
+| ----------------- | ------------------ | ------------------ | -------------- |
+| Circle            | `[x, y, r]`        | 3                  | up to 3 sets   |
+| Ellipse           | `[x, y, a, b, φ]`  | 5                  | up to 5 sets   |
+| Square            | `[x, y, side]`     | 3                  | up to 3 sets   |
+| Rectangle         | `[x, y, w, h]`     | 4                  | up to 3 sets   |
+| Rotated rectangle | `[x, y, w, h, φ]`  | 5                  | up to 4 sets   |
 
 Area-proportional Euler diagrams are not bound by these ceilings (you
 can fit more sets), but the more free parameters a shape has, the harder
-the fit, so expect ellipse fits to take longer and to vary more between
-runs than circle fits.
+the fit, so expect ellipse and rotated-rectangle fits to take longer and
+to vary more between runs than circle fits.
 
 ## Selecting a Shape in Code
 
 In JavaScript, the shape is the `shape` option on `euler()` and
-`venn()`. It accepts `"circle"`, `"ellipse"`, `"square"`, or
-`"rectangle"`; `euler()` defaults to `"circle"` and `venn()` to
-`"ellipse"` (the only shape that covers `n = 4..5`).
+`venn()`. It accepts `"circle"`, `"ellipse"`, `"square"`,
+`"rectangle"`, or `"rotatedRectangle"`; `euler()` defaults to `"circle"`
+and `venn()` to `"ellipse"` (the only shape that reaches `n = 5`).
 
 ```js
 import { euler } from "@jolars/eunoia";
 
 const layout = euler({
   sets: { A: 10, B: 10, "A&B": 3 },
-  shape: "ellipse",
+  shape: "rotatedRectangle",
 });
+layout.rotatedRectangles; // center, width, height, rotation, and label anchor
 ```
 
 In Rust, the shape is a type parameter on the fitter, defaulting to
 `Circle`:
 
 ```rust
-use eunoia::{Ellipse, Fitter};
+use eunoia::geometry::shapes::RotatedRectangle;
+use eunoia::Fitter;
 
-let layout = Fitter::<Ellipse>::new(&spec).fit()?;
+let layout = Fitter::<RotatedRectangle>::new(&spec).fit()?;
 ```
+
+The R, Python, Julia, and C APIs use `"rotated_rectangle"` for the
+same shape. See the language quickstarts for examples.
 
 A type becomes fittable by implementing the `DiagramShape` trait, which
 also defines each shape's two parameter encodings (a human-friendly

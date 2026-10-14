@@ -22,7 +22,7 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 | ----------------- | ---------------------------------------------------------------- | -------------- | ------------------------------------------------------------------ |
 | `sets`            | `Record<string, number>`                                         | *(required)*   | Sizes keyed by combination expression (`"A"`, `"A&B"`, …).         |
 | `inputType`       | `"exclusive" \| "inclusive"`                                     | `"exclusive"`  | Whether values are exclusive pieces or full set unions.            |
-| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle"`              | `"circle"`     | Shape family to fit with.                                          |
+| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle" \| "rotatedRectangle"` | `"circle"`     | Shape family to fit with.                                          |
 | `output`          | `"shapes" \| "polygons" \| "regions"`                           | `"shapes"`     | What the `Layout` carries (see [Layout](#the-layout-object)).      |
 | `seed`            | `number \| bigint`                                               | —              | RNG seed for reproducible fits.                                    |
 | `optimizer`       | `Optimizer`                                                       | core default   | Optimization algorithm (see below).                               |
@@ -39,6 +39,9 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 `"stress"`, `"diagError"`. The defaults match the Rust core and are what you
 want unless you are deliberately exploring; see the
 [Fitter Pipeline](/docs/concepts/fitter-pipeline/) chapter.
+
+Rotated rectangles use derivative-free Nelder–Mead and CMA-ES by default
+because their exact polygon overlap areas do not supply analytical gradients.
 
 For final-layout LM stages, `tolerance` controls relative model reduction:
 both the actual and predicted cost reductions must be small before this test
@@ -61,14 +64,14 @@ const layout = venn({ n: 3 }); // 1 ≤ n ≤ 5
 | Option            | Type                                                  | Default      | Meaning                                       |
 | ----------------- | ---------------------------------------------------- | ------------ | --------------------------------------------- |
 | `n`               | `number`                                             | *(required)* | Number of sets.                               |
-| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle"` | `"ellipse"`  | Shape family.                                 |
+| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle" \| "rotatedRectangle"` | `"ellipse"`  | Shape family.                                 |
 | `output`          | `"polygons" \| "regions"`                           | `"polygons"` | What the `Layout` carries.                    |
 | `polygonVertices` | `number`                                             | `256`        | Vertices per outline.                         |
 | `complement`      | `number`                                             | —            | Optional complement container.                |
 
 Only `"ellipse"` reaches `n = 5`; `"circle"` gives the classic 1–3-circle
-diagrams, and `"square"`/`"rectangle"` are axis-aligned. The non-ellipse
-shapes cap at `n = 3`.
+diagrams, and `"square"`/`"rectangle"` are axis-aligned and cap at `n = 3`.
+`"rotatedRectangle"` supports `n = 1..4`.
 
 ## The `Layout` Object
 
@@ -77,7 +80,7 @@ which follows the `output` option:
 
 | `output`     | `mode`         | Carries                                                                 |
 | ------------ | -------------- | ----------------------------------------------------------------------- |
-| `"shapes"`   | `"shapes"`     | `circles`/`ellipses`/`squares`/`rectangles`, the primitive params.      |
+| `"shapes"`   | `"shapes"`     | The selected shape's geometric parameters, listed below.                 |
 | `"polygons"` | `"polygons"`   | the shapes **plus** `polygons`, one closed outline per set.             |
 | `"regions"`  | `"regions"`    | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors` + `shapeOutlines`. |
 
@@ -87,6 +90,20 @@ Every `Layout` also carries:
 - `metrics`: `{ loss, stress, diagError, iterations, targetAreas, fittedAreas,
   regionError, residuals }`. See [Goodness of Fit](/docs/concepts/goodness-of-fit/).
 - `container`: present only when `complement` was set: `{ x, y, width, height }`.
+
+In `"shapes"` and `"polygons"` modes, `shape` selects the array of primitives:
+
+| `shape`              | Array               | Geometry fields                         |
+| -------------------- | ------------------- | --------------------------------------- |
+| `"circle"`           | `circles`           | `x`, `y`, `radius`                      |
+| `"ellipse"`          | `ellipses`          | `x`, `y`, `semiMajor`, `semiMinor`, `rotation` |
+| `"square"`           | `squares`           | `x`, `y`, `side`                        |
+| `"rectangle"`        | `rectangles`        | `x`, `y`, `width`, `height`             |
+| `"rotatedRectangle"` | `rotatedRectangles` | `x`, `y`, `width`, `height`, `rotation` |
+
+Each primitive also has a `label` and a `labelAnchor`. For ellipses and rotated
+rectangles, `rotation` is in radians, counterclockwise from the positive
+x-axis; the axis lengths describe the shape before rotation.
 
 Each shape and region carries a `labelAnchor` (`{ x, y }`) for interior labels;
 `"regions"` mode adds `setAnchors` and `shapeOutlines`. The latter is one closed
@@ -258,6 +275,9 @@ document.body.innerHTML = toSvg(layout, { showLabels: true });
 - `polygonPath`, `regionPath`, `leaderPath`: SVG `d` path builders.
 - Color helpers: `PALETTES`, `paletteColors`, `defaultColorFor`, `colorForSet`,
   `mixColors`, plus `nestedSets`/`regionTitleLines` for region labeling.
+
+For rotated rectangles, request `output: "polygons"` or `output: "regions"`
+when using the serializer.
 
 `ToSvgOptions` covers palettes and per-set color overrides, opacity, strokes,
 label and count rendering, a legend, padding, the `placements`/`labelSizes`

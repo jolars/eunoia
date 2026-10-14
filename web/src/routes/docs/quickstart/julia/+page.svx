@@ -39,7 +39,7 @@ using Eunoia
 
 fit = euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5))
 fit          # `show` prints the residual table
-fit.shapes   # fitted Circle/Ellipse/Square/Rectangle structs
+fit.shapes   # fitted Circle, Ellipse, Square, Rectangle, or RotatedRectangle structs
 fit.loss     # fit quality (lower is better)
 ```
 
@@ -77,9 +77,11 @@ into an existing axis. Styling keywords (`colors`, `fills`, `edges`, `labels`,
 euler(Dict("A" => 5, "B" => 3, "A&B" => 1.5); shape = "ellipse")
 ```
 
-`shape` is one of `"circle"` (default), `"ellipse"`, `"square"`, or
-`"rectangle"`. Ellipses are more flexible and often fit three or more sets
-noticeably better; see [Shapes](/docs/concepts/shapes/).
+`shape` is one of `"circle"` (default), `"ellipse"`, `"square"`,
+`"rectangle"`, or `"rotated_rectangle"`. Ellipses are more flexible and often
+fit three or more sets noticeably better. Rotated rectangles add an angle to
+the width and height and use derivative-free fitting; see
+[Shapes](/docs/concepts/shapes/).
 
 ## Venn Diagrams
 
@@ -90,7 +92,11 @@ mapping:
 ```julia
 venn(3)                                    # three sets named A, B, C
 venn(["A", "B", "C"]; shape = "ellipse")
+venn(4; shape = "rotated_rectangle")
 ```
+
+Ellipse Venn diagrams support up to five sets, rotated rectangles up to four,
+and circles, squares, and axis-aligned rectangles up to three.
 
 ## Next Steps
 
