@@ -71,6 +71,13 @@ tasks:
     cmds:
       - node --experimental-wasm-modules --test 'ts/tests-wasm/*.test.mjs'
 
+  test-members:
+    desc: Test whole-region member callouts in the web renderer
+    deps: [build-ts]
+    dir: web
+    cmds:
+      - pnpm test:members
+
   coverage:
     desc: Generate code coverage report
     cmds:

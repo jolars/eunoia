@@ -9,7 +9,6 @@
   } from "@jolars/eunoia";
   import {
     labelObstacles,
-    placeGlyphBoxesForRegions,
     placeGlyphsForRegions,
     placeLabelsForRegions,
     placeSetLabels,
@@ -22,6 +21,7 @@
     viewBox,
   } from "@jolars/eunoia/svg";
   import { glyphStatus, memberListsForRegions } from "../members.svelte";
+  import { placeMemberLabels, type MeasuredMemberLine } from "../member-layout";
   import { appState } from "../state.svelte";
   import type { DiagramStyle, FitResult } from "../types/diagram";
   import { vennAnnotationsForRegions, vennCombinations } from "../venn";
@@ -108,7 +108,10 @@
     if (appState.diagramType !== "venn" || !result) return undefined;
     const combinations =
       result.layout.mode === "regions"
-        ? result.layout.regions.map((r) => r.combination)
+        ? [
+            ...vennCombinations(appState.vennN),
+            ...result.layout.regions.map((r) => r.combination),
+          ]
         : vennCombinations(appState.vennN);
     return vennAnnotationsForRegions(appState.vennRegions, combinations);
   });
@@ -133,6 +136,7 @@
   let measureContainer: SVGGElement | null = $state(null);
   let measuredSizes: Record<string, LabelSize> = $state({});
   let measuredSetSizes: Record<string, LabelSize> = $state({});
+  let measuredHeaderLines: Record<string, MeasuredMemberLine[]> = $state({});
 
   $effect(() => {
     // Re-measure when result changes, font scales, or showCounts toggles.
@@ -155,6 +159,7 @@
       return;
     }
     const sizes: Record<string, LabelSize> = {};
+    const headerLines: Record<string, MeasuredMemberLine[]> = {};
     const nodes = measureContainer.querySelectorAll<SVGGraphicsElement>(
       "text[data-fit-region]",
     );
@@ -162,6 +167,14 @@
       const combo = t.getAttribute("data-fit-region");
       if (combo === null) continue;
       const bb = t.getBBox();
+      (headerLines[combo] ??= []).push({
+        text: t.textContent?.trim() ?? "",
+        w: bb.width,
+        h: bb.height,
+        fontSize: Number(t.getAttribute("font-size")),
+        fontWeight: t.getAttribute("font-weight") ?? 400,
+        fontStyle: t.getAttribute("font-style") ?? "normal",
+      });
       const cur = sizes[combo];
       if (cur) {
         sizes[combo] = {
@@ -173,6 +186,7 @@
       }
     }
     measuredSizes = sizes;
+    measuredHeaderLines = headerLines;
 
     const setBoxes: Record<string, LabelSize> = {};
     const setNodes =
@@ -194,7 +208,7 @@
   // bbox (or container, when complement is set) with a leader back to the POI.
   // Empty until the first DOM measurement runs; the serializer then falls back
   // to each region's own POI for unplaced regions.
-  let regionPlacements: Record<string, LabelPlacement> = $derived.by(() => {
+  let baseRegionPlacements: Record<string, LabelPlacement> = $derived.by(() => {
     if (!result || result.layout.mode !== "regions") return {};
     const sizes = measuredSizes;
     if (Object.keys(sizes).length === 0) return {};
@@ -225,7 +239,7 @@
   // never lands on a region's quantity.
   let regionLabelObstacles = $derived(
     labelObstacles({
-      placements: regionPlacements,
+      placements: baseRegionPlacements,
       sizes: measuredSizes,
       padding: style.labelSize * 0.15,
     }),
@@ -233,7 +247,7 @@
 
   // Exterior set names: each hugs its own shape's outline at the angle with
   // the most free space, no leader line.
-  let setLabelPlacements: Record<string, LabelPlacement> | undefined =
+  let baseSetLabelPlacements: Record<string, LabelPlacement> | undefined =
     $derived.by(() => {
       if (!setLabelsOutside || !result || setOutlines.length === 0) {
         return undefined;
@@ -261,9 +275,9 @@
   // they join the list.
   let glyphObstacles = $derived([
     ...regionLabelObstacles,
-    ...(setLabelPlacements
+    ...(baseSetLabelPlacements
       ? labelObstacles({
-          placements: setLabelPlacements,
+          placements: baseSetLabelPlacements,
           sizes: measuredSetSizes,
           padding: style.labelSize * 0.15,
         })
@@ -353,9 +367,10 @@
   );
 
   // Second measurement pass, mirroring the label one: hidden `<text>` per member
-  // name, read back with getBBox() into per-region arrays in the order the rows
-  // supply them (the packer returns a prefix, so order decides what survives).
+  // name, read back with getBBox() in the packer's input order. An incomplete
+  // prefix switches the entire roster to a callout rather than omitting names.
   let memberSizes: Record<string, LabelSize[]> = $state({});
+  let missingHeaders: Record<string, MeasuredMemberLine> = $state({});
 
   $effect(() => {
     void result;
@@ -381,26 +396,66 @@
       sizes[combo] = cur;
     }
     memberSizes = sizes;
+    const headings: Record<string, MeasuredMemberLine> = {};
+    for (const t of Array.from(
+      measureContainer.querySelectorAll<SVGGraphicsElement>(
+        "text[data-fit-missing]",
+      ),
+    )) {
+      const combo = t.getAttribute("data-fit-missing");
+      if (combo === null) continue;
+      const bb = t.getBBox();
+      headings[combo] = {
+        text: t.textContent?.trim() ?? "",
+        w: bb.width,
+        h: bb.height,
+        fontSize: style.memberLabelSize,
+        fontWeight: 400,
+      };
+    }
+    missingHeaders = headings;
   });
 
   // Member text boxes, packed at a single diagram-wide scale. Shrink-only, so
   // `style.memberLabelSize` is the ceiling and the rendered size is
   // `memberLabelSize * placements.scale`.
-  let glyphBoxPlacements: GlyphBoxPlacements | undefined = $derived.by(() => {
+  let memberLayout = $derived.by(() => {
     if (style.glyphMode !== "members" || !result) return undefined;
     if (result.layout.mode !== "regions") return undefined;
     if (memberBudgetExceeded) return undefined;
     if (Object.keys(memberSizes).length === 0) return undefined;
+    if (
+      Object.entries(memberLabels).some(
+        ([key, names]) =>
+          memberSizes[key]?.length !== names.length || !missingHeaders[key],
+      )
+    )
+      return undefined;
     try {
-      return placeGlyphBoxesForRegions({
-        regions: result.layout.regions,
+      return placeMemberLabels({
+        layout: result.layout,
+        labels: memberLabels,
         sizes: memberSizes,
-        options: {
+        headerSizes: measuredSizes,
+        headerLines: measuredHeaderLines,
+        missingHeaders,
+        fontSize: style.memberLabelSize,
+        boxOptions: {
           arrangement: style.glyphArrangement,
           gap: style.glyphGap,
           seed: style.glyphSeed,
-          obstacles: glyphObstacles,
         },
+        strategy: {
+          leader:
+            style.labelPlacement === "elbow"
+              ? { type: "elbow" }
+              : { type: "straight", placement: style.labelPlacement },
+          precision: Math.max(0.05, style.labelSize * 0.05),
+          tether: style.labelTether,
+          leaderGap: style.labelSize * 0.25,
+        },
+        setSizes: setLabelsOutside ? measuredSetSizes : undefined,
+        padding: style.labelSize * 0.15,
       });
     } catch (err) {
       console.warn("[glyph boxes] placement failed:", err);
@@ -408,7 +463,17 @@
     }
   });
 
-  // Publish why names were dropped, for the note in StyleControls.
+  let glyphBoxPlacements: GlyphBoxPlacements | undefined = $derived(
+    memberLayout?.boxes,
+  );
+  let regionPlacements = $derived(
+    memberLayout?.placements ?? baseRegionPlacements,
+  );
+  let setLabelPlacements = $derived(
+    memberLayout?.setPlacements ?? baseSetLabelPlacements,
+  );
+
+  // Publish callout regions and any skipped rendering for the glyph controls.
   $effect(() => {
     if (style.glyphMode !== "members") {
       glyphStatus.clear();
@@ -423,11 +488,13 @@
         `[glyph boxes] skipped: ${total} names exceed the interactive budget of ${MAX_MEMBER_LABELS}`,
       );
       glyphStatus.unplaced = {};
+      glyphStatus.callouts = [];
       glyphStatus.skipped = `${total} names exceed the interactive budget of ${MAX_MEMBER_LABELS}.`;
       return;
     }
     glyphStatus.skipped = "";
     glyphStatus.unplaced = { ...(glyphBoxPlacements?.unplaced ?? {}) };
+    glyphStatus.callouts = Object.keys(memberLayout?.callouts ?? {});
   });
 
   // The single options object handed to the serializer — the adapter from the
@@ -464,6 +531,7 @@
       // 400-weight nodes we measured, overflowing every box.
       fontWeight: 400,
     },
+    memberCallouts: memberLayout?.callouts,
   });
 
   let vb = $derived(
@@ -497,9 +565,6 @@
       data-fit-measure
     >
       {#each regions as region}
-        {@const members = memberBudgetExceeded
-          ? []
-          : (memberLabels[region.combination] ?? [])}
         {#if !setLabelsOutside}
           {#each regionTitleLines(region.combination, nested) as title}
             <text
@@ -523,15 +588,25 @@
             </text>
           {/if}
         {/if}
-        {#each members as name}
+      {/each}
+      {#if !memberBudgetExceeded}
+        {#each Object.entries(memberLabels) as [combination, members]}
           <text
-            data-fit-member={region.combination}
+            data-fit-missing={combination}
             font-size={style.memberLabelSize}
           >
-            {name}
+            {combination || "Outside"} (no geometry)
           </text>
+          {#each members as name}
+            <text
+              data-fit-member={combination}
+              font-size={style.memberLabelSize}
+            >
+              {name}
+            </text>
+          {/each}
         {/each}
-      {/each}
+      {/if}
       {#if setLabelsOutside}
         {#each setOutlines as outline}
           <text

@@ -296,6 +296,17 @@ default) adds a rounded chip behind each label, tinted from the region color
 like the glyph discs. `glyphs` and `glyphBoxes` may both be set; discs draw
 first.
 
+`memberCallouts` renders complete roster blocks composed by the caller. Each
+combination maps to a `MemberCallout` with a `placement` from the label placer,
+the measured `size: { w, h }` of the entire block, and `lines` containing
+`{ text, y, fontSize, fontWeight?, fontStyle? }`. Each line's `y` is its vertical
+center relative to the block's anchor. Supply the region heading and count as
+lines when wanted: a callout replaces that region's ordinary label. Blocks
+expand the viewport and draw the placement's leader when it has a tether.
+A block whose region has no geometry can omit the tether and label the missing
+region explicitly. Text inherits the SVG's font family and uses `labelColor`.
+The serializer does not measure, pack, or choose which rosters become callouts.
+
 ### Interactivity: tooltips and data hooks
 
 The serializer can attach hover tooltips and identifying attributes to each

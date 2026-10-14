@@ -225,6 +225,21 @@ boxes remain a prefix of the input under either policy.
 
 To see it without writing any code, type names into the per-combination roster
 fields in the [playground](/app/) and set **Glyphs → Draw → Member names**.
+The playground uses strict label obstacles and keeps each region's roster
+together. If individual names do not all fit, it replaces that packing with a
+single measured block containing the region heading, count when enabled, and
+the entire roster. The label placer keeps the block inside when it fits and
+otherwise places it outside with a leader. The other regions are repacked
+without that roster, so one oversized name no longer shrinks every region's
+text to the readability floor.
+
+Regions stay in callout mode for the rest of that layout pass. Measurements
+remain in layout units as the viewport expands, so adding a callout does not
+start a cycle of shrinking the diagram and evicting more names. A requested
+region with no drawable geometry appears in a separate list marked **no
+geometry**, without a leader to a region that does not exist. These lists are
+included in diagram exports. Python rendering remains a separate integration;
+the core packer's prefix contract is unchanged.
 
 ## JavaScript/TypeScript
 

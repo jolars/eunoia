@@ -73,6 +73,57 @@ function regionLayout() {
   };
 }
 
+test("member callouts replace region labels and expand the viewport", () => {
+  const layout = regionLayout();
+  const callout = {
+    placement: {
+      anchor: { x: 30, y: 5 },
+      kind: "exteriorElbow",
+      tether: { x: 10, y: 5 },
+      leaderEnd: { x: 19, y: 5 },
+      leaderWaypoints: [{ x: 15, y: 5 }],
+    },
+    size: { w: 20, h: 12 },
+    lines: [
+      { text: "A", y: -4, fontSize: 3, fontWeight: 700 },
+      { text: "Ada & Grace <friends>", y: 2, fontSize: 2 },
+    ],
+  };
+  const options = {
+    memberCallouts: { A: callout },
+    padding: 0,
+    showCounts: true,
+  };
+  const svg = toSvg(layout, options);
+  assert.equal(svg.split(">A</text>").length - 1, 1);
+  assert.match(svg, /data-member-callout="A"/);
+  assert.match(svg, /M 10,5 L 15,5 L 19,5/);
+  assert.match(
+    svg,
+    /y="7"[^>]*font-size="2"[^>]*>Ada &amp; Grace &lt;friends&gt;<\/text>/,
+  );
+  assert.deepEqual(viewBox(layout, options), { x: 0, y: -1, w: 40, h: 12 });
+});
+
+test("rosters without geometry render without a fabricated leader", () => {
+  const svg = toSvg(regionLayout(), {
+    memberCallouts: {
+      "B&C": {
+        placement: {
+          anchor: { x: 20, y: 5 },
+          kind: "interior",
+          leaderWaypoints: [],
+        },
+        size: { w: 10, h: 4 },
+        lines: [{ text: "B&C (no geometry)", y: 0, fontSize: 2 }],
+      },
+    },
+  });
+  assert.match(svg, /data-member-callout="B&amp;C"/);
+  assert.match(svg, />B&amp;C \(no geometry\)<\/text>/);
+  assert.doesNotMatch(svg, /stroke-opacity="0.6"/);
+});
+
 test("mixColors averages in sRGB", () => {
   assert.equal(mixColors(["#000000", "#ffffff"]), "rgb(128,128,128)");
   assert.equal(mixColors(["#ff0000", "#0000ff"]), "rgb(128,0,128)");

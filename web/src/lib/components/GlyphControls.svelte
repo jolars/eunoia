@@ -44,9 +44,9 @@
     {:else if appState.style.glyphMode === "members"}
       <p class="text-xs text-muted mt-1">
         The member names typed on the combination rows — or, for a Venn, on its
-        region rows — measured and packed inside their region. A single
-        diagram-wide scale is found by shrinking the name size until every
-        region fits, never by growing it, so the size below is a ceiling.
+        region rows — measured and packed inside their region. If the full list
+        does not fit, it moves together into a labeled callout. Names shrink to
+        fit but never grow past the size below.
       </p>
       {#if appState.diagramType === "venn" && !hasVennMembers}
         <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
@@ -64,6 +64,11 @@
             ? ""
             : "s"} did not fit ({glyphStatus.overflowedRegions.join(", ")}).
           Lower the name size or shorten the names.
+        </p>
+      {:else if glyphStatus.callouts.length > 0}
+        <p class="text-xs text-muted mt-1">
+          Complete lists shown in callouts: {glyphStatus.callouts.join(", ")}. A
+          list marked “no geometry” has no drawable region to point to.
         </p>
       {/if}
     {/if}

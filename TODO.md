@@ -48,18 +48,16 @@ are in the sibling [eunoia-py TODO](../eunoia-py/TODO.md).
   compares both modes. WASM, C, TypeScript, tests, and docs expose the option.
   Python adoption and multicolumn `mode="list"` remain renderer follow-ups.
 
-- [ ] **Decide how to support partial packing beyond an oversized name (item
-  4).** The existing prefix contract intentionally stops at the first item
-  that fits nowhere. In a `2 x 2` region, input sizes
-  `[(7, 0.3), (0.4, 0.3), (0.4, 0.3)]` place nothing at the default scale
-  floor `0.35`; moving the wide item last places the two short names. This
-  explains how an entire group can disappear, but the report lacks the exact
-  input for its three-name case. An optional packing mode that skips
-  oversized items would need explicit input indices in its output; silently
-  returning a subset would break consumers that zip boxes with names.
-  Alternatively, preserve the contract and compose whole-region callouts in
-  the renderer, as described below. Establish the desired behavior before
-  changing the API.
+- [x] **Keep prefix packing and compose whole-region callouts (item 4).**
+  The core API still returns a prefix. The web renderer now replaces any
+  incomplete roster with one measured block containing its heading, optional
+  count, and every name, then repacks the remaining regions. Label placement
+  handles the block as a unit, keeping it inside when it fits and placing it
+  outside with a leader otherwise. Requested regions without drawable geometry
+  retain their names in a separate list marked "no geometry". SVG rendering and
+  exports include the blocks and expand their viewport. The oversized-first-name
+  fixture, both arrangements, all leader styles, and missing/degenerate regions
+  have regression coverage. Python adoption remains a renderer follow-up.
 
 Any new public packing option must be mirrored through WASM, C, TypeScript,
 tests, and binding docs, then exposed by eunoia-py separately.
@@ -296,51 +294,23 @@ ends that work deliberately deferred. Surfaced 2026-08-06.
   `k > 1`; the missing capability is automatic growth. Python owns reference
   font sizes, the label/member size ratio, and readability floors.
 
-- [ ] **Exterior callout for overflowing regions**. Text boxes are 5-10x wider
-  than tall, so `place_glyph_boxes` populates `unplaced` far more often than
-  the disc packer ever does (a region with ample *area* still cannot seat a
-  single row of names). The wanted behaviour mirrors what `place_labels`
-  already does for a label that won't fit: put the names in a box *outside*
-  the diagram with a leader line back to the region. The "+n more"
-  affordance is the degenerate one-line case of this, so design them
-  together rather than separately.
+- [x] **Whole-region callouts for overflowing member rosters (web).**
+  `web/src/lib/member-layout.ts` composes the existing box packer and label
+  placers. Every region with an incomplete packing switches permanently to a
+  measured roster block for that pass. The block shares label collision
+  resolution with region headings and counts; set names are placed against
+  the resulting boxes, and the surviving rosters use strict obstacles.
+  Repacking can evict more regions as label obstacles move, but each iteration
+  removes at least one roster, so termination does not depend on the scale
+  increasing monotonically. All measurements stay in layout units rather than
+  feeding viewport expansion back into text sizes.
 
-  **Compose it, don't build it.** A callout block is just a big label: measure
-  the leftover names stacked as one `w x h` block and hand that block to
-  `place_labels` as a region's label. Exterior raycast / force-directed
-  placement, leader lines, collision resolution against the other labels, and
-  `placements_bbox` viewport expansion all come for free --- no new solver, no
-  new geometry. That argues for building it in `ts/` first (compose
-  `placeGlyphBoxesForRegions` + `placeLabelsForRegions`) and only pulling it
-  into the core if the other bindings want it.
-
-  **All-or-nothing per region, not "the leftovers".** Splitting a member list
-  across inside-the-region and a box off to the side reads badly: you scan
-  region A, see four names, and get no cue that three more live elsewhere. If a
-  region cannot hold everyone, evict that *whole* region to a callout. The loop
-  is then: pack, evict every region with `unplaced > 0`, repack the survivors.
-  It terminates and cannot thrash --- `scale` is a min over regions, so dropping
-  the binding region only relaxes constraints, the scale monotonically rises,
-  and no previously-fitting region can start failing.
-  `GlyphBoxPlacements::unplaced` is already exactly the input that loop needs,
-  so **this version needs no core change at all**.
-
-  **The hard part is a feedback loop.** A callout appears -> the canvas bbox
-  grows -> the diagram shrinks within it -> measured boxes are relatively larger
-  -> more regions overflow -> more callouts. `place_labels_to_fixed_point` has
-  the same exposure and damps it with a bbox-relative tolerance plus an
-  iteration cap; either reuse that or make eviction a one-shot decision taken
-  before the viewport is finalised.
-
-  **Interactions.** The existing "leader lines crossing interior labels" item
-  gets meaningfully worse --- a callout block is a much bigger obstacle than a
-  single label, and its leader crosses more of the diagram; approach (1) there
-  (tether on the boundary, not the POI) becomes more valuable. Note also that
-  `place_glyphs` never needs any of this, since dots always fit somewhere: this
-  is entirely a consequence of text aspect ratio. Which is the argument against
-  over-engineering it --- wrapped multi-line measurement already works with no
-  core change and closes a good fraction of the gap for free. Surfaced
-  2026-08-07.
+  `ToSvgOptions.memberCallouts` renders the measured lines, preserves leaders,
+  replaces the ordinary region label, and includes each block in the viewport.
+  Missing and degenerate regions get a separate labeled list without an
+  invented leader target. The core and its prefix contract are unchanged;
+  Python integration remains separate. Leader crossings still depend on the
+  selected label-placement strategy, as they do for ordinary exterior labels.
 
 - [ ] **Relaxation pass for the box footprint**. The disc packer's `random`
   arrangement now finishes with a force-directed relaxation

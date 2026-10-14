@@ -347,6 +347,25 @@ export interface RegionInfo {
   area: number;
 }
 
+/** One measured line in a caller-composed member callout. */
+export interface MemberCalloutLine {
+  text: string;
+  /** Vertical center relative to the callout's anchor, in layout units. */
+  y: number;
+  fontSize: number;
+  fontWeight?: string | number;
+  fontStyle?: string;
+}
+
+/** A complete roster block, placed with the region-label machinery. */
+export interface MemberCallout {
+  placement: LabelPlacement;
+  /** Measured dimensions of the entire block, including its heading. */
+  size: LabelSize;
+  /** Lines include the region heading and count when those should be shown. */
+  lines: ReadonlyArray<MemberCalloutLine>;
+}
+
 export interface ToSvgOptions {
   /** Base fill palette id (see {@link PALETTES}). Default `"default"`. */
   palette?: string;
@@ -516,6 +535,14 @@ export interface ToSvgOptions {
     /** `class` attribute on each `<text>`. Default `"eunoia-glyph-label"`. */
     className?: string;
   };
+  /**
+   * Complete member rosters that did not fit as individual boxes, keyed by
+   * combination. Each block replaces that region's ordinary label, supplies
+   * its own measured heading/count lines, and expands the viewport. Blocks
+   * without a tether can also report requested regions with no geometry.
+   * Placement and text measurement remain the caller's responsibility.
+   */
+  memberCallouts?: Record<string, MemberCallout>;
   /** Leader-line color. Default `"#6b7280"`. */
   leaderColor?: string;
   /** Container (universe) frame stroke color. Default `"#9ca3af"`. */
@@ -566,6 +593,7 @@ export interface BoundsOptions {
   setLabelPlacements?: Record<string, LabelPlacement>;
   /** Measured set-label sizes, keyed by set name. */
   setLabelSizes?: Record<string, LabelSize>;
+  memberCallouts?: Record<string, MemberCallout>;
 }
 
 // ============================================================================
@@ -791,6 +819,12 @@ export function boundingBox(layout: Layout, opts: BoundsOptions = {}): Bounds {
     consume(setLabelBox.maxX, setLabelBox.maxY);
   }
 
+  for (const callout of Object.values(opts.memberCallouts ?? {})) {
+    const { anchor } = callout.placement;
+    consume(anchor.x - callout.size.w / 2, anchor.y - callout.size.h / 2);
+    consume(anchor.x + callout.size.w / 2, anchor.y + callout.size.h / 2);
+  }
+
   if (!Number.isFinite(minX)) {
     return { minX: 0, minY: 0, maxX: 100, maxY: 100 };
   }
@@ -901,6 +935,7 @@ interface Resolved {
   setLabelPlacements?: Record<string, LabelPlacement>;
   glyphs?: ToSvgOptions["glyphs"];
   glyphBoxes?: ToSvgOptions["glyphBoxes"];
+  memberCallouts?: ToSvgOptions["memberCallouts"];
   interactive: boolean;
   tooltip?: (info: RegionInfo) => string | null | undefined;
   regionAttrs?: (
@@ -914,6 +949,7 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     labelSizes: opts.labelSizes,
     setLabelPlacements: opts.setLabelPlacements,
     setLabelSizes: opts.setLabelSizes,
+    memberCallouts: opts.memberCallouts,
   });
   const diag =
     Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) || 100;
@@ -970,6 +1006,7 @@ function resolve(layout: Layout, opts: ToSvgOptions): Resolved {
     setLabelPlacements: opts.setLabelPlacements,
     glyphs: opts.glyphs,
     glyphBoxes: opts.glyphBoxes,
+    memberCallouts: opts.memberCallouts,
     interactive: opts.interactive ?? false,
     tooltip: opts.tooltip,
     regionAttrs: opts.regionAttrs,
@@ -1053,6 +1090,7 @@ export function svgBody(layout: Layout, opts: ToSvgOptions = {}): string {
   // Exterior set names, drawn last so they sit above every fill. Both render
   // paths above suppress their own interior copies when this is set.
   renderSetLabels(parts, o);
+  renderMemberCallouts(parts, o);
 
   if (o.legendShow && (o.legendLabels.length > 0 || o.hasContainer))
     renderLegend(parts, o);
@@ -1240,6 +1278,7 @@ function countFor(
 }
 
 function renderRegionLabel(parts: string[], r: Region, o: Resolved): void {
+  if (o.memberCallouts?.[r.combination]) return;
   const placement = o.placements[r.combination];
   const anchor = placement?.anchor ?? r.labelAnchor;
   // Set names live outside the diagram in set-label mode, so the region box
@@ -1273,6 +1312,25 @@ function renderRegionLabel(parts: string[], r: Region, o: Resolved): void {
     parts.push(
       `<text x="${anchor.x}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${o.countColor}">${escText(o.formatCount(count))}</text>`,
     );
+  }
+}
+
+function renderMemberCallouts(parts: string[], o: Resolved): void {
+  for (const [combination, callout] of Object.entries(o.memberCallouts ?? {})) {
+    const { placement } = callout;
+    const { anchor } = placement;
+    parts.push(`<g data-member-callout="${escAttr(combination)}">`);
+    if (placement.tether) {
+      parts.push(
+        `<path d="${leaderPath(placement.tether, placement.leaderEnd ?? anchor, placement.leaderWaypoints)}" fill="none" stroke="${o.leaderColor}" stroke-width="${Math.max(o.strokeWidth * 0.5, 0.3)}" stroke-opacity="0.6" />`,
+      );
+    }
+    for (const line of callout.lines) {
+      parts.push(
+        `<text x="${anchor.x}" y="${anchor.y + line.y}" text-anchor="middle" dominant-baseline="central" font-size="${line.fontSize}" font-weight="${escAttr(String(line.fontWeight ?? 400))}" font-style="${escAttr(line.fontStyle ?? "normal")}" fill="${o.labelColor}">${escText(line.text)}</text>`,
+      );
+    }
+    parts.push("</g>");
   }
 }
 
