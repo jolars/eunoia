@@ -1097,6 +1097,7 @@ export function euler(options: EulerOptions): Layout {
       restartsArg,
       complement,
     );
+    // Getters clone handles; result.free() drops arrays we never read.
     try {
       const metrics = metricsFromPolygonResult(result);
       const container = containerFrom(result.container);
@@ -1110,10 +1111,6 @@ export function euler(options: EulerOptions): Layout {
           const arr = result.circles;
           const circles = arr.map(circleFrom);
           freeAll(arr);
-          freeAll(result.ellipses);
-          freeAll(result.squares);
-          freeAll(result.rectangles);
-          freeAll(result.rotated_rectangles);
           return {
             mode: "polygons",
             shape: "circle",
@@ -1127,10 +1124,6 @@ export function euler(options: EulerOptions): Layout {
           const arr = result.ellipses;
           const ellipses = arr.map(ellipseFrom);
           freeAll(arr);
-          freeAll(result.circles);
-          freeAll(result.squares);
-          freeAll(result.rectangles);
-          freeAll(result.rotated_rectangles);
           return {
             mode: "polygons",
             shape: "ellipse",
@@ -1144,10 +1137,6 @@ export function euler(options: EulerOptions): Layout {
           const arr = result.rectangles;
           const rectangles = arr.map(rectangleFrom);
           freeAll(arr);
-          freeAll(result.circles);
-          freeAll(result.ellipses);
-          freeAll(result.squares);
-          freeAll(result.rotated_rectangles);
           return {
             mode: "polygons",
             shape: "rectangle",
@@ -1161,10 +1150,6 @@ export function euler(options: EulerOptions): Layout {
           const arr = result.rotated_rectangles;
           const rotatedRectangles = arr.map(rotatedRectangleFrom);
           freeAll(arr);
-          freeAll(result.circles);
-          freeAll(result.ellipses);
-          freeAll(result.squares);
-          freeAll(result.rectangles);
           return {
             mode: "polygons",
             shape: "rotatedRectangle",
@@ -1177,10 +1162,6 @@ export function euler(options: EulerOptions): Layout {
         const arr = result.squares;
         const squares = arr.map(squareFrom);
         freeAll(arr);
-        freeAll(result.circles);
-        freeAll(result.ellipses);
-        freeAll(result.rectangles);
-        freeAll(result.rotated_rectangles);
         return {
           mode: "polygons",
           shape: "square",
@@ -1196,11 +1177,6 @@ export function euler(options: EulerOptions): Layout {
         const arr = result.circles;
         const circles = arr.map(circleFrom);
         freeAll(arr);
-        freeAll(result.ellipses);
-        freeAll(result.squares);
-        freeAll(result.rectangles);
-        freeAll(result.rotated_rectangles);
-        freeAll(result.polygons);
         return {
           mode: "shapes",
           shape: "circle",
@@ -1213,11 +1189,6 @@ export function euler(options: EulerOptions): Layout {
         const arr = result.ellipses;
         const ellipses = arr.map(ellipseFrom);
         freeAll(arr);
-        freeAll(result.circles);
-        freeAll(result.squares);
-        freeAll(result.rectangles);
-        freeAll(result.rotated_rectangles);
-        freeAll(result.polygons);
         return {
           mode: "shapes",
           shape: "ellipse",
@@ -1230,11 +1201,6 @@ export function euler(options: EulerOptions): Layout {
         const arr = result.rectangles;
         const rectangles = arr.map(rectangleFrom);
         freeAll(arr);
-        freeAll(result.circles);
-        freeAll(result.ellipses);
-        freeAll(result.squares);
-        freeAll(result.rotated_rectangles);
-        freeAll(result.polygons);
         return {
           mode: "shapes",
           shape: "rectangle",
@@ -1247,11 +1213,6 @@ export function euler(options: EulerOptions): Layout {
         const arr = result.rotated_rectangles;
         const rotatedRectangles = arr.map(rotatedRectangleFrom);
         freeAll(arr);
-        freeAll(result.circles);
-        freeAll(result.ellipses);
-        freeAll(result.squares);
-        freeAll(result.rectangles);
-        freeAll(result.polygons);
         return {
           mode: "shapes",
           shape: "rotatedRectangle",
@@ -1263,11 +1224,6 @@ export function euler(options: EulerOptions): Layout {
       const arr = result.squares;
       const squares = arr.map(squareFrom);
       freeAll(arr);
-      freeAll(result.circles);
-      freeAll(result.ellipses);
-      freeAll(result.rectangles);
-      freeAll(result.rotated_rectangles);
-      freeAll(result.polygons);
       return {
         mode: "shapes",
         shape: "square",
@@ -1356,6 +1312,7 @@ export function venn(options: VennOptions): Layout {
             ? wasm.generate_venn_polygons_rotated_rectangles
             : wasm.generate_venn_polygons_ellipses;
   const result = fn(n, nVerts, complement);
+  // Getters clone handles; result.free() drops arrays we never read.
   try {
     const polysArr = result.polygons;
     const polygons = polysArr.map(polygonFrom);
@@ -1368,10 +1325,6 @@ export function venn(options: VennOptions): Layout {
       const arr = result.circles;
       const circles = arr.map(circleFrom);
       freeAll(arr);
-      freeAll(result.ellipses);
-      freeAll(result.squares);
-      freeAll(result.rectangles);
-      freeAll(result.rotated_rectangles);
       return {
         mode: "polygons",
         shape: "circle",
@@ -1385,10 +1338,6 @@ export function venn(options: VennOptions): Layout {
       const arr = result.squares;
       const squares = arr.map(squareFrom);
       freeAll(arr);
-      freeAll(result.circles);
-      freeAll(result.ellipses);
-      freeAll(result.rectangles);
-      freeAll(result.rotated_rectangles);
       return {
         mode: "polygons",
         shape: "square",
@@ -1402,10 +1351,6 @@ export function venn(options: VennOptions): Layout {
       const arr = result.rectangles;
       const rectangles = arr.map(rectangleFrom);
       freeAll(arr);
-      freeAll(result.circles);
-      freeAll(result.ellipses);
-      freeAll(result.squares);
-      freeAll(result.rotated_rectangles);
       return {
         mode: "polygons",
         shape: "rectangle",
@@ -1419,10 +1364,6 @@ export function venn(options: VennOptions): Layout {
       const arr = result.rotated_rectangles;
       const rotatedRectangles = arr.map(rotatedRectangleFrom);
       freeAll(arr);
-      freeAll(result.circles);
-      freeAll(result.ellipses);
-      freeAll(result.squares);
-      freeAll(result.rectangles);
       return {
         mode: "polygons",
         shape: "rotatedRectangle",
@@ -1435,10 +1376,6 @@ export function venn(options: VennOptions): Layout {
     const arr = result.ellipses;
     const ellipses = arr.map(ellipseFrom);
     freeAll(arr);
-    freeAll(result.circles);
-    freeAll(result.squares);
-    freeAll(result.rectangles);
-    freeAll(result.rotated_rectangles);
     return {
       mode: "polygons",
       shape: "ellipse",

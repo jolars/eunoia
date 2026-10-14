@@ -411,13 +411,10 @@ analytic gradient and the capability-driven default pool routes it to
   This is the "smooth the shape" option from the original design discussion;
   revisit only if derivative-free quality proves insufficient.
 
-- [ ] **TS handle-freeing is wasteful** (minor cleanup). The `euler` / `venn`
-  dispatch in `ts/index.ts` frees the non-active shape arrays per branch by
-  *accessing* each getter (which clones the wasm handles) only to free the
-  clones --- `result.free()` already drops the internal vectors, so a branch
-  that never reads a getter leaks nothing. Pre-existing pattern, now
-  extended to `rotated_rectangles`. If that dispatch is ever revisited, drop
-  the create-then-free of unused shape arrays.
+- [x] **TS handle-freeing is wasteful** (done). The `euler` / `venn`
+  dispatch in `ts/index.ts` now reads and frees only the arrays used in the
+  returned layout. Unused shape arrays and polygons in `shapes` mode stay
+  inside the result until `result.free()` drops them, avoiding getter clones.
 
 - [ ] **Narrative docs**. <https://eunoia.bz/docs/> and the rustdoc/README shape
   lists don't mention `RotatedRectangle`. Add it once the web UI and quality
