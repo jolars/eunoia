@@ -561,7 +561,12 @@
     setLabelPlacements,
     setLabelSizes: measuredSetSizes,
     complement: result?.complement,
-    glyphs: glyphPlacements,
+    glyphs: glyphPlacements && {
+      ...glyphPlacements,
+      fill: style.glyphFill ?? undefined,
+      stroke: style.glyphStroke ?? undefined,
+      strokeWidth: style.glyphStrokeWidth ?? undefined,
+    },
     // The placer is font-blind, so the strings ride separately; they are
     // index-aligned with `boxes` because the packer returns a prefix of what we
     // measured. `renderGlyphBoxes` applies `fontSize * scale` itself, and the

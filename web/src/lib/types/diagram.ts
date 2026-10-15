@@ -188,6 +188,12 @@ export interface DiagramStyle {
    * member names.
    */
   glyphGap: number;
+  /** Dot fill color. Null derives the fill from each region's color. */
+  glyphFill: string | null;
+  /** Dot border color. Null derives the border from each region's color. */
+  glyphStroke: string | null;
+  /** Dot border width in layout units. Null uses half the set border width. */
+  glyphStrokeWidth: number | null;
   /** Extra clearance to dot region edges and labels, as a fraction of radius. */
   glyphBoundaryGap: number;
   /** Seed for the `"random"` glyph arrangement. */

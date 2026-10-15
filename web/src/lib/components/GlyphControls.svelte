@@ -2,6 +2,11 @@
   import { glyphStatus, parseMembers } from "../members.svelte";
   import { appState } from "../state.svelte";
 
+  const colorControls = [
+    { key: "glyphFill", label: "Fill color", fallback: "#ffffff" },
+    { key: "glyphStroke", label: "Border color", fallback: "#000000" },
+  ] as const;
+
   // Only over the *current* n's regions: entries left behind by a larger n are
   // not drawn, so they must not silence the "nothing to draw" notes either.
   const vennEntries = $derived(
@@ -148,6 +153,76 @@
     </div>
 
     {#if appState.style.glyphMode === "dots"}
+      {#each colorControls as control}
+        <div class="flex items-center justify-between gap-2">
+          <label class="flex items-center gap-2 text-xs font-medium text-muted">
+            <input
+              type="color"
+              aria-label={`Glyph ${control.label.toLowerCase()}`}
+              value={appState.style[control.key] ?? control.fallback}
+              oninput={(e) => {
+                appState.style[control.key] = e.currentTarget.value;
+              }}
+              class="h-6 w-7 cursor-pointer rounded border border-line p-0"
+            />
+            {control.label}
+          </label>
+          {#if appState.style[control.key] !== null}
+            <button
+              type="button"
+              onclick={() => {
+                appState.style[control.key] = null;
+              }}
+              class="text-xs text-accent hover:underline"
+              aria-label={`Reset glyph ${control.label.toLowerCase()} to automatic`}
+              >Reset</button
+            >
+          {:else}
+            <span class="text-xs text-faint">Automatic</span>
+          {/if}
+        </div>
+      {/each}
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label for="glyphStrokeWidth" class="text-xs font-medium text-muted">
+            Border width <span class="font-mono text-faint"
+              >{(
+                appState.style.glyphStrokeWidth ??
+                appState.style.strokeWidth / 2
+              ).toFixed(2)}</span
+            >
+          </label>
+          {#if appState.style.glyphStrokeWidth !== null}
+            <button
+              type="button"
+              onclick={() => {
+                appState.style.glyphStrokeWidth = null;
+              }}
+              class="text-xs text-accent hover:underline"
+              aria-label="Reset glyph border width to automatic">Reset</button
+            >
+          {:else}
+            <span class="text-xs text-faint">Automatic</span>
+          {/if}
+        </div>
+        <input
+          id="glyphStrokeWidth"
+          type="range"
+          min="0"
+          max="2"
+          step="0.05"
+          value={appState.style.glyphStrokeWidth ??
+            appState.style.strokeWidth / 2}
+          oninput={(e) => {
+            appState.style.glyphStrokeWidth = Number(e.currentTarget.value);
+          }}
+          class="w-full"
+        />
+        <p class="text-xs text-muted mt-1">
+          Set to zero to hide borders. Automatic uses half the set border width.
+        </p>
+      </div>
+
       <div>
         <label
           for="glyphBoundaryGap"

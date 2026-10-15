@@ -99,6 +99,18 @@ lattice, so actual gaps can exceed these minimums.
 The app exposes these as **Dot spacing** and **Boundary gap**, with defaults
 of `0.25` and `1`, respectively.
 
+## Dot appearance
+
+In the app's **Dots** mode, use **Fill color**, **Border color**, and **Border
+width** to style the glyphs independently of the sets. Set the border width to
+zero to hide borders. **Reset** restores automatic styling: colors derived from
+each region and a border width equal to half the set border width.
+
+Saved configurations store these settings as `style.glyphFill`,
+`style.glyphStroke`, and `style.glyphStrokeWidth`. Each defaults to `null` for
+automatic styling. Color settings accept color strings, and the width uses
+layout units. SVG and image exports use the same styling as the preview.
+
 ## Label Keep-Out
 
 Labels are painted over glyphs, so anything a label covers is invisible. Pass
