@@ -37,13 +37,18 @@ fully deterministic).
 
 ## Arrangements
 
-Three arrangements are available; both are deterministic:
+Four arrangements are available; both are deterministic:
 
 - **`uniform`** *(default)*: centers sit on a hexagonal lattice anchored at
   the region's pole of inaccessibility. The lattice spacing is widened as far
   as the region allows, so the glyphs spread across the region instead of
   clumping at the center. No randomness at all—the same input always gives
   the same output.
+- **`rectangular`**: an axis-aligned grid with equal horizontal and vertical
+  spacing, useful for square and rectangular diagrams. Select **Rectangular
+  grid** in the app, or set `style.glyphArrangement` to `"rectangular"`.
+  Placement is deterministic and ignores `seed`. Member labels use uniform
+  row packing.
 - **`lowDiscrepancy`**: candidates follow a deterministic Halton sequence,
   filtered by minimum spacing and clearance to region boundaries and labels.
   Select **Low discrepancy (Halton)** in the app, or set

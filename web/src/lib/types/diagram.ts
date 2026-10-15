@@ -181,7 +181,7 @@ export interface DiagramStyle {
    * member names — both fully deterministic) or `"random"` (seeded
    * dart-throwing scatter).
    */
-  glyphArrangement: "uniform" | "lowDiscrepancy" | "random";
+  glyphArrangement: "uniform" | "rectangular" | "lowDiscrepancy" | "random";
   /**
    * Extra spacing between glyphs as a fraction of the radius for dots (min
    * center-to-center distance is `2r * (1 + gap)`), or of the row height for

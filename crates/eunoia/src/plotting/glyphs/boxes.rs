@@ -374,7 +374,10 @@ pub fn place_glyph_boxes(
     for region in &work {
         let mut placed = pack_boxes_region(region, options, ctx);
         if region.scans.len() > 1
-            && options.arrangement == GlyphArrangement::Uniform
+            && matches!(
+                options.arrangement,
+                GlyphArrangement::Uniform | GlyphArrangement::Rectangular
+            )
             && options
                 .target_aspect_ratio
                 .is_some_and(|r| r.is_finite() && r > 0.0)
@@ -603,7 +606,7 @@ fn pack_boxes_region(
         let Some(scan) = scan else { continue };
         let offered = &scaled[out.len()..(out.len() + budget).min(scaled.len())];
         let placed = match options.arrangement {
-            GlyphArrangement::Uniform => pack_rows_piece(
+            GlyphArrangement::Uniform | GlyphArrangement::Rectangular => pack_rows_piece(
                 scan,
                 offered,
                 options.precision,
@@ -1266,6 +1269,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphBoxOptions::default().arrangement(arrangement);
@@ -1411,6 +1415,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphBoxOptions::default().arrangement(arrangement);
@@ -1578,6 +1583,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             for scale in [None, Some(1.0)] {
@@ -1630,6 +1636,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             for scale in [None, Some(1.0)] {
@@ -1670,6 +1677,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphBoxOptions::default()
@@ -1698,6 +1706,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let plain = GlyphBoxOptions::default().arrangement(arrangement);
@@ -1741,6 +1750,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphBoxOptions::default()

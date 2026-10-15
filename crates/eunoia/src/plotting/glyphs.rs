@@ -8,12 +8,14 @@
 //! center point per glyph plus the single radius shared by every glyph in
 //! the diagram.
 //!
-//! Three arrangements are offered via [`GlyphArrangement`]:
+//! Four arrangements are offered via [`GlyphArrangement`]:
 //!
 //! * [`Uniform`](GlyphArrangement::Uniform) (default) — glyph centers sit on
 //!   a hexagonal lattice anchored at the region's pole of inaccessibility,
 //!   with the lattice spacing widened as far as the region allows so the
 //!   glyphs spread across it instead of clumping. Fully deterministic.
+//! * [`Rectangular`](GlyphArrangement::Rectangular) — aligned rows and columns
+//!   with equal horizontal and vertical spacing. Fully deterministic.
 //! * [`LowDiscrepancy`](GlyphArrangement::LowDiscrepancy) — deterministic Halton
 //!   candidates filtered by minimum spacing and boundary clearance, providing
 //!   an even scatter without a lattice. Ignores the seed.
@@ -83,6 +85,9 @@ pub enum GlyphArrangement {
     /// — [`GlyphOptions::seed`] is ignored.
     #[default]
     Uniform,
+    /// Axis-aligned rectangular grid with equal spacing along both axes.
+    /// Ignores [`GlyphOptions::seed`]. Member labels use uniform row packing.
+    Rectangular,
     /// Deterministic Halton candidates filtered by boundary clearance and
     /// minimum spacing. Ignores [`GlyphOptions::seed`]. Member labels use
     /// the same candidate sequence with rectangular collision checks.

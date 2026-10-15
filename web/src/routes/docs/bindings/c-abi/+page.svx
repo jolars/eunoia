@@ -307,7 +307,8 @@ per-region count. See [Glyphs](/docs/concepts/glyphs/).
   | `options` | object                     | Optional; omitted fields keep core defaults (see below).                    |
 
 The `options` knobs: `arrangement` is `"uniform"` (default, hex lattice spread
-across the region), `"low_discrepancy"` (deterministic Halton candidates
+across the region), `"rectangular"` (aligned rows and columns with equal
+spacing), `"low_discrepancy"` (deterministic Halton candidates
 filtered by spacing and boundary clearance), or `"random"` (seeded dart
 throwing); `radius` fixes the
 glyph radius (omit for the auto mode, which picks the largest radius at which

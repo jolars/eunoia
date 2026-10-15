@@ -452,7 +452,22 @@ fn pack_region(
         }
         match options.arrangement {
             GlyphArrangement::Uniform => {
-                placed.extend(pack_uniform_piece(piece, quota, options.precision, ctx));
+                placed.extend(pack_uniform_piece(
+                    piece,
+                    quota,
+                    options.precision,
+                    ctx,
+                    false,
+                ));
+            }
+            GlyphArrangement::Rectangular => {
+                placed.extend(pack_uniform_piece(
+                    piece,
+                    quota,
+                    options.precision,
+                    ctx,
+                    true,
+                ));
             }
             GlyphArrangement::LowDiscrepancy => {
                 placed.extend(pack_low_discrepancy_piece(
@@ -544,34 +559,51 @@ struct HexCells {
     blocked: Vec<Point>,
 }
 
-/// Centers of a hexagonal lattice with spacing `s`, anchored at `anchor`,
+/// Lattice geometry travels together so feasibility and final placement use
+/// identical row spacing and offsets.
+#[derive(Clone, Copy)]
+struct Lattice {
+    spacing: f64,
+    rectangular: bool,
+}
+
+/// Centers of a hexagonal or rectangular lattice, anchored at `anchor`,
 /// restricted to points with clearance ≥ `min_clearance` inside `piece`
 /// (the caller passes the gap-padded inset `r * (1 + gap)`), and partitioned
 /// by the same clearance to `obstacles`. Stops early once `cap` free cells
 /// are found (feasibility probing only needs to know whether the count
 /// reaches the quota).
-fn hex_valid_cells(
+fn lattice_valid_cells(
     piece: &RegionPiece,
     anchor: Point,
-    s: f64,
+    lattice: Lattice,
     min_clearance: f64,
     obstacles: &[Rectangle],
     cap: Option<usize>,
 ) -> HexCells {
     let mut cells = HexCells::default();
+    let s = lattice.spacing;
     let Some((min_x, max_x, min_y, max_y)) = ring_bounds(piece.outer.vertices()) else {
         return cells;
     };
     if s <= 0.0 || !s.is_finite() {
         return cells;
     }
-    let row_h = s * 3.0_f64.sqrt() / 2.0;
+    let row_h = if lattice.rectangular {
+        s
+    } else {
+        s * 3.0_f64.sqrt() / 2.0
+    };
     let j_min = ((min_y - anchor.y()) / row_h).floor() as i64;
     let j_max = ((max_y - anchor.y()) / row_h).ceil() as i64;
     let mut visited = 0usize;
     for j in j_min..=j_max {
         let y = anchor.y() + j as f64 * row_h;
-        let offset = if j.rem_euclid(2) == 1 { s / 2.0 } else { 0.0 };
+        let offset = if !lattice.rectangular && j.rem_euclid(2) == 1 {
+            s / 2.0
+        } else {
+            0.0
+        };
         let i_min = ((min_x - offset - anchor.x()) / s).floor() as i64;
         let i_max = ((max_x - offset - anchor.x()) / s).ceil() as i64;
         for i in i_min..=i_max {
@@ -622,7 +654,7 @@ fn take_cells(mut cells: HexCells, n: usize, anchor: Point, honoring: bool) -> V
     cells.free
 }
 
-/// Uniform (hex-lattice) packer for one piece. At minimum spacing
+/// Uniform lattice packer for one piece. At minimum spacing
 /// `2r * (1 + gap)` the piece either holds `n` centers or it doesn't; when
 /// it does and `spread` is set, the spacing is widened by bisection to the
 /// largest value still yielding `n` valid cells, and the `n` cells nearest
@@ -639,7 +671,12 @@ fn pack_uniform_piece(
     n: usize,
     precision: f64,
     ctx: PackCtx<'_>,
+    rectangular: bool,
 ) -> Vec<Point> {
+    let lattice = |spacing| Lattice {
+        spacing,
+        rectangular,
+    };
     let single = std::slice::from_ref(piece);
     let Some((poi, _)) = poi_with_holes(single, precision) else {
         return Vec::new();
@@ -652,7 +689,7 @@ fn pack_uniform_piece(
         escape_obstacles(poi, piece, &local, inset)
     };
     let s_min = ctx.spacing();
-    let at_min = hex_valid_cells(piece, anchor, s_min, inset, &local, Some(n));
+    let at_min = lattice_valid_cells(piece, anchor, lattice(s_min), inset, &local, Some(n));
     let honoring = at_min.free.len() >= n;
     if !honoring && ctx.mode.strict_obstacles {
         // Probes only need a count; final placements retain the usual anchor
@@ -677,7 +714,15 @@ fn pack_uniform_piece(
     let s_max = ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
     let mut lo = s_min;
     let mut hi = s_max.max(s_min);
-    if available(&hex_valid_cells(piece, anchor, hi, inset, &local, Some(n))) >= n {
+    if available(&lattice_valid_cells(
+        piece,
+        anchor,
+        lattice(hi),
+        inset,
+        &local,
+        Some(n),
+    )) >= n
+    {
         lo = hi;
     } else {
         // Largest spacing still fitting `n` cells; `lo` stays feasible by
@@ -687,14 +732,22 @@ fn pack_uniform_piece(
                 break;
             }
             let mid = 0.5 * (lo + hi);
-            if available(&hex_valid_cells(piece, anchor, mid, inset, &local, Some(n))) >= n {
+            if available(&lattice_valid_cells(
+                piece,
+                anchor,
+                lattice(mid),
+                inset,
+                &local,
+                Some(n),
+            )) >= n
+            {
                 lo = mid;
             } else {
                 hi = mid;
             }
         }
     }
-    let cells = hex_valid_cells(piece, anchor, lo, inset, &local, None);
+    let cells = lattice_valid_cells(piece, anchor, lattice(lo), inset, &local, None);
     take_cells(cells, n, anchor, honoring)
 }
 
@@ -870,6 +923,48 @@ mod tests {
     }
 
     #[test]
+    fn rectangular_grid_has_aligned_rows_and_columns() {
+        let regions = boxed_region(0.0, 0.0, 10.0, 10.0);
+        for count in [100, 300, 500] {
+            let options = GlyphOptions::default()
+                .arrangement(GlyphArrangement::Rectangular)
+                .boundary_gap(0.95);
+            let counts = counts(&[("A", count)]);
+            let result = place_glyphs(&regions, &counts, &options);
+            assert!(result.unplaced.is_empty());
+            let points = &result.positions["A"];
+            assert_eq!(points.len(), count);
+            assert_invariants(&result, &regions, options.gap);
+            let coordinates = |x_axis: bool| {
+                let mut values: Vec<f64> = points
+                    .iter()
+                    .map(|p| if x_axis { p.x() } else { p.y() })
+                    .collect();
+                values.sort_by(f64::total_cmp);
+                values.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+                values
+            };
+            let xs = coordinates(true);
+            let ys = coordinates(false);
+            assert!(xs.len() > 1 && ys.len() > 1);
+            let pitch = xs[1] - xs[0];
+            for axis in [&xs, &ys] {
+                for pair in axis.windows(2) {
+                    assert!((pair[1] - pair[0] - pitch).abs() < 1e-9);
+                }
+            }
+            let combo: Combination = "A".parse().unwrap();
+            for point in points {
+                assert!(
+                    region_clearance(point, regions.get(&combo).unwrap())
+                        >= result.radius * 1.95 - 1e-9
+                );
+            }
+            assert_eq!(result, place_glyphs(&regions, &counts, &options.seed(123)));
+        }
+    }
+
+    #[test]
     fn low_discrepancy_example_preserves_counts_clearance_and_seed_independence() {
         let regions = two_set_regions();
         let counts = counts(&[("A", 500), ("B", 300), ("A&B", 100)]);
@@ -974,6 +1069,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphOptions::default().arrangement(arrangement);
@@ -1120,6 +1216,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphOptions::default()
@@ -1208,6 +1305,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             for radius in [None, Some(0.2)] {
@@ -1254,6 +1352,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             for radius in [None, Some(0.15)] {
@@ -1283,6 +1382,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphOptions::default().arrangement(arrangement).radius(0.5);
@@ -1306,6 +1406,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let plain = GlyphOptions::default().arrangement(arrangement);
@@ -1381,6 +1482,7 @@ mod tests {
         for arrangement in [
             GlyphArrangement::Uniform,
             GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Rectangular,
             GlyphArrangement::Random,
         ] {
             let options = GlyphOptions::default()

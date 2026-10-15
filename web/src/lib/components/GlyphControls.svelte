@@ -92,6 +92,7 @@
             ? "Uniform (rows)"
             : "Uniform (hex lattice)"}
         </option>
+        <option value="rectangular">Rectangular grid</option>
         <option value="lowDiscrepancy">Low discrepancy (Halton)</option>
         <option value="random">Random (seeded scatter)</option>
       </select>

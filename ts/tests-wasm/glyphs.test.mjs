@@ -69,7 +69,12 @@ for (const boxes of [false, true]) {
       }
     : { A: 3 };
 
-  for (const arrangement of ["uniform", "lowDiscrepancy", "random"]) {
+  for (const arrangement of [
+    "uniform",
+    "rectangular",
+    "lowDiscrepancy",
+    "random",
+  ]) {
     for (const fixed of [false, true]) {
       test(`${output}: strict obstacles report overflow (${arrangement}, fixed=${fixed})`, () => {
         const options = { arrangement, obstacles };
@@ -105,6 +110,7 @@ for (const boxes of [false, true]) {
               ...options,
               arrangement: {
                 uniform: "Uniform",
+                rectangular: "Rectangular",
                 lowDiscrepancy: "LowDiscrepancy",
                 random: "Random",
               }[arrangement],

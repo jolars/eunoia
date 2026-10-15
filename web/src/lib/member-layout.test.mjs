@@ -56,7 +56,12 @@ function fixture() {
   };
 }
 
-for (const arrangement of ["uniform", "lowDiscrepancy", "random"]) {
+for (const arrangement of [
+  "uniform",
+  "rectangular",
+  "lowDiscrepancy",
+  "random",
+]) {
   for (const placement of ["raycast", "forceDirected", "matched", "elbow"]) {
     test(`complete rosters survive oversized first items (${arrangement}, ${placement})`, () => {
       const options = fixture();
