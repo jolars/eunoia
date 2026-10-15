@@ -2,6 +2,7 @@
   import { appState } from "../state.svelte";
   import type {
     AdvancedOptions,
+    DiagramStyle,
     DiagramType,
     InputType,
     Row,
@@ -16,6 +17,7 @@
     shapeType: ShapeType;
     diagramType: DiagramType;
     vennN: VennSetCount;
+    style?: Partial<DiagramStyle>;
     advanced: AdvancedOptions;
   }
 
@@ -29,6 +31,7 @@
     shapeType: appState.shapeType,
     diagramType: appState.diagramType,
     vennN: appState.vennN,
+    style: $state.snapshot(appState.style),
     advanced: $state.snapshot(appState.advanced),
   });
 
@@ -135,6 +138,9 @@
       if (parsed.advanced) {
         appState.advanced = { ...appState.advanced, ...parsed.advanced };
       }
+      if (parsed.style) {
+        appState.style = { ...appState.style, ...parsed.style };
+      }
       flash("Applied", "ok");
     } catch (e) {
       flash(
@@ -171,8 +177,8 @@
     {/if}
   </div>
   <p class="text-xs text-muted">
-    Reproducer for the current diagram (spec + advanced options). Copy to share,
-    or paste a snapshot and click Apply.
+    Reproducer for the current diagram (spec, style, and advanced options). Copy
+    to share, or paste a snapshot and click Apply.
   </p>
   <textarea
     bind:value={editor}
