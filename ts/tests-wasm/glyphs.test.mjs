@@ -24,6 +24,32 @@ const regions = [
 ];
 const obstacles = [{ x: 1, y: 1, width: 2, height: 2 }];
 
+test("dot boundary gap passes through TypeScript and WASM independently", () => {
+  const options = { radius: 0.1, gap: 0, boundaryGap: 2 };
+  const typed = placeGlyphsForRegions({ regions, counts: { A: 20 }, options });
+  const raw = JSON.parse(
+    wasm.place_region_glyphs(
+      JSON.stringify(polygons),
+      JSON.stringify({ A: 20 }),
+      JSON.stringify(options),
+    ),
+  );
+  assert.equal(typed.positions.A.length, 20);
+  assert.deepEqual(
+    typed.positions.A.map(({ x, y }) => [x, y]),
+    raw.positions.A,
+  );
+  for (const { x, y } of typed.positions.A) {
+    assert.ok(Math.min(x, y, 2 - x, 2 - y) >= 0.3 - 1e-9);
+  }
+  const legacy = placeGlyphsForRegions({
+    regions,
+    counts: { A: 20 },
+    options: { radius: 0.1, gap: 0 },
+  });
+  assert.notDeepEqual(typed.positions, legacy.positions);
+});
+
 for (const boxes of [false, true]) {
   const place = boxes ? placeGlyphBoxesForRegions : placeGlyphsForRegions;
   const direct = boxes

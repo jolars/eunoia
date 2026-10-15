@@ -40,8 +40,14 @@ pub struct GlyphOptions {
     /// a clearance of `r * (1 + gap)` to every ring, so glyphs never sit
     /// tangent to (or under the stroke of) a region edge. Negative values
     /// are clamped to `0.0` (glyphs may then touch each other and the
-    /// boundary). Defaults to `0.25`.
+    /// boundary). Defaults to `0.25`. [`boundary_gap`](Self::boundary_gap)
+    /// overrides the boundary and obstacle clearance independently.
     pub gap: f64,
+    /// Extra clearance to region boundaries, holes, and obstacles, as a
+    /// fraction of the radius. Centers keep `r * (1 + boundary_gap)` clearance.
+    /// `None` (default) uses [`gap`](Self::gap) for backward compatibility.
+    /// Negative values are clamped to zero.
+    pub boundary_gap: Option<f64>,
     /// Seed for the [`GlyphArrangement::Random`] arrangement. Ignored by
     /// [`GlyphArrangement::Uniform`]. Defaults to `0`.
     pub seed: u64,
@@ -86,6 +92,7 @@ impl Default for GlyphOptions {
             arrangement: GlyphArrangement::default(),
             radius: None,
             gap: 0.25,
+            boundary_gap: None,
             seed: 0,
             precision: 0.01,
             max_attempts: 300,
@@ -112,6 +119,13 @@ impl GlyphOptions {
     /// Sets [`gap`](Self::gap) and returns `self`.
     pub fn gap(mut self, gap: f64) -> Self {
         self.gap = gap;
+        self
+    }
+
+    /// Sets the boundary clearance independently of the spacing between glyphs.
+    /// Passing `None` restores the default of using [`gap`](Self::gap).
+    pub fn boundary_gap(mut self, boundary_gap: impl Into<Option<f64>>) -> Self {
+        self.boundary_gap = boundary_gap.into();
         self
     }
 
@@ -177,13 +191,13 @@ pub struct GlyphPlacements {
 /// or a count of zero, are skipped; count keys with no matching region are
 /// ignored — both mirror [`place_labels`](crate::plotting::place_labels).
 ///
-/// Every glyph center is guaranteed to have clearance ≥ `r * (1 + gap)` to
-/// the region boundary (outer ring and holes), and every pair of centers
-/// within a region is at least `2r * (1 + gap)` apart — the same `gap`
-/// fraction pads both, so glyphs keep visible breathing room from edges as
-/// well as from each other. When a region is split into several
-/// disconnected pieces, its count is apportioned across the pieces
-/// proportionally to their net areas (largest-remainder rounding).
+/// Every glyph center keeps clearance ≥ `r * (1 + boundary_gap)` to the
+/// region boundary (outer ring and holes), where `boundary_gap` defaults to
+/// `gap`. Every pair of centers within a region stays at least
+/// `2r * (1 + gap)` apart. [`GlyphOptions::boundary_gap`] controls boundary
+/// and obstacle clearance independently of this pairwise spacing. When a
+/// region is split into several disconnected pieces, its count is apportioned
+/// across the pieces proportionally to their net areas (largest-remainder rounding).
 ///
 /// [`GlyphOptions::obstacles`] adds keep-out boxes at the same clearance.
 /// Clearance follows [`GlyphOptions::obstacle_policy`]: best-effort by
@@ -260,7 +274,11 @@ pub fn place_glyphs(
             };
         }
         None => {
-            let Some(r_hi) = analytic_r_hi(&work, gap, options.precision) else {
+            let Some(r_hi) = analytic_r_hi(
+                &work,
+                options.boundary_gap.unwrap_or(gap).max(0.0),
+                options.precision,
+            ) else {
                 return GlyphPlacements {
                     radius: 0.0,
                     positions: HashMap::new(),
@@ -291,6 +309,7 @@ pub fn place_glyphs(
         let ctx = PackCtx {
             r: radius,
             gap,
+            boundary_gap: options.boundary_gap.unwrap_or(gap).max(0.0),
             obstacles: &obstacles,
             mode: PackMode {
                 strict_obstacles: options.obstacle_policy == ObstaclePolicy::Strict,
@@ -325,6 +344,7 @@ const OBSTACLE_FREE_FALLBACK: f64 = 0.25;
 struct PackCtx<'a> {
     r: f64,
     gap: f64,
+    boundary_gap: f64,
     obstacles: &'a [Rectangle],
     mode: PackMode,
 }
@@ -332,12 +352,12 @@ struct PackCtx<'a> {
 impl PackCtx<'_> {
     /// Clearance every glyph center keeps from region rings and obstacles.
     fn inset(&self) -> f64 {
-        self.r * (1.0 + self.gap)
+        self.r * (1.0 + self.boundary_gap)
     }
 
     /// Minimum center-to-center distance between two glyphs.
     fn spacing(&self) -> f64 {
-        2.0 * self.inset()
+        2.0 * self.r * (1.0 + self.gap)
     }
 }
 
@@ -378,6 +398,7 @@ fn auto_radius(
         let ctx = PackCtx {
             r,
             gap,
+            boundary_gap: options.boundary_gap.unwrap_or(gap).max(0.0),
             obstacles,
             mode: PROBE,
         };
@@ -598,8 +619,8 @@ fn take_cells(mut cells: HexCells, n: usize, anchor: Point, honoring: bool) -> V
 /// it does and `spread` is set, the spacing is widened by bisection to the
 /// largest value still yielding `n` valid cells, and the `n` cells nearest
 /// the piece's pole of inaccessibility are kept (centered, deterministic).
-/// Valid cells keep clearance ≥ `r * (1 + gap)` to the boundary, so glyphs
-/// get the same breathing room from edges as from each other.
+/// Valid cells keep the configured boundary clearance independently of
+/// the minimum spacing between centers.
 ///
 /// Obstacles are honoured whenever the piece can hold its quota without
 /// them; a piece that cannot falls back to the full cell set — under a
@@ -881,6 +902,7 @@ mod tests {
         let ctx = |spread| PackCtx {
             r: 0.4,
             gap: 0.25,
+            boundary_gap: 0.25,
             obstacles: &[],
             mode: PackMode {
                 spread,
@@ -972,6 +994,61 @@ mod tests {
         let p = &result.positions["A"][0];
         // The lattice is anchored at the POI, so a lone glyph sits on it.
         assert!((p.x() - 1.0).abs() < 0.05 && (p.y() - 1.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn boundary_gap_is_independent_of_dot_spacing() {
+        let regions = boxed_region(0.0, 0.0, 2.0, 2.0);
+        let counts = counts(&[("A", 20)]);
+        let obstacle = Rectangle::new(Point::new(1.0, 1.0), 0.1, 0.1);
+        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+            let options = GlyphOptions::default()
+                .arrangement(arrangement)
+                .radius(0.1)
+                .gap(0.0)
+                .boundary_gap(2.0)
+                .obstacle_policy(ObstaclePolicy::Strict)
+                .obstacles([obstacle]);
+            let result = place_glyphs(&regions, &counts, &options);
+            assert!(result.unplaced.is_empty(), "{arrangement:?}");
+            assert_eq!(result.positions["A"].len(), 20);
+            assert_invariants(&result, &regions, 0.0);
+            assert_clear_of_obstacles(&result, &[obstacle], 2.0, "boundary gap");
+            let points = &result.positions["A"];
+            let mut nearest = f64::INFINITY;
+            for (i, p) in points.iter().enumerate() {
+                assert!(p.x().min(p.y()).min(2.0 - p.x()).min(2.0 - p.y()) >= 0.3 - 1e-9);
+                for q in &points[i + 1..] {
+                    nearest = nearest.min((p.x() - q.x()).hypot(p.y() - q.y()));
+                }
+            }
+            assert!(nearest < 0.6, "boundary gap must not enlarge dot spacing");
+            let default = options.clone().boundary_gap(None);
+            assert_eq!(
+                place_glyphs(&regions, &counts, &default),
+                place_glyphs(&regions, &counts, &default.clone().boundary_gap(0.0)),
+            );
+        }
+    }
+
+    #[test]
+    fn dense_uniform_layout_keeps_counts_and_label_clearance() {
+        let regions = two_set_regions();
+        let counts = counts(&[("A", 500), ("B", 300), ("A&B", 100)]);
+        let (poi, _) =
+            poi_with_holes(regions.get(&Combination::new(&["A"])).unwrap(), 0.01).unwrap();
+        let obstacles = [Rectangle::new(poi, 0.2, 0.15)];
+        let options = GlyphOptions::default()
+            .obstacles(obstacles)
+            .obstacle_policy(ObstaclePolicy::Strict);
+        let result = place_glyphs(&regions, &counts, &options);
+        assert!(result.unplaced.is_empty());
+        for (key, count) in &counts {
+            assert_eq!(result.positions[key].len(), *count);
+        }
+        assert_invariants(&result, &regions, options.gap);
+        assert_clear_of_obstacles(&result, &obstacles, options.gap, "dense uniform");
+        assert_eq!(result, place_glyphs(&regions, &counts, &options));
     }
 
     fn assert_clear_of_obstacles(

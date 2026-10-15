@@ -62,6 +62,7 @@ const DEFAULT_STYLE: DiagramStyle = {
   glyphMode: "none",
   glyphArrangement: "uniform",
   glyphGap: 0.25,
+  glyphBoundaryGap: 1,
   glyphSeed: 0,
   memberLabelSize: 4,
 };

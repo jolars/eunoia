@@ -187,6 +187,8 @@ export interface DiagramStyle {
    * member names.
    */
   glyphGap: number;
+  /** Extra clearance to dot region edges and labels, as a fraction of radius. */
+  glyphBoundaryGap: number;
   /** Seed for the `"random"` glyph arrangement. */
   glyphSeed: number;
   /**

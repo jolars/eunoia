@@ -1239,9 +1239,11 @@ fn place_set_labels_impl(input: PlaceSetLabelsInput) -> Result<PlaceSetLabelsOut
 /// label boxes); degenerate ones are ignored rather than rejected.
 /// `obstacle_policy` is `"best_effort"` (default) or `"strict"`. Strict
 /// clearance preserves size floors and reports any shortfall in `unplaced`.
+/// `boundary_gap` overrides `gap` for boundary and obstacle clearance only.
 #[derive(serde::Deserialize, Default)]
 #[serde(default)]
 struct GlyphOptionsIn {
+    boundary_gap: Option<f64>,
     arrangement: Option<String>,
     radius: Option<f64>,
     gap: Option<f64>,
@@ -1303,7 +1305,8 @@ fn glyph_options_from_input(options: Option<GlyphOptionsIn>) -> Result<GlyphOpti
             options.obstacle_policy.as_deref(),
         )?)
         .arrangement(arrangement)
-        .radius(options.radius);
+        .radius(options.radius)
+        .boundary_gap(options.boundary_gap);
     if let Some(gap) = options.gap {
         out = out.gap(gap);
     }
@@ -2265,6 +2268,24 @@ mod tests {
     // ------------------------------------------------------------------------
     // Glyph placement
     // ------------------------------------------------------------------------
+
+    #[test]
+    fn glyph_boundary_gap_round_trips() {
+        let mut input = serde_json::json!({
+            "regions": {"A": [{"outer": [[0, 0], [2, 0], [2, 2], [0, 2]], "holes": []}]},
+            "counts": {"A": 3},
+            "options": {"radius": 0.1, "gap": 0.0},
+        });
+        let plain: serde_json::Value =
+            serde_json::from_str(&call(eunoia_place_glyphs, &input.to_string())).unwrap();
+        assert_eq!(plain["positions"]["A"].as_array().unwrap().len(), 3);
+        input["options"]["boundary_gap"] = serde_json::json!(20.0);
+        let inset: serde_json::Value =
+            serde_json::from_str(&call(eunoia_place_glyphs, &input.to_string())).unwrap();
+        assert_eq!(inset["ok"], true);
+        assert!(inset["positions"]["A"].as_array().unwrap().is_empty());
+        assert_eq!(inset["unplaced"]["A"], 3);
+    }
 
     #[test]
     fn glyph_obstacle_policies_round_trip() {

@@ -556,9 +556,16 @@ export interface GlyphOptions {
    * applies both between glyphs (the minimum center-to-center distance is
    * `2r * (1 + gap)`) and against the region boundary (centers keep a
    * clearance of `r * (1 + gap)` to every ring, so glyphs never sit tangent
-   * to a region edge). Default `0.25`.
+   * to a region edge). Default `0.25`. `boundaryGap` overrides the
+   * boundary and obstacle clearance independently.
    */
   gap?: number;
+  /**
+   * Extra clearance to region edges, holes, and label obstacles, as a fraction
+   * of the dot radius. Centers keep `r * (1 + boundaryGap)` clearance.
+   * Omit to use `gap`. Does not change the minimum distance between dots.
+   */
+  boundaryGap?: number;
   /** Seed for the `"random"` arrangement. Default `0`. */
   seed?: number;
   /** Pole-of-inaccessibility search precision. Default `0.01`. */
@@ -570,7 +577,7 @@ export interface GlyphOptions {
   maxAttempts?: number;
   /**
    * Diagram-wide keep-out boxes that glyph centers clear by
-   * `r * (1 + gap)`, in the same coordinates as the region polygons.
+   * `r * (1 + (boundaryGap ?? gap))`, in the same coordinates as the region polygons.
    * Labels are painted over glyphs, so these are usually the measured label
    * boxes — see {@link labelObstacles}, which builds them from a
    * [`placeLabelsForRegions`] result.
@@ -2026,6 +2033,7 @@ export function placeGlyphsForRegions(
       arrangement?: "Uniform" | "Random";
       radius?: number;
       gap?: number;
+      boundaryGap?: number;
       seed?: number;
       precision?: number;
       maxAttempts?: number;
@@ -2043,6 +2051,8 @@ export function placeGlyphsForRegions(
     }
     if (glyphOptions.radius !== undefined) payload.radius = glyphOptions.radius;
     if (glyphOptions.gap !== undefined) payload.gap = glyphOptions.gap;
+    if (glyphOptions.boundaryGap !== undefined)
+      payload.boundaryGap = glyphOptions.boundaryGap;
     if (glyphOptions.seed !== undefined) payload.seed = glyphOptions.seed;
     if (glyphOptions.precision !== undefined)
       payload.precision = glyphOptions.precision;

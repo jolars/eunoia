@@ -5,6 +5,7 @@
     LabelPlacement,
     LabelSize,
     Region,
+    Rect,
     SetOutline,
   } from "@jolars/eunoia";
   import {
@@ -137,6 +138,7 @@
   let measuredSizes: Record<string, LabelSize> = $state({});
   let measuredSetSizes: Record<string, LabelSize> = $state({});
   let measuredHeaderLines: Record<string, MeasuredMemberLine[]> = $state({});
+  let measuredRegionLines: Record<string, Rect[]> = $state({});
 
   $effect(() => {
     // Re-measure when result changes, font scales, or showCounts toggles.
@@ -159,6 +161,8 @@
       return;
     }
     const sizes: Record<string, LabelSize> = {};
+    const lineBoxes: Record<string, Rect[]> = {};
+    const context = document.createElement("canvas").getContext("2d");
     const headerLines: Record<string, MeasuredMemberLine[]> = {};
     const nodes = measureContainer.querySelectorAll<SVGGraphicsElement>(
       "text[data-fit-region]",
@@ -167,6 +171,34 @@
       const combo = t.getAttribute("data-fit-region");
       if (combo === null) continue;
       const bb = t.getBBox();
+      // SVG boxes include font ascent and descent even when a line has no
+      // descenders. Use the visible ink for glyph clearance instead.
+      let ink = { x: bb.x, y: bb.y, width: bb.width, height: bb.height };
+      if (context) {
+        const font = getComputedStyle(t);
+        context.font = `${font.fontStyle} ${font.fontWeight} ${font.fontSize} ${font.fontFamily}`;
+        const metrics = context.measureText(t.textContent?.trim() ?? "");
+        const height =
+          metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+        if (Number.isFinite(metrics.fontBoundingBoxAscent) && height > 0) {
+          ink = {
+            x: -metrics.width / 2 - metrics.actualBoundingBoxLeft,
+            y:
+              bb.y +
+              metrics.fontBoundingBoxAscent -
+              metrics.actualBoundingBoxAscent,
+            width:
+              metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight,
+            height,
+          };
+        }
+      }
+      (lineBoxes[combo] ??= []).push({
+        x: ink.x + ink.width / 2,
+        y: ink.y + ink.height / 2,
+        width: ink.width,
+        height: ink.height,
+      });
       (headerLines[combo] ??= []).push({
         text: t.textContent?.trim() ?? "",
         w: bb.width,
@@ -186,6 +218,7 @@
       }
     }
     measuredSizes = sizes;
+    measuredRegionLines = lineBoxes;
     measuredHeaderLines = headerLines;
 
     const setBoxes: Record<string, LabelSize> = {};
@@ -274,7 +307,17 @@
   // outside their own shape but can still overhang a neighbouring region, so
   // they join the list.
   let glyphObstacles = $derived([
-    ...regionLabelObstacles,
+    ...Object.entries(measuredRegionLines).flatMap(([key, lines]) => {
+      const anchor = baseRegionPlacements[key]?.anchor;
+      if (!anchor) return [];
+      const padding = style.labelSize * 0.1;
+      return lines.map((line) => ({
+        x: anchor.x + line.x,
+        y: anchor.y + line.y,
+        width: line.width + 2 * padding,
+        height: line.height + 2 * padding,
+      }));
+    }),
     ...(baseSetLabelPlacements
       ? labelObstacles({
           placements: baseSetLabelPlacements,
@@ -334,6 +377,7 @@
         options: {
           arrangement: style.glyphArrangement,
           gap: style.glyphGap,
+          boundaryGap: style.glyphBoundaryGap,
           seed: style.glyphSeed,
           obstacles: glyphObstacles,
         },
@@ -566,9 +610,12 @@
     >
       {#each regions as region}
         {#if !setLabelsOutside}
-          {#each regionTitleLines(region.combination, nested) as title}
+          {#each regionTitleLines(region.combination, nested) as title, i}
             <text
               data-fit-region={region.combination}
+              y={i * style.labelSize}
+              text-anchor="middle"
+              dominant-baseline="central"
               font-size={style.labelSize}
               font-weight={fontWeight}
               font-style={fontItalic}
@@ -582,6 +629,12 @@
           {#if count !== undefined}
             <text
               data-fit-region={region.combination}
+              y={setLabelsOutside
+                ? 0
+                : regionTitleLines(region.combination, nested).length *
+                  style.labelSize}
+              text-anchor="middle"
+              dominant-baseline="central"
               font-size={style.labelSize * 0.75}
             >
               {fmt(count)}

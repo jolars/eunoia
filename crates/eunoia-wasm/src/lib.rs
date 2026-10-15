@@ -3236,7 +3236,8 @@ fn glyph_obstacle_policy(value: Option<&str>) -> Result<eunoia::plotting::Obstac
 /// applied both between glyphs (minimum center-to-center distance is
 /// `2r * (1 + gap)`) and against the region boundary (centers keep a
 /// clearance of `r * (1 + gap)` to every ring). `seed` and `maxAttempts`
-/// only affect the `"Random"` arrangement.
+/// only affect the `"Random"` arrangement. `boundaryGap` overrides `gap`
+/// for boundary and obstacle clearance without changing dot spacing.
 ///
 /// `obstacles` are diagram-wide keep-out boxes (center + full extents, the
 /// same shape as the container elsewhere in this API) that glyph centers
@@ -3291,6 +3292,8 @@ pub fn place_region_glyphs(
         /// Glyph radius; omit for the auto (feasibility-bisection) mode.
         radius: Option<f64>,
         gap: Option<f64>,
+        #[serde(rename = "boundaryGap")]
+        boundary_gap: Option<f64>,
         seed: Option<u64>,
         precision: Option<f64>,
         #[serde(rename = "maxAttempts")]
@@ -3335,7 +3338,8 @@ pub fn place_region_glyphs(
             options_in.obstacle_policy.as_deref(),
         )?)
         .arrangement(arrangement)
-        .radius(options_in.radius);
+        .radius(options_in.radius)
+        .boundary_gap(options_in.boundary_gap);
     if let Some(gap) = options_in.gap {
         options = options.gap(gap);
     }

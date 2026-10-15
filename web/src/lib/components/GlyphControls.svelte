@@ -120,7 +120,8 @@
 
     <div>
       <label for="glyphGap" class="block text-xs font-medium text-muted mb-1">
-        Spacing <span class="font-mono text-faint"
+        {appState.style.glyphMode === "dots" ? "Dot spacing" : "Spacing"}
+        <span class="font-mono text-faint"
           >{appState.style.glyphGap.toFixed(2)}</span
         >
       </label>
@@ -134,11 +135,40 @@
         class="w-full"
       />
       <p class="text-xs text-muted mt-1">
-        Breathing room around each mark, as a fraction of the dot radius or of
-        the text row height. Half of it is also kept to region boundaries,
-        holes, and the region labels.
+        {#if appState.style.glyphMode === "dots"}
+          Minimum gap between dots, in dot diameters. The grid may spread dots
+          farther apart.
+        {:else}
+          Breathing room between names, as a fraction of the text row height.
+          Half of it is also kept to region boundaries, holes, and labels.
+        {/if}
       </p>
     </div>
+
+    {#if appState.style.glyphMode === "dots"}
+      <div>
+        <label
+          for="glyphBoundaryGap"
+          class="block text-xs font-medium text-muted mb-1"
+        >
+          Boundary gap <span class="font-mono text-faint"
+            >{appState.style.glyphBoundaryGap.toFixed(2)}</span
+          >
+        </label>
+        <input
+          id="glyphBoundaryGap"
+          type="range"
+          min="0"
+          max="3"
+          step="0.05"
+          bind:value={appState.style.glyphBoundaryGap}
+          class="w-full"
+        />
+        <p class="text-xs text-muted mt-1">
+          Minimum gap to region edges, holes, and labels, in dot radii.
+        </p>
+      </div>
+    {/if}
 
     {#if appState.style.glyphArrangement === "random"}
       <div>

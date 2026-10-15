@@ -26,7 +26,7 @@ diagram and per-region counts. You get back:
 - `unplaced`: per-region shortfall. Check it with either sizing mode; strict
   obstacles can prevent placement even at the automatic radius floor.
 
-Every center keeps a clearance of at least `radius * (1 + gap)` to the region
+By default, every center keeps a clearance of at least `radius * (1 + gap)` to the region
 boundary (outer ring **and** holes), and centers within a region stay at
 least `2 * radius * (1 + gap)` apart — the same `gap` fraction pads both, so
 rendered circles never overlap each other, never leak across a boundary, and
@@ -76,12 +76,24 @@ fraction of the radius: the minimum center-to-center distance is
 `radius * (1 + gap)` to the region boundary. Raise it for a sparser, airier
 look; set it to `0` to let circles touch each other and the edges.
 
+Set `boundaryGap` (`boundary_gap` in Rust and C) to control clearance to
+region boundaries, holes, and label boxes separately. Centers then keep
+`radius * (1 + boundaryGap)` clearance, while the minimum dot spacing still
+uses `gap`. Omit it to retain the shared setting. For example, `gap: 0.25`
+and `boundaryGap: 1` leave a visible gap of at least half a radius between
+dots and one radius at boundaries. Uniform placement retains its hexagonal
+lattice, so actual gaps can exceed these minimums.
+
+The app exposes these as **Dot spacing** and **Boundary gap**, with defaults
+of `0.25` and `1`, respectively.
+
 ## Label Keep-Out
 
 Labels are painted over glyphs, so anything a label covers is invisible. Pass
 the boxes you measured for [label placement](/docs/concepts/label-placement/)
 as `obstacles` and glyph centers will keep the same `radius * (1 + gap)`
-clearance from them as they do from region edges:
+clearance from them as they do from region edges, unless `boundaryGap`
+overrides it:
 
 ```ts
 import { labelObstacles, placeGlyphsForRegions, placeLabelsForRegions } from "@jolars/eunoia";

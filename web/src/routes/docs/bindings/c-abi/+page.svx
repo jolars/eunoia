@@ -279,6 +279,12 @@ adjacent to the shape it names, so there is nothing to connect.
 
 ## `eunoia_place_glyphs`
 
+Set `options.boundary_gap` to control clearance to region edges, holes, and
+label obstacles independently of `gap`. Centers keep a distance of at least
+`radius * (1 + boundary_gap)` from these boundaries, while the minimum
+center-to-center distance remains `2 * radius * (1 + gap)`. Omitting
+`boundary_gap` uses `gap`, preserving the default behavior.
+
 Packs equally-sized circular glyphs—one mark per data unit,
 eulerGlyphs-style—inside each region, given the region polygons and a
 per-region count. See [Glyphs](/docs/concepts/glyphs/).
