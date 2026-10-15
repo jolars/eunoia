@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.10.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.9.0...eunoia-npm-v1.10.0) (2026-10-15)
+
+### Features
+
+- **plotting:** add rectangular glyph grid ([`d497b8d`](https://github.com/jolars/eunoia/commit/d497b8d0147bfcf6d7fd5c1a287b46c616a58530))
+- **plotting:** add low-discrepancy glyph layout ([`7163758`](https://github.com/jolars/eunoia/commit/7163758b8c06f73e163bd74f6ed797be9cc40753))
+- **plotting:** separate glyph boundary spacing ([`ec63050`](https://github.com/jolars/eunoia/commit/ec63050ce5d100ecde594804abda69b4769a5bfa))
+- **web:** add whole-region member callouts ([`fae7882`](https://github.com/jolars/eunoia/commit/fae78824a60fe5e33971010b0607a19f2e316ed3))
+- **plotting:** add balanced member rows ([`c0737eb`](https://github.com/jolars/eunoia/commit/c0737ebfb6f150fd94b9591e7bc10f09bc27d536)), refs [#133](https://github.com/jolars/eunoia/issues/133)
+- **plotting:** add strict obstacle packing ([`50ae0f0`](https://github.com/jolars/eunoia/commit/50ae0f00ed6ff8b09aa4e96e60e62afdc142bb86)), refs [#133](https://github.com/jolars/eunoia/issues/133)
+
+### Bug Fixes
+
+- **ts:** render complement regions white ([`e7f462b`](https://github.com/jolars/eunoia/commit/e7f462b61b8980d7a144b0603a460fdad88f569b))
+
+### Performance Improvements
+
+- **ts:** avoid cloning unused WASM handles ([`c6c2652`](https://github.com/jolars/eunoia/commit/c6c2652df18e9658c65fbc7d3e3429299a1f5bb8))
+
+### Dependencies
+
+- updated eunoia to v1.10.0
+
 ## [1.9.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.8.0...eunoia-npm-v1.9.0) (2026-08-21)
 
 ### Features
