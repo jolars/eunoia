@@ -101,7 +101,8 @@ eu.venn(4, shape="rotated_rectangle").plot()
 
 ## Next Steps
 
-The full API reference lives on the [eunoia-py docs
-site](https://jolars.github.io/eunoia-py/). For how the fit works across all
+Browse the [Python API reference](/docs/reference/python/) for the complete
+public interface. The [eunoia-py docs site](https://jolars.github.io/eunoia-py/)
+retains the longer Python guides. For how the fit works across all
 bindings, see the [Fitter Pipeline](/docs/concepts/fitter-pipeline/) and
 [Goodness of Fit](/docs/concepts/goodness-of-fit/) chapters.

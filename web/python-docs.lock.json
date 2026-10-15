@@ -1,0 +1,12 @@
+{
+  "python": {
+    "repository": "https://github.com/jolars/eunoia-py.git",
+    "revision": "af16491d64a6d1f3b87b8645bd9697593daa0f02",
+    "version": "0.6.0"
+  },
+  "diplodocus": {
+    "repository": "https://github.com/jolars/diplodocus.git",
+    "revision": "72c8f353f4a597119213f200721f9bd250a1c7f6",
+    "rust": "1.98.0"
+  }
+}

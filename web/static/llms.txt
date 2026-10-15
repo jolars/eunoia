@@ -38,6 +38,7 @@ at authors of downstream bindings.
 
 - [Reference overview](https://eunoia.bz/docs/reference/): Where the per-language API references live.
 - [JavaScript API Reference](https://eunoia.bz/docs/reference/javascript/): The public surface of `@jolars/eunoia`.
+- [Python API Reference](https://eunoia.bz/docs/reference/python/): The `eunoia` Python API, including fitting, result objects, geometry, and plotting options.
 - [Bindings: C ABI Contract](https://eunoia.bz/docs/bindings/c-abi/): The C ABI for native hosts that reach the core without wasm-bindgen, PyO3, or extendr.
 
 ## Optional

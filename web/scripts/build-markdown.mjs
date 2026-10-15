@@ -70,9 +70,13 @@ async function walkDocs(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) await walkDocs(path);
-    else if (entry.name === "+page.svx") {
+    else if (entry.name === "+page.svx" || entry.name === "reference.md") {
       const route = join("docs", relative(routesRoot, dir));
-      await writePage(route, cleanDocsSource(await readFile(path, "utf8")));
+      const source = await readFile(path, "utf8");
+      await writePage(
+        route,
+        entry.name === "+page.svx" ? cleanDocsSource(source) : source,
+      );
     }
   }
 }

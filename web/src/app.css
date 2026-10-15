@@ -95,3 +95,41 @@ body {
   border-radius: 0;
   font-weight: inherit;
 }
+
+/* API fragments inherit the host typography and theme. Long signatures and
+   parameter tables scroll inside the article on narrow screens. */
+.diplodocus-content {
+  min-width: 0;
+}
+.diplodocus-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+.prose .diplodocus-content pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-weight: inherit;
+}
+.diplodocus-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.diplodocus-content img {
+  max-width: 100%;
+  height: auto;
+}
+.diplodocus-content .package,
+.diplodocus-content .source-links {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.diplodocus-content dt {
+  margin-top: 1rem;
+  font-weight: 600;
+}
+.diplodocus-content dd {
+  margin-left: 1rem;
+}

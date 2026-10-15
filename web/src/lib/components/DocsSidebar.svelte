@@ -17,7 +17,10 @@
       {/if}
       <ul class="space-y-1">
         {#each section.chapters as chapter}
-          {@const active = currentPath === chapter.slug}
+          {@const active =
+            currentPath === chapter.slug ||
+            (chapter.slug === "/docs/reference/python/" &&
+              currentPath.startsWith(chapter.slug))}
           <li>
             <a
               href={chapter.slug}

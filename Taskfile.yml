@@ -148,6 +148,11 @@ tasks:
     cmds:
       - pnpm dev
 
+  docs-python:
+    desc: Generate the Python API reference with pinned Diplodocus sources
+    cmds:
+      - node web/scripts/python-docs.mjs {{.CLI_ARGS}}
+
   lighthouse:
     desc: "Lighthouse desktop audit of the docs (perf, a11y, best-practices, SEO). Args: URL=..."
     # Audits the live docs site by default. Point URL at a local preview

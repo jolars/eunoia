@@ -58,6 +58,17 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: web
 
+      - name: Install documentation toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+
+      - name: Check Python reference integration
+        run: |
+          pnpm check
+          pnpm test:python-docs
+        working-directory: web
+
       - name: Build web app
         run: pnpm run build
         working-directory: web

@@ -2,6 +2,8 @@
 resolver = "2"
 members = ["crates/eunoia", "crates/eunoia-wasm", "crates/eunoia-capi"]
 default-members = ["crates/eunoia"]
+# Cached documentation sources build independently of the core workspace.
+exclude = [".docs-sources"]
 
 [workspace.package]
 readme = "README.md"

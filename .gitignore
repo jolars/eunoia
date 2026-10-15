@@ -204,3 +204,11 @@ dist
 /.task/checksum
 /paper/jats
 /paper/paper.pdf
+
+# Pinned documentation sources, snapshots, and generated Python reference pages.
+/.docs-sources/
+/.diplodocus/
+/web/src/routes/docs/reference/python/
+/web/src/routes/docs/reference/python.staging-*/
+/web/src/routes/docs/reference/python.previous-*/
+/web/static/_diplodocus/

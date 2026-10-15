@@ -1,6 +1,6 @@
 # Reference
 
-API references live outside this site, one per language binding:
+Each language binding has its own API reference:
 
 - **Rust:** [docs.rs/eunoia](https://docs.rs/eunoia/) (rustdoc, the
   authoritative reference for every public type, trait, and function).
@@ -9,8 +9,10 @@ API references live outside this site, one per language binding:
   type definitions ship with
   [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia) so your
   editor's "go to definition"/IntelliSense will surface them.
-- **Python:** the [`eunoia` Python API
-  reference](https://jolars.github.io/eunoia-py/).
+- **Python:** the [`eunoia` Python API reference](/docs/reference/python/)
+  documents fitting, result objects, geometry, and plotting options. The
+  [Python package documentation](https://jolars.github.io/eunoia-py/) retains
+  its longer guides.
 - **R:** the [eulerr reference](https://jolars.github.io/eulerr/), now backed by
   the eunoia engine.
 - **Julia:** the [`Eunoia.jl`
