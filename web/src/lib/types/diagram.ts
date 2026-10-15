@@ -176,11 +176,12 @@ export interface DiagramStyle {
    */
   glyphMode: GlyphMode;
   /**
-   * Glyph arrangement: `"uniform"` (hex lattice for dots, row/shelf packing for
+   * Glyph arrangement: `"lowDiscrepancy"` (Halton scatter),
+   * `"uniform"` (hex lattice for dots, row/shelf packing for
    * member names — both fully deterministic) or `"random"` (seeded
    * dart-throwing scatter).
    */
-  glyphArrangement: "uniform" | "random";
+  glyphArrangement: "uniform" | "lowDiscrepancy" | "random";
   /**
    * Extra spacing between glyphs as a fraction of the radius for dots (min
    * center-to-center distance is `2r * (1 + gap)`), or of the row height for

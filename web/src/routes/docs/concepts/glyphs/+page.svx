@@ -37,13 +37,20 @@ fully deterministic).
 
 ## Arrangements
 
-Two arrangements are available; both are deterministic:
+Three arrangements are available; both are deterministic:
 
 - **`uniform`** *(default)*: centers sit on a hexagonal lattice anchored at
   the region's pole of inaccessibility. The lattice spacing is widened as far
   as the region allows, so the glyphs spread across the region instead of
   clumping at the center. No randomness at all—the same input always gives
   the same output.
+- **`lowDiscrepancy`**: candidates follow a deterministic Halton sequence,
+  filtered by minimum spacing and clearance to region boundaries and labels.
+  Select **Low discrepancy (Halton)** in the app, or set
+  `style.glyphArrangement` to `"lowDiscrepancy"` in a saved configuration.
+  This gives an even scatter without a lattice and ignores `seed`. Filtering
+  enforces separation but does not preserve the raw sequence’s discrepancy
+  guarantees. C callers use `low_discrepancy`.
 - **`random`**: seeded dart throwing with the same minimum-spacing guarantee,
   giving the scattered look of the original eulerGlyphs tool. Deterministic
   for a fixed `seed` (default `0`); each region draws from its own

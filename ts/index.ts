@@ -525,11 +525,13 @@ export interface PlaceLabelsForRegionsOptions {
  * - `"uniform"` (default) — centers sit on a hexagonal lattice anchored at
  *   the region's pole of inaccessibility, with the spacing widened so the
  *   glyphs spread across the region. Fully deterministic.
+ * - `"lowDiscrepancy"` — deterministic Halton candidates with minimum spacing
+ *   and boundary clearance. Ignores `seed`.
  * - `"random"` — seeded dart throwing with a minimum center-to-center
  *   spacing, giving the scattered look of the original eulerGlyphs tool.
  *   Deterministic for a fixed `seed`.
  */
-export type GlyphArrangement = "uniform" | "random";
+export type GlyphArrangement = "uniform" | "lowDiscrepancy" | "random";
 
 /**
  * How glyph and member-label packing handles obstacles.
@@ -1962,8 +1964,12 @@ const OBSTACLE_POLICY_MAP: Record<ObstaclePolicy, "BestEffort" | "Strict"> = {
   strict: "Strict",
 };
 
-const GLYPH_ARRANGEMENT_MAP: Record<GlyphArrangement, "Uniform" | "Random"> = {
+const GLYPH_ARRANGEMENT_MAP: Record<
+  GlyphArrangement,
+  "Uniform" | "LowDiscrepancy" | "Random"
+> = {
   uniform: "Uniform",
+  lowDiscrepancy: "LowDiscrepancy",
   random: "Random",
 };
 
@@ -2030,7 +2036,7 @@ export function placeGlyphsForRegions(
   let optionsJson: string | undefined;
   if (glyphOptions) {
     const payload: {
-      arrangement?: "Uniform" | "Random";
+      arrangement?: "Uniform" | "LowDiscrepancy" | "Random";
       radius?: number;
       gap?: number;
       boundaryGap?: number;
@@ -2193,7 +2199,7 @@ export function placeGlyphBoxesForRegions(
   let optionsJson: string | undefined;
   if (boxOptions) {
     const payload: {
-      arrangement?: "Uniform" | "Random";
+      arrangement?: "Uniform" | "LowDiscrepancy" | "Random";
       targetAspectRatio?: number;
       scale?: number;
       minScale?: number;

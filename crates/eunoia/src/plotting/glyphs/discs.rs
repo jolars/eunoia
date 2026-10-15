@@ -454,6 +454,14 @@ fn pack_region(
             GlyphArrangement::Uniform => {
                 placed.extend(pack_uniform_piece(piece, quota, options.precision, ctx));
             }
+            GlyphArrangement::LowDiscrepancy => {
+                placed.extend(pack_low_discrepancy_piece(
+                    piece,
+                    quota,
+                    options.precision,
+                    ctx,
+                ));
+            }
             GlyphArrangement::Random => {
                 placed.extend(pack_random_piece(
                     piece,
@@ -690,6 +698,86 @@ fn pack_uniform_piece(
     take_cells(cells, n, anchor, honoring)
 }
 
+/// Radical inverse supplies each coordinate of the deterministic Halton stream.
+pub(super) fn radical_inverse(mut index: usize, base: usize) -> f64 {
+    let mut value = 0.0;
+    let mut weight = 1.0 / base as f64;
+    while index > 0 {
+        value += (index % base) as f64 * weight;
+        index /= base;
+        weight /= base as f64;
+    }
+    value
+}
+
+/// Filters a Halton sequence through the region and a minimum-distance test.
+/// A spatial hash keeps dense diagrams from comparing every candidate with
+/// every accepted glyph. The fixed candidate budget also bounds work for
+/// slivers and infeasible explicit radii.
+fn pack_low_discrepancy_piece(
+    piece: &RegionPiece,
+    n: usize,
+    precision: f64,
+    ctx: PackCtx<'_>,
+) -> Vec<Point> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let Some((min_x, max_x, min_y, max_y)) = ring_bounds(piece.outer.vertices()) else {
+        return Vec::new();
+    };
+    let inset = ctx.inset();
+    let local = obstacles_near(piece, ctx.obstacles, inset);
+    let spacing = ctx.spacing();
+    let cell_size = spacing.max(f64::EPSILON);
+    let mut placed: Vec<Point> = Vec::with_capacity(n);
+    let mut cells: HashMap<(i64, i64), Vec<Point>> = HashMap::new();
+    let budget = n.saturating_mul(100).clamp(1024, 1_000_000);
+    // Keep a lone glyph centered rather than choosing an arbitrary stream point.
+    let anchor = (n == 1)
+        .then(|| poi_with_holes(std::slice::from_ref(piece), precision))
+        .flatten()
+        .map(|(point, _)| escape_obstacles(point, piece, &local, inset));
+    for honor_obstacles in [true, false] {
+        if !honor_obstacles && (ctx.mode.strict_obstacles || local.is_empty()) {
+            break;
+        }
+        for index in 0..budget {
+            let point = anchor.filter(|_| index == 0).unwrap_or_else(|| {
+                Point::new(
+                    min_x + (max_x - min_x) * radical_inverse(index + 1, 2),
+                    min_y + (max_y - min_y) * radical_inverse(index + 1, 3),
+                )
+            });
+            let (x, y) = (point.x(), point.y());
+            let cell = (
+                ((x - min_x) / cell_size).floor() as i64,
+                ((y - min_y) / cell_size).floor() as i64,
+            );
+            let separated = (-1..=1).all(|dx| {
+                (-1..=1).all(|dy| {
+                    cells.get(&(cell.0 + dx, cell.1 + dy)).is_none_or(|points| {
+                        points
+                            .iter()
+                            .all(|q| (x - q.x()).powi(2) + (y - q.y()).powi(2) >= spacing.powi(2))
+                    })
+                })
+            });
+            if separated
+                && signed_clearance(x, y, piece) >= inset
+                && (!honor_obstacles || clear_of_obstacles(x, y, &local, inset))
+            {
+                placed.push(point);
+                cells.entry(cell).or_default().push(point);
+                if placed.len() == n {
+                    return placed;
+                }
+            }
+        }
+    }
+    placed
+}
+
 /// Random (dart-throwing) packer for one piece: uniform samples over the
 /// piece's bounding box, accepted when they keep clearance ≥ `r * (1 + gap)`
 /// to the boundary and distance ≥ `2r * (1 + gap)` to every accepted center.
@@ -782,6 +870,30 @@ mod tests {
     }
 
     #[test]
+    fn low_discrepancy_example_preserves_counts_clearance_and_seed_independence() {
+        let regions = two_set_regions();
+        let counts = counts(&[("A", 500), ("B", 300), ("A&B", 100)]);
+        let options = GlyphOptions::default()
+            .arrangement(GlyphArrangement::LowDiscrepancy)
+            .boundary_gap(0.95);
+        let result = place_glyphs(&regions, &counts, &options);
+        assert!(result.unplaced.is_empty());
+        for (key, count) in &counts {
+            assert_eq!(result.positions[key].len(), *count);
+            let combo: Combination = key.parse().unwrap();
+            for point in &result.positions[key] {
+                assert!(
+                    region_clearance(point, regions.get(&combo).unwrap())
+                        >= result.radius * 1.95 - 1e-9
+                );
+            }
+        }
+        assert_invariants(&result, &regions, options.gap);
+        let other = place_glyphs(&regions, &counts, &options.seed(123));
+        assert_eq!(result, other);
+    }
+
+    #[test]
     fn uniform_fitted_two_set_places_all_counts() {
         let regions = two_set_regions();
         let counts = counts(&[("A", 10), ("B", 6), ("A&B", 2)]);
@@ -859,7 +971,11 @@ mod tests {
         map.insert(Combination::new(&["A"]), pieces);
         let regions = RegionPolygons::from_map(map);
 
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphOptions::default().arrangement(arrangement);
             let result = place_glyphs(&regions, &counts(&[("A", 20)]), &options);
             assert!(result.unplaced.is_empty(), "{arrangement:?}");
@@ -992,7 +1108,7 @@ mod tests {
         let result = place_glyphs(&regions, &counts(&[("A", 1)]), &GlyphOptions::default());
         assert_eq!(result.positions["A"].len(), 1);
         let p = &result.positions["A"][0];
-        // The lattice is anchored at the POI, so a lone glyph sits on it.
+        // A lone glyph is kept at the pole of inaccessibility.
         assert!((p.x() - 1.0).abs() < 0.05 && (p.y() - 1.0).abs() < 0.05);
     }
 
@@ -1001,7 +1117,11 @@ mod tests {
         let regions = boxed_region(0.0, 0.0, 2.0, 2.0);
         let counts = counts(&[("A", 20)]);
         let obstacle = Rectangle::new(Point::new(1.0, 1.0), 0.1, 0.1);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphOptions::default()
                 .arrangement(arrangement)
                 .radius(0.1)
@@ -1085,7 +1205,11 @@ mod tests {
         ]));
         let counts = counts(&[("A", 3), ("B", 6)]);
         let obstacles = [Rectangle::new(Point::new(1.0, 1.0), 2.0, 2.0)];
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             for radius in [None, Some(0.2)] {
                 let options = GlyphOptions::default()
                     .arrangement(arrangement)
@@ -1127,7 +1251,11 @@ mod tests {
         let regions = boxed_region(0.0, 0.0, 4.0, 4.0);
         let obstacles = [Rectangle::new(Point::new(1.75, 2.0), 3.5, 4.0)];
         let counts = counts(&[("A", 30)]);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             for radius in [None, Some(0.15)] {
                 let options = GlyphOptions::default()
                     .arrangement(arrangement)
@@ -1152,7 +1280,11 @@ mod tests {
     fn strict_policy_preserves_overflow_without_obstacles() {
         let regions = boxed_region(0.0, 0.0, 4.0, 4.0);
         let counts = counts(&[("A", 100)]);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphOptions::default().arrangement(arrangement).radius(0.5);
             let plain = place_glyphs(&regions, &counts, &options);
             assert!(plain.unplaced["A"] > 0);
@@ -1171,7 +1303,11 @@ mod tests {
     fn empty_obstacles_match_no_obstacles() {
         let regions = two_set_regions();
         let counts = counts(&[("A", 10), ("B", 6), ("A&B", 2)]);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let plain = GlyphOptions::default().arrangement(arrangement);
             let empty = GlyphOptions::default()
                 .arrangement(arrangement)
@@ -1242,7 +1378,11 @@ mod tests {
             .collect();
         assert_eq!(obstacles.len(), 3);
 
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphOptions::default()
                 .arrangement(arrangement)
                 .obstacles(obstacles.clone());

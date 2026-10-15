@@ -8,12 +8,15 @@
 //! center point per glyph plus the single radius shared by every glyph in
 //! the diagram.
 //!
-//! Two arrangements are offered via [`GlyphArrangement`]:
+//! Three arrangements are offered via [`GlyphArrangement`]:
 //!
 //! * [`Uniform`](GlyphArrangement::Uniform) (default) — glyph centers sit on
 //!   a hexagonal lattice anchored at the region's pole of inaccessibility,
 //!   with the lattice spacing widened as far as the region allows so the
 //!   glyphs spread across it instead of clumping. Fully deterministic.
+//! * [`LowDiscrepancy`](GlyphArrangement::LowDiscrepancy) — deterministic Halton
+//!   candidates filtered by minimum spacing and boundary clearance, providing
+//!   an even scatter without a lattice. Ignores the seed.
 //! * [`Random`](GlyphArrangement::Random) — seeded dart throwing with a
 //!   minimum center-to-center spacing, followed by a force-directed
 //!   relaxation that evens out the lumps dart throwing leaves behind. Gives
@@ -80,6 +83,10 @@ pub enum GlyphArrangement {
     /// — [`GlyphOptions::seed`] is ignored.
     #[default]
     Uniform,
+    /// Deterministic Halton candidates filtered by boundary clearance and
+    /// minimum spacing. Ignores [`GlyphOptions::seed`]. Member labels use
+    /// the same candidate sequence with rectangular collision checks.
+    LowDiscrepancy,
     /// Seeded dart throwing with minimum center-to-center spacing
     /// `2r * (1 + gap)`, evened out afterwards by a force-directed
     /// relaxation. Deterministic for a fixed [`GlyphOptions::seed`]; each

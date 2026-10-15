@@ -1234,7 +1234,7 @@ fn place_set_labels_impl(input: PlaceSetLabelsInput) -> Result<PlaceSetLabelsOut
 /// Glyph options for [`eunoia_place_glyphs`]. All fields optional; omitted
 /// fields keep the core defaults (uniform arrangement, auto radius,
 /// `gap = 0.25`, `seed = 0`, `precision = 0.01`, `max_attempts = 300`, no
-/// obstacles). `arrangement` is `"uniform"` (default) or `"random"`.
+/// obstacles). `arrangement` is `"uniform"` (default), `"low_discrepancy"`, or `"random"`.
 /// `obstacles` are diagram-wide keep-out boxes (usually the caller's measured
 /// label boxes); degenerate ones are ignored rather than rejected.
 /// `obstacle_policy` is `"best_effort"` (default) or `"strict"`. Strict
@@ -1293,10 +1293,11 @@ fn glyph_options_from_input(options: Option<GlyphOptionsIn>) -> Result<GlyphOpti
     let options = options.unwrap_or_default();
     let arrangement = match options.arrangement.as_deref() {
         None | Some("uniform") => GlyphArrangement::Uniform,
+        Some("low_discrepancy") => GlyphArrangement::LowDiscrepancy,
         Some("random") => GlyphArrangement::Random,
         Some(other) => {
             return Err(format!(
-                "invalid arrangement '{other}' (want uniform|random)"
+                "invalid arrangement '{other}' (want uniform|low_discrepancy|random)"
             ));
         }
     };
@@ -1437,10 +1438,11 @@ fn glyph_box_options_from_input(
     let options = options.unwrap_or_default();
     let arrangement = match options.arrangement.as_deref() {
         None | Some("uniform") => GlyphArrangement::Uniform,
+        Some("low_discrepancy") => GlyphArrangement::LowDiscrepancy,
         Some("random") => GlyphArrangement::Random,
         Some(other) => {
             return Err(format!(
-                "invalid arrangement '{other}' (want uniform|random)"
+                "invalid arrangement '{other}' (want uniform|low_discrepancy|random)"
             ));
         }
     };
@@ -2301,7 +2303,7 @@ mod tests {
                     "positions",
                 )
             };
-            for arrangement in ["uniform", "random"] {
+            for arrangement in ["uniform", "low_discrepancy", "random"] {
                 for fixed in [false, true] {
                     let mut input = serde_json::json!({
                         "regions": {"A": [{"outer": [[0, 0], [2, 0], [2, 2], [0, 2]], "holes": []}]},

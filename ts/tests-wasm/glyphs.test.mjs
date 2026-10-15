@@ -69,7 +69,7 @@ for (const boxes of [false, true]) {
       }
     : { A: 3 };
 
-  for (const arrangement of ["uniform", "random"]) {
+  for (const arrangement of ["uniform", "lowDiscrepancy", "random"]) {
     for (const fixed of [false, true]) {
       test(`${output}: strict obstacles report overflow (${arrangement}, fixed=${fixed})`, () => {
         const options = { arrangement, obstacles };
@@ -103,7 +103,11 @@ for (const boxes of [false, true]) {
             JSON.stringify(wireInput),
             JSON.stringify({
               ...options,
-              arrangement: arrangement === "uniform" ? "Uniform" : "Random",
+              arrangement: {
+                uniform: "Uniform",
+                lowDiscrepancy: "LowDiscrepancy",
+                random: "Random",
+              }[arrangement],
               obstaclePolicy: "Strict",
             }),
           ),

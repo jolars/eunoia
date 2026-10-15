@@ -90,7 +90,8 @@ pub struct GlyphBoxOptions {
     /// Polylabel-style search precision for the per-region pole of
     /// inaccessibility. Defaults to `0.01`.
     pub precision: f64,
-    /// [`GlyphArrangement::Random`] only: dart throws attempted per box
+    /// Candidate attempts per box for [`GlyphArrangement::Random`] and
+    /// [`GlyphArrangement::LowDiscrepancy`];
     /// before the piece is declared full. Defaults to `300`.
     pub max_attempts: u32,
     /// Axis-aligned keep-out boxes, with the same semantics as
@@ -611,9 +612,14 @@ fn pack_boxes_region(
                     .filter(|r| ctx.mode.spread && r.is_finite() && *r > 0.0),
                 ctx,
             ),
-            GlyphArrangement::Random => {
-                pack_random_boxes_piece(scan, offered, options.max_attempts, ctx, &mut rng)
-            }
+            GlyphArrangement::Random | GlyphArrangement::LowDiscrepancy => pack_random_boxes_piece(
+                scan,
+                offered,
+                options.max_attempts,
+                ctx,
+                &mut rng,
+                options.arrangement == GlyphArrangement::LowDiscrepancy,
+            ),
         };
         budget -= placed.len();
         out.extend(placed);
@@ -965,6 +971,7 @@ fn pack_random_boxes_piece(
     max_attempts: u32,
     ctx: BoxCtx<'_>,
     rng: &mut StdRng,
+    low_discrepancy: bool,
 ) -> Vec<Rectangle> {
     if items.is_empty() {
         return Vec::new();
@@ -975,6 +982,7 @@ fn pack_random_boxes_piece(
     let w_max = items.iter().map(|&(w, _)| w).fold(0.0_f64, f64::max);
     let local = obstacles_near(piece, ctx.obstacles, halo + 0.5 * (w_max + ctx.row_h));
 
+    let mut sequence_index = 0;
     let mut placed: Vec<Rectangle> = Vec::with_capacity(items.len());
     for honor_obstacles in [true, false] {
         if !honor_obstacles && (ctx.mode.strict_obstacles || local.is_empty()) {
@@ -987,8 +995,18 @@ fn pack_random_boxes_piece(
             let hw = (0.5 * w + halo).max(1e-12);
             let hh = (0.5 * h + halo).max(1e-12);
             for _ in 0..max_attempts {
-                let x = rng.random_range(min_x..=max_x);
-                let y = rng.random_range(min_y..=max_y);
+                sequence_index += 1;
+                let (x, y) = if low_discrepancy {
+                    (
+                        min_x + (max_x - min_x) * super::discs::radical_inverse(sequence_index, 2),
+                        min_y + (max_y - min_y) * super::discs::radical_inverse(sequence_index, 3),
+                    )
+                } else {
+                    (
+                        rng.random_range(min_x..=max_x),
+                        rng.random_range(min_y..=max_y),
+                    )
+                };
                 let clear_of_placed = placed.iter().all(|r| {
                     (x - r.center().x()).abs() >= 0.5 * (w + r.width()) + 2.0 * halo
                         || (y - r.center().y()).abs() >= 0.5 * (h + r.height()) + 2.0 * halo
@@ -1245,7 +1263,11 @@ mod tests {
     fn invalid_aspect_ratios_and_random_arrangement_keep_existing_layouts() {
         let regions = boxed_region(0.0, 0.0, 10.0, 10.0);
         let sizes = sizes(&[("A", uniform_sizes(12, 1.0, 0.5))]);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphBoxOptions::default().arrangement(arrangement);
             let baseline = place_glyph_boxes(&regions, &sizes, &options);
             for ratio in [
@@ -1386,7 +1408,11 @@ mod tests {
         map.insert(Combination::new(&["A"]), pieces);
         let regions = RegionPolygons::from_map(map);
 
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphBoxOptions::default().arrangement(arrangement);
             let result = place_glyph_boxes(
                 &regions,
@@ -1549,7 +1575,11 @@ mod tests {
             ("B", uniform_sizes(6, 1.0, 0.2)),
         ]);
         let obstacles = [Rectangle::new(Point::new(1.0, 1.0), 2.0, 2.0)];
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             for scale in [None, Some(1.0)] {
                 for gap in [0.0, 0.25] {
                     let options = GlyphBoxOptions::default()
@@ -1597,7 +1627,11 @@ mod tests {
         let obstacles = [Rectangle::new(Point::new(1.5, 2.0), 3.0, 4.0)];
         let items: Vec<_> = (0..40).map(|i| (0.5 + i as f64 * 0.005, 0.2)).collect();
         let sizes = sizes(&[("A", items.clone())]);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             for scale in [None, Some(1.0)] {
                 for gap in [0.0, 0.25] {
                     let options = GlyphBoxOptions::default()
@@ -1633,7 +1667,11 @@ mod tests {
     fn strict_policy_preserves_overflow_without_obstacles() {
         let regions = boxed_region(0.0, 0.0, 4.0, 4.0);
         let sizes = sizes(&[("A", uniform_sizes(200, 0.5, 0.2))]);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphBoxOptions::default()
                 .arrangement(arrangement)
                 .scale(1.0);
@@ -1657,7 +1695,11 @@ mod tests {
             ("A", uniform_sizes(4, 0.2, 0.08)),
             ("B", uniform_sizes(2, 0.2, 0.08)),
         ]);
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let plain = GlyphBoxOptions::default().arrangement(arrangement);
             let empty = GlyphBoxOptions::default()
                 .arrangement(arrangement)
@@ -1696,7 +1738,11 @@ mod tests {
     fn obstacles_are_honored_for_both_arrangements() {
         let regions = boxed_region(0.0, 0.0, 10.0, 10.0);
         let obstacles = [Rectangle::new(Point::new(5.0, 5.0), 3.0, 1.5)];
-        for arrangement in [GlyphArrangement::Uniform, GlyphArrangement::Random] {
+        for arrangement in [
+            GlyphArrangement::Uniform,
+            GlyphArrangement::LowDiscrepancy,
+            GlyphArrangement::Random,
+        ] {
             let options = GlyphBoxOptions::default()
                 .arrangement(arrangement)
                 .obstacles(obstacles);

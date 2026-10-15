@@ -3218,7 +3218,7 @@ fn glyph_obstacle_policy(value: Option<&str>) -> Result<eunoia::plotting::Obstac
 ///
 /// ```json
 /// {
-///   "arrangement": "Uniform" | "Random",
+///   "arrangement": "Uniform" | "LowDiscrepancy" | "Random",
 ///   "radius": 0.05,
 ///   "gap": 0.25,
 ///   "seed": 0,
@@ -3287,7 +3287,7 @@ pub fn place_region_glyphs(
     #[derive(serde::Deserialize, Default)]
     #[serde(default)]
     struct OptionsJson {
-        /// `"Uniform"` (default) or `"Random"`.
+        /// `"Uniform"` (default), `"LowDiscrepancy"`, or `"Random"`.
         arrangement: Option<String>,
         /// Glyph radius; omit for the auto (feasibility-bisection) mode.
         radius: Option<f64>,
@@ -3326,10 +3326,11 @@ pub fn place_region_glyphs(
     };
     let arrangement = match options_in.arrangement.as_deref() {
         None | Some("Uniform") => GlyphArrangement::Uniform,
+        Some("LowDiscrepancy") => GlyphArrangement::LowDiscrepancy,
         Some("Random") => GlyphArrangement::Random,
         Some(other) => {
             return Err(JsValue::from_str(&format!(
-                "invalid options.arrangement '{other}' (expected 'Uniform' or 'Random')"
+                "invalid options.arrangement '{other}' (expected 'Uniform', 'LowDiscrepancy', or 'Random')"
             )));
         }
     };
@@ -3419,7 +3420,7 @@ pub fn place_region_glyphs(
 /// clamped to zero rather than rejected (an empty name measures `0 × 0`).
 ///
 /// `options_json` is optional:
-/// `{ "arrangement": "Uniform" | "Random", "scale": 0.8, "minScale": 0.35,
+/// `{ "arrangement": "Uniform" | "LowDiscrepancy" | "Random", "scale": 0.8, "minScale": 0.35,
 /// "gap": 0.25, "seed": 0, "precision": 0.01, "maxAttempts": 300,
 /// "obstaclePolicy": "BestEffort" | "Strict",
 /// "obstacles": [{ "x": .., "y": .., "width": .., "height": .. }] }`.
@@ -3511,10 +3512,11 @@ pub fn place_region_glyph_boxes(
     };
     let arrangement = match options_in.arrangement.as_deref() {
         None | Some("Uniform") => GlyphArrangement::Uniform,
+        Some("LowDiscrepancy") => GlyphArrangement::LowDiscrepancy,
         Some("Random") => GlyphArrangement::Random,
         Some(other) => {
             return Err(JsValue::from_str(&format!(
-                "invalid options.arrangement '{other}' (expected 'Uniform' or 'Random')"
+                "invalid options.arrangement '{other}' (expected 'Uniform', 'LowDiscrepancy', or 'Random')"
             )));
         }
     };
