@@ -17,8 +17,8 @@
     "format:check": "prettier --check \"**/*.svelte\""
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.142",
-    "@iconify-json/simple-icons": "^1.2.99",
+    "@iconify-json/lucide": "^1.2.145",
+    "@iconify-json/simple-icons": "^1.2.100",
     "@iconify/utils": "^3.1.7",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.70.3",
@@ -32,10 +32,10 @@
     "prettier": "^3.9.10",
     "prettier-plugin-svelte": "^4.1.1",
     "rehype-slug": "^6.0.0",
-    "rollup": "^4.64.5",
+    "rollup": "^4.64.9",
     "shiki": "^4.5.0",
     "svelte": "^5.57.2",
-    "svelte-check": "^4.7.6",
+    "svelte-check": "^4.7.7",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "unplugin-icons": "^24.0.0",
@@ -43,7 +43,7 @@
     "vite-plugin-compression": "^0.5.1",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.5.0",
-    "wrangler": "^4.149.0"
+    "wrangler": "^4.151.1"
   },
   "dependencies": {
     "@jolars/eunoia": "link:../npm",
