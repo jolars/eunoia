@@ -237,14 +237,15 @@ fn run_attempt(
                     target_norm: target_norm(distances),
                 },
             };
-            let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new()
+            let solver = basin::Lbfgs::new()
+                .unbounded()
                 .with_m_capacity(10)
                 .with_absolute_gradient_tolerance(f64::EPSILON.sqrt())
                 .with_absolute_cost_change_tolerance(f64::EPSILON);
             let result = basin::Executor::new(
                 cost_function,
                 solver,
-                basin::LbfgsState::new(initial_param.as_slice().to_vec(), 10),
+                basin::FirstOrderState::new(initial_param.as_slice().to_vec()),
             )
             .max_iter(200)
             .run()
@@ -257,7 +258,7 @@ fn run_attempt(
             let result = basin::Executor::new(
                 problem,
                 solver,
-                basin::NllsState::new(initial_param.clone()),
+                basin::PointState::new(initial_param.clone()),
             )
             .max_iter(200)
             .run()
@@ -275,7 +276,7 @@ fn run_attempt(
 /// Trajectory-recording path only (see [`crate::fitter::recording`]); the
 /// production MDS path is [`run_attempt`] / [`compute_initial_layout_with_solver`]
 /// and is left untouched. We pin LM (not the configurable MDS solver pool) so
-/// the observer always sees a single-iterate `NllsState<DVector<f64>>`. The
+/// the observer always sees a single-iterate `PointState<DVector<f64>>`. The
 /// solver setup mirrors [`run_attempt`]'s `LevenbergMarquardt` arm so the
 /// recorded process is faithful to the real MDS init.
 pub(crate) fn run_mds_recorded(
@@ -290,7 +291,7 @@ pub(crate) fn run_mds_recorded(
     let result = basin::Executor::new(
         problem,
         solver,
-        basin::NllsState::new(initial_param.clone()),
+        basin::PointState::new(initial_param.clone()),
     )
     .max_iter(200)
     .observe_with(observer, basin::ObserverMode::Always)
@@ -319,6 +320,14 @@ fn mds_lm_solver() -> basin::LevenbergMarquardt<DVector<f64>, DMatrix<f64>> {
 /// per-pair cost / gradient sums.
 struct BasinMdsCost<'a> {
     inner: MdsCost<'a>,
+}
+
+impl basin::ProblemConstraints for BasinMdsCost<'_> {
+    type Constraints = basin::NoConstraints;
+
+    fn constraint_set(&self) -> basin::NoConstraints {
+        basin::NoConstraints::EMPTY
+    }
 }
 
 impl basin::CostFunction for BasinMdsCost<'_> {
@@ -611,6 +620,14 @@ impl<'a> LmMdsProblem<'a> {
             return (0.0, xd, yd, false);
         }
         (d, xd, yd, true)
+    }
+}
+
+impl basin::ProblemConstraints for LmMdsProblem<'_> {
+    type Constraints = basin::NoConstraints;
+
+    fn constraint_set(&self) -> basin::NoConstraints {
+        basin::NoConstraints::EMPTY
     }
 }
 

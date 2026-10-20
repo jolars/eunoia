@@ -64,8 +64,9 @@ pub enum Optimizer {
     /// with a CMA-ES global escape", not literal LM.
     ///
     CmaEsLm,
-    /// Box-constrained Levenberg-Marquardt — trust-region-reflective
-    /// (`basin::Trf`). The bounded analog of [`Optimizer::LevenbergMarquardt`]:
+    /// Box-constrained Levenberg-Marquardt with Coleman-Li scaling
+    /// (`basin::BoundedLevenbergMarquardt`).
+    /// The bounded analog of [`Optimizer::LevenbergMarquardt`]:
     /// it shares the exact `LmDiagramProblem` least-squares kernel (analytic
     /// region-area Jacobian, `JᵀJ` Gram) but constrains every step to a
     /// per-shape box via Coleman-Li affine scaling.
@@ -395,7 +396,7 @@ fn run_lm_or_lbfgs<S: DiagramShape + Copy + 'static>(
             let result = basin::Executor::new(
                 problem,
                 solver,
-                basin::NllsState::new(initial_param.clone()),
+                basin::PointState::new(initial_param.clone()),
             )
             .max_iter(config.max_iterations.max(1) as u64)
             .run()
@@ -452,7 +453,7 @@ pub(crate) fn run_lm_recorded<S: DiagramShape + Copy + 'static>(
     let result = basin::Executor::new(
         problem,
         solver,
-        basin::NllsState::new(initial_param.clone()),
+        basin::PointState::new(initial_param.clone()),
     )
     .max_iter(config.max_iterations.max(1) as u64)
     .observe_with(observer, basin::ObserverMode::Always)
@@ -462,8 +463,8 @@ pub(crate) fn run_lm_recorded<S: DiagramShape + Copy + 'static>(
     Ok((result.param().clone(), result.cost() * 2.0))
 }
 
-/// Run box-constrained Levenberg-Marquardt (`basin::Trf`,
-/// trust-region-reflective) — the bounded analog of [`run_lm_or_lbfgs`].
+/// Run box-constrained Levenberg-Marquardt (`basin::BoundedLevenbergMarquardt`),
+/// the bounded analog of [`run_lm_or_lbfgs`].
 ///
 /// Reuses the same `LmDiagramProblem` least-squares kernel (analytic Jacobian,
 /// `JᵀJ` Gram) wrapped in [`BoundedLmDiagramProblem`] to carry the box bounds
@@ -508,17 +509,17 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
                 upper,
             };
             // `Trf`'s sole convergence tolerance is the absolute
-            // `‖D·Jᵀr‖_∞ ≤ tol_grad` test — it has no relative ftol/xtol/gtol
+            // `‖v ⊙ Jᵀr‖_∞ ≤ tol_grad` test — it has no relative ftol/xtol/gtol
             // knobs like basin's LM. The residuals' `1/√Σtᵢ²` normalisation
             // makes that bound scale-dependent (the same reason the LM arm
             // disables absolute `tol_grad`), so the iteration budget is the
             // primary stop here. We still thread `config.gtol` through for
             // parity with the LM dispatch.
-            let solver = basin::Trf::<DVector<f64>, DMatrix<f64>>::new()
+            let solver = basin::BoundedLevenbergMarquardt::<DVector<f64>, DMatrix<f64>>::new()
                 .with_absolute_scaled_gradient_tolerance(optional_lm_tolerance(
                     config.gtol.unwrap_or(1e-8),
                 ));
-            let result = basin::Executor::new(problem, solver, basin::NllsState::new(x0))
+            let result = basin::Executor::new(problem, solver, basin::PointState::new(x0))
                 .max_iter(config.max_iterations.max(1) as u64)
                 .run()
                 .expect("solver problem is infallible");
@@ -663,7 +664,7 @@ fn run_nelder_mead<S: DiagramShape + Copy + 'static>(
             _shape: std::marker::PhantomData,
         },
     };
-    let state = basin::BasicSimplexState::from_simplex(simplex);
+    let state = basin::SimplexProgress::from_simplex(simplex);
     let solver = basin::NelderMead::new();
     let result = basin::Executor::new(cost_function, solver, state)
         .max_iter(config.max_iterations as u64)
@@ -715,7 +716,7 @@ fn run_mads<S: DiagramShape + Copy + 'static>(
         .max_iterations
         .saturating_mul(2 * n_params + 1)
         .max(1) as u64;
-    let state = basin::MadsState::new(initial_param.as_slice().to_vec());
+    let state = basin::PointState::new(initial_param.as_slice().to_vec());
     // The poll-size floor must lie in `(0, Δ₀=1)`, so clamp the fitter's
     // tolerance to stay strictly inside that range.
     let min_poll_size = config.tolerance.clamp(1e-12, 0.5);
@@ -755,11 +756,12 @@ fn run_lbfgs<S: DiagramShape + Copy + 'static>(
         },
     };
     let x0 = initial_param.as_slice().to_vec();
-    let solver = basin::Lbfgs::<basin::solver::lbfgs::Unbounded>::new()
+    let solver = basin::Lbfgs::new()
+        .unbounded()
         .with_m_capacity(10)
         .with_absolute_gradient_tolerance(config.tolerance)
         .with_absolute_cost_change_tolerance(config.tolerance);
-    let result = basin::Executor::new(cost_function, solver, basin::LbfgsState::new(x0, 10))
+    let result = basin::Executor::new(cost_function, solver, basin::FirstOrderState::new(x0))
         .max_iter(config.max_iterations.max(1) as u64)
         .run()
         .expect("solver problem is infallible");
@@ -806,14 +808,15 @@ fn run_bounded_cmaes<S: DiagramShape + Copy + 'static>(
     };
     let solver = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::new(
         config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
-    );
+        1.0,
+    )
+    .with_stds(DVector::from_vec(initial_std));
     // initial_sigma = 1: the per-coordinate scale lives entirely in
     // `with_stds`, so the search runs on the unitless `diag(stds)`-scaled
     // space (matches the old inline solver's internal `sigma = 1`). The
-    // distribution (mean / sigma / stds) now lives on the `CmaEsState`; the
+    // distribution (mean / sigma / stds) lives on the solver; the
     // default population size `4 + ⌊3 ln n⌋` is what `default_lambda` returned.
-    let state = basin::CmaEsState::<DVector<f64>, DMatrix<f64>>::new(initial_param.clone(), 1.0)
-        .with_stds(DVector::from_vec(initial_std));
+    let state = basin::PopulationProgress::from_point(initial_param.clone());
     let result = basin::Executor::new(problem, solver, state)
         .max_iter(100)
         .run()
@@ -914,12 +917,17 @@ fn run_bounded_cma_inject<S: DiagramShape + Copy + 'static>(
     };
     let cma = basin::BoundedCmaEs::<DVector<f64>, DMatrix<f64>>::new(
         config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15),
-    );
-    let solver = basin::BoundedCmaInject::with_inner_solver(cma, lm_solver(config))
-        .with_k(MEMETIC_REFINE_K)
-        .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
-    let state = basin::CmaEsState::<DVector<f64>, DMatrix<f64>>::new(initial_param.clone(), 1.0)
-        .with_stds(DVector::from_vec(initial_std));
+        1.0,
+    )
+    .with_stds(DVector::from_vec(initial_std));
+    // Preserve unbounded LM refinement before the outer solver repairs the candidate.
+    let solver = basin::BoundedCmaInject::with_inner_solver(
+        cma,
+        basin::RelaxedInner::new(lm_solver(config)),
+    )
+    .with_k(MEMETIC_REFINE_K)
+    .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
+    let state = basin::PopulationProgress::from_point(initial_param.clone());
     let result = basin::Executor::new(problem, solver, state)
         .max_iter(MEMETIC_ESCAPE_GENERATIONS)
         .run()
@@ -975,10 +983,12 @@ fn run_de_inject<S: DiagramShape + Copy + 'static>(
     let pop_size = (2 * initial_param.len()).clamp(16, 48);
     let de = basin::De::<f64>::new(config.seed.wrapping_mul(0x9E37_79B9_7F4A_7C15))
         .with_pop_size(pop_size);
-    let solver = basin::DeInject::with_inner_solver(de, lm_solver(config))
-        .with_k(MEMETIC_REFINE_K)
-        .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
-    let state = basin::BasicPopulationState::<DVector<f64>, f64>::with_size(pop_size);
+    // Preserve unbounded LM refinement before the outer solver clips the candidate.
+    let solver =
+        basin::DeInject::with_inner_solver(de, basin::RelaxedInner::new(lm_solver(config)))
+            .with_k(MEMETIC_REFINE_K)
+            .with_inner_max_iter(MEMETIC_INNER_MAX_ITER);
+    let state = basin::PopulationProgress::<DVector<f64>>::empty();
     let result = basin::Executor::new(problem, solver, state)
         .max_iter(MEMETIC_ESCAPE_GENERATIONS)
         .run()
@@ -997,6 +1007,14 @@ fn run_de_inject<S: DiagramShape + Copy + 'static>(
 /// invisible next to `compute_exclusive_regions`, which dominates the profile.
 struct BasinDiagramCost<'a, S: DiagramShape + Copy + 'static> {
     inner: DiagramCost<'a, S>,
+}
+
+impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints for BasinDiagramCost<'_, S> {
+    type Constraints = basin::NoConstraints;
+
+    fn constraint_set(&self) -> basin::NoConstraints {
+        basin::NoConstraints::EMPTY
+    }
 }
 
 impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BasinDiagramCost<'_, S> {
@@ -1039,7 +1057,7 @@ impl<S: DiagramShape + Copy + 'static> basin::Gradient for BasinDiagramCost<'_, 
 /// `basin::BoundedCmaEs` runs on the nalgebra backend directly — the whole tree
 /// is aligned on a single nalgebra, so basin's vector type *is*
 /// [`DVector<f64>`]. Box bounds live on the problem (basin's tenet 4); the
-/// solver's adaptive quadratic penalty reads them through [`BoxConstraints`].
+/// solver's adaptive quadratic penalty reads them through [`basin::ProblemConstraints`].
 struct BoundedDiagramCost<'a, S: DiagramShape + Copy + 'static> {
     inner: DiagramCost<'a, S>,
     lower: DVector<f64>,
@@ -1061,25 +1079,22 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedDiagramCos
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> basin::BoxConstraints for BoundedDiagramCost<'_, S> {
-    fn lower(&self) -> &DVector<f64> {
-        &self.lower
-    }
+impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints for BoundedDiagramCost<'_, S> {
+    type Constraints = basin::Constraints<basin::BoxBounds<DVector<f64>>>;
 
-    fn upper(&self) -> &DVector<f64> {
-        &self.upper
+    fn constraint_set(&self) -> <Self::Constraints as basin::ConstraintDescription>::Borrowed<'_> {
+        basin::Constraints::new()
+            .with_bounds(basin::BoxBounds::new(Some(&self.lower), Some(&self.upper)))
     }
 }
 
-/// Box-constrained wrapper around [`LmDiagramProblem`] for basin's `Trf`
-/// (trust-region-reflective) solver — [`Optimizer::Trf`].
+/// Box-constrained wrapper around [`LmDiagramProblem`] for [`Optimizer::Trf`]
+/// and the memetic escapes.
 ///
-/// Delegates `Residual`/`Jacobian` to the inner least-squares problem
-/// unchanged and adds the box bounds `Trf` requires via [`BoxConstraints`].
-/// The `CostFunction` impl exists only to satisfy basin's `BoxConstraints:
-/// CostFunction` supertrait bound — `Trf` computes `½‖r‖²` from the residual
-/// directly and never queries `cost()`, so it carries no extra kernel
-/// evaluations on the solve path.
+/// Delegates `Residual`/`Jacobian` to the inner least-squares problem and declares
+/// box bounds through [`basin::ProblemConstraints`]. The bounded LM solver
+/// computes `½‖r‖²` directly. The memetic solvers use `CostFunction` to evaluate
+/// population members against that same objective.
 struct BoundedLmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
     inner: LmDiagramProblem<'a, S>,
     lower: DVector<f64>,
@@ -1110,20 +1125,19 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedLmDiagramP
     type Error = Infallible;
 
     fn cost(&self, x: &DVector<f64>) -> Result<f64, Infallible> {
-        // Present only for the `BoxConstraints: CostFunction` bound; `Trf`
-        // never calls this. Mirror its `½‖r‖²` convention so any incidental
-        // query stays consistent with `state.cost`.
+        // Memetic population costs must match the inner LM residual objective.
         Ok(0.5 * basin::Residual::residual(&self.inner, x)?.norm_squared())
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> basin::BoxConstraints for BoundedLmDiagramProblem<'_, S> {
-    fn lower(&self) -> &DVector<f64> {
-        &self.lower
-    }
+impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints
+    for BoundedLmDiagramProblem<'_, S>
+{
+    type Constraints = basin::Constraints<basin::BoxBounds<DVector<f64>>>;
 
-    fn upper(&self) -> &DVector<f64> {
-        &self.upper
+    fn constraint_set(&self) -> <Self::Constraints as basin::ConstraintDescription>::Borrowed<'_> {
+        basin::Constraints::new()
+            .with_bounds(basin::BoxBounds::new(Some(&self.lower), Some(&self.upper)))
     }
 }
 
@@ -1601,6 +1615,14 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 fitted_grads,
             },
         ));
+    }
+}
+
+impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints for LmDiagramProblem<'_, S> {
+    type Constraints = basin::NoConstraints;
+
+    fn constraint_set(&self) -> basin::NoConstraints {
+        basin::NoConstraints::EMPTY
     }
 }
 
@@ -3281,11 +3303,17 @@ mod tests {
             // convergence check cannot hide behind numerical no-progress.
             let solver = lm_solver(&config).with_no_progress_check(false);
             let result =
-                basin::Executor::new(problem, solver, basin::NllsState::new(params.clone()))
+                basin::Executor::new(problem, solver, basin::PointState::new(params.clone()))
                     .max_iter(2)
                     .run()
                     .unwrap();
-            assert_eq!(result.reason, basin::TerminationReason::MaxIter);
+            assert_eq!(
+                result.report.termination,
+                basin::Termination::Limit(vec![basin::ExecutionLimit::Iterations {
+                    observed: 2,
+                    limit: 2,
+                }])
+            );
             assert_eq!(result.iter(), 2);
         }
     }

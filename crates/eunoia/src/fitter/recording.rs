@@ -8,7 +8,7 @@
 //!
 //! It deliberately stays off the production hot path: [`Fitter::fit_recording`]
 //! forces `n_restarts = 1`, pins Levenberg-Marquardt for both phases (so the
-//! observer always sees a single-iterate `NllsState<DVector<f64>>`), and uses
+//! observer always sees a single-iterate `PointState<DVector<f64>>`), and uses
 //! the `SumSquared` least-squares loss. The recorders live only here and on the
 //! dedicated `run_*_recorded` entry points; `fit()` / `fit_initial_only()` never
 //! allocate one and pay no overhead.
