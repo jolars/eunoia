@@ -306,7 +306,7 @@ struct SeparationCost {
     r2: f64,
     target_overlap: f64,
     /// Lower / upper of the feasible centre-distance bracket, stored so
-    /// `basin::Brent` can read them via [`basin::ProblemConstraints`].
+    /// `basin::Brent` can read them via [`basin::Constraints`].
     lower: f64,
     upper: f64,
 }
@@ -325,11 +325,11 @@ impl basin::CostFunction for SeparationCost {
     }
 }
 
-impl basin::ProblemConstraints for SeparationCost {
-    type Constraints = basin::Constraints<basin::BoxBounds<f64>>;
+impl basin::Constraints for SeparationCost {
+    type Set = basin::ConstraintSet<basin::BoxBounds<f64>>;
 
-    fn constraint_set(&self) -> <Self::Constraints as basin::ConstraintDescription>::Borrowed<'_> {
-        basin::Constraints::new()
+    fn constraints(&self) -> <Self::Set as basin::ConstraintDescription>::Borrowed<'_> {
+        basin::ConstraintSet::new()
             .with_bounds(basin::BoxBounds::new(Some(&self.lower), Some(&self.upper)))
     }
 }
@@ -465,7 +465,7 @@ pub(crate) fn distance_for_overlap(
     // `tol` is the relative x-tolerance on the centre distance. The default
     // `sqrt(machine epsilon)` matches eulerr; `Brent::new` uses the same
     // relative tolerance with a `1e-12` absolute floor. basin's `Brent` reads
-    // the `[min_distance, max_distance]` bracket from `ProblemConstraints`, seeded
+    // the `[min_distance, max_distance]` bracket from `Constraints`, seeded
     // at the bracket midpoint. `state.param` tracks the incumbent minimiser,
     // so the final value is the best distance found.
     let solver = match tol {

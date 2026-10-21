@@ -1009,14 +1009,6 @@ struct BasinDiagramCost<'a, S: DiagramShape + Copy + 'static> {
     inner: DiagramCost<'a, S>,
 }
 
-impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints for BasinDiagramCost<'_, S> {
-    type Constraints = basin::NoConstraints;
-
-    fn constraint_set(&self) -> basin::NoConstraints {
-        basin::NoConstraints::EMPTY
-    }
-}
-
 impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BasinDiagramCost<'_, S> {
     type Param = Vec<f64>;
     type Output = f64;
@@ -1057,7 +1049,7 @@ impl<S: DiagramShape + Copy + 'static> basin::Gradient for BasinDiagramCost<'_, 
 /// `basin::BoundedCmaEs` runs on the nalgebra backend directly — the whole tree
 /// is aligned on a single nalgebra, so basin's vector type *is*
 /// [`DVector<f64>`]. Box bounds live on the problem (basin's tenet 4); the
-/// solver's adaptive quadratic penalty reads them through [`basin::ProblemConstraints`].
+/// solver's adaptive quadratic penalty reads them through [`basin::Constraints`].
 struct BoundedDiagramCost<'a, S: DiagramShape + Copy + 'static> {
     inner: DiagramCost<'a, S>,
     lower: DVector<f64>,
@@ -1079,11 +1071,11 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedDiagramCos
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints for BoundedDiagramCost<'_, S> {
-    type Constraints = basin::Constraints<basin::BoxBounds<DVector<f64>>>;
+impl<S: DiagramShape + Copy + 'static> basin::Constraints for BoundedDiagramCost<'_, S> {
+    type Set = basin::ConstraintSet<basin::BoxBounds<DVector<f64>>>;
 
-    fn constraint_set(&self) -> <Self::Constraints as basin::ConstraintDescription>::Borrowed<'_> {
-        basin::Constraints::new()
+    fn constraints(&self) -> <Self::Set as basin::ConstraintDescription>::Borrowed<'_> {
+        basin::ConstraintSet::new()
             .with_bounds(basin::BoxBounds::new(Some(&self.lower), Some(&self.upper)))
     }
 }
@@ -1092,7 +1084,7 @@ impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints for BoundedDiag
 /// and the memetic escapes.
 ///
 /// Delegates `Residual`/`Jacobian` to the inner least-squares problem and declares
-/// box bounds through [`basin::ProblemConstraints`]. The bounded LM solver
+/// box bounds through [`basin::Constraints`]. The bounded LM solver
 /// computes `½‖r‖²` directly. The memetic solvers use `CostFunction` to evaluate
 /// population members against that same objective.
 struct BoundedLmDiagramProblem<'a, S: DiagramShape + Copy + 'static> {
@@ -1130,13 +1122,11 @@ impl<S: DiagramShape + Copy + 'static> basin::CostFunction for BoundedLmDiagramP
     }
 }
 
-impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints
-    for BoundedLmDiagramProblem<'_, S>
-{
-    type Constraints = basin::Constraints<basin::BoxBounds<DVector<f64>>>;
+impl<S: DiagramShape + Copy + 'static> basin::Constraints for BoundedLmDiagramProblem<'_, S> {
+    type Set = basin::ConstraintSet<basin::BoxBounds<DVector<f64>>>;
 
-    fn constraint_set(&self) -> <Self::Constraints as basin::ConstraintDescription>::Borrowed<'_> {
-        basin::Constraints::new()
+    fn constraints(&self) -> <Self::Set as basin::ConstraintDescription>::Borrowed<'_> {
+        basin::ConstraintSet::new()
             .with_bounds(basin::BoxBounds::new(Some(&self.lower), Some(&self.upper)))
     }
 }
@@ -1615,14 +1605,6 @@ impl<'a, S: DiagramShape + Copy + 'static> LmDiagramProblem<'a, S> {
                 fitted_grads,
             },
         ));
-    }
-}
-
-impl<S: DiagramShape + Copy + 'static> basin::ProblemConstraints for LmDiagramProblem<'_, S> {
-    type Constraints = basin::NoConstraints;
-
-    fn constraint_set(&self) -> basin::NoConstraints {
-        basin::NoConstraints::EMPTY
     }
 }
 

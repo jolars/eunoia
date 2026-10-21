@@ -322,14 +322,6 @@ struct BasinMdsCost<'a> {
     inner: MdsCost<'a>,
 }
 
-impl basin::ProblemConstraints for BasinMdsCost<'_> {
-    type Constraints = basin::NoConstraints;
-
-    fn constraint_set(&self) -> basin::NoConstraints {
-        basin::NoConstraints::EMPTY
-    }
-}
-
 impl basin::CostFunction for BasinMdsCost<'_> {
     type Param = Vec<f64>;
     type Output = f64;
@@ -620,14 +612,6 @@ impl<'a> LmMdsProblem<'a> {
             return (0.0, xd, yd, false);
         }
         (d, xd, yd, true)
-    }
-}
-
-impl basin::ProblemConstraints for LmMdsProblem<'_> {
-    type Constraints = basin::NoConstraints;
-
-    fn constraint_set(&self) -> basin::NoConstraints {
-        basin::NoConstraints::EMPTY
     }
 }
 
