@@ -9,7 +9,7 @@ version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://b
 version](https://badge.fury.io/py/eunoia.svg?icon=si%3Apython)](https://badge.fury.io/py/eunoia)
 [![CRAN
 Badge](http://www.r-pkg.org/badges/version/eulerr)](https://cran.r-project.org/package=eulerr)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21471283.svg)](https://doi.org/10.5281/zenodo.21471283)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22042667.svg)](https://doi.org/10.5281/zenodo.22042667)
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
 
 Eunoia is a Rust library for area-proportional **Euler and Venn diagrams**. Give
@@ -25,7 +25,8 @@ built to power bindings across many languages.
 ## Highlights
 
 - **Five shape families**: fit with circles, ellipses, squares, axis-aligned
-  rectangles, or rotated rectangles; the engine is shape-agnostic until fit time.
+  rectangles, or rotated rectangles; the engine is shape-agnostic until fit
+  time.
 - **Robust fitting**: MDS initialization followed by a global/local optimization
   pipeline (LM, CMA-ES, trust-region) that mirrors and improves on eulerr.
 - **Venn diagrams too**: canonical arrangements for up to three sets with
