@@ -7,7 +7,7 @@ settings:
 overrides:
   cookie: 0.7.2
   devalue: 5.9.4
-  dompurify: 3.4.16
+  dompurify: 3.4.17
   fflate: 0.8.3
   postcss-selector-parser: 7.1.6
   sharp: 0.35.5
@@ -1357,8 +1357,8 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
-  dompurify@3.4.16:
-    resolution: {integrity: sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==}
+  dompurify@3.4.17:
+    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
 
   enhanced-resolve@5.24.3:
     resolution: {integrity: sha512-PwKooW9JUzh5chmYfHM3IQl5OkK2u2Nm011MgeZrss3JmFraUx/fqrf78kk8GUMYoibx/14MdwTl/1WKkG7TpQ==}
@@ -2998,7 +2998,7 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
-  dompurify@3.4.16:
+  dompurify@3.4.17:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
     optional: true
@@ -3140,7 +3140,7 @@ snapshots:
     optionalDependencies:
       canvg: 3.0.11
       core-js: 3.49.0
-      dompurify: 3.4.16
+      dompurify: 3.4.17
       html2canvas: 1.4.1
 
   kleur@4.1.5: {}
