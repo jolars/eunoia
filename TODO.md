@@ -33,10 +33,10 @@ are in the sibling [eunoia-py TODO](../eunoia-py/TODO.md).
   Both options types now accept `ObstaclePolicy::Strict`, which requires
   obstacle clearance and reports overflow in `unplaced`. `BestEffort`
   remains the default. Size floors, final spreading, and the member-box
-  prefix contract are preserved. The policy is exposed through WASM, C,
-  and TypeScript, with coverage for both arrangements and both packers,
-  including zero-padding boxes. The example compares both policies.
-  Python adoption and visible overflow handling remain a separate follow-up.
+  prefix contract are preserved. The policy is exposed through WASM, C, and
+  TypeScript, with coverage for both arrangements and both packers,
+  including zero-padding boxes. The example compares both policies. Python
+  adoption and visible overflow handling remain a separate follow-up.
 
 - [x] **Offer balanced rows for packed member names (item 4).**
   `GlyphBoxOptions::target_aspect_ratio` optionally balances measured widths
@@ -44,20 +44,22 @@ are in the sibling [eunoia-py TODO](../eunoia-py/TODO.md).
   boundary clearance, obstacle policy, and the prefix contract. The default
   still returns the first complete row packing. With twelve `2 x 0.5` boxes,
   a target of `1.0` uses six rows in both `20 x 20` and `40 x 40` regions,
-  occupying height `3.625` at the unchanged automatic scale `1.0`. The example
-  compares both modes. WASM, C, TypeScript, tests, and docs expose the option.
-  Python adoption and multicolumn `mode="list"` remain renderer follow-ups.
+  occupying height `3.625` at the unchanged automatic scale `1.0`. The
+  example compares both modes. WASM, C, TypeScript, tests, and docs expose
+  the option. Python adoption and multicolumn `mode="list"` remain renderer
+  follow-ups.
 
-- [x] **Keep prefix packing and compose whole-region callouts (item 4).**
-  The core API still returns a prefix. The web renderer now replaces any
+- [x] **Keep prefix packing and compose whole-region callouts (item 4).** The
+  core API still returns a prefix. The web renderer now replaces any
   incomplete roster with one measured block containing its heading, optional
   count, and every name, then repacks the remaining regions. Label placement
   handles the block as a unit, keeping it inside when it fits and placing it
-  outside with a leader otherwise. Requested regions without drawable geometry
-  retain their names in a separate list marked "no geometry". SVG rendering and
-  exports include the blocks and expand their viewport. The oversized-first-name
-  fixture, both arrangements, all leader styles, and missing/degenerate regions
-  have regression coverage. Python adoption remains a renderer follow-up.
+  outside with a leader otherwise. Requested regions without drawable
+  geometry retain their names in a separate list marked "no geometry". SVG
+  rendering and exports include the blocks and expand their viewport. The
+  oversized-first-name fixture, both arrangements, all leader styles, and
+  missing/degenerate regions have regression coverage. Python adoption
+  remains a renderer follow-up.
 
 Any new public packing option must be mirrored through WASM, C, TypeScript,
 tests, and binding docs, then exposed by eunoia-py separately.
@@ -193,6 +195,20 @@ they're pre-existing behaviour the harness now exposes.
 
 ## Label placement follow-ups
 
+- [ ] **Improve leaders that traverse unrelated regions (Python gallery).** In
+  eunoia-py's "Counts and percentages" example, the exterior leader for
+  `Anti-CCP&Treat` (count `6`) passes through the exclusive `Treat` region.
+  Reproduce with the gene-set input above, seed `0`, and
+  `quantities={"type": ["counts", "percent"], "fontsize": 8}`. The crossing
+  persists with `labels={"placement": {"tether": "boundary"}}`; calling
+  `_place_labels` directly with the captured rings and measured boxes
+  returns the same segments. This is a core routing follow-up beyond
+  choosing a boundary tether in Python. Freeze those inputs for a core
+  regression and compare raycast, matched, and elbow routing before choosing
+  a remedy. Reduce traversal where geometry permits while preserving a clear
+  source attachment; an enclosed source region can require crossing other
+  regions. Keep Python's viewport and font-measurement fixes separate.
+
 - [x] **Leader lines crossing interior labels**. Raycast and ForceDirected now
   apply `leader_avoidance_push` against interior label boxes; both have
   regression tests in `plotting/placement.rs`. This does not cover packed
@@ -300,17 +316,17 @@ ends that work deliberately deferred. Surfaced 2026-08-06.
   measured roster block for that pass. The block shares label collision
   resolution with region headings and counts; set names are placed against
   the resulting boxes, and the surviving rosters use strict obstacles.
-  Repacking can evict more regions as label obstacles move, but each iteration
-  removes at least one roster, so termination does not depend on the scale
-  increasing monotonically. All measurements stay in layout units rather than
-  feeding viewport expansion back into text sizes.
+  Repacking can evict more regions as label obstacles move, but each
+  iteration removes at least one roster, so termination does not depend on
+  the scale increasing monotonically. All measurements stay in layout units
+  rather than feeding viewport expansion back into text sizes.
 
   `ToSvgOptions.memberCallouts` renders the measured lines, preserves leaders,
   replaces the ordinary region label, and includes each block in the viewport.
-  Missing and degenerate regions get a separate labeled list without an
-  invented leader target. The core and its prefix contract are unchanged;
-  Python integration remains separate. Leader crossings still depend on the
-  selected label-placement strategy, as they do for ordinary exterior labels.
+  Missing and degenerate regions get a separate labeled list without an invented
+  leader target. The core and its prefix contract are unchanged; Python
+  integration remains separate. Leader crossings still depend on the selected
+  label-placement strategy, as they do for ordinary exterior labels.
 
 - [ ] **Relaxation pass for the box footprint**. The disc packer's `random`
   arrangement now finishes with a force-directed relaxation
@@ -369,8 +385,8 @@ analytic gradient and the capability-driven default pool routes it to
   includes all five shapes in Markdown and JSON, and accepts `--config` and
   `--shape` filters. The initial default sweep (2026-10-14, 30 specs × 16
   seeds × 5 shapes) completed without fit errors. Rotated rectangles had
-  median SumSquared loss `4.75e-5`; the worst `diag_error` was `8.90e-2`
-  on `issue44_4_set_inclusive`. `corpus.rs` records per-spec ceilings with
+  median SumSquared loss `4.75e-5`; the worst `diag_error` was `8.90e-2` on
+  `issue44_4_set_inclusive`. `corpus.rs` records per-spec ceilings with
   headroom over this baseline. The synthetic test checks recovery of 50
   deterministic, nondegenerate rotated-rectangle configurations, with the
   existing `5e-2` diagnostic-error limit.
@@ -384,15 +400,15 @@ analytic gradient and the capability-driven default pool routes it to
   This is the "smooth the shape" option from the original design discussion;
   revisit only if derivative-free quality proves insufficient.
 
-- [x] **TS handle-freeing is wasteful** (done). The `euler` / `venn`
-  dispatch in `ts/index.ts` now reads and frees only the arrays used in the
-  returned layout. Unused shape arrays and polygons in `shapes` mode stay
-  inside the result until `result.free()` drops them, avoiding getter clones.
+- [x] **TS handle-freeing is wasteful** (done). The `euler` / `venn` dispatch in
+  `ts/index.ts` now reads and frees only the arrays used in the returned
+  layout. Unused shape arrays and polygons in `shapes` mode stay inside the
+  result until `result.free()` drops them, avoiding getter clones.
 
 - [x] **Narrative docs** (done). README and core rustdoc list all five fitting
-  shapes. The Shapes page covers rotated-rectangle parameters, derivative-free
-  fitting, an interactive example, and the four-set canonical Venn limit.
-  Language quickstarts, the JavaScript reference, C ABI Venn docs, page metadata,
-  and `llms.txt` are updated. The TypeScript `venn()` range check now accepts
-  four sets for `"rotatedRectangle"`, with regression tests for both output modes
-  and rejection of five sets.
+  shapes. The Shapes page covers rotated-rectangle parameters,
+  derivative-free fitting, an interactive example, and the four-set
+  canonical Venn limit. Language quickstarts, the JavaScript reference, C
+  ABI Venn docs, page metadata, and `llms.txt` are updated. The TypeScript
+  `venn()` range check now accepts four sets for `"rotatedRectangle"`, with
+  regression tests for both output modes and rejection of five sets.
