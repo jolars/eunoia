@@ -1,5 +1,5 @@
 <script>
-import DiagramExample from "$lib/components/DiagramExample.svelte";
+import DiagramExample from "#lib/components/DiagramExample.svelte";
 
 // A small two-set spec with a sizeable universe so the container frame
 // stands well clear of the fitted shapes.

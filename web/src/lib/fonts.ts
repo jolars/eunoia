@@ -23,7 +23,7 @@
  *
  * Both fonts are Apache-2.0 licensed — see `assets/fonts/NOTICE.md`.
  */
-import { browser } from "$app/environment";
+import { browser } from "$app/env";
 
 import arimo400 from "./assets/fonts/arimo-400.woff2";
 import arimo400i from "./assets/fonts/arimo-400-italic.woff2";

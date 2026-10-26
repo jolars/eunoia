@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+  import ThemeToggle from "#lib/components/ThemeToggle.svelte";
   import IconMenu from "~icons/lucide/menu";
   import IconX from "~icons/lucide/x";
   import IconGithub from "~icons/simple-icons/github";

@@ -1,11 +1,11 @@
 <script lang="ts">
   import type { LabelPlacement } from "@jolars/eunoia";
   import { leaderPath } from "@jolars/eunoia/svg";
-  import { defaultColorFor } from "$lib/colors";
-  import type { FitInputs } from "$lib/fit";
-  import { DEFAULT_FONT_FAMILY } from "$lib/fonts";
-  import { theme } from "$lib/theme.svelte";
-  import type { FitResult, ShapeType } from "$lib/types/diagram";
+  import { defaultColorFor } from "#lib/colors.ts";
+  import type { FitInputs } from "#lib/fit.ts";
+  import { DEFAULT_FONT_FAMILY } from "#lib/fonts.ts";
+  import { theme } from "#lib/theme.svelte.ts";
+  import type { FitResult, ShapeType } from "#lib/types/diagram.ts";
 
   // A small, self-contained "play with it" widget for the landing page: seven
   // sliders (the full exclusive-region spec of a 3-set diagram) plus a shape

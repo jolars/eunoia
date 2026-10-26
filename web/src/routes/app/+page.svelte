@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import AdvancedControls from "$lib/components/AdvancedControls.svelte";
-  import DebugPanel from "$lib/components/DebugPanel.svelte";
-  import DiagramSvg from "$lib/components/DiagramSvg.svelte";
-  import ExportToolbar from "$lib/components/ExportToolbar.svelte";
-  import FitTable from "$lib/components/FitTable.svelte";
-  import GlyphControls from "$lib/components/GlyphControls.svelte";
-  import MetricsPanel from "$lib/components/MetricsPanel.svelte";
-  import Section from "$lib/components/Section.svelte";
-  import SpecEditor from "$lib/components/SpecEditor.svelte";
-  import StyleControls from "$lib/components/StyleControls.svelte";
-  import type { FitInputs } from "$lib/fit";
-  import { appState, saveToStorage } from "$lib/state.svelte";
-  import type { FitResult } from "$lib/types/diagram";
-  import { RELEASE_URL, VERSION } from "$lib/version";
+  import AdvancedControls from "#lib/components/AdvancedControls.svelte";
+  import DebugPanel from "#lib/components/DebugPanel.svelte";
+  import DiagramSvg from "#lib/components/DiagramSvg.svelte";
+  import ExportToolbar from "#lib/components/ExportToolbar.svelte";
+  import FitTable from "#lib/components/FitTable.svelte";
+  import GlyphControls from "#lib/components/GlyphControls.svelte";
+  import MetricsPanel from "#lib/components/MetricsPanel.svelte";
+  import Section from "#lib/components/Section.svelte";
+  import SpecEditor from "#lib/components/SpecEditor.svelte";
+  import StyleControls from "#lib/components/StyleControls.svelte";
+  import type { FitInputs } from "#lib/fit.ts";
+  import { appState, saveToStorage } from "#lib/state.svelte.ts";
+  import type { FitResult } from "#lib/types/diagram.ts";
+  import { RELEASE_URL, VERSION } from "#lib/version.ts";
 
   type WorkerResponse =
     | { id: number; ready: true }

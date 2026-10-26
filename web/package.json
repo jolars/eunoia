@@ -20,8 +20,8 @@
     "@iconify-json/lucide": "^1.2.145",
     "@iconify-json/simple-icons": "^1.2.100",
     "@iconify/utils": "^3.1.7",
-    "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.70.3",
+    "@sveltejs/adapter-static": "^4.0.0",
+    "@sveltejs/kit": "3.0.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
@@ -39,7 +39,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "unplugin-icons": "^24.0.0",
-    "vite": "npm:rolldown-vite@7.2.5",
+    "vite": "^8.0.12",
     "vite-plugin-compression": "^0.5.1",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.5.0",
@@ -53,7 +53,6 @@
   },
   "pnpm": {
     "overrides": {
-      "cookie": "0.7.2",
       "devalue": "5.9.4",
       "dompurify": "3.4.17",
       "fflate": "0.8.3",
@@ -62,5 +61,8 @@
       "source-map-js": "1.2.2",
       "uuid": "11.1.1"
     }
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
   }
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { theme } from "$lib/theme.svelte";
+  import { theme } from "#lib/theme.svelte.ts";
   import IconSun from "~icons/lucide/sun";
   import IconMoon from "~icons/lucide/moon";
 

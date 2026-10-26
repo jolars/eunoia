@@ -73,7 +73,7 @@ body {
   color: var(--ink);
 }
 
-/* Shiki syntax highlighting. The highlighter (see svelte.config.js) emits
+/* Shiki syntax highlighting. The highlighter (see vite.config.ts) emits
    dual-theme token colors as CSS variables; map them to the active theme.
    The `.dark` rule needs `span` specificity to beat the light-mode `.shiki
    span` rule, so both sides target spans. The code-block frame (background,

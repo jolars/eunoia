@@ -1,5 +1,5 @@
 <script>
-import PipelinePlayer from "$lib/components/PipelinePlayer.svelte";
+import PipelinePlayer from "#lib/components/PipelinePlayer.svelte";
 
 // An asymmetric three-set spec: the lopsided pairwise overlaps (A&B large,
 // A&C small) can't be matched well by circles, so the ellipse fit has to work

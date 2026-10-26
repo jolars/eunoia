@@ -1,5 +1,5 @@
 <script>
-import DiagramExample from "$lib/components/DiagramExample.svelte";
+import DiagramExample from "#lib/components/DiagramExample.svelte";
 
 // A clean, fairly symmetric three-set spec; circles reproduce it well.
 const THREE_SET_SPEC = {

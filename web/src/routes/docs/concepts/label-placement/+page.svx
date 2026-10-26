@@ -1,5 +1,5 @@
 <script>
-import DiagramExample from "$lib/components/DiagramExample.svelte";
+import DiagramExample from "#lib/components/DiagramExample.svelte";
 
 // A calmer spec for the set-label example: every region label fits inside, so
 // the exterior placements on show are the set names and nothing else.

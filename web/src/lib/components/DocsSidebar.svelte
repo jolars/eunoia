@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { SUMMARY } from "$lib/docs/SUMMARY";
+  import { SUMMARY } from "#lib/docs/SUMMARY.ts";
 
   const currentPath = $derived(page.url.pathname);
 </script>

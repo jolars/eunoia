@@ -1,6 +1,6 @@
 <script lang="ts">
-  import DocsSidebar from "$lib/components/DocsSidebar.svelte";
-  import Footer from "$lib/components/Footer.svelte";
+  import DocsSidebar from "#lib/components/DocsSidebar.svelte";
+  import Footer from "#lib/components/Footer.svelte";
 
   let { children } = $props();
 </script>

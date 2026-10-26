@@ -2,9 +2,9 @@
   import { onMount, type Snippet } from "svelte";
   import { page } from "$app/state";
   import "../app.css";
-  import TopNav from "$lib/components/TopNav.svelte";
-  import { hydrateFromStorage } from "$lib/state.svelte";
-  import { initTheme } from "$lib/theme.svelte";
+  import TopNav from "#lib/components/TopNav.svelte";
+  import { hydrateFromStorage } from "#lib/state.svelte.ts";
+  import { initTheme } from "#lib/theme.svelte.ts";
 
   interface Props {
     children: Snippet;

@@ -1,5 +1,5 @@
 <script>
-import DiagramExample from "$lib/components/DiagramExample.svelte";
+import DiagramExample from "#lib/components/DiagramExample.svelte";
 
 const TWO_SET_SPEC = { A: 5, B: 3, "A&B": 1.5 };
 </script>

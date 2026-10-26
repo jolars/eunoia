@@ -1,5 +1,5 @@
 <script lang="ts">
-  import HeroWidget from "$lib/components/HeroWidget.svelte";
+  import HeroWidget from "#lib/components/HeroWidget.svelte";
   import IconBook from "~icons/lucide/book-open";
   import IconGithub from "~icons/simple-icons/github";
   import IconJulia from "~icons/simple-icons/julia";
@@ -7,7 +7,7 @@
   import IconPython from "~icons/simple-icons/python";
   import IconR from "~icons/simple-icons/r";
   import IconRust from "~icons/simple-icons/rust";
-  import { RELEASE_URL, VERSION } from "$lib/version";
+  import { RELEASE_URL, VERSION } from "#lib/version.ts";
 
   // Repo links — kept here so the landing has a single declarative source of
   // truth that's easy to scan and edit.
