@@ -208,6 +208,11 @@ tune those;
 `precision` is the pole-of-inaccessibility precision; `tether` is `"poi"`
 (default) or `"boundary"`; `leader_gap` is the gap from label to leader.
 
+All three straight strategies refine their exit directions to reduce the
+leader's distance through other exclusive regions, including regions without
+labels. They preserve label clearance and matched angular order. Enclosed
+sources can require some traversal; elbow placement uses separate routing.
+
 Only regions present in **both** `regions` and `sizes` get a placement. The
 success payload is a `placements` map:
 

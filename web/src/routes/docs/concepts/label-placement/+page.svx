@@ -38,8 +38,8 @@ region: interior when the box fits, exterior otherwise. The returned `kind`
 tells the renderer which branch fired:
 
 - `interior`: the box fits; anchor sits at the region's POI.
-- `exteriorRaycast`: anchored outside the diagram bbox along the ray from the
-  diagram centroid through the region's POI.
+- `exteriorRaycast`: initialized by the ray from the diagram centroid through
+  the region's POI, then refined to reduce traversal through foreign regions.
 - `exteriorForceDirected`: initialized from the raycast position, then
   iteratively settled against label-vs-label collisions and foreign-region
   polygon repulsion.
@@ -66,12 +66,19 @@ box used for clipping is the size you passed in for that region, so any half-gap
 padding the caller adds (see the gotchas below) is preserved as the visible gap
 between the leader tip and the text.
 
-Independently of the tether choice, both exterior solvers run a
-**leader-vs-interior-label avoidance** pass: when an exterior label's leader
-segment would visually cross another region's interior label, the exterior
-anchor is pushed tangentially until the segment clears. This is always on (no
-opt-out) because crossings are visually wrong and the push is purely tangential
-(it doesn't change which side of the diagram the label ends up on).
+Raycast and force-directed placement push exterior anchors tangentially when
+their leaders cross an interior label box. After placement, all three straight
+strategies test alternative exit directions to reduce the rendered leader's
+distance through other exclusive regions, including regions without labels. The
+refinement prefers less traversal, then shorter leaders. It preserves label
+clearance, introduces no new leader crossings, and keeps matched labels in their
+cyclic order. A clearer exit can move a label to another side of the diagram.
+
+This search is best effort. An enclosed source can require crossing another
+region, and label clearance or matched ordering can rule out a clearer exit.
+Boundary tethers still attach to the source region's first outer-ring exit; they
+do not skip foreign geometry by attaching to the diagram silhouette. Elbow
+leaders retain their separate column placement and orthogonal routing.
 
 ## Size Measurement Contract
 
@@ -186,9 +193,9 @@ own); omit `leader` entirely for the default, straight leaders placed by
 raycasting. For straight leaders the placement chooses how exterior labels are
 positioned:
 
-- **`raycast` placement** *(default)*: deterministic ray from the diagram
-  centroid through the region's POI; anchor lands outside the union polygon of
-  the fitted shapes (or container, if you set one), padded by `margin`.
+- **`raycast` placement** *(default)*: starts with a deterministic ray from the
+  diagram centroid through the region's POI; anchor lands outside the union
+  polygon of the fitted shapes (or container, if you set one), padded by `margin`.
   Clearance is checked per-vertex with the label's full footprint, so width and
   height are honored even on diagonal rays. It is cheap and predictable.
 - **`forceDirected` placement**: warm-starts from the raycast positions, then

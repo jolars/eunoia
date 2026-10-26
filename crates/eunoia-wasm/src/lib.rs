@@ -2753,6 +2753,11 @@ pub fn generate_venn_regions_rotated_rectangles(
 /// bounding box; defaults to `0.0` (leader stops exactly at the box edge).
 /// Negative values are clamped to `0.0`.
 ///
+/// All three straight strategies refine their final exit directions to reduce
+/// the rendered leader's distance through foreign regions, while preserving
+/// label clearance and matched angular order. Enclosed regions can require
+/// some traversal. Elbow leaders use their separate column placement.
+///
 /// Returns a JSON object mapping each placed region to `{ "anchor": [x, y],
 /// "kind": "...", "tether"?: [x, y], "leaderEnd"?: [x, y],
 /// "leaderWaypoints"?: [[x, y], ...] }`. Regions with degenerate input (no

@@ -195,19 +195,19 @@ they're pre-existing behaviour the harness now exposes.
 
 ## Label placement follow-ups
 
-- [ ] **Improve leaders that traverse unrelated regions (Python gallery).** In
-  eunoia-py's "Counts and percentages" example, the exterior leader for
-  `Anti-CCP&Treat` (count `6`) passes through the exclusive `Treat` region.
-  Reproduce with the gene-set input above, seed `0`, and
-  `quantities={"type": ["counts", "percent"], "fontsize": 8}`. The crossing
-  persists with `labels={"placement": {"tether": "boundary"}}`; calling
-  `_place_labels` directly with the captured rings and measured boxes
-  returns the same segments. This is a core routing follow-up beyond
-  choosing a boundary tether in Python. Freeze those inputs for a core
-  regression and compare raycast, matched, and elbow routing before choosing
-  a remedy. Reduce traversal where geometry permits while preserving a clear
-  source attachment; an enclosed source region can require crossing other
-  regions. Keep Python's viewport and font-measurement fixes separate.
+- [x] **Improve leaders that traverse unrelated regions (Python gallery).** The
+  [frozen gallery fixture](crates/eunoia/tests/fixtures/leader_routing_gallery.json)
+  captures the rings, measured boxes, and original leaders from "Counts and
+  percentages" with seed `0`. Raycast and matched originally traversed about
+  `2.08` units of `Treat` for `Anti-CCP&Treat` (count `6`); elbow traversed
+  about `11` units of `Anti-CCP`. All three straight strategies now refine
+  their exit directions after collision resolution, reducing the reported
+  crossing to numerical tolerance for both POI and boundary tethers. The
+  refinement includes unlabeled regions, holes, and disconnected pieces,
+  preserves source attachment and matched ordering, and accepts only valid
+  reductions. Core, C, and TypeScript/WASM regressions cover the fixture.
+  Enclosed sources can still require traversal. Elbow routing and Python's
+  viewport and font-measurement fixes remain separate.
 
 - [x] **Leader lines crossing interior labels**. Raycast and ForceDirected now
   apply `leader_avoidance_push` against interior label boxes; both have

@@ -15,6 +15,8 @@ use crate::plotting::regions::{
 };
 use crate::spec::Combination;
 
+mod routing;
+
 /// Result of placing one label.
 ///
 /// This output is non-exhaustive; downstream matches should use `..`.
@@ -62,7 +64,8 @@ impl LabelPlacement {
 pub enum PlacementKind {
     /// Box fits inside the region's polygon — anchor at the region's POI.
     Interior,
-    /// Anchor is outside the diagram, ray-cast from centroid through POI.
+    /// Anchor is outside the diagram, initialized by a centroid-through-POI
+    /// ray and refined to reduce traversal through foreign regions.
     ExteriorRaycast,
     /// Anchor is outside the diagram, decided by the force-directed solver
     /// — emitted by [`ExteriorPolicy::ForceDirected`].
@@ -84,10 +87,18 @@ pub enum PlacementKind {
 
 /// Exterior fallback solver to use when a label doesn't fit inside its
 /// region's polygon.
+///
+/// After placement, straight leaders are refined by testing alternative exit
+/// directions. The refinement prefers less distance through foreign regions,
+/// then shorter leaders, while preserving label clearance and matched angular
+/// order. It keeps the current placement when no valid improvement is found;
+/// enclosed source regions can require traversal through other regions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum ExteriorPolicy {
-    /// Deterministic ray from the diagram centroid through the region's POI.
+    /// Initialized by a deterministic ray from the diagram centroid through
+    /// the region's POI; the final exit direction may change to reduce
+    /// traversal through foreign regions.
     /// The anchor is placed outside the union polygon of the fitted shapes
     /// (or the container, when complement is set), padded by `margin`.
     /// `margin = None` selects a proportional default of
@@ -526,8 +537,13 @@ pub fn place_labels(
     // leader lines (tether → anchor) from crossing them. Labels whose
     // size was missing from `sizes` or whose dimensions are non-finite /
     // non-positive contribute no AABB.
-    let interior_aabbs: Vec<InteriorAabb> = out
-        .iter()
+    // Solvers apply sequential pushes, so their input order must not depend
+    // on randomized HashMap iteration.
+    exteriors.sort_by(|a, b| a.key.cmp(&b.key));
+    let mut interior_labels: Vec<_> = out.iter().collect();
+    interior_labels.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let interior_aabbs: Vec<InteriorAabb> = interior_labels
+        .into_iter()
         .filter(|(_, p)| p.kind == PlacementKind::Interior)
         .filter_map(|(k, p)| {
             let (w, h) = *sizes.get(k)?;
@@ -582,32 +598,23 @@ pub fn place_labels(
         }
     };
 
+    if let Some(bbox) = diagram_bbox {
+        routing::refine_straight_leaders(
+            &mut exteriors,
+            regions,
+            &union_pieces,
+            &bbox,
+            &interior_aabbs,
+            strategy,
+        );
+    }
+
     for entry in exteriors {
-        // `direction = (anchor - poi)` is what the renderer actually draws,
-        // and the resolver may have moved `anchor` from its raycast warm-start,
-        // so recompute the ray direction here instead of reusing
-        // `entry.direction`. This keeps the boundary tether geometrically
-        // consistent with the rendered leader.
         let pieces = regions
             .get(&entry.combo)
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
-        let tether_pt = tether_point(
-            strategy.tether,
-            &entry.poi,
-            (
-                entry.anchor.x() - entry.poi.x(),
-                entry.anchor.y() - entry.poi.y(),
-            ),
-            pieces,
-        );
-        let leader_end = leader_end_on_label_box(
-            &tether_pt,
-            &entry.anchor,
-            entry.w,
-            entry.h,
-            strategy.leader_gap,
-        );
+        let (tether_pt, leader_end) = straight_leader(&entry, &entry.anchor, pieces, strategy);
         out.insert(
             entry.key,
             LabelPlacement {
@@ -624,6 +631,24 @@ pub fn place_labels(
     }
 
     out
+}
+
+fn straight_leader(
+    entry: &ExteriorEntry,
+    anchor: &Point,
+    pieces: &[RegionPiece],
+    strategy: &PlacementStrategy,
+) -> (Point, Point) {
+    // A solver may have moved the anchor, so attachment and clipping must
+    // follow the live direction rather than the original raycast direction.
+    let tether = tether_point(
+        strategy.tether,
+        &entry.poi,
+        (anchor.x() - entry.poi.x(), anchor.y() - entry.poi.y()),
+        pieces,
+    );
+    let end = leader_end_on_label_box(&tether, anchor, entry.w, entry.h, strategy.leader_gap);
+    (tether, end)
 }
 
 /// Resolve the tether attachment for an exterior label given an explicit
@@ -1259,6 +1284,7 @@ enum ExteriorPlan {
 
 /// Axis-aligned bounding box of an already-placed interior label, used by
 /// the exterior solvers to keep leader lines from visually crossing it.
+#[derive(Clone, Copy)]
 pub(super) struct InteriorAabb {
     pub(super) xmin: f64,
     pub(super) ymin: f64,

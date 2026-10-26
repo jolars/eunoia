@@ -465,6 +465,7 @@ dependencies = [
  "proptest",
  "rand",
  "rayon",
+ "serde_json",
 ]
 
 [[package]]

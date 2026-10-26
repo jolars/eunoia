@@ -336,9 +336,9 @@ export interface RegionInput {
  * Exterior fallback solver used when a label doesn't fit inside its
  * region.
  *
- * - `"raycast"` — deterministic ray from the diagram centroid through the
- *   region's POI; anchor lands outside the diagram bbox (or container, when
- *   complement is set), padded by `margin`.
+ * - `"raycast"` — initialized by a deterministic ray from the diagram centroid
+ *   through the region's POI; anchor lands outside the diagram silhouette (or
+ *   container, when complement is set), padded by `margin`.
  * - `"forceDirected"` — iterative spring + repulsion solve. Initial
  *   positions come from the raycast, then each label is pulled toward
  *   that "home" by a soft spring while being repelled from other labels
@@ -351,6 +351,11 @@ export interface RegionInput {
  *   a final 2-opt pass uncrosses any crossing leaders. The leaders are
  *   provably non-crossing and the labels stay close to the diagram. Best for
  *   dense diagrams where raycast leaders cross each other or pile up.
+ *
+ * All three strategies refine straight exit directions to reduce distance
+ * through foreign regions, then prefer shorter leaders. The refinement keeps
+ * label clearance and matched angular order; enclosed regions can require
+ * some traversal. A region without a label still counts as an obstacle.
  */
 export type ExteriorPolicyName = "raycast" | "forceDirected" | "matched";
 
@@ -1448,7 +1453,9 @@ const PLACEMENT_KIND_MAP: Record<
  * POI when the label fits inside the region, otherwise raycast from the
  * diagram centroid through the POI to land outside the diagram bbox (or
  * container, when complement is set), padded by a per-label proportional
- * margin. Switch to `strategy.exterior = "forceDirected"` for crowded
+ * margin. Straight strategies then refine exit directions to reduce traversal
+ * through foreign regions. Switch to
+ * `strategy.leader = { type: "straight", placement: "forceDirected" }` for crowded
  * diagrams where the raycast solver lands labels on top of unrelated
  * regions.
  *

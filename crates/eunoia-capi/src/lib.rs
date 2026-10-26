@@ -2124,6 +2124,71 @@ mod tests {
     }
 
     #[test]
+    fn place_labels_gallery_leaders_avoid_foreign_regions() {
+        fn in_ring(x: f64, y: f64, ring: &serde_json::Value) -> bool {
+            let vertices = ring.as_array().unwrap();
+            let mut inside = false;
+            for (a, b) in vertices
+                .iter()
+                .zip(vertices.iter().cycle().skip(1))
+                .take(vertices.len())
+            {
+                let (ax, ay) = (a[0].as_f64().unwrap(), a[1].as_f64().unwrap());
+                let (bx, by) = (b[0].as_f64().unwrap(), b[1].as_f64().unwrap());
+                if (ay > y) != (by > y) && x < ax + (bx - ax) * (y - ay) / (by - ay) {
+                    inside = !inside;
+                }
+            }
+            inside
+        }
+
+        let mut input: serde_json::Value = serde_json::from_str(include_str!(
+            "../../eunoia/tests/fixtures/leader_routing_gallery.json"
+        ))
+        .unwrap();
+        for policy in ["raycast", "force_directed", "matched"] {
+            for tether in ["poi", "boundary"] {
+                input["strategy"] = serde_json::json!({
+                    "leader": {"type": "straight", "placement": policy},
+                    "tether": tether
+                });
+                let out = call(eunoia_place_labels, &input.to_string());
+                let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+                assert_eq!(out["ok"], true);
+                let p = &out["placements"]["Anti-CCP&Treat"];
+                assert_eq!(p["kind"], format!("exterior_{policy}"));
+                assert!(p.get("leader_waypoints").is_none());
+                let a: [f64; 2] = serde_json::from_value(p["tether"].clone()).unwrap();
+                let b: [f64; 2] = serde_json::from_value(p["leader_end"].clone()).unwrap();
+                assert!(a.into_iter().chain(b).all(f64::is_finite));
+                // Sampling independently of the core's interval calculation
+                // catches the original long crossing while tolerating contact
+                // at the source vertex.
+                for step in 0..512 {
+                    let t = (step as f64 + 0.5) / 512.0;
+                    let (x, y) = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]));
+                    for (key, pieces) in input["regions"].as_object().unwrap() {
+                        if key == "Anti-CCP&Treat" {
+                            continue;
+                        }
+                        for piece in pieces.as_array().unwrap() {
+                            assert!(
+                                !in_ring(x, y, &piece["outer"])
+                                    || piece["holes"]
+                                        .as_array()
+                                        .unwrap()
+                                        .iter()
+                                        .any(|h| in_ring(x, y, h)),
+                                "{policy}/{tether} leader enters {key} at ({x}, {y})"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn place_labels_bad_tokens_are_reported() {
         let sizes = serde_json::json!({ "A": [0.1, 0.1] });
         for (strat, bad) in [

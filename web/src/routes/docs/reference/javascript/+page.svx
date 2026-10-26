@@ -134,6 +134,11 @@ a render → measure → re-place loop. The `strategy` knobs (`leader`, `precisi
 `tether`, `leaderGap`) and that loop are covered in
 [Label Placement](/docs/concepts/label-placement/).
 
+All three straight strategies refine exit directions to reduce traversal
+through other regions, including regions without labels. The refinement
+preserves label clearance and matched angular order; enclosed sources can
+require some traversal. Elbow leaders use their separate column placement.
+
 ## `placeSetLabels(options)`
 
 Places one label per **set**, just outside that set's own shape and with no

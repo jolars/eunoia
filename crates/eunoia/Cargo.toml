@@ -40,6 +40,7 @@ corpus = []
 criterion = { version = "0.8", features = ["html_reports"] }
 env_logger = "0.11"
 proptest = "1"
+serde_json = "1.0"
 
 [[bench]]
 name = "initial_layout"
