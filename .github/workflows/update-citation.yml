@@ -1,0 +1,44 @@
+name: Update citation from Zenodo
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Every Monday at 06:17 UTC.
+  workflow_dispatch:
+
+concurrency:
+  group: update-citation
+  cancel-in-progress: false
+
+jobs:
+  update-citation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Update citation metadata
+        env:
+          ZENODO_CONCEPT_ID: ${{ vars.ZENODO_CONCEPT_ID || '20665805' }}
+        run: python3 scripts/update_citation.py
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          commit-message: "chore: update citation from Zenodo"
+          branch: automation/update-citation
+          base: ${{ github.event.repository.default_branch }}
+          delete-branch: true
+          title: "chore: update citation from Zenodo"
+          body: |
+            Synchronize the version and release date in `CITATION.cff`
+            with the latest published Zenodo record, using the stable
+            concept DOI for the project.
+          add-paths: CITATION.cff
