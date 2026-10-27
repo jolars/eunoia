@@ -80,7 +80,8 @@ Eunoia extends eulerr by
 Eunoia's target audience comprises researchers and others who need trustworthy
 proportional set visualizations, irrespective of whether they use R, Python,
 Julia, JavaScript, Rust, or C, and developers who want to embed a diagram fitter
-in their own tools, for instance in interactive visualizations on the web.
+and visualizer in their own tools, for instance in interactive visualizations on
+the web.
 
 # State of the Field
 
