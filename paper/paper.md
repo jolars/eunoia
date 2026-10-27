@@ -73,10 +73,9 @@ ellipses can represent more specifications accurately.
 
 Eunoia extends eulerr by
 
-- replacing its fitting algorithm with a multistage local-and-global pipeline,
-- expanding its circles and ellipses to include squares and both axis-aligned
-  and rotated rectangles, and
-- providing analytical gradients for its four axis-aligned shape families.
+- replacing its fitting algorithm with a multi-stage local-and-global method,
+- supporting squares and rectangles (with or without rotation), and
+- providing analytical gradients.
 
 Eunoia's target audience comprises researchers and others who need trustworthy
 proportional set visualizations, irrespective of whether they use R, Python,
