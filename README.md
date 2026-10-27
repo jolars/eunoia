@@ -9,7 +9,7 @@ version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://b
 version](https://badge.fury.io/py/eunoia.svg?icon=si%3Apython)](https://badge.fury.io/py/eunoia)
 [![CRAN
 Badge](http://www.r-pkg.org/badges/version/eulerr)](https://cran.r-project.org/package=eulerr)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22042667.svg)](https://doi.org/10.5281/zenodo.22042667)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20665805.svg)](https://doi.org/10.5281/zenodo.20665805)
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
 
 Eunoia is a Rust library for area-proportional **Euler and Venn diagrams**. Give
