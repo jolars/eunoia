@@ -259,13 +259,18 @@ Python, member names are available when the input is given as member lists, or
 as array or DataFrame input with identifiers. They are drawn with
 `plot(members=...)` in one of two modes.
 
-- **List mode** (the default) draws each region's names as a single block of
-  text. A block that does not fit inside its region is placed outside it with a
-  leader line. If a maximum number of names per region is set, only that many
-  are shown, followed by a "+N more" line.
-- **Packed mode** places each name individually inside its region. When space is
-  limited, all names are reduced by the same factor, down to a minimum size, and
-  names that still do not fit are left out with a warning.
+List mode *(the default)*
+
+:   Draws each region's names as a single block of text. A block that does not
+    fit inside its region is placed outside it with a leader line. If a maximum
+    number of names per region is set, only that many are shown, followed by a
+    "+N more" line.
+
+Packed mode
+
+:   Places each name individually inside its region. When space is limited, all
+    names are reduced by the same factor, down to a minimum size, and names that
+    still do not fit are left out with a warning.
 
 In the web app, names are typed in for each region and drawn in packed mode. If
 a region's names do not all fit, they are shown as a single block instead, as in
