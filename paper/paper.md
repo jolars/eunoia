@@ -38,9 +38,9 @@ Eunoia is a [Rust library](https://github.com/jolars/eunoia)\ [@eunoia2026] for
 area-proportional Euler and Venn diagrams. Given the sizes of a collection of
 sets and their intersections, it fits a diagram of circles, ellipses, squares,
 or rectangles whose overlapping areas match those quantities as closely as
-possible. When an exact representation does not exist, Eunoia returns both the
-fitted layout and residuals and goodness-of-fit statistics that indicate whether
-it can be trusted. The core is a Rust crate, and the same engine powers an [R
+possible. When an exact representation does not exist, Eunoia returns the fitted
+layout plus residuals and goodness-of-fit statistics that indicate whether it
+can be trusted. The core is a Rust crate, and the same engine powers an [R
 package (eulerr)](https://cran.r-project.org/package=eulerr), a [Python
 package](https://pypi.org/project/eunoia/), a [Julia
 package](https://github.com/jolars/Eunoia.jl), a [JavaScript
@@ -63,13 +63,12 @@ numerically\ [@chow2007]. Producing one is therefore an optimization problem
 where we need to choose positions and parameters of the shapes so as to minimize
 the discrepancy between the fitted and requested areas of intersection.
 
-Existing implementations offer different compromises. venneuler introduced MDS
-initialization followed by overlap-aware refinement\ [@wilkinson2012]; venn.js
-improved that initialization and added exact area
-calculations\ [@frederickson2015]. eulerAPE introduced ellipses for three-set
-diagrams\ [@micallef2014], and eulerr generalized them to any number of
-sets\ [@larsson2018]. Circles remain familiar and legible\ [@blake2016], whereas
-ellipses can represent more specifications accurately.
+Existing alternatives offer different compromises. venneuler introduced
+multi-dimensional scaling\ (MDS) initialization followed by overlap-aware
+refinement\ [@wilkinson2012]; venn.js improved that initialization and added
+exact area calculations\ [@frederickson2015]. eulerAPE introduced ellipses for
+three-set diagrams\ [@micallef2014], and eulerr generalized them to any number
+of sets\ [@larsson2018].
 
 Eunoia extends eulerr by
 
@@ -102,14 +101,13 @@ nVenn\ [@perezsilva2018], Edeap\ [@wybrow2021], and eulerr\ [@larsson2018].
 
   : Related software for area-proportional Euler and Venn diagrams: fitting
     algorithm, supported shapes, maximum number of sets, and implementation
-    language. \*Rectangles may be axis-aligned or rotated.\label{tab:packages}
+    language. \label{tab:packages}
 
-Eunoia is a separate core library rather than another host-specific eulerr
-backend because eulerr's C++ implementation was coupled to R and could not serve
+Eunoia is a separate library rather than another host-specific eulerr backend
+because eulerr's C++ implementation was coupled to R and could not serve
 WebAssembly and the other bindings directly. Centralizing fitting, diagnostics,
-and geometry in an independent Rust crate keeps those interfaces consistent; the
-alternatives above are limited either in shape family, set count, deployment
-target, or some combination of the three.
+and geometry in an independent Rust crate keeps those interfaces consistent and
+avoids duplication of effort.
 
 # Example
 
