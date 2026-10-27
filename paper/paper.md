@@ -63,7 +63,7 @@ numerically\ [@chow2007]. Producing one is therefore an optimization problem
 where we need to choose positions and parameters of the shapes so as to minimize
 the discrepancy between the fitted and requested areas of intersection.
 
-Existing fitters offer different compromises. venneuler introduced MDS
+Existing implementations offer different compromises. venneuler introduced MDS
 initialization followed by overlap-aware refinement\ [@wilkinson2012]; venn.js
 improved that initialization and added exact area
 calculations\ [@frederickson2015]. eulerAPE introduced ellipses for three-set
