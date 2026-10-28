@@ -58,9 +58,9 @@ common in the life sciences, for instance, where researchers use them to compare
 gene and protein lists across conditions or studies. For most specifications
 involving three or more sets, however, no exact area-proportional diagram
 exists\ [@wilkinson2012], and the diagram must instead be constructed
-numerically\ [@chow2007]. Producing one is therefore an optimization problem
-where we need to choose positions and parameters of the shapes so as to minimize
-the discrepancy between the fitted and requested areas of intersection.
+numerically\ [@chow2007]. Fitting a diagram is therefore an optimization
+problem: choosing the shapes' positions and parameters to minimize the
+discrepancy between fitted and requested intersection areas.
 
 Existing alternatives offer different compromises. venneuler introduced
 multi-dimensional scaling\ (MDS) initialization followed by overlap-aware
