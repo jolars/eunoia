@@ -239,11 +239,11 @@ Glyphs are circular marks, one per data unit, packed inside their regions
 following the eulerGlyphs approach of @micallef2012. They can also be added to
 Venn diagrams.
 
-All glyphs in a diagram are the same size, so that counts can be compared across
-regions. By default, Eunoia searches for the largest common size that fits every
-region's count. In Python, a fixed size can be set instead, and a warning is
-given if any glyphs do not fit. In Python and the web app, glyphs are kept clear
-of the diagram's labels where space allows.
+All glyphs in a diagram are the same size, so counts can be compared across
+regions. By default, Eunoia searches for the largest size that fits all the
+glyphs in every region. In Python, users can set a fixed size instead, and the
+package warns if any glyphs do not fit. In Python and the web app, glyphs are
+kept clear of the diagram's labels where space allows.
 
 The web app and the JavaScript package offer four arrangements, namely a
 hexagonal grid (the default), a rectangular grid, an even scatter, and a random
