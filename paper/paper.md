@@ -88,15 +88,15 @@ diagram fitters: venneuler\ [@wilkinson2012], eulerAPE\ [@micallef2014],
 venn.js\ [@frederickson2015], matplotlib-venn\ [@tretyakov2024],
 nVenn\ [@perezsilva2018], Edeap\ [@wybrow2021], and eulerr\ [@larsson2018].
 
-  | Package           | Algorithm                | Shapes                                 | Sets | Language                                  |
-  | ----------------- | ------------------------ | -------------------------------------- | :--: | ----------------------------------------- |
-  | `venneuler`       | Stress minimization      | Circles                                | Any  | `Java`, `R`                               |
-  | `eulerAPE`        | Hill climbing            | Ellipses                               |  3   | `Java`                                    |
-  | `venn.js`         | MDS + final layout       | Circles                                | Any  | `JavaScript`                              |
-  | `matplotlib-venn` | Analytic placement       | Circles                                |  3   | `Python`                                  |
-  | `nVenn`           | Physics-based simulation | Polygons                               | Any  | `C++`, `R`                                |
-  | `Edeap`           | Hill climbing            | Ellipses                               | Any  | `JavaScript`                              |
-  | **`Eunoia`**      | MDS + final layout       | Circles, ellipses, squares, rectangles | Any  | `Rust`, `R`, `Julia`, `Python`, `C`, `JS` |
+  | Package                 | Algorithm                | Shapes                                 | Sets  | Language                                  |
+  | --------------------    | ------------------------ | ---------------------                  | :---: | -------------------                       |
+  | `venneuler`             | Stress minimization      | Circles                                |  Any  | `Java`, `R`                               |
+  | `eulerAPE`              | Hill climbing            | Ellipses                               |   3   | `Java`                                    |
+  | `venn.js`               | MDS + final layout       | Circles                                |  Any  | `JavaScript`                              |
+  | `matplotlib-venn`       | Analytic placement       | Circles                                |   3   | `Python`                                  |
+  | `nVenn`                 | Physics-based simulation | Polygons                               |  Any  | `C++`, `R`                                |
+  | `Edeap`                 | Hill climbing            | Ellipses                               |  Any  | `JavaScript`                              |
+  | **`Eunoia`**            | MDS + final layout       | Circles, ellipses, squares, rectangles |  Any  | `Rust`, `R`, `Julia`, `Python`, `C`, `JS` |
 
   : Related software for area-proportional Euler and Venn diagrams: fitting
     algorithm, supported shapes, maximum number of sets, and implementation
@@ -135,14 +135,14 @@ let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
 
 The four sets---SE, Treat, Anti-CCP, and DAS28---correspond to clinical
 variables in the rheumatoid arthritis data from @junta2009. The fitted layout is
-shown in \autoref{fig:ellipse}. Its diagError of $9 \times 10^{-5}$ indicates
-that the diagram reproduces the data essentially exactly. The figure also shows
-Eunoia's automatic label placement: set labels and region quantities are
-positioned at poles of inaccessibility of the region polygons, with labels
-placed outside the diagram when they do not fit inside their regions.
+shown in \autoref{fig:ellipse}. Its diagError of $10^{-4}$ indicates that the
+diagram reproduces the data essentially exactly. The figure also shows Eunoia's
+automatic label placement: set labels and region quantities are positioned at
+poles of inaccessibility of the region polygons, with labels placed outside the
+diagram when they do not fit inside their regions.
 
 ![A four-set Euler diagram fitted with ellipses, with region quantities shown.
-Eunoia fits it to a diagError of $9 \times 10^{-5}$, an essentially exact
+Eunoia fits it to a diagError of $10^{-4}$, an essentially exact
 diagram.\label{fig:ellipse}](images/euler_4set.pdf)
 
 The bindings mirror this interface; the equivalent call in Python is:
@@ -230,8 +230,13 @@ many elements a region contains, member labels identify those elements, and
 interactive output reveals information about regions too small to annotate
 (\autoref{fig:features}).
 
+Glyphs and packed member labels use the core's placement routines and are
+available in the R, Python, Julia, and JavaScript packages and the web app.
+Julia renders these annotations through its Makie extension.
+
 ![A three-set Euler diagram fitted with ellipses, shown with glyphs (left)
-and member labels (right).\label{fig:features}](images/features.pdf)
+and member labels (right). Callouts identify members in regions too narrow for
+their names.\label{fig:features}](images/features.pdf)
 
 ## Glyphs
 
@@ -241,33 +246,27 @@ Venn diagrams.
 
 All glyphs in a diagram are the same size, so counts can be compared across
 regions. By default, Eunoia searches for the largest size that fits all the
-glyphs in every region. In Python, users can set a fixed size instead, and the
-package warns if any glyphs do not fit. In Python and the web app, glyphs are
-kept clear of the diagram's labels where space allows.
+glyphs in every region. The placement routines also accept a fixed size and
+report any glyphs that do not fit. Glyphs can be kept clear of the diagram's
+labels where space allows.
 
-The web app and the JavaScript package offer four arrangements: a hexagonal grid
-(the default), a rectangular grid, an even scatter, and a random scatter. The
-Python package offers the hexagonal grid and the random scatter.
+The shared placement routines offer four arrangements: a hexagonal grid (the
+default), a rectangular grid, an even, deterministic scatter, and a random
+scatter.
 
 ## Member Labels
 
-Member labels show the names of the elements in each region. In Python, member
-names are available when the input consists of member lists, arrays with
-identifiers, or DataFrames with identifiers. The `plot(members=...)` method
-draws them in one of two modes.
+Member labels show the names of the elements in each region. The shared packing
+routine places each name individually inside its region and reduces all font
+sizes by the same factor when space is limited, down to a minimum size. Names
+that still do not fit are reported as unplaced.
 
-List mode *(the default)*
-
-:   Draws each region's names as a single block of text. A block that does not
-    fit inside its region is placed outside it with a leader line. If a maximum
-    number of names per region is set, only that many are shown, followed by a
-    "+N more" line.
-
-Packed mode
-
-:   Places each name individually inside its region. When space is limited, all
-    font sizes are reduced by the same factor, down to a minimum size. Names
-    that still do not fit are left out with a warning.
+Python also offers a list mode, the default for `plot(members=...)`, which draws
+each region's names as a single block of text. A block that does not fit inside
+its region is placed outside with a leader line. Member names can come from
+membership lists, arrays with identifiers, or DataFrames with identifiers. Users
+can limit the number of displayed names per region, with a "+N more" line
+indicating any remaining names.
 
 In the web app, users enter names for each region, and the app draws them in
 packed mode. If a region's names do not all fit, they are shown as a single
