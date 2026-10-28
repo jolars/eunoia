@@ -1,69 +1,5 @@
 # TODO
 
-## Python 0.6.0 report: core follow-ups
-
-Triaged from `epost-att-lv9vlQ.html` against core commit `4e9b5fc`. The
-standalone [Rust example](crates/eunoia/examples/python_report_repro.rs) uses
-synthetic measured boxes and the exclusive counts derived from the original
-membership data in [issue #133](https://github.com/jolars/eunoia/issues/133):
-`A=35, S=32, U=35, A&S=12, A&U=2, S&U=0, A&S&U=2`, where `A/S/U` denote
-Atorvastatin, Simvastatin, and Sunitinib. These are **exclusive region counts**,
-not total set sizes. Fitting uses the issue's seed 0 and an explicit budget of
-10 restarts.
-
-```sh
-cargo run -p eunoia --release --example python_report_repro
-```
-
-The example prints measurements; it does not assert that today's shortcomings
-must persist. Python rendering follow-ups and a script that generates figures
-are in the sibling [eunoia-py TODO](../eunoia-py/TODO.md).
-
-  | Report item                                    | Ownership and finding                                                                                                                                                                                                                   |
-  | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | 1: Labels, members, and leaders overlap        | Core obstacle fallback permits label/member overlap. Boundary tethers already exist; choosing them when members are shown belongs in Python.                                                                                            |
-  | 2: Relative font sizes change with figure size | Python controls font sizes and their ratio. Core's automatic scale ceiling is the existing `max_scale` follow-up below.                                                                                                                 |
-  | 3: Tall lists and exterior overlaps            | Python composes and measures list blocks. In the synthetic long-list reproduction, all four core calls returned non-overlapping supplied boxes, but final rendered text overlapped. Fix the renderer's measurement/viewport loop first. |
-  | 4: Long rows and whole groups disappearing     | Core chooses the first row count that fits and returns only a prefix of the input. Both policies are reproduced below. Font defaults and list columns belong in Python.                                                                 |
-  | 5: Missing triple intersection                 | Core fitting loses the region in this circle fit. This is the existing topology follow-up below. Python must also report members whose region has no geometry.                                                                          |
-  | 6: Font-dependent omissions                    | Expected when measured widths differ. Python should expose omissions clearly and verify that measurement matches rendering; core receives only boxes.                                                                                   |
-  | 7: Hidden Plotly title                         | Python's `_plotly._finalize_layout` sets the top margin to zero.                                                                                                                                                                        |
-
-- [x] **Offer strict label obstacles for member and glyph packing (item 1).**
-  Both options types now accept `ObstaclePolicy::Strict`, which requires
-  obstacle clearance and reports overflow in `unplaced`. `BestEffort`
-  remains the default. Size floors, final spreading, and the member-box
-  prefix contract are preserved. The policy is exposed through WASM, C, and
-  TypeScript, with coverage for both arrangements and both packers,
-  including zero-padding boxes. The example compares both policies. Python
-  adoption and visible overflow handling remain a separate follow-up.
-
-- [x] **Offer balanced rows for packed member names (item 4).**
-  `GlyphBoxOptions::target_aspect_ratio` optionally balances measured widths
-  toward a preferred block width-to-height ratio, preserving input order,
-  boundary clearance, obstacle policy, and the prefix contract. The default
-  still returns the first complete row packing. With twelve `2 x 0.5` boxes,
-  a target of `1.0` uses six rows in both `20 x 20` and `40 x 40` regions,
-  occupying height `3.625` at the unchanged automatic scale `1.0`. The
-  example compares both modes. WASM, C, TypeScript, tests, and docs expose
-  the option. Python adoption and multicolumn `mode="list"` remain renderer
-  follow-ups.
-
-- [x] **Keep prefix packing and compose whole-region callouts (item 4).** The
-  core API still returns a prefix. The web renderer now replaces any
-  incomplete roster with one measured block containing its heading, optional
-  count, and every name, then repacks the remaining regions. Label placement
-  handles the block as a unit, keeping it inside when it fits and placing it
-  outside with a leader otherwise. Requested regions without drawable
-  geometry retain their names in a separate list marked "no geometry". SVG
-  rendering and exports include the blocks and expand their viewport. The
-  oversized-first-name fixture, both arrangements, all leader styles, and
-  missing/degenerate regions have regression coverage. Python adoption
-  remains a renderer follow-up.
-
-Any new public packing option must be mirrored through WASM, C, TypeScript,
-tests, and binding docs, then exposed by eunoia-py separately.
-
 ## Surfaced fitter issues (regressions to investigate)
 
 The corpus / proptest surfaced these. None were introduced by the harness;
@@ -196,7 +132,8 @@ they're pre-existing behaviour the harness now exposes.
 ## Label placement follow-ups
 
 - [x] **Improve leaders that traverse unrelated regions (Python gallery).** The
-  [frozen gallery fixture](crates/eunoia/tests/fixtures/leader_routing_gallery.json)
+  [frozen gallery
+  fixture](crates/eunoia/tests/fixtures/leader_routing_gallery.json)
   captures the rings, measured boxes, and original leaders from "Counts and
   percentages" with seed `0`. Raycast and matched originally traversed about
   `2.08` units of `Treat` for `Anti-CCP&Treat` (count `6`); elbow traversed
@@ -237,10 +174,10 @@ they're pre-existing behaviour the harness now exposes.
   `place_labels`, so design the two together rather than bolting a leader
   onto this mode. Surfaced 2026-08-14 when the mode landed.
 
-- [x] **Retire the obsolete placement-policy TODO**. Commit `33c1bf0`
-  removed `InteriorPolicy`, `ExteriorPolicy::None`, and `PlacementError`
-  when simplifying the placement API. `place_labels` tries an interior fit
-  and falls back to the selected exterior solver. Callers wanting anchors
+- [x] **Retire the obsolete placement-policy TODO**. Commit `33c1bf0` removed
+  `InteriorPolicy`, `ExteriorPolicy::None`, and `PlacementError` when
+  simplifying the placement API. `place_labels` tries an interior fit and
+  falls back to the selected exterior solver. Callers wanting anchors
   regardless of label size can use `RegionPolygons::label_points`; callers
   wanting to omit labels that do not fit can use `fit_label_in_region` per
   region. No unimplemented policy variants remain.
