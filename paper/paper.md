@@ -225,7 +225,7 @@ language's runtime, it compiles to WebAssembly, and the [web
 app](https://eunoia.bz/app) fits diagrams entirely in the browser without a
 server.
 
-# Features
+# Annotation and Interactivity
 
 Area-proportional Euler diagrams encode the size of each set intersection as the
 area of a region. Eunoia extends this with three complementary additions. Unit
