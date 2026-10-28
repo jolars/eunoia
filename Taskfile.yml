@@ -214,6 +214,13 @@ tasks:
     cmds:
       - node paper/make-figures.mjs
 
+  paper-features:
+    desc: Generate the annotation figure with eunoia-py
+    vars:
+      PYTHON: '{{.PYTHON | default "python"}}'
+    cmds:
+      - '{{.PYTHON}} paper/make-features.py'
+
   paper-build:
     desc: Build JOSS paper locally
     cmds:
