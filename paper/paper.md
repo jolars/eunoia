@@ -110,8 +110,8 @@ bindings.
 
 # Example
 
-A diagram is specified by naming the sets and their intersections and giving the
-size of each region. Below, we give an example in Rust.
+A diagram specification names the sets and their intersections and gives the
+size of each region. For example, in Rust:
 
 ```rust
 use eunoia::geometry::shapes::Ellipse;
