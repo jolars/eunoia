@@ -288,15 +288,14 @@ controls for glyph mode, spacing, and styling.
 
 Eunoia descends from eulerr, which has been distributed on CRAN since 2016 and
 has been cited in over 700 academic publications^[Google Scholar, accessed Aug
-11, 2026], predominantly in the life sciences. Since version\ 8.0, eulerr's C++
-backend has been replaced by Eunoia, which means that all current eulerr users
-are now also using Eunoia. Other packages build on eulerr, and therefore on
-Eunoia, as a dependency, including the Bioconductor genomics packages cola,
-hicVennDiagram, and seqsetvis and the CRAN package RulesTools, which use it to
-draw the area-proportional diagrams in their own analyses. Six more
-packages---DOTSeq, highdir, IlluminaHumanMethylationEPICv2manifest, ISAnalytics,
-overviewR, and pcutils---use eulerr optionally and therefore can also invoke
-Eunoia.
+11, 2026], predominantly in the life sciences. Since version\ 8.0, eulerr has
+used Eunoia in place of its C++ backend, so all current eulerr users also use
+Eunoia. Other packages depend on eulerr, and therefore on Eunoia, to draw
+area-proportional diagrams in their analyses. These include three Bioconductor
+genomics packages---cola, hicVennDiagram, and seqsetvis---and the CRAN package
+RulesTools. Six more packages---DOTSeq, highdir,
+IlluminaHumanMethylationEPICv2manifest, ISAnalytics, overviewR, and
+pcutils---use eulerr optionally and can therefore also invoke Eunoia.
 
 The Python, Julia, and JavaScript packages and the web app extend the same
 underlying library to communities that previously had no access to ellipse-based
