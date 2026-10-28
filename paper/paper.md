@@ -245,9 +245,9 @@ glyphs in every region. In Python, users can set a fixed size instead, and the
 package warns if any glyphs do not fit. In Python and the web app, glyphs are
 kept clear of the diagram's labels where space allows.
 
-The web app and the JavaScript package offer four arrangements, namely a
-hexagonal grid (the default), a rectangular grid, an even scatter, and a random
-scatter. The Python package offers the hexagonal grid and the random scatter.
+The web app and the JavaScript package offer four arrangements: a hexagonal grid
+(the default), a rectangular grid, an even scatter, and a random scatter. The
+Python package offers the hexagonal grid and the random scatter.
 
 ## Member Labels
 
