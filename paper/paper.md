@@ -251,11 +251,10 @@ Python package offers the hexagonal grid and the random scatter.
 
 ## Member Labels
 
-Member labels add the elements themselves to the diagram, so that each region
-shows which elements it contains rather than only a set name or a count. In
-Python, member names are available when the input is given as member lists, or
-as array or DataFrame input with identifiers. They are drawn with
-`plot(members=...)` in one of two modes.
+Member labels show the names of the elements in each region. In Python, member
+names are available when the input consists of member lists, arrays with
+identifiers, or DataFrames with identifiers. The `plot(members=...)` method
+draws them in one of two modes.
 
 List mode *(the default)*
 
