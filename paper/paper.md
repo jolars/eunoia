@@ -133,13 +133,13 @@ let spec = DiagramSpecBuilder::new()
 let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
 ```
 
-The four sets here---SE, Treat, Anti-CCP, and DAS28---are clinical variables
-from rheumatoid-arthritis research, taken from @junta2009. The fitted layout is
-shown in \autoref{fig:ellipse}. Eunoia reports how well it succeeded: here the
-diagError is $9 \times 10^{-5}$, which means that the diagram reproduces the
-data essentially exactly. The figure also shows the automatic label placement,
-which positions set labels and region quantities at poles of inaccessibility of
-the region polygons and moves labels that do not fit outside the diagram.
+The four sets---SE, Treat, Anti-CCP, and DAS28---correspond to clinical
+variables in the rheumatoid arthritis data from @junta2009. The fitted layout is
+shown in \autoref{fig:ellipse}. Its diagError of $9 \times 10^{-5}$ indicates
+that the diagram reproduces the data essentially exactly. The figure also shows
+Eunoia's automatic label placement: set labels and region quantities are
+positioned at poles of inaccessibility of the region polygons, with labels
+placed outside the diagram when they do not fit inside their regions.
 
 ![A four-set Euler diagram fitted with ellipses, with region quantities shown.
 Eunoia fits it to a diagError of $9 \times 10^{-5}$, an essentially exact
