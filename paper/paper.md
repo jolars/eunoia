@@ -53,8 +53,8 @@ the same layout given the same specification, options, and seed.
 
 Euler diagrams\ [@euler1802] depict relationships between sets, and
 area-proportional Euler diagrams do so quantitatively: the area of each region
-is drawn in proportion to the size of the corresponding set intersection. They
-are common in the life sciences, for instance, where they are used to compare
+is proportional to the size of the corresponding set intersection. They are
+common in the life sciences, for instance, where researchers use them to compare
 gene and protein lists across conditions or studies. For most specifications
 involving three or more sets, however, no exact area-proportional diagram
 exists\ [@wilkinson2012], and the diagram must instead be constructed
