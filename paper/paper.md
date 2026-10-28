@@ -39,9 +39,9 @@ area-proportional Euler and Venn diagrams. Given the sizes of a collection of
 sets and their intersections, it fits a diagram of circles, ellipses, squares,
 or rectangles whose overlapping areas match those quantities as closely as
 possible. When an exact representation does not exist, Eunoia returns the fitted
-layout plus residuals and goodness-of-fit statistics that indicate whether it
-can be trusted. The core is a Rust crate, and the same engine powers an [R
-package (eulerr)](https://cran.r-project.org/package=eulerr), a [Python
+layout with residuals and goodness-of-fit statistics that help users assess how
+well it represents the data. The Rust crate also powers an [R package
+(eulerr)](https://cran.r-project.org/package=eulerr), a [Python
 package](https://pypi.org/project/eunoia/), a [Julia
 package](https://github.com/jolars/Eunoia.jl), a [JavaScript
 package](https://www.npmjs.com/package/@jolars/eunoia) compiled to WebAssembly,
