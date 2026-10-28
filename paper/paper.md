@@ -269,10 +269,10 @@ Packed mode
     font sizes are reduced by the same factor, down to a minimum size. Names
     that still do not fit are left out with a warning.
 
-In the web app, names are typed in for each region and drawn in packed mode. If
-a region's names do not all fit, they are shown as a single block instead, as in
-list mode, so no names are left out. Names are not drawn when a diagram has more
-than 500 in total.
+In the web app, users enter names for each region, and the app draws them in
+packed mode. If a region's names do not all fit, they are shown as a single
+block instead, as in list mode, so no names are left out. The app does not draw
+member labels for diagrams with more than 500 names in total.
 
 ## Interactivity
 
