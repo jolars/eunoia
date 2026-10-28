@@ -45,10 +45,9 @@ well it represents the data. The Rust crate also powers an [R package
 package](https://pypi.org/project/eunoia/), a [Julia
 package](https://github.com/jolars/Eunoia.jl), a [JavaScript
 package](https://www.npmjs.com/package/@jolars/eunoia) compiled to WebAssembly,
-a C API for further bindings, and a [web app](https://eunoia.bz/app) (that uses
-the JavaScript package). Because every binding calls the same implementation,
-all of them produce the same layout given the same specification, options, and
-seed.
+a C API for further bindings, and a [web app](https://eunoia.bz/app) built on
+the JavaScript package. All bindings call the same implementation and produce
+the same layout given the same specification, options, and seed.
 
 # Statement of Need
 
