@@ -276,13 +276,13 @@ member labels for diagrams with more than 500 names in total.
 
 ## Interactivity
 
-The Python package provides an interactive plotly backend through
-`fit.plot_plotly()`. It adds a hover tooltip to each region showing the
-intersection label, its sample size, and its members. This is primarily useful
-for dense multi-set diagrams, in which small regions cannot hold any text. The
-JavaScript SVG serializer similarly supports native tooltips and data attributes
-on each region, so that host pages can add their own interaction. The web app
-provides controls for glyph mode, spacing, and styling.
+The Python package provides an interactive Plotly backend through
+`fit.plot_plotly()`. Each region has a hover tooltip showing its intersection
+label, sample size, and members. These tooltips are primarily useful for dense
+multi-set diagrams, in which small regions cannot hold any text. The JavaScript
+SVG serializer similarly supports native tooltips and data attributes on each
+region, so host pages can add their own interaction. The web app provides
+controls for glyph mode, spacing, and styling.
 
 # Research Impact Statement
 
