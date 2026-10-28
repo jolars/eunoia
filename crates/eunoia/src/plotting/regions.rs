@@ -991,6 +991,67 @@ mod tests {
     use crate::spec::{DiagramSpecBuilder, InputType};
 
     #[test]
+    fn test_three_intersecting_circles_inside_fourth_partition_regions() {
+        let names = ["A", "B", "C", "D"];
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 30.0)
+            .intersection(&["A", "B"], 3.0)
+            .intersection(&["A", "C"], 3.0)
+            .intersection(&["A", "D"], 3.0)
+            .intersection(&["A", "B", "C"], 0.4)
+            .intersection(&["A", "B", "D"], 0.4)
+            .intersection(&["A", "C", "D"], 0.4)
+            .intersection(&["A", "B", "C", "D"], 1.0)
+            .build()
+            .unwrap();
+        // Freeze a fitted gallery layout to isolate extraction from fitting.
+        let shapes = [
+            Circle::new(Point::new(0.0, 0.0), 3.6336808749930527),
+            Circle::new(Point::new(1.362619263074504, 0.0), 1.2433844529501539),
+            Circle::new(
+                Point::new(1.7848401289795373, 1.5405744154910126),
+                1.243384452846204,
+            ),
+            Circle::new(
+                Point::new(0.23955311588121297, 1.1359412032933687),
+                1.2433844529509555,
+            ),
+        ];
+        let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        let regions = decompose_regions(&shapes, &names, &spec, None, 200);
+        assert_eq!(regions.len(), 8);
+
+        let total_area: f64 = regions
+            .iter()
+            .flat_map(|(_, pieces)| pieces)
+            .map(|p| p.area())
+            .sum();
+        let outer_area = shapes[0].polygonize(200).area();
+        assert!(
+            (total_area - outer_area).abs() < 1e-6,
+            "exclusive regions must partition A: got {total_area}, expected {outer_area}"
+        );
+
+        for (combo, anchor) in regions.label_points(0.01) {
+            let actual: Vec<&str> = shapes
+                .iter()
+                .zip(&names)
+                .filter(|(shape, _)| shape.contains_point(&anchor))
+                .map(|(_, name)| name.as_str())
+                .collect();
+            assert_eq!(combo, Combination::new(&actual));
+            for (other, pieces) in regions.iter().filter(|(other, _)| **other != combo) {
+                assert!(
+                    pieces
+                        .iter()
+                        .all(|p| signed_clearance(anchor.x(), anchor.y(), p) < 0.0),
+                    "anchor for {combo} also lies in {other}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_decompose_disjoint_circles_skips_pairwise() {
         // Two disjoint circles. The previous power-set scanner would still
         // walk the {A,B} mask and only discover emptiness via polygon

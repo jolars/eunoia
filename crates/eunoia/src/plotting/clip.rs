@@ -100,16 +100,28 @@ pub fn polygon_clip(subject: &Polygon, clip: &Polygon, operation: ClipOperation)
         .collect()
 }
 
-/// Clips a list of polygons against a single clip polygon.
+/// Clips a composite list of rings against a single clip polygon.
 ///
+/// Subjects may include outer rings and oppositely wound holes from a previous
+/// clipping operation. All rings are processed together with the nonzero fill
+/// rule so holes remain associated with their outer boundaries.
 pub fn polygon_clip_many(
     subjects: &[Polygon],
     clip: &Polygon,
     operation: ClipOperation,
 ) -> Vec<Polygon> {
-    subjects
+    let subject_rings: Vec<Vec<Point>> = subjects
         .iter()
-        .flat_map(|subject| polygon_clip(subject, clip, operation))
+        .filter(|subject| !subject.vertices().is_empty())
+        .map(|subject| subject.vertices().to_vec())
+        .collect();
+    let clip_points = clip.vertices().to_vec();
+    let result =
+        subject_rings.overlay(&clip_points, operation.to_overlay_rule(), FillRule::NonZero);
+    result
+        .into_iter()
+        .flat_map(|shape| shape.into_iter())
+        .map(Polygon::new)
         .collect()
 }
 
@@ -413,6 +425,50 @@ mod tests {
                 0.5 * s
             })
             .sum()
+    }
+
+    #[test]
+    fn test_polygon_clip_many_preserves_holes_across_operations() {
+        let square = |x, y, side| {
+            Polygon::new(vec![
+                Point::new(x, y),
+                Point::new(x + side, y),
+                Point::new(x + side, y + side),
+                Point::new(x, y + side),
+            ])
+        };
+        let outer = square(0.0, 0.0, 6.0);
+        let hole = square(2.0, 2.0, 2.0);
+        let clip = square(3.0, 3.0, 2.0);
+        let subjects = polygon_clip(&outer, &hole, ClipOperation::Difference);
+
+        // Subtracting a shape already inside a hole must leave the fill alone.
+        let nested_clip = square(2.5, 2.5, 1.0);
+        let rings = polygon_clip_many(&subjects, &nested_clip, ClipOperation::Difference);
+        assert!((signed_area_sum(&rings).abs() - 32.0).abs() < 1e-6);
+        let pieces = crate::plotting::classify_into_pieces(rings);
+        let area: f64 = pieces.iter().map(|p| p.area()).sum();
+        assert!((area - 32.0).abs() < 1e-6, "expected area 32, got {area}");
+
+        // The clip overlaps one unit of the hole and three units of the fill.
+        for (operation, expected) in [
+            (ClipOperation::Difference, 29.0),
+            (ClipOperation::Intersection, 3.0),
+            (ClipOperation::Union, 33.0),
+            (ClipOperation::Xor, 30.0),
+        ] {
+            let rings = polygon_clip_many(&subjects, &clip, operation);
+            assert!(
+                (signed_area_sum(&rings).abs() - expected).abs() < 1e-6,
+                "{operation:?}: ring winding must preserve net area {expected}"
+            );
+            let pieces = crate::plotting::classify_into_pieces(rings);
+            let area: f64 = pieces.iter().map(|p| p.area()).sum();
+            assert!(
+                (area - expected).abs() < 1e-6,
+                "{operation:?}: expected area {expected}, got {area}"
+            );
+        }
     }
 
     #[test]
