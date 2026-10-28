@@ -175,10 +175,9 @@ ellipses.\label{fig:venn}](images/venn5.pdf)
 
 # Software Design
 
-The library follows a trait-based design, where shapes are provided at compile
-time. Circles, ellipses, squares, and axis-aligned and rotated rectangles are
-all implemented this way, and a given specification can be fitted with each of
-them. \autoref{fig:shapes} illustrates the four axis-aligned families.
+The library uses a trait-based design, with shapes selected at compile time. A
+given specification can be fitted with circles, ellipses, squares, or
+rectangles, as illustrated in \autoref{fig:shapes}.
 
 ![A three-set specification fitted with circles, ellipses, squares, and
 rectangles. Not every shape family can represent the input exactly: the
