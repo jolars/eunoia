@@ -235,9 +235,9 @@ and member labels (right).\label{fig:features}](images/features.pdf)
 
 ## Glyphs
 
-Glyphs are equally sized circular marks, one per data unit, packed inside the
-region they belong to, following the eulerGlyphs approach of @micallef2012.
-Glyphs can also be added to Venn diagrams.
+Glyphs are circular marks, one per data unit, packed inside their regions
+following the eulerGlyphs approach of @micallef2012. They can also be added to
+Venn diagrams.
 
 All glyphs in a diagram are the same size, so that counts can be compared across
 regions. By default, Eunoia searches for the largest common size that fits every
