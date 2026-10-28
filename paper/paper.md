@@ -71,8 +71,9 @@ of sets\ [@larsson2018].
 
 Eunoia extends eulerr by
 
-- replacing its fitting algorithm with a multi-stage local-and-global method,
-- supporting squares and rectangles (with or without rotation), and
+- replacing its fitting algorithm with a multistage method that combines local
+  and global optimization,
+- supporting squares and rectangles, and
 - providing analytical gradients.
 
 Eunoia's target audience comprises researchers and others who need trustworthy
