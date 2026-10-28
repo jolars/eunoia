@@ -3,6 +3,7 @@
 // Usage: node paper/make-figures.mjs   (from the repository root, after
 // `task build-wasm`). Writes SVGs to paper/images/ and converts them to PDF
 // with inkscape (text converted to paths).
+// The annotation figure is generated separately by paper/make-features.py.
 //
 // Sizing model. `toSvg` emits an SVG with only a `viewBox` (in layout units)
 // and no physical width/height, and each fitted diagram lives at a different
