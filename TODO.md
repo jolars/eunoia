@@ -131,37 +131,6 @@ they're pre-existing behaviour the harness now exposes.
 
 ## Label placement follow-ups
 
-- [x] **Improve leaders that traverse unrelated regions (Python gallery).** The
-  [frozen gallery
-  fixture](crates/eunoia/tests/fixtures/leader_routing_gallery.json)
-  captures the rings, measured boxes, and original leaders from "Counts and
-  percentages" with seed `0`. Raycast and matched originally traversed about
-  `2.08` units of `Treat` for `Anti-CCP&Treat` (count `6`); elbow traversed
-  about `11` units of `Anti-CCP`. All three straight strategies now refine
-  their exit directions after collision resolution, reducing the reported
-  crossing to numerical tolerance for both POI and boundary tethers. The
-  refinement includes unlabeled regions, holes, and disconnected pieces,
-  preserves source attachment and matched ordering, and accepts only valid
-  reductions. Core, C, and TypeScript/WASM regressions cover the fixture.
-  Enclosed sources can still require traversal. Elbow routing and Python's
-  viewport and font-measurement fixes remain separate.
-
-- [x] **Leader lines crossing interior labels**. Raycast and ForceDirected now
-  apply `leader_avoidance_push` against interior label boxes; both have
-  regression tests in `plotting/placement.rs`. This does not cover packed
-  member boxes, which Python places afterward. Report item 1's default
-  leaders still traverse their source region; select a boundary tether
-  first. Boundary attachment alone does not guarantee clearance from members
-  in other regions. General routing around arbitrary member boxes remains a
-  possible extension, pending a reproduction that still crosses members with
-  boundary tethers.
-
-- [x] **Leader-line entry-point refinement**. Implemented as
-  `TetherSource::Boundary`; `Poi` remains the default. The report example
-  shows the tether moving from `(1, 1)` to `(1, 2)` for a `2 x 2` region.
-  Python already exposes this as
-  `labels={"placement": {"tether": "boundary"}}`.
-
 - [ ] **Nested sets in `place_set_labels`**. The exterior set-label mode
   guarantees label boxes don't overlap each other, but clearance from the
   *shapes* is best-effort: a set nested inside a much larger one has a hug
@@ -174,14 +143,6 @@ they're pre-existing behaviour the harness now exposes.
   `place_labels`, so design the two together rather than bolting a leader
   onto this mode. Surfaced 2026-08-14 when the mode landed.
 
-- [x] **Retire the obsolete placement-policy TODO**. Commit `33c1bf0` removed
-  `InteriorPolicy`, `ExteriorPolicy::None`, and `PlacementError` when
-  simplifying the placement API. `place_labels` tries an interior fit and
-  falls back to the selected exterior solver. Callers wanting anchors
-  regardless of label size can use `RegionPolygons::label_points`; callers
-  wanting to omit labels that do not fit can use `fit_label_in_region` per
-  region. No unimplemented policy variants remain.
-
 ## Glyph placement follow-ups
 
 `place_glyphs` shipped across core/wasm/capi/ts/web (eulerGlyphs-style unit
@@ -190,53 +151,6 @@ spacing bisection) and random (seeded dart-throwing) arrangements, a
 diagram-wide radius auto-sized by feasibility bisection, and a `gap` knob
 padding both glyph-vs-glyph spacing and the boundary inset. These are the loose
 ends that work deliberately deferred. Surfaced 2026-08-06.
-
-- [x] **Label keep-out**. Done: `GlyphOptions::obstacles` takes a diagram-wide
-  list of axis-aligned keep-out boxes (`label_boxes` / `labelObstacles`
-  build them from a `place_labels` result), mirrored through wasm/capi/ts
-  and wired into the web app. Lattice cells and darts within `r * (1 + gap)`
-  of a box are rejected, the lattice anchor escapes a blocked pole of
-  inaccessibility, and the auto-radius bisection probes with the boxes
-  applied. Two deliberate softenings: the obstacle-aware radius is floored
-  at half the obstacle-blind one, and a region that still cannot fit packs
-  into its box rather than reporting a shortfall --- otherwise one small
-  region whose label nearly fills it would shrink every glyph in the
-  diagram.
-
-- [x] **Member text labels as glyphs**. Done: `place_glyph_boxes` is a sibling
-  entry point taking per-item measured `(w, h)` boxes instead of counts,
-  with a single diagram-wide `scale` bisected in `[min_scale, 1.0]`
-  (shrink-only --- the caller owns the reference font size). The uniform
-  arrangement packs rows over a new exact scan-line band oracle
-  (`plotting/glyphs/scan.rs`); the random one throws rectangular darts. The
-  obstacle plumbing, apportionment, and `PROBE`/`PACK` split are shared with
-  the disc packer, which moved to `plotting/glyphs/discs.rs`. Mirrored
-  through wasm/capi/ts + a `toSvg` `glyphBoxes` mode. `boxes[key]` is a
-  prefix of `sizes[key]`, so drop order is the caller's item order.
-
-- [x] **Web app doesn't expose member labels** (done). The UI decision was a
-  per-row roster: `Row.members` is an optional comma/newline-separated
-  string edited on a second line of each combination row in
-  `SpecEditor.svelte`, and the default rows ship with names so the mode
-  demos itself. The glyph knobs outgrew `StyleControls.svelte` and moved to
-  their own collapsed `Glyphs` sidebar section (`GlyphControls.svelte`): the
-  `showGlyphs` checkbox became a `glyphMode` select (`none` / `dots` /
-  `members`) sharing the arrangement/spacing/seed knobs, plus a
-  `memberLabelSize` slider --- its own knob because the packer is
-  shrink-only, so the reference size is a ceiling rather than a hint.
-  `DiagramSvg.svelte` measures the names in a second hidden `<text>` pass
-  inside the existing `data-fit-measure` group, packs them with
-  `placeGlyphBoxesForRegions` under the same `labelObstacles` keep-outs as
-  the disc packer, and renders via the `glyphBoxes` serializer option at a
-  pinned weight of 400 (the Bold toggle belongs to the set names, and
-  measuring at 400 while rendering at 700 would overflow every box).
-  `web/src/lib/members.svelte.ts` holds the glue the core does not provide:
-  roster parsing, order-insensitive matching of a typed `B&A` row to the
-  core's canonical `A&B` region key, and the rune store carrying `unplaced`
-  to the inline overflow note. Member names are Euler-only (Venn is driven
-  by `vennN`, not the rows) and the complement region has no roster. A
-  500-name budget mirrors `MAX_GLYPHS`. Persisted `showGlyphs` migrates to
-  `glyphMode` in `loadPersisted`.
 
 - [ ] **`max_scale` for glyph boxes** (minor). The auto-scale bracket's upper
   end is hardcoded to `1.0`, so a roomy diagram renders sparse text at the
@@ -248,24 +162,6 @@ ends that work deliberately deferred. Surfaced 2026-08-06.
   scale `1.0` for both roomy fixtures. Explicit `.scale(k)` already permits
   `k > 1`; the missing capability is automatic growth. Python owns reference
   font sizes, the label/member size ratio, and readability floors.
-
-- [x] **Whole-region callouts for overflowing member rosters (web).**
-  `web/src/lib/member-layout.ts` composes the existing box packer and label
-  placers. Every region with an incomplete packing switches permanently to a
-  measured roster block for that pass. The block shares label collision
-  resolution with region headings and counts; set names are placed against
-  the resulting boxes, and the surviving rosters use strict obstacles.
-  Repacking can evict more regions as label obstacles move, but each
-  iteration removes at least one roster, so termination does not depend on
-  the scale increasing monotonically. All measurements stay in layout units
-  rather than feeding viewport expansion back into text sizes.
-
-  `ToSvgOptions.memberCallouts` renders the measured lines, preserves leaders,
-  replaces the ordinary region label, and includes each block in the viewport.
-  Missing and degenerate regions get a separate labeled list without an invented
-  leader target. The core and its prefix contract are unchanged; Python
-  integration remains separate. Leader crossings still depend on the selected
-  label-placement strategy, as they do for ordinary exterior labels.
 
 - [ ] **Relaxation pass for the box footprint**. The disc packer's `random`
   arrangement now finishes with a force-directed relaxation
@@ -307,29 +203,6 @@ Sutherland--Hodgman convex-clip overlap is only piecewise-C¹, so it carries no
 analytic gradient and the capability-driven default pool routes it to
 `[NelderMead, CmaEs]`). These are the loose ends that PR did not cover.
 
-- [x] **Web app doesn't expose the shape** (done). `ShapeType` in
-  `web/src/lib/types/diagram.ts` and the `FitResult.shapeType` field now
-  carry the `"rotatedRectangle"` variant, the `scaleLayout` dispatch in
-  `web/src/lib/fit.ts` has a `rotatedRectangle` case (rotation passes
-  through unscaled, like ellipse), and `SpecEditor.svelte` adds a "Rotated
-  rectangle" radio. Rendering rides the existing polygons path through
-  `@jolars/eunoia/svg`, so no serializer change was needed. No shape-param
-  geometry readout exists in the app, so there was nothing to surface
-  rotation in. The landing-page `HeroWidget` keeps its curated
-  circle/ellipse/square/ rectangle subset (live slider re-fits stay fast).
-
-- [x] **Quality-harness coverage** (done). `quality_report`, `corpus_quality`,
-  and `synthetic_groundtruth` now include `RotatedRectangle`. The report
-  benchmarks default, Nelder--Mead, CMA-ES, and MADS configurations for it,
-  includes all five shapes in Markdown and JSON, and accepts `--config` and
-  `--shape` filters. The initial default sweep (2026-10-14, 30 specs × 16
-  seeds × 5 shapes) completed without fit errors. Rotated rectangles had
-  median SumSquared loss `4.75e-5`; the worst `diag_error` was `8.90e-2` on
-  `issue44_4_set_inclusive`. `corpus.rs` records per-spec ceilings with
-  headroom over this baseline. The synthetic test checks recovery of 50
-  deterministic, nondegenerate rotated-rectangle configurations, with the
-  existing `5e-2` diagnostic-error limit.
-
 - [ ] **Fit quality may motivate corner-rounding**. The shape is fitted
   derivative-free by design (no analytic gradient). If the quality harness
   above shows it underperforming the gradient shapes, the principled upgrade
@@ -338,16 +211,3 @@ analytic gradient and the capability-driven default pool routes it to
   re-enables the LM/TRF path (flip `SUPPORTS_ANALYTIC_GRADIENT` to `true`).
   This is the "smooth the shape" option from the original design discussion;
   revisit only if derivative-free quality proves insufficient.
-
-- [x] **TS handle-freeing is wasteful** (done). The `euler` / `venn` dispatch in
-  `ts/index.ts` now reads and frees only the arrays used in the returned
-  layout. Unused shape arrays and polygons in `shapes` mode stay inside the
-  result until `result.free()` drops them, avoiding getter clones.
-
-- [x] **Narrative docs** (done). README and core rustdoc list all five fitting
-  shapes. The Shapes page covers rotated-rectangle parameters,
-  derivative-free fitting, an interactive example, and the four-set
-  canonical Venn limit. Language quickstarts, the JavaScript reference, C
-  ABI Venn docs, page metadata, and `llms.txt` are updated. The TypeScript
-  `venn()` range check now accepts four sets for `"rotatedRectangle"`, with
-  regression tests for both output modes and rejection of five sets.
