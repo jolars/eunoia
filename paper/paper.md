@@ -225,10 +225,10 @@ without a server.
 # Annotation and Interactivity
 
 Area-proportional Euler diagrams encode the size of each set intersection as the
-area of a region. Eunoia extends this with three complementary additions. Unit
-glyphs show how many elements a region contains, member labels show which
-elements they are, and interactive output exposes regions that are too small to
-annotate (\autoref{fig:features}).
+area of a region. Eunoia adds three complementary features: unit glyphs show how
+many elements a region contains, member labels identify those elements, and
+interactive output reveals information about regions too small to annotate
+(\autoref{fig:features}).
 
 ![A three-set Euler diagram fitted with ellipses, shown with glyphs (left)
 and member labels (right).\label{fig:features}](images/features.pdf)
