@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.1](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.10.0...eunoia-npm-v1.10.1) (2026-10-28)
+
+### Bug Fixes
+
+- **plotting:** reduce leader traversal through regions ([`41f1359`](https://github.com/jolars/eunoia/commit/41f13590913b2cee6e979bae8dabac73349a2652))
+
+### Dependencies
+
+- updated eunoia to v1.10.1
+
 ## [1.10.0](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.9.0...eunoia-npm-v1.10.0) (2026-10-21)
 
 ### Features

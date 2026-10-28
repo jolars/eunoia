@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/jolars/eunoia/compare/v1.10.0...v1.10.1) (2026-10-28)
+
+### Bug Fixes
+
+- **plotting:** preserve holes during polygon clipping ([`4479cc6`](https://github.com/jolars/eunoia/commit/4479cc6aede0c4f429c157a451d291dd7d3bbf02))
+- **plotting:** reduce leader traversal through regions ([`41f1359`](https://github.com/jolars/eunoia/commit/41f13590913b2cee6e979bae8dabac73349a2652))
+
 ## [1.10.0](https://github.com/jolars/eunoia/compare/v1.9.0...v1.10.0) (2026-10-21)
 
 ### Features
