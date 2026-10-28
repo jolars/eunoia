@@ -76,11 +76,10 @@ Eunoia extends eulerr by
 - supporting squares and rectangles, and
 - providing analytical gradients.
 
-Eunoia's target audience comprises researchers and others who need trustworthy
-proportional set visualizations, irrespective of whether they use R, Python,
-Julia, JavaScript, Rust, or C, and developers who want to embed a diagram fitter
-and visualizer in their own tools, for instance in interactive visualizations on
-the web.
+Eunoia serves researchers and others who need trustworthy proportional set
+visualizations in R, Python, Julia, JavaScript, Rust, or C. Developers can also
+embed its diagram fitter and visualizer in their own tools, including
+interactive web visualizations.
 
 # State of the Field
 
