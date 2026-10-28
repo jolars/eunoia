@@ -63,8 +63,8 @@ problem: choosing the shapes' positions and parameters to minimize the
 discrepancy between fitted and requested intersection areas.
 
 Existing alternatives offer different compromises. venneuler introduced
-multi-dimensional scaling\ (MDS) initialization followed by overlap-aware
-refinement\ [@wilkinson2012]; venn.js improved that initialization and added
+multidimensional scaling\ (MDS) initialization followed by overlap-aware
+refinement\ [@wilkinson2012]. venn.js improved that initialization and added
 exact area calculations\ [@frederickson2015]. eulerAPE introduced ellipses for
 three-set diagrams\ [@micallef2014], and eulerr generalized them to any number
 of sets\ [@larsson2018].
