@@ -186,19 +186,18 @@ and $4.5 \times 10^{-2}$ for rectangles, compared to $2.3 \times 10^{-14}$ for
 ellipses.\label{fig:shapes}](images/shape_families.pdf)
 
 Fitting proceeds in two phases, roughly following the approach of
-venneuler\ [@wilkinson2012], venn.js\ [@frederickson2015] and the original
-eulerr package\ [@larsson2018]. The first phase computes an initial layout by
-multidimensional scaling: shapes of fixed size are placed so that their pairwise
-distances approximate the distances required by the pairwise intersections,
-using the relaxed loss suggested by @frederickson2015 for disjoint and contained
-set pairs. The second phase refines all shape parameters to minimize a loss over
-the differences between the fitted and requested region areas^[the default loss
-is a normalized sum of squared errors]. Region areas for every shape are
-computed analytically---ellipse intersections through a projective-conic
-construction\ [@richtergebert2011] and the resulting overlaps from circular and
-elliptical segments in closed form\ [@eberly2016]. For circles, ellipses,
-squares, and axis-aligned rectangles, the smooth losses come with exact
-analytical gradients.
+venneuler\ [@wilkinson2012], venn.js\ [@frederickson2015], and the original
+eulerr package\ [@larsson2018]. The first phase uses multidimensional scaling to
+place shapes of fixed size so that their pairwise distances approximate those
+required by the pairwise intersections. For disjoint and contained set pairs, it
+uses the relaxed loss suggested by @frederickson2015. The second phase refines
+all shape parameters to minimize a loss computed from the differences between
+the fitted and requested region areas^[The default loss is a normalized sum of
+squared errors.]. Eunoia computes region areas analytically for every shape. It
+finds ellipse intersections through a projective-conic
+construction\ [@richtergebert2011] and computes the resulting overlaps from
+circular and elliptical segments in closed form\ [@eberly2016]. For several
+shape families, the smooth losses have exact analytical gradients.
 
 For shapes with analytical gradients, refinement begins with Levenberg-Marquardt
 least squares, with a bounded Levenberg-Marquardt retry if the loss remains
@@ -212,16 +211,16 @@ Non-smooth losses---such as the maximum absolute region error---use
 derivative-free methods (Nelder--Mead or mesh-adaptive direct search) or can be
 replaced by a smooth surrogate.
 
-The fitted layout is returned with its residuals, loss, and the stress (a
-venneuler-style normalized least-squares measure) and diagError (the maximum
-absolute difference between requested and fitted region shares) statistics, so
-that the quality of the diagram can be assessed numerically rather than by eye.
-A plotting module extracts the region polygons through polygon clipping and
-computes label positions, which is what the R, Python, Julia, and JavaScript
-packages use for rendering. Because the core has no dependency on any host
-language's runtime, it compiles to WebAssembly, and the [web
-app](https://eunoia.bz/app) fits diagrams entirely in the browser without a
-server.
+Eunoia returns the fitted layout with its residuals, loss, and two
+goodness-of-fit statistics: stress, a venneuler-style normalized least-squares
+measure, and diagError, the maximum absolute difference between requested and
+fitted region shares. These diagnostics allow users to assess the diagram's
+quality numerically. A plotting module extracts the region polygons through
+polygon clipping and computes label positions. The R, Python, Julia, and
+JavaScript packages use this output for rendering. The core has no dependency on
+any host language's runtime and compiles to WebAssembly. The [web
+app](https://eunoia.bz/app) therefore fits diagrams entirely in the browser
+without a server.
 
 # Annotation and Interactivity
 
