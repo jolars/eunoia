@@ -230,10 +230,6 @@ many elements a region contains, member labels identify those elements, and
 interactive output reveals information about regions too small to annotate
 (\autoref{fig:features}).
 
-Glyphs and packed member labels use the core's placement routines and are
-available in the R, Python, Julia, and JavaScript packages and the web app.
-Julia renders these annotations through its Makie extension.
-
 ![A three-set Euler diagram fitted with ellipses, shown with glyphs (left)
 and member labels (right). Callouts identify members in regions too narrow for
 their names.\label{fig:features}](images/features.pdf)
