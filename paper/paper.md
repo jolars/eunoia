@@ -102,11 +102,11 @@ nVenn\ [@perezsilva2018], Edeap\ [@wybrow2021], and eulerr\ [@larsson2018].
     algorithm, supported shapes, maximum number of sets, and implementation
     language. \label{tab:packages}
 
-Eunoia is a separate library rather than another host-specific eulerr backend
-because eulerr's C++ implementation was coupled to R and could not serve
-WebAssembly and the other bindings directly. Centralizing fitting, diagnostics,
-and geometry in an independent Rust crate keeps those interfaces consistent and
-avoids duplication of effort.
+Eunoia is a separate library because eulerr's C++ implementation was coupled to
+R and could not directly support WebAssembly and the other bindings.
+Centralizing fitting, diagnostics, and geometry in an independent Rust crate
+keeps the interfaces consistent and avoids duplicating this work across
+bindings.
 
 # Example
 
