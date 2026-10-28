@@ -237,11 +237,13 @@ they're pre-existing behaviour the harness now exposes.
   `place_labels`, so design the two together rather than bolting a leader
   onto this mode. Surfaced 2026-08-14 when the mode landed.
 
-- [ ] **`InteriorPolicy::Loose` and `ExteriorPolicy::None` for `place_labels`**.
-  Only `InteriorPolicy::Strict` and the `Raycast` / `ForceDirected` exterior
-  policies are implemented; `Loose` interior placement and the `None`
-  exterior policy currently return `PlacementError::Unimplemented` (see
-  `plotting/placement.rs`). Moved from `AGENTS.md` "Open work" 2026-05-22.
+- [x] **Retire the obsolete placement-policy TODO**. Commit `33c1bf0`
+  removed `InteriorPolicy`, `ExteriorPolicy::None`, and `PlacementError`
+  when simplifying the placement API. `place_labels` tries an interior fit
+  and falls back to the selected exterior solver. Callers wanting anchors
+  regardless of label size can use `RegionPolygons::label_points`; callers
+  wanting to omit labels that do not fit can use `fit_label_in_region` per
+  region. No unimplemented policy variants remain.
 
 ## Glyph placement follow-ups
 
