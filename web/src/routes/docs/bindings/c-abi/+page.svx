@@ -88,7 +88,7 @@ front (a bad token errors regardless of the other inputs):
   | ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
   | `loss`                              | string  | `sum_squared`, `sum_absolute`, `sum_absolute_region_error`, `sum_squared_region_error`, `max_absolute`, `max_squared`, `root_mean_squared`, `stress`, `diag_error`, `log_sum_absolute`, and the six `smooth_*` variants. |
   | `loss_eps`                          | number  | Smoothing `eps` for the `smooth_*` losses (default `1e-3`); ignored otherwise.                                                                                                                                           |
-  | `optimizer`                         | string  | `levenberg_marquardt`, `lbfgs`, `nelder_mead`, `mads`, `trf`, `cmaes`, `cmaes_lm`, `cmaes_trf`.                                                                                                                          |
+  | `optimizer`                         | string  | `levenberg_marquardt`, `bounded_levenberg_marquardt`, `lbfgs`, `nelder_mead`, `mads`, `cmaes`, `cmaes_lm`, `cmaes_bounded_lm`.                                                                                                                          |
   | `mds_solver`                        | string  | `lbfgs`, `levenberg_marquardt`.                                                                                                                                                                                          |
   | `initial_sampler`                   | string  | `uniform`, `latin_hypercube`.                                                                                                                                                                                            |
   | `n_restarts`                        | integer | Random restarts of the two-phase fit; lowest loss kept.                                                                                                                                                                  |
@@ -104,11 +104,16 @@ These mirror the Rust `Fitter`/`PlotOptions`; the defaults are what you want
 unless you are deliberately exploring. See the [Fitter
 pipeline](/docs/concepts/fitter-pipeline/) chapter for what they do.
 
-For final-layout LM stages, `tolerance` sets the relative model-reduction
+The default optimizer for shapes with analytic gradients is `cmaes_bounded_lm`,
+which uses bounded Levenberg-Marquardt for its retry and polishing stages.
+The old tokens `trf` and `cmaes_trf` remain accepted as deprecated synonyms for
+`bounded_levenberg_marquardt` and `cmaes_bounded_lm`, respectively.
+
+For final-layout unbounded LM stages, `tolerance` sets the relative model-reduction
 threshold (default `1e-3`), and `ftol` overrides it. The test checks both actual and
 predicted reduction. `xtol` bounds the relative attempted step (default
 `1e-6`), and `gtol` bounds residual/Jacobian-column orthogonality (default
-`1e-8`). Zero disables the corresponding LM test. TRF uses `gtol` as an
+`1e-8`). Zero disables the corresponding LM test. Bounded LM uses `gtol` as an
 absolute scaled-gradient threshold instead; it ignores `xtol` and `ftol`.
 L-BFGS uses `tolerance` for its absolute gradient-norm and cost-change tests.
 All four values must be finite and nonnegative; invalid values return an error.

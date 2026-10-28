@@ -57,7 +57,7 @@ mod quality_report {
     /// Common-across-configs description. Things that vary across configs
     /// (final-stage optimizer, MDS solver pool) are listed per config.
     const COMMON_CONFIG: &str = "Fitter defaults: n_restarts<=10 (reduced for small smooth fits), \
-         max_iterations=200, tolerance=1e-3, loss=SumSquared; default optimizer=CmaEsTrf \
+         max_iterations=200, tolerance=1e-3, loss=SumSquared; default optimizer=CmaEsBoundedLm \
          for analytic-gradient shapes, [NelderMead, CmaEs] otherwise";
 
     const SHAPES: [&str; 5] = [
@@ -123,44 +123,38 @@ mod quality_report {
                 f.optimizer(Optimizer::LevenbergMarquardt)
                     .initial_solver(MdsSolver::LevenbergMarquardt)
             }),
-            // Box-constrained LM (TRF) at the final stage. Same least-squares
-            // kernel as `lm_final` but every step is clamped to the per-shape
-            // box (positions to centroid ± 4·span, radii/semi-axes to
-            // [1e-6·max_radius, 5·max_radius]). The apples-to-apples baseline
-            // is `lm_final`; the promotion bar is `cmaes_lm` (the default).
-            // Expected to help where unbounded LM blows up shapes on
-            // extreme-scale specs (issue71_4_set_extreme_scale), not on
-            // wrong-basin specs (TRF has no global escape).
-            ("trf_final", |f| f.optimizer(Optimizer::Trf)),
+            // Bounded LM uses the same least-squares kernel as `lm_final`,
+            // with the wider local safety bounds used by the default fitter.
+            ("bounded_lm_final", |f| {
+                f.optimizer(Optimizer::BoundedLevenbergMarquardt)
+            }),
             // Bounded CMA-ES global step + LM polish on the final stage.
             // Targets the three specs LM-on-LM can't escape (issue91_6_set,
             // issue44_4_set_inclusive, issue92_3_set_dropped_pair). Expensive
             // — ~1k–2k extra region-area evals per restart on hard 6-set
             // ellipse fits.
             ("cmaes_lm", |f| f.optimizer(Optimizer::CmaEsLm)),
-            // The default's global escape, but the post-escape polish is the
-            // box-constrained TRF instead of unbounded LM. The hypothesis from
-            // the `trf_final` run: keep the CMA-ES escape that fixes wrong-basin
-            // specs (issue91, issue93) while gaining the bounded refinement that
-            // wins extreme-scale / nested specs (issue71, issue44). This is the
-            // candidate to actually beat `cmaes_lm` (the default).
-            ("cmaes_trf", |f| f.optimizer(Optimizer::CmaEsTrf)),
-            // Same escape path as `cmaes_trf`, but the global-escape *core* is
+            // The default's global escape with bounded LM retries and polish,
+            // compared with the unbounded polish in `cmaes_lm`.
+            ("cmaes_bounded_lm", |f| {
+                f.optimizer(Optimizer::CmaEsBoundedLm)
+            }),
+            // Same escape path as `cmaes_bounded_lm`, but the global-escape *core* is
             // swapped from plain `BoundedCmaEs` to the memetic
             // `BoundedCmaInject` (CMA-ES with an inner LM refining the best-k
-            // each generation, Hansen-2011 injection). External TRF polish +
-            // non-regression guard are identical to `cmaes_trf`, so the diff is
+            // each generation, Hansen-2011 injection). External bounded LM polish +
+            // non-regression guard are identical to `cmaes_bounded_lm`, so the diff is
             // exclusively the escape solver. Head-to-head target on the
             // wrong-basin specs (issue91/issue92/eulerape).
-            ("cmaes_inject_trf", |f| {
-                f.optimizer(Optimizer::CmaEsTrf)
+            ("cmaes_inject_bounded_lm", |f| {
+                f.optimizer(Optimizer::CmaEsBoundedLm)
                     .escape_solver(EscapeSolver::BoundedCmaInject)
             }),
-            // Same as `cmaes_inject_trf` but the escape core is memetic
+            // Same as `cmaes_inject_bounded_lm` but the escape core is memetic
             // differential evolution (`DeInject`, LM inner) instead of CMA-ES.
             // The DE-vs-CMA half of the head-to-head the user asked for.
-            ("de_inject_trf", |f| {
-                f.optimizer(Optimizer::CmaEsTrf)
+            ("de_inject_bounded_lm", |f| {
+                f.optimizer(Optimizer::CmaEsBoundedLm)
                     .escape_solver(EscapeSolver::DeInject)
             }),
             // Same plus LM at the MDS stage. Tests whether the global step
@@ -234,7 +228,14 @@ mod quality_report {
                     if arg == "--shape" {
                         shape_filter = Some(value);
                     } else {
-                        config_filter = Some(value);
+                        // Preserve historical CLI names while reports use the solver's name.
+                        config_filter = Some(match value.as_str() {
+                            "trf_final" => "bounded_lm_final".to_owned(),
+                            "cmaes_trf" => "cmaes_bounded_lm".to_owned(),
+                            "cmaes_inject_trf" => "cmaes_inject_bounded_lm".to_owned(),
+                            "de_inject_trf" => "de_inject_bounded_lm".to_owned(),
+                            _ => value,
+                        });
                     }
                 }
                 "--help" | "-h" => {

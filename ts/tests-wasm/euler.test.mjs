@@ -4,6 +4,30 @@ import { test } from "node:test";
 import * as wasm from "../../npm/eunoia_wasm.js";
 import { euler } from "../../npm/index.js";
 
+test("bounded LM optimizer names preserve deprecated aliases", () => {
+  const options = {
+    sets: { A: 5, B: 3, "A&B": 1 },
+    seed: 1,
+    restarts: 1,
+  };
+  for (const [canonical, legacy] of [
+    ["boundedLevenbergMarquardt", "trf"],
+    ["cmaEsBoundedLm", "cmaEsTrf"],
+  ]) {
+    const current = euler({ ...options, optimizer: canonical });
+    const previous = euler({ ...options, optimizer: legacy });
+    assert.ok(current.metrics.loss < 1e-6);
+    assert.ok(Math.abs(current.metrics.loss - previous.metrics.loss) < 1e-12);
+    for (let i = 0; i < current.circles.length; i++) {
+      for (const key of ["x", "y", "radius"]) {
+        assert.ok(
+          Math.abs(current.circles[i][key] - previous.circles[i][key]) < 1e-12,
+        );
+      }
+    }
+  }
+});
+
 test("invalid tolerances throw without trapping the WASM instance", () => {
   const sets = { A: 5, B: 3, "A&B": 1 };
   for (const tolerance of [-1, NaN, Infinity, -Infinity]) {

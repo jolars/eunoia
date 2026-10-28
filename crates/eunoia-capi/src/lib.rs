@@ -126,7 +126,7 @@ struct EulerInput {
     loss_eps: Option<f64>,
     #[serde(default)]
     n_restarts: Option<usize>,
-    /// `Optimizer` variant (snake_case, e.g. `"cmaes_trf"`).
+    /// `Optimizer` variant (snake_case, e.g. `"cmaes_bounded_lm"`).
     #[serde(default)]
     optimizer: Option<String>,
     /// `MdsSolver` variant for the initial layout (snake_case).
@@ -611,13 +611,13 @@ fn parse_optimizer(name: &str) -> Result<Optimizer, String> {
         "lbfgs" => Ok(Optimizer::Lbfgs),
         "nelder_mead" => Ok(Optimizer::NelderMead),
         "mads" => Ok(Optimizer::Mads),
-        "trf" => Ok(Optimizer::Trf),
+        "bounded_levenberg_marquardt" | "trf" => Ok(Optimizer::BoundedLevenbergMarquardt),
         "cmaes" => Ok(Optimizer::CmaEs),
         "cmaes_lm" => Ok(Optimizer::CmaEsLm),
-        "cmaes_trf" => Ok(Optimizer::CmaEsTrf),
+        "cmaes_bounded_lm" | "cmaes_trf" => Ok(Optimizer::CmaEsBoundedLm),
         other => Err(format!(
             "invalid optimizer '{other}' (want levenberg_marquardt|lbfgs|\
-             nelder_mead|mads|trf|cmaes|cmaes_lm|cmaes_trf)"
+             nelder_mead|mads|bounded_levenberg_marquardt|cmaes|cmaes_lm|cmaes_bounded_lm)"
         )),
     }
 }
@@ -1719,6 +1719,32 @@ mod tests {
         assert!(plot["region_areas"]["A&B"].is_number());
         assert_eq!(plot["set_anchors"]["A"].as_array().unwrap().len(), 2);
         assert!(plot["shape_outlines"]["A"].is_array());
+    }
+
+    #[test]
+    fn bounded_optimizer_names_accept_deprecated_tokens() {
+        for (canonical, legacy) in [
+            ("bounded_levenberg_marquardt", "trf"),
+            ("cmaes_bounded_lm", "cmaes_trf"),
+        ] {
+            assert_eq!(parse_optimizer(canonical), parse_optimizer(legacy));
+            for optimizer in [canonical, legacy] {
+                let input = serde_json::json!({
+                    "sets": [
+                        {"combination": "A", "size": 5},
+                        {"combination": "B", "size": 3},
+                        {"combination": "A&B", "size": 1},
+                    ],
+                    "optimizer": optimizer,
+                    "seed": 1,
+                    "n_restarts": 1,
+                });
+                let response: serde_json::Value =
+                    serde_json::from_str(&call(eunoia_euler, &input.to_string())).unwrap();
+                assert_eq!(response["ok"], true, "{optimizer}: {response}");
+                assert!(response["metrics"]["loss"].as_f64().unwrap() < 1e-6);
+            }
+        }
     }
 
     #[test]

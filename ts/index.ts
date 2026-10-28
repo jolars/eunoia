@@ -24,13 +24,17 @@ export type ShapeType =
 export type InputType = "exclusive" | "inclusive";
 export type OutputMode = "shapes" | "polygons" | "regions";
 export type Optimizer =
-  | "cmaEsTrf"
+  | "cmaEsBoundedLm"
   | "cmaEsLm"
   | "cmaEs"
   | "levenbergMarquardt"
-  | "trf"
+  | "boundedLevenbergMarquardt"
   | "lbfgs"
-  | "nelderMead";
+  | "nelderMead"
+  /** @deprecated Use "cmaEsBoundedLm" instead. */
+  | "cmaEsTrf"
+  /** @deprecated Use "boundedLevenbergMarquardt" instead. */
+  | "trf";
 export type LossType =
   | "sumSquared"
   | "sumAbsolute"
@@ -282,15 +286,16 @@ export interface EulerOptions {
   output?: OutputMode;
   /** RNG seed for reproducible layouts. Accepts `number` or `bigint`. */
   seed?: number | bigint;
-  /** Final-stage optimizer. When omitted, the core default (`"cmaEsTrf"`) is used. */
+  /** Final-stage optimizer. Defaults to `"cmaEsBoundedLm"` for shapes with analytic gradients. */
   optimizer?: Optimizer;
   /** Loss function. Defaults to the optimizer's preferred loss. */
   loss?: LossType;
   /**
    * Optimizer convergence tolerance. Must be finite and nonnegative.
-   * Defaults to 1e-3. For final-layout LM, controls relative model reduction;
-   * zero disables that test. For L-BFGS, controls the absolute gradient
-   * norm and cost change. Does not affect TRF, CMA-ES, or Nelder-Mead stages.
+   * Defaults to 1e-3. For final-layout unbounded LM, controls relative model
+   * reduction; zero disables that test. For L-BFGS, controls the absolute
+   * gradient norm and cost change. Does not affect bounded LM, CMA-ES,
+   * or Nelder-Mead stages.
    */
   tolerance?: number;
   /**
@@ -788,13 +793,15 @@ export interface VennOptions {
 // ============================================================================
 
 const OPTIMIZER_MAP: Record<Optimizer, wasm.WasmOptimizer> = {
-  cmaEsTrf: wasm.WasmOptimizer.CmaEsTrf,
+  cmaEsBoundedLm: wasm.WasmOptimizer.CmaEsBoundedLm,
   cmaEsLm: wasm.WasmOptimizer.CmaEsLm,
   cmaEs: wasm.WasmOptimizer.CmaEs,
   levenbergMarquardt: wasm.WasmOptimizer.LevenbergMarquardt,
-  trf: wasm.WasmOptimizer.Trf,
+  boundedLevenbergMarquardt: wasm.WasmOptimizer.BoundedLevenbergMarquardt,
   lbfgs: wasm.WasmOptimizer.Lbfgs,
   nelderMead: wasm.WasmOptimizer.NelderMead,
+  cmaEsTrf: wasm.WasmOptimizer.CmaEsBoundedLm,
+  trf: wasm.WasmOptimizer.BoundedLevenbergMarquardt,
 };
 
 const LOSS_MAP: Record<LossType, wasm.WasmLossType> = {

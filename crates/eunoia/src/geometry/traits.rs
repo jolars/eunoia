@@ -111,7 +111,7 @@ pub trait DiagramShape: Closed {
     ///
     /// The fitter consults this to pick a default optimizer pool: shapes with
     /// smooth, differentiable overlap areas (`true`) default to the
-    /// gradient-based `CmaEsTrf`; shapes whose exact overlap area is only
+    /// gradient-based `CmaEsBoundedLm`; shapes whose exact overlap area is only
     /// piecewise-C¹ (`false`, e.g.
     /// [`RotatedRectangle`](crate::geometry::shapes::RotatedRectangle)) default
     /// to a derivative-free pool so a gradient solver never chatters at the

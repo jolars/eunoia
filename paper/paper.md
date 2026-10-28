@@ -202,12 +202,12 @@ elliptical segments in closed form\ [@eberly2016]. For circles, ellipses,
 squares, and axis-aligned rectangles, the smooth losses come with exact
 analytical gradients.
 
-For shapes with analytical gradients, refinement begins with a bounded
-trust-region-reflective least-squares solver. If the loss remains above a
-threshold, a bounded variant of CMA-ES\ [@hansen1996] searches for another
-basin, which the trust-region method then polishes; Eunoia keeps whichever
-solution has the lower loss. The pipeline uses several seeded restarts, which
-can run in parallel when the optional `parallel` feature is enabled (but remain
+For shapes with analytical gradients, refinement begins with Levenberg-Marquardt
+least squares, with a bounded Levenberg-Marquardt retry if the loss remains
+above a threshold. If both local fits remain above the threshold, a bounded
+variant of CMA-ES\ [@hansen1996] searches for another basin, which bounded
+Levenberg-Marquardt then polishes. Eunoia keeps the solution with the lowest
+loss. The pipeline uses several seeded restarts, which can run in parallel when the optional `parallel` feature is enabled (but remain
 serial in WebAssembly). For small set counts, one restart begins from a
 canonical Venn layout. Non-smooth losses---such as the maximum absolute region
 error---use derivative-free methods (Nelder--Mead or mesh-adaptive direct

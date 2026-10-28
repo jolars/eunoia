@@ -32,8 +32,14 @@ const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
 | `polygonVertices` | `number`                                                        | `256`          | Vertices per polygon outline (`"polygons"`/`"regions"`).           |
 | `complement`      | `number`                                                        | —              | Items outside every set; fits a bounding container. See [Complement](/docs/concepts/complement/). |
 
-`Optimizer` is one of `"cmaEsTrf"`, `"cmaEsLm"`, `"cmaEs"`,
-`"levenbergMarquardt"`, `"trf"`, `"lbfgs"`, `"nelderMead"`. `LossType` is one of
+`Optimizer` is one of `"cmaEsBoundedLm"`, `"cmaEsLm"`, `"cmaEs"`,
+`"levenbergMarquardt"`, `"boundedLevenbergMarquardt"`, `"lbfgs"`, or `"nelderMead"`.
+The default for shapes with analytic gradients is `"cmaEsBoundedLm"`, which
+uses an LM baseline, a bounded LM retry, and CMA-ES escape with bounded LM
+polishing when needed. `"cmaEsTrf"` and `"trf"` remain accepted as deprecated
+synonyms for `"cmaEsBoundedLm"` and `"boundedLevenbergMarquardt"`, respectively.
+
+`LossType` is one of
 `"sumSquared"`, `"sumAbsolute"`, `"sumAbsoluteRegionError"`,
 `"sumSquaredRegionError"`, `"maxAbsolute"`, `"maxSquared"`, `"rootMeanSquared"`,
 `"stress"`, `"diagError"`. The defaults match the Rust core and are what you
@@ -43,11 +49,11 @@ want unless you are deliberately exploring; see the
 Rotated rectangles use derivative-free Nelder–Mead and CMA-ES by default
 because their exact polygon overlap areas do not supply analytical gradients.
 
-For final-layout LM stages, `tolerance` controls relative model reduction:
+For final-layout unbounded LM stages, `tolerance` controls relative model reduction:
 both the actual and predicted cost reductions must be small before this test
 stops the solver.
 Zero disables that test. For L-BFGS, it controls the absolute gradient norm
-and cost change. TRF, CMA-ES, and Nelder-Mead stages ignore this option.
+and cost change. Bounded LM, CMA-ES, and Nelder-Mead stages ignore this option.
 Invalid tolerances throw an error.
 
 ## `venn(options)`

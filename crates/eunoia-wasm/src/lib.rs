@@ -21,7 +21,6 @@
 // wasm-bindgen ABI on every call. The argument count is deliberate.
 #![allow(clippy::too_many_arguments)]
 
-use eunoia::Optimizer;
 use eunoia::VennDiagram;
 use eunoia::geometry::shapes::{Circle, Ellipse, Rectangle, RotatedRectangle, Square};
 use eunoia::geometry::traits::Polygonize;
@@ -31,32 +30,9 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use console_error_panic_hook;
 
-/// Optimizer options for WASM
-#[wasm_bindgen]
-#[derive(Clone, Copy)]
-pub enum WasmOptimizer {
-    CmaEsTrf,
-    CmaEsLm,
-    CmaEs,
-    LevenbergMarquardt,
-    Trf,
-    Lbfgs,
-    NelderMead,
-}
+mod optimizer;
 
-impl From<WasmOptimizer> for Optimizer {
-    fn from(opt: WasmOptimizer) -> Self {
-        match opt {
-            WasmOptimizer::CmaEsTrf => Optimizer::CmaEsTrf,
-            WasmOptimizer::CmaEsLm => Optimizer::CmaEsLm,
-            WasmOptimizer::CmaEs => Optimizer::CmaEs,
-            WasmOptimizer::LevenbergMarquardt => Optimizer::LevenbergMarquardt,
-            WasmOptimizer::Trf => Optimizer::Trf,
-            WasmOptimizer::Lbfgs => Optimizer::Lbfgs,
-            WasmOptimizer::NelderMead => Optimizer::NelderMead,
-        }
-    }
-}
+pub use optimizer::WasmOptimizer;
 
 /// Loss-function options for WASM, mirroring `eunoia::loss::LossType`.
 #[wasm_bindgen]

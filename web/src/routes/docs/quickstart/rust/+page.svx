@@ -62,6 +62,13 @@ set unions and eunoia will decompose them.
 `.seed(u64)` makes the (stochastic, multi-restart) fit reproducible; omit it for
 a fresh layout each run.
 
+For shapes with analytic gradients, the default optimizer is
+`Optimizer::CmaEsBoundedLm`: an LM baseline, a bounded LM retry, and CMA-ES
+escape with bounded LM polishing when needed. To select bounded LM alone, use
+`.optimizer(Optimizer::BoundedLevenbergMarquardt)`.
+The old names `Optimizer::CmaEsTrf` and `Optimizer::Trf` remain accepted as
+deprecated synonyms, with the same fitting behavior.
+
 ## Read the Result
 
 `fit()` returns a `Layout<S>` carrying the fitted shapes and fit metrics:

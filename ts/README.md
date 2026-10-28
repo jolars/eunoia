@@ -56,6 +56,11 @@ closed outline per set, and `"regions"` returns the exclusive pieces (`A` only,
 `A&B`, …) for per-region fills and label placement. Every mode also carries fit
 `metrics`. See the [JavaScript quickstart][quickstart] for the full walkthrough.
 
+The optimizer names `"boundedLevenbergMarquardt"` and `"cmaEsBoundedLm"` select
+bounded LM alone or the default strategy with CMA-ES escape and bounded LM
+polishing. The old names `"trf"` and `"cmaEsTrf"` remain accepted as deprecated
+synonyms with the same fitting behavior.
+
 ## Entry points
 
 All three ship from the one package:

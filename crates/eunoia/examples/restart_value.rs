@@ -16,7 +16,7 @@
 //!
 //!   B. **Does the CMA-ES escape ever fire / help?** We compare plain
 //!      Levenberg-Marquardt at `n_restarts=10` (`lm`) against the default
-//!      `CmaEsTrf` ladder's `loss@10` (which *is* the escape path). `fire rate`
+//!      `CmaEsBoundedLm` ladder's `loss@10` (which *is* the escape path). `fire rate`
 //!      is the fraction of single-restart LM fits landing above the 1e-3
 //!      fallback threshold (only then can the escape stage run). `seeds helped`
 //!      counts seeds where the escape actually lowered the loss.
@@ -58,7 +58,7 @@ mod restart_value {
     use eunoia::test_utils::corpus::{CorpusEntry, Fittable, QUALITY_SEEDS, all};
     use eunoia::{Fitter, Optimizer};
 
-    /// The fallback threshold the default `CmaEsTrf` uses: plain LM at or below
+    /// The fallback threshold the default `CmaEsBoundedLm` uses: plain LM at or below
     /// this skips the escape stage. Mirrors `FinalLayoutConfig`'s default. Note
     /// this is compared against the *raw* loss value, so it is calibrated for
     /// the scale-invariant `SumSquared` and means something different under
@@ -232,7 +232,7 @@ mod restart_value {
         let mut seeds_helped_restarts = 0usize;
         let mut min_k_worst = 1usize;
 
-        // Experiment A: default-optimizer (CmaEsTrf) restart ladder.
+        // Experiment A: default-optimizer (CmaEsBoundedLm) restart ladder.
         for &seed in seeds {
             let mut per_k = [f64::NAN; RESTART_LADDER.len()];
             let mut diag_seed1 = f64::NAN;
@@ -359,7 +359,7 @@ mod restart_value {
     }
 
     fn render_restart_table(rows: &[SpecRow]) {
-        println!("#### A. Restart value (default `CmaEsTrf`)\n");
+        println!("#### A. Restart value (default `CmaEsBoundedLm`)\n");
         println!(
             "| spec | n | loss@1 | loss@2 | loss@3 | loss@10 | spread@1 | diag@1 | diag@10 | min-k | helped | gain |"
         );
@@ -388,7 +388,9 @@ mod restart_value {
     }
 
     fn render_escape_table(rows: &[SpecRow]) {
-        println!("#### B. CMA-ES escape value (lm vs default `CmaEsTrf`, both `n_restarts=10`)\n");
+        println!(
+            "#### B. CMA-ES escape value (lm vs default `CmaEsBoundedLm`, both `n_restarts=10`)\n"
+        );
         println!("| spec | n | lm loss | cmaes loss | fire rate | helped | gain | lm ms |");
         println!("| ---- | -:| -------:| ---------:| --------:| -----:| ---:| ----:|");
         for r in rows {

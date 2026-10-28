@@ -64,6 +64,14 @@ pub enum Optimizer {
     /// with a CMA-ES global escape", not literal LM.
     ///
     CmaEsLm,
+    /// Deprecated name for [`Optimizer::BoundedLevenbergMarquardt`].
+    #[deprecated(
+        note = "Use `BoundedLevenbergMarquardt`; this solver uses bounded Levenberg-Marquardt."
+    )]
+    Trf,
+    /// Deprecated name for [`Optimizer::CmaEsBoundedLm`].
+    #[deprecated(note = "Use `CmaEsBoundedLm`; polishing uses bounded Levenberg-Marquardt.")]
+    CmaEsTrf,
     /// Box-constrained Levenberg-Marquardt with Coleman-Li scaling
     /// (`basin::BoundedLevenbergMarquardt`).
     /// The bounded analog of [`Optimizer::LevenbergMarquardt`]:
@@ -78,23 +86,22 @@ pub enum Optimizer {
     /// `BoundsEnvelope::CMAES` the global escape uses — a local refinement
     /// only needs to catch blow-up, not constrain the optimum. The periodic
     /// ellipse angle is `±∞`; the affine scaling degrades to unconstrained on
-    /// infinite-bound coordinates, so no finite angle cap is needed. Where
-    /// `lower = -∞` and `upper = +∞` element-wise, `Trf` reduces exactly to
-    /// `LevenbergMarquardt`.
+    /// infinite-bound coordinates, so no finite angle cap is needed. With
+    /// infinite bounds, the Coleman-Li scaling becomes the identity.
     ///
     /// This is a local solver and cannot escape an incorrect basin.
-    Trf,
-    /// Threshold-gated CMA-ES with bounded TRF polishing.
+    BoundedLevenbergMarquardt,
+    /// Threshold-gated CMA-ES with bounded Levenberg-Marquardt polishing.
     ///
     /// This is the [`crate::Fitter`] default. The lowest-loss result among the
     /// local fit, bounded retry, and escaped bounded fit is returned.
     ///
     #[default]
-    CmaEsTrf,
+    CmaEsBoundedLm,
 }
 
 /// Global-escape solver used inside [`Optimizer::CmaEsLm`] /
-/// [`Optimizer::CmaEsTrf`] when the local baseline is stuck above
+/// [`Optimizer::CmaEsBoundedLm`] when the local baseline is stuck above
 /// `cmaes_fallback_threshold`.
 ///
 /// All variants share the same external polish and result-selection logic.
@@ -331,6 +338,8 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
     };
 
     // Choose optimizer and run based on configuration
+    // Keep the deprecated variants on the same solver paths as their replacements.
+    #[allow(deprecated)]
     let (final_params, loss) = match optimizer {
         Optimizer::NelderMead => {
             run_nelder_mead::<S>(spec, params_per_shape, initial_param, config)?
@@ -348,10 +357,12 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
         Optimizer::LevenbergMarquardt => {
             run_lm_or_lbfgs::<S>(spec, params_per_shape, initial_param, config)?
         }
-        Optimizer::Trf => run_trf::<S>(spec, params_per_shape, initial_param, config)?,
+        Optimizer::BoundedLevenbergMarquardt | Optimizer::Trf => {
+            run_bounded_lm::<S>(spec, params_per_shape, initial_param, config)?
+        }
         // Threshold-fired CMA-ES global escape; the two variants differ only in
-        // the post-escape polish — unbounded LM (`CmaEsLm`) vs bounded TRF
-        // (`CmaEsTrf`). See [`run_cmaes_escape`].
+        // the post-escape polish — unbounded LM (`CmaEsLm`) vs bounded LM
+        // (`CmaEsBoundedLm`). See [`run_cmaes_escape`].
         Optimizer::CmaEsLm => run_cmaes_escape::<S>(
             spec,
             params_per_shape,
@@ -360,13 +371,13 @@ pub(crate) fn optimize_from_initial<S: DiagramShape + Copy + 'static>(
             None,
             run_lm_or_lbfgs::<S>,
         )?,
-        Optimizer::CmaEsTrf => run_cmaes_escape::<S>(
+        Optimizer::CmaEsBoundedLm | Optimizer::CmaEsTrf => run_cmaes_escape::<S>(
             spec,
             params_per_shape,
             initial_param,
             config,
-            Some(run_trf::<S>),
-            run_trf::<S>,
+            Some(run_bounded_lm::<S>),
+            run_bounded_lm::<S>,
         )?,
     };
 
@@ -467,16 +478,15 @@ pub(crate) fn run_lm_recorded<S: DiagramShape + Copy + 'static>(
 /// the bounded analog of [`run_lm_or_lbfgs`].
 ///
 /// Reuses the same `LmDiagramProblem` least-squares kernel (analytic Jacobian,
-/// `JᵀJ` Gram) wrapped in [`BoundedLmDiagramProblem`] to carry the box bounds
-/// `Trf` requires. Bounds come from [`optimizer_bounds_for`] — the same
-/// per-shape envelope the `CmaEsLm` escape uses. `Trf`'s Coleman-Li scaling
-/// reduces to plain LM on `±∞` coordinates (the ellipse angle), so unbounded
-/// dims need no finite surrogate.
+/// `JᵀJ` Gram) wrapped in [`BoundedLmDiagramProblem`] to carry the box bounds.
+/// Bounds come from [`optimizer_bounds_for`] with the local envelope. Coleman-Li
+/// scaling leaves unbounded coordinates unscaled, so periodic ellipse angles
+/// need no finite surrogate.
 ///
 /// For non-`SumSquared` losses the least-squares problem doesn't exist, so the
 /// dispatch degrades through the same fallback as [`run_lm_or_lbfgs`]:
 /// Nelder-Mead for non-smooth losses, L-BFGS for the other smooth ones.
-fn run_trf<S: DiagramShape + Copy + 'static>(
+fn run_bounded_lm<S: DiagramShape + Copy + 'static>(
     spec: &PreprocessedSpec,
     params_per_shape: usize,
     initial_param: &DVector<f64>,
@@ -491,8 +501,8 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
             );
             let lower = DVector::from_vec(lower);
             let upper = DVector::from_vec(upper);
-            // `Trf`'s Coleman-Li affine scaling is undefined on a finite face
-            // (`v_i = 0`), so start strictly inside the box. For an interior
+            // Coleman-Li affine scaling is undefined on a finite face (`v_i = 0`),
+            // so start strictly inside the box. For an interior
             // MDS/LM seed (the common case) this is a no-op; it only rescues a
             // degenerate seed that landed on or outside a finite bound.
             let mut x0 = initial_param.clone();
@@ -508,7 +518,7 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
                 lower,
                 upper,
             };
-            // `Trf`'s sole convergence tolerance is the absolute
+            // Bounded LM's sole convergence tolerance is the absolute
             // `‖v ⊙ Jᵀr‖_∞ ≤ tol_grad` test — it has no relative ftol/xtol/gtol
             // knobs like basin's LM. The residuals' `1/√Σtᵢ²` normalisation
             // makes that bound scale-dependent (the same reason the LM arm
@@ -524,7 +534,7 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
                 .run()
                 .expect("solver problem is infallible");
             let final_param = result.param().clone();
-            // `Trf::state.cost` is ½·Σrᵢ² over the normalised residuals; the
+            // The solver reports ½·Σrᵢ² over the normalised residuals; the
             // configured loss is Σrᵢ², so ×2 (matches the LM arm).
             let final_loss = result.cost() * 2.0;
             Ok((final_param, final_loss))
@@ -544,7 +554,7 @@ fn run_trf<S: DiagramShape + Copy + 'static>(
 }
 
 /// A final-layout local solver: `(spec, params_per_shape, x0, config)` →
-/// `(params, loss)`. Both [`run_lm_or_lbfgs`] and [`run_trf`] match this, which
+/// `(params, loss)`. Both [`run_lm_or_lbfgs`] and [`run_bounded_lm`] match this, which
 /// is what lets [`run_cmaes_escape`] take the post-escape polish as a parameter.
 type FinalSolver = fn(
     &PreprocessedSpec,
@@ -554,18 +564,18 @@ type FinalSolver = fn(
 ) -> Result<(DVector<f64>, f64), DiagramError>;
 
 /// Threshold-fired CMA-ES global escape shared by [`Optimizer::CmaEsLm`] and
-/// [`Optimizer::CmaEsTrf`].
+/// [`Optimizer::CmaEsBoundedLm`].
 ///
 /// 1. Run plain LM. If it lands at or below `config.cmaes_fallback_threshold`,
 ///    return immediately — CMA-ES wouldn't beat that and would only burn
 ///    ~1k–2k extra evals per restart, so easy specs pay no extra wall time.
-/// 2. If `baseline_extra` is `Some` (the `CmaEsTrf` case — TRF from the MDS
+/// 2. If `baseline_extra` is `Some` (the `CmaEsBoundedLm` case — bounded LM from the MDS
 ///    init), race it against LM and use the lower-loss of the two as the
-///    baseline. LM and TRF reach *different* basins on a handful of specs:
-///    TRF's box constraint finds a basin LM misses on `three_inside_fourth`
-///    seed=1 (LM stalls at 2.97e-3, TRF reaches ~1e-18), and LM's unbounded
-///    steps find a basin TRF can't on `gene_sets` (LM 5.1e-8, TRF 5.1e-5,
-///    and CMA-ES + TRF polish doesn't rediscover LM's basin). Racing both
+///    baseline. LM and bounded LM reach *different* basins on a handful of specs:
+///    bounded LM's box constraint finds a basin LM misses on `three_inside_fourth`
+///    seed=1 (LM stalls at 2.97e-3, bounded LM reaches ~1e-18), and LM's unbounded
+///    steps find a basin bounded LM can't on `gene_sets` (LM 5.1e-8, bounded LM 5.1e-5,
+///    and CMA-ES + bounded LM polish doesn't rediscover LM's basin). Racing both
 ///    is what makes the path strictly non-regressing on each spec
 ///    individually. If the better baseline drops at or below the threshold,
 ///    return it — CMA-ES adds no value below threshold and would only burn
@@ -573,7 +583,7 @@ type FinalSolver = fn(
 /// 3. Otherwise both local solvers are stuck in a wrong basin (issue92,
 ///    eulerape, …). Run bounded CMA-ES, then refine its best candidate with
 ///    `polish` — unbounded [`run_lm_or_lbfgs`] for `CmaEsLm`, bounded
-///    [`run_trf`] for `CmaEsTrf`. The bounded TRF polish keeps the
+///    [`run_bounded_lm`] for `CmaEsBoundedLm`. The bounded LM polish keeps the
 ///    refinement inside the box CMA-ES explored; the unbounded LM polish
 ///    picks up the analytic Jacobian for free. Return the lowest-loss of
 ///    {baseline, CMA-ES → polish}, so the path is strictly non-regressing
@@ -872,7 +882,7 @@ type EscapeParts<'a, S> = (LmDiagramProblem<'a, S>, Vec<f64>, Vec<f64>, Vec<f64>
 /// per-coordinate `(lower, upper)` box, and the initial-std vector (for the
 /// CMA variant's `with_stds`). Returns `None` when the loss has no
 /// least-squares form (non-`SumSquared`) — in which case the caller falls back
-/// to plain [`run_bounded_cmaes`], mirroring how [`run_trf`] degrades.
+/// to plain [`run_bounded_cmaes`], mirroring how [`run_bounded_lm`] degrades.
 ///
 /// The bounds may carry `±∞` entries (the ellipse angle is intentionally
 /// unbounded — see [`optimizer_bounds_for`]). CMA-ES tolerates that; DE must
@@ -1080,7 +1090,7 @@ impl<S: DiagramShape + Copy + 'static> basin::Constraints for BoundedDiagramCost
     }
 }
 
-/// Box-constrained wrapper around [`LmDiagramProblem`] for [`Optimizer::Trf`]
+/// Box-constrained wrapper around [`LmDiagramProblem`] for [`Optimizer::BoundedLevenbergMarquardt`]
 /// and the memetic escapes.
 ///
 /// Delegates `Residual`/`Jacobian` to the inner least-squares problem and declares
@@ -1139,7 +1149,7 @@ impl<S: DiagramShape + Copy + 'static> basin::Constraints for BoundedLmDiagramPr
 ///   adaptive boundary penalty and `with_stds` preconditioning assume this
 ///   scale, and a tight box keeps global sampling focused.
 /// - [`LOCAL`](Self::LOCAL) — a wider safety-cage for the bounded *local*
-///   solve ([`Optimizer::Trf`] and the `CmaEsTrf` polish). A local refinement
+///   solve ([`Optimizer::BoundedLevenbergMarquardt`] and the `CmaEsBoundedLm` polish). A local refinement
 ///   only needs bounds to catch radius/position blow-up, not to constrain a
 ///   legitimate optimum.
 #[derive(Clone, Copy)]
@@ -1159,7 +1169,7 @@ impl BoundsEnvelope {
         radius_floor_frac: 1e-6,
         radius_ceil_mult: 5.0,
     };
-    /// Wide safety-cage for bounded local refinement (TRF): loose enough not
+    /// Wide safety-cage for bounded local refinement (bounded LM): loose enough not
     /// to clip a legitimate optimum, tight enough to catch blow-up.
     const LOCAL: Self = Self {
         pos_margin_scale: 8.0,
@@ -1172,7 +1182,7 @@ impl BoundsEnvelope {
 /// solvers from an MDS-initialised parameter vector, under the given
 /// [`BoundsEnvelope`]. Consumed by the `CmaEsLm` global escape
 /// ([`run_bounded_cmaes`], `BoundsEnvelope::CMAES`, uses all three) and by the
-/// bounded local solve ([`run_trf`], `BoundsEnvelope::LOCAL`, uses only
+/// bounded local solve ([`run_bounded_lm`], `BoundsEnvelope::LOCAL`, uses only
 /// lower/upper).
 ///
 /// Layout-dependent on the shape (constants below are the `env` fields):
@@ -1190,7 +1200,7 @@ impl BoundsEnvelope {
 ///   Same x/y bounds; the semi-axis envelope is mapped into log space, so the
 ///   bound width and std are scale-invariant. Angle is unbounded with std
 ///   `π/4` (periodic; hard caps would just force the solver against an
-///   artificial wall — and TRF's Coleman-Li scaling handles the `±∞` coords
+///   artificial wall — and bounded LM's Coleman-Li scaling handles the `±∞` coords
 ///   by reducing to unconstrained there).
 ///
 /// Other `params_per_shape` values fall back to wide unbounded bounds with
@@ -1655,6 +1665,40 @@ mod tests {
     use crate::geometry::primitives::Point;
     use crate::geometry::shapes::Circle;
     use crate::spec::{DiagramSpec, DiagramSpecBuilder};
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_optimizer_names_preserve_fitting_behavior() {
+        use Optimizer::{CmaEsTrf, Trf};
+
+        let spec = DiagramSpecBuilder::new()
+            .set("A", 5.0)
+            .set("B", 3.0)
+            .intersection(&["A", "B"], 1.0)
+            .build()
+            .unwrap()
+            .preprocess()
+            .unwrap();
+        let initial = DVector::from_vec(vec![0.0, 0.0, 1.4, 1.0, 0.5, 1.1]);
+        for (legacy, canonical) in [
+            (Trf, Optimizer::BoundedLevenbergMarquardt),
+            (CmaEsTrf, Optimizer::CmaEsBoundedLm),
+        ] {
+            let fit = |optimizer| {
+                optimize_from_initial::<Circle>(
+                    &spec,
+                    &initial,
+                    &FinalLayoutConfig {
+                        optimizer,
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+            };
+            assert_eq!(fit(legacy), fit(canonical));
+        }
+        assert_eq!(Optimizer::default(), Optimizer::CmaEsBoundedLm);
+    }
 
     /// Build the flat optimizer-parameter vector for a list of rectangles.
     fn rect_params(rects: &[crate::geometry::shapes::Rectangle]) -> Vec<f64> {

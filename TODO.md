@@ -1,5 +1,11 @@
 # TODO
 
+## Eunoia 2.0
+
+- [ ] Remove the deprecated TRF optimizer aliases from Rust and WASM (`Trf`,
+  `CmaEsTrf`), TypeScript (`trf`, `cmaEsTrf`), and the C ABI (`trf`,
+  `cmaes_trf`). Update the compatibility tests and documentation accordingly.
+
 ## Surfaced fitter issues (regressions to investigate)
 
 The corpus / proptest surfaced these. None were introduced by the harness;
@@ -32,13 +38,13 @@ they're pre-existing behaviour the harness now exposes.
   seeds 8/5/3/7, but `2.9e-2`, `1.6e-1`, `6.1e-1`, `9.8e-1` (poor → failed)
   on seeds 1/4/6/2. The CMA-ES global escape provides **no** benefit here:
   every restart's plain-LM loss is above `cmaes_fallback_threshold` (1e-3)
-  so the escape fires on all of them, yet `Optimizer::CmaEsTrf`,
+  so the escape fires on all of them, yet `Optimizer::CmaEsBoundedLm`,
   `Optimizer::CmaEsLm`, and bare `Optimizer::LevenbergMarquardt` produce
   *bit-identical* per-seed stress --- i.e. the escape + polish never beats
   the plain-LM result, and the lower loss kept is always LM's. So quality is
   determined entirely by the MDS init + local LM convergence, and the escape
-  stage is pure wasted compute for this spec. Not caused by the LM→TRF
-  default switch in 8eda26d (CmaEsLm ≡ CmaEsTrf here) nor by the sparse-mask
+  stage is pure wasted compute for this spec. Not caused by the LM→bounded LM
+  default switch in 8eda26d (CmaEsLm ≡ CmaEsBoundedLm here) nor by the sparse-mask
   perf fix (mathematically identical; circle fits are bit-identical
   before/after). Most likely root cause is the circle-equivalent ellipse MDS
   warm-start (see "Ellipse MDS still warm-starts as a circle" below): 17
@@ -208,6 +214,6 @@ analytic gradient and the capability-driven default pool routes it to
   above shows it underperforming the gradient shapes, the principled upgrade
   is a rounded-rectangle / superellipse family: rounding the corners makes
   the overlap area C¹ again, which restores a usable analytic gradient and
-  re-enables the LM/TRF path (flip `SUPPORTS_ANALYTIC_GRADIENT` to `true`).
+  re-enables the LM/bounded LM path (flip `SUPPORTS_ANALYTIC_GRADIENT` to `true`).
   This is the "smooth the shape" option from the original design discussion;
   revisit only if derivative-free quality proves insufficient.

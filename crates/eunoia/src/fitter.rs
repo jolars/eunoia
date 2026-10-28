@@ -138,7 +138,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
             loss_type: LossType::SumSquared,
             // Piecewise-smooth area functions require derivative-free solvers.
             optimizer_pool: if S::SUPPORTS_ANALYTIC_GRADIENT {
-                vec![Optimizer::CmaEsTrf]
+                vec![Optimizer::CmaEsBoundedLm]
             } else {
                 vec![Optimizer::NelderMead, Optimizer::CmaEs]
             },
@@ -256,8 +256,8 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// Set the cost-change convergence tolerance for the final-stage
     /// optimizer.
     ///
-    /// - **Levenberg-Marquardt**, including the LM stages of
-    ///   [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsTrf`]: sets the relative
+    /// - **Levenberg-Marquardt**, including the unbounded LM stages of
+    ///   [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsBoundedLm`]: sets the relative
     ///   model-reduction tolerance (`ftol`). The parameter-change (`xtol`)
     ///   and gradient-orthogonality (`gtol`) tolerances keep their own
     ///   defaults of `1e-6` and `1e-8`, respectively. Zero disables the cost
@@ -266,7 +266,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
     /// - **L-BFGS**: sets both the absolute gradient-norm and absolute
     ///   cost-change tolerances.
     /// - **MADS**: sets the minimum poll size, clamped to `[1e-12, 0.5]`.
-    /// - **TRF**, **CMA-ES**, and **Nelder-Mead**: this setting has no effect.
+    /// - **Bounded LM**, **CMA-ES**, and **Nelder-Mead**: this setting has no effect.
     ///
     /// All tolerances must be finite and nonnegative. [`fit`](Self::fit),
     /// [`fit_initial_only`](Self::fit_initial_only), and
@@ -301,10 +301,10 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
-    /// Override the LM relative attempted-step tolerance.
+    /// Override the unbounded LM relative attempted-step tolerance.
     ///
-    /// Applies to [`Optimizer::LevenbergMarquardt`] and the LM stages of
-    /// [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsTrf`]. The default is
+    /// Applies to [`Optimizer::LevenbergMarquardt`] and the unbounded LM stages of
+    /// [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsBoundedLm`]. The default is
     /// `1e-6`, independent of [`tolerance`]. LM stops when the unscaled
     /// optimizer step satisfies `‖Δp‖ ≤ xtol·‖p‖`. Zero disables this test.
     ///
@@ -314,10 +314,10 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
-    /// Override the LM relative model-reduction tolerance.
+    /// Override the unbounded LM relative model-reduction tolerance.
     ///
-    /// Applies to [`Optimizer::LevenbergMarquardt`] and the LM stages of
-    /// [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsTrf`]. Defaults to
+    /// Applies to [`Optimizer::LevenbergMarquardt`] and the unbounded LM stages of
+    /// [`Optimizer::CmaEsLm`] and [`Optimizer::CmaEsBoundedLm`]. Defaults to
     /// [`tolerance`]. LM stops when both the actual and predicted cost
     /// reductions are small relative to the current cost and their gain
     /// ratio is at most two. Zero disables this test.
@@ -328,14 +328,16 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         self
     }
 
-    /// Override the LM gradient-orthogonality or TRF scaled-gradient tolerance.
+    /// Override gradient-orthogonality for unbounded LM or the scaled-gradient
+    /// tolerance for bounded LM.
     ///
-    /// Defaults to `1e-8`, independent of [`tolerance`]. In final-layout LM
+    /// Defaults to `1e-8`, independent of [`tolerance`]. In final-layout unbounded LM
     /// solves, this bounds the absolute cosine between the residual and each
     /// Jacobian column: `max_j |(Jᵀr)_j| / (‖J_j‖ · ‖r‖) ≤ gtol`.
     /// It is invariant to residual scaling.
     ///
-    /// In [`Optimizer::Trf`] and the TRF stages of [`Optimizer::CmaEsTrf`],
+    /// In [`Optimizer::BoundedLevenbergMarquardt`] and the bounded LM stages of
+    /// [`Optimizer::CmaEsBoundedLm`],
     /// the same value bounds the infinity norm of the Coleman-Li scaled
     /// gradient instead. Zero disables either test.
     ///
@@ -847,7 +849,7 @@ impl<'a, S: DiagramShape + Copy + 'static> Fitter<'a, S> {
         // shape with n_sets ≤ SMALL_SMOOTH_MAX_SETS, the Venn warm-start already
         // lands restart 0 in the correct basin, so the default 10-restart pool
         // buys nothing — trim the restart count (unless the caller pinned it).
-        // The default `CmaEsTrf` optimizer is *kept* on purpose: its CMA-ES
+        // The default `CmaEsBoundedLm` optimizer is *kept* on purpose: its CMA-ES
         // escape is self-gating (zero cost when LM lands ≤ threshold) and still
         // rescues the occasional wrong-basin small fit — e.g. an unequal-area
         // 2-set ellipse whose warm-start otherwise refines into a disjoint
@@ -2759,12 +2761,12 @@ fn test_cmaes_lm_escapes_issue92_dropped_pair() {
     );
 }
 
-/// `Optimizer::Trf` (box-constrained LM / trust-region-reflective) smoke test.
-/// A two-circle spec is exactly representable, so TRF must drive the loss to
+/// `Optimizer::BoundedLevenbergMarquardt` (box-constrained LM) smoke test.
+/// A two-circle spec is exactly representable, so bounded LM must drive the loss to
 /// ~0 — exercising the bounds construction, the solver wiring, the `½‖r‖²→‖r‖²`
 /// cost doubling, and that an interior MDS seed stays feasible.
 #[test]
-fn test_trf_fits_representable_two_set() {
+fn test_bounded_lm_fits_representable_two_set() {
     use crate::fitter::{Fitter, Optimizer};
     use crate::geometry::shapes::Circle;
     use crate::spec::{DiagramSpecBuilder, InputType};
@@ -2778,25 +2780,24 @@ fn test_trf_fits_representable_two_set() {
         .unwrap();
 
     let layout = Fitter::<Circle>::new(&spec)
-        .optimizer(Optimizer::Trf)
+        .optimizer(Optimizer::BoundedLevenbergMarquardt)
         .seed(1)
         .fit()
         .unwrap();
     assert!(
         layout.loss() < 1e-6,
-        "Trf loss = {:e} on an exactly-representable 2-set (expected < 1e-6)",
+        "BoundedLevenbergMarquardt loss = {:e} on an exactly-representable 2-set (expected < 1e-6)",
         layout.loss()
     );
 }
 
-/// On an easy circle spec the per-shape box never binds, so `Optimizer::Trf`
-/// (Coleman-Li scaling → identity when no bound is active) reduces to plain
-/// `LevenbergMarquardt` and must reach the same local minimum. Comparing the
-/// two reported losses guards the loss convention: `Trf::state.cost` is
-/// `½‖r‖²` while the configured loss is `‖r‖²`, so the dispatch doubles it —
-/// a missing `×2` would surface here as ~half the LM loss.
+/// On an easy circle spec the bounds should not prevent bounded LM from
+/// reaching a similar loss to unbounded LM. Comparing the two reported losses
+/// also guards the loss convention: both solvers report `½‖r‖²` while the
+/// configured loss is `‖r‖²`, so the dispatch doubles it. A missing `×2` would
+/// surface here as ~half the LM loss.
 #[test]
-fn test_trf_matches_lm_when_bounds_inactive() {
+fn test_bounded_lm_matches_lm_when_bounds_inactive() {
     use crate::fitter::{Fitter, Optimizer};
     use crate::geometry::shapes::Circle;
     use crate::spec::{DiagramSpecBuilder, InputType};
@@ -2820,39 +2821,39 @@ fn test_trf_matches_lm_when_bounds_inactive() {
         .seed(1)
         .fit()
         .unwrap();
-    let trf = Fitter::<Circle>::new(&spec)
-        .optimizer(Optimizer::Trf)
+    let bounded_lm = Fitter::<Circle>::new(&spec)
+        .optimizer(Optimizer::BoundedLevenbergMarquardt)
         .seed(1)
         .fit()
         .unwrap();
     assert!(
-        lm.loss().is_finite() && trf.loss().is_finite(),
-        "non-finite loss: lm={:e} trf={:e}",
+        lm.loss().is_finite() && bounded_lm.loss().is_finite(),
+        "non-finite loss: lm={:e} bounded_lm={:e}",
         lm.loss(),
-        trf.loss()
+        bounded_lm.loss()
     );
-    let rel = (trf.loss() - lm.loss()).abs() / lm.loss().max(1e-12);
+    let rel = (bounded_lm.loss() - lm.loss()).abs() / lm.loss().max(1e-12);
     assert!(
         rel < 0.25,
-        "Trf loss {:e} vs LM loss {:e} differ by {:.1}% — bounds shouldn't \
+        "BoundedLevenbergMarquardt loss {:e} vs LM loss {:e} differ by {:.1}% — bounds shouldn't \
          bind on this easy spec, so a large gap points at the loss convention \
          or the bounded step",
-        trf.loss(),
+        bounded_lm.loss(),
         lm.loss(),
         rel * 100.0
     );
 }
 
-/// `Optimizer::CmaEsTrf` (CMA-ES global escape + bounded TRF polish) must
+/// `Optimizer::CmaEsBoundedLm` (CMA-ES global escape + bounded LM polish) must
 /// escape the same wrong-basin trap `CmaEsLm` does on
-/// `issue92_3_set_dropped_pair`. Plain LM (and standalone `Trf`) get stuck
+/// `issue92_3_set_dropped_pair`. Plain LM (and standalone `BoundedLevenbergMarquardt`) get stuck
 /// here at ~1.3e-4 because the small `A&B` pair can't be moved locally; the
-/// CMA-ES stage is what escapes, and the bounded TRF polish must not undo
-/// that. If this regresses, the shared global-escape path or the TRF polish
+/// CMA-ES stage is what escapes, and the bounded LM polish must not undo
+/// that. If this regresses, the shared global-escape path or the bounded LM polish
 /// has broken.
 #[test]
 #[ignore = "slow regression coverage"]
-fn test_cmaes_trf_escapes_issue92_dropped_pair() {
+fn test_cmaes_bounded_lm_escapes_issue92_dropped_pair() {
     use crate::fitter::{Fitter, Optimizer};
     use crate::geometry::shapes::Ellipse;
     use crate::spec::{DiagramSpecBuilder, InputType};
@@ -2870,20 +2871,20 @@ fn test_cmaes_trf_escapes_issue92_dropped_pair() {
         .unwrap();
 
     let layout = Fitter::<Ellipse>::new(&spec)
-        .optimizer(Optimizer::CmaEsTrf)
+        .optimizer(Optimizer::CmaEsBoundedLm)
         .seed(1)
         .fit()
         .unwrap();
     assert!(
         layout.loss() < 1e-6,
-        "CmaEsTrf loss = {:e} (expected < 1e-6 — global escape or TRF polish regressed)",
+        "CmaEsBoundedLm loss = {:e} (expected < 1e-6 — global escape or bounded LM polish regressed)",
         layout.loss()
     );
 }
 
 /// Smoke coverage for the memetic escape solvers (`EscapeSolver::*Inject`):
 /// the same wrong-basin `issue92_3_set_dropped_pair` trap the plain
-/// `BoundedCmaEs` escape clears (see `test_cmaes_trf_escapes_issue92_dropped_pair`)
+/// `BoundedCmaEs` escape clears (see `test_cmaes_bounded_lm_escapes_issue92_dropped_pair`)
 /// must also be cleared when the escape core is swapped to `BoundedCmaInject`
 /// or `DeInject`. Validates that the memetic-LM escape paths actually run,
 /// stay numerically sound, and find the same basin. Internal benchmark knob,
@@ -2910,7 +2911,7 @@ fn test_memetic_escapes_issue92_dropped_pair() {
 
     for escape in [EscapeSolver::BoundedCmaInject, EscapeSolver::DeInject] {
         let layout = Fitter::<Ellipse>::new(&spec)
-            .optimizer(Optimizer::CmaEsTrf)
+            .optimizer(Optimizer::CmaEsBoundedLm)
             .escape_solver(escape)
             .seed(1)
             .fit()
