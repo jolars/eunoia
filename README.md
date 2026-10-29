@@ -10,8 +10,7 @@ version](https://badge.fury.io/py/eunoia.svg?icon=si%3Apython)](https://badge.fu
 [![CRAN
 Badge](http://www.r-pkg.org/badges/version/eulerr)](https://cran.r-project.org/package=eulerr)
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
-[![Software
-DOI](https://img.shields.io/badge/Software_DOI-10.5281%2Fzenodo.20665805-blue)](https://doi.org/10.5281/zenodo.20665805)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20665805-blue)](https://doi.org/10.5281/zenodo.20665805)
 
 Eunoia is a Rust library for area-proportional **Euler and Venn diagrams**. Give
 it a set of sizes and intersections and it fits a layout of shapes whose areas
