@@ -9,8 +9,9 @@ version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://b
 version](https://badge.fury.io/py/eunoia.svg?icon=si%3Apython)](https://badge.fury.io/py/eunoia)
 [![CRAN
 Badge](http://www.r-pkg.org/badges/version/eulerr)](https://cran.r-project.org/package=eulerr)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20665805.svg)](https://doi.org/10.5281/zenodo.20665805)
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
+[![Software
+DOI](https://img.shields.io/badge/Software_DOI-10.5281%2Fzenodo.20665805-blue)](https://doi.org/10.5281/zenodo.20665805)
 
 Eunoia is a Rust library for area-proportional **Euler and Venn diagrams**. Give
 it a set of sizes and intersections and it fits a layout of shapes whose areas
@@ -163,6 +164,20 @@ Full runnable examples (a Quarto document and a standalone HTML page) are in
 
 - Narrative docs: [eunoia.bz/docs/](https://eunoia.bz/docs/)
 - Rust API reference: [docs.rs/eunoia](https://docs.rs/eunoia/)
+
+## Citation
+
+If you use Eunoia in your research, please cite [A Case Study in Fitting
+Area-Proportional Euler Diagrams with Ellipses Using
+eulerr](https://ceur-ws.org/Vol-2116/paper7.pdf).
+
+For reproducibility, also cite the software release you used. Select that
+release in the [Zenodo archive](https://doi.org/10.5281/zenodo.20665805) and
+export its citation. The concept DOI `10.5281/zenodo.20665805` identifies Eunoia
+across all releases.
+
+Machine-readable software metadata and the preferred paper citation are
+available in [CITATION.cff](CITATION.cff).
 
 ## License
 
