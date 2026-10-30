@@ -303,9 +303,9 @@ generative AI tools including Claude Code Opus (versions 4.5, 4.8, and 5.0),
 Claude Code Fable 5, GitHub Copilot GPT 5.1 and 5.4, and Codex GPT 5.6-sol and
 GPT 6.1-sol. NL used Claude Code Opus 5.5. The authors used these tools to help
 write code, parts of the documentation, and unit tests and to review and edit
-the manuscript. NML performed user testing and detected bugs independently of AI.
-JL and NML reviewed, modified, and validated all AI-assisted content and made the
-final design and implementation decisions.
+the manuscript. NML performed user testing and detected bugs independently of
+AI. JL and NML reviewed, modified, and validated all AI-assisted content and
+made the final design and implementation decisions.
 
 # Acknowledgements
 
