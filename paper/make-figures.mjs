@@ -3,6 +3,8 @@
 // Usage: node paper/make-figures.mjs   (from the repository root, after
 // `task build-wasm`). Writes SVGs to paper/images/ and converts them to PDF
 // with inkscape (text converted to paths).
+// Pass figure names, such as euler_4set, to regenerate only those files.
+// The annotation figure is generated separately by paper/make-features.py.
 //
 // Sizing model. `toSvg` emits an SVG with only a `viewBox` (in layout units)
 // and no physical width/height, and each fitted diagram lives at a different
@@ -23,6 +25,7 @@ const { toSvg } = await import("../npm/svg.js");
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), "images");
 mkdirSync(outDir, { recursive: true });
+const requestedFigures = new Set(process.argv.slice(2));
 
 // Physical widths (mm): a standalone plot, one cell of the shape grid, and the
 // label height. Label height is fixed and independent of the plot width, so the
@@ -102,11 +105,11 @@ function serialize(layout, plotWmm, extra = {}) {
   return toSvg(layout, { ...opts, labelSize });
 }
 
-// A standalone plot: PLOT_MM wide, physical size baked in.
-function plotFigure(layout, extra = {}) {
-  const svg = serialize(layout, PLOT_MM, extra);
+// A standalone plot with physical size baked in.
+function plotFigure(layout, extra = {}, widthMm = PLOT_MM) {
+  const svg = serialize(layout, widthMm, extra);
   const { w, h } = viewBox(svg);
-  return withSize(svg, PLOT_MM, (PLOT_MM * h) / w);
+  return withSize(svg, widthMm, (widthMm * h) / w);
 }
 
 // Nest a cell SVG at (x, y) sized `w` x `h` in grid units, preserving its root
@@ -158,6 +161,7 @@ function grid(cells, cols, { cell = 100, band = 12 } = {}) {
 }
 
 function write(name, svg) {
+  if (requestedFigures.size > 0 && !requestedFigures.has(name)) return;
   const svgPath = join(outDir, `${name}.svg`);
   writeFileSync(svgPath, svg);
   execFileSync("inkscape", [
@@ -174,11 +178,15 @@ function write(name, svg) {
 const ellipseFit = fit(geneSets.sets, "ellipse");
 write(
   "euler_4set",
-  plotFigure(ellipseFit, {
-    setOrder: geneSets.order,
-    showCounts: true,
-    formatCount: (v) => String(Math.round(v)),
-  }),
+  plotFigure(
+    ellipseFit,
+    {
+      setOrder: geneSets.order,
+      showCounts: true,
+      formatCount: (v) => String(Math.round(v)),
+    },
+    100,
+  ),
 );
 console.log(
   `  gene_sets ellipse: diagError = ${ellipseFit.metrics.diagError.toExponential(2)}`,

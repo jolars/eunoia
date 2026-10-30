@@ -28,7 +28,7 @@ affiliations:
   - name: Program in Neuroscience and Behavioral Disorders, Duke-NUS Medical School, Singapore
     index: 2
     ror: 02j1m6098
-date: 11 July 2026
+date: 30 October 2026
 bibliography: paper.bib
 ---
 
@@ -39,48 +39,47 @@ area-proportional Euler and Venn diagrams. Given the sizes of a collection of
 sets and their intersections, it fits a diagram of circles, ellipses, squares,
 or rectangles whose overlapping areas match those quantities as closely as
 possible. When an exact representation does not exist, Eunoia returns the fitted
-layout plus residuals and goodness-of-fit statistics that indicate whether it
-can be trusted. The core is a Rust crate, and the same engine powers an [R
-package (eulerr)](https://cran.r-project.org/package=eulerr), a [Python
+layout with residuals and goodness-of-fit statistics that help users assess how
+well it represents the data. The Rust crate also powers an [R package
+(eulerr)](https://cran.r-project.org/package=eulerr), a [Python
 package](https://pypi.org/project/eunoia/), a [Julia
 package](https://github.com/jolars/Eunoia.jl), a [JavaScript
 package](https://www.npmjs.com/package/@jolars/eunoia) compiled to WebAssembly,
-a C API for further bindings, and a [web app](https://eunoia.bz/app) (that uses
-the JavaScript package). Because every binding calls the same implementation,
-all of them produce the same layout given the same specification, options, and
-seed.
+a C API for further bindings, and a [web app](https://eunoia.bz/app) built on
+the JavaScript package. All bindings call the same implementation and produce
+the same layout given the same specification, options, and seed.
 
 # Statement of Need
 
 Euler diagrams\ [@euler1802] depict relationships between sets, and
 area-proportional Euler diagrams do so quantitatively: the area of each region
-is drawn in proportion to the size of the corresponding set intersection. They
-are common in the life sciences, for instance, where they are used to compare
+is proportional to the size of the corresponding set intersection. They are
+common in the life sciences, for instance, where researchers use them to compare
 gene and protein lists across conditions or studies. For most specifications
 involving three or more sets, however, no exact area-proportional diagram
 exists\ [@wilkinson2012], and the diagram must instead be constructed
-numerically\ [@chow2007]. Producing one is therefore an optimization problem
-where we need to choose positions and parameters of the shapes so as to minimize
-the discrepancy between the fitted and requested areas of intersection.
+numerically\ [@chow2007]. Fitting a diagram is therefore an optimization
+problem: choosing the shapes' positions and parameters to minimize the
+discrepancy between fitted and requested intersection areas.
 
 Existing alternatives offer different compromises. venneuler introduced
-multi-dimensional scaling\ (MDS) initialization followed by overlap-aware
-refinement\ [@wilkinson2012]; venn.js improved that initialization and added
+multidimensional scaling\ (MDS) initialization followed by overlap-aware
+refinement\ [@wilkinson2012]. venn.js improved that initialization and added
 exact area calculations\ [@frederickson2015]. eulerAPE introduced ellipses for
 three-set diagrams\ [@micallef2014], and eulerr generalized them to any number
 of sets\ [@larsson2018].
 
 Eunoia extends eulerr by
 
-- replacing its fitting algorithm with a multi-stage local-and-global method,
-- supporting squares and rectangles (with or without rotation), and
+- replacing its fitting algorithm with a multistage method that combines local
+  and global optimization,
+- supporting squares and rectangles, and
 - providing analytical gradients.
 
-Eunoia's target audience comprises researchers and others who need trustworthy
-proportional set visualizations, irrespective of whether they use R, Python,
-Julia, JavaScript, Rust, or C, and developers who want to embed a diagram fitter
-and visualizer in their own tools, for instance in interactive visualizations on
-the web.
+Eunoia serves researchers and others who need trustworthy proportional set
+visualizations in R, Python, Julia, JavaScript, Rust, or C. Developers can also
+embed its diagram fitter and visualizer in their own tools, including
+interactive web visualizations.
 
 # State of the Field
 
@@ -89,30 +88,30 @@ diagram fitters: venneuler\ [@wilkinson2012], eulerAPE\ [@micallef2014],
 venn.js\ [@frederickson2015], matplotlib-venn\ [@tretyakov2024],
 nVenn\ [@perezsilva2018], Edeap\ [@wybrow2021], and eulerr\ [@larsson2018].
 
-  | Package           | Algorithm                | Shapes                                 | Sets | Language                                  |
-  | ----------------- | ------------------------ | -------------------------------------- | :--: | ----------------------------------------- |
-  | `venneuler`       | Stress minimization      | Circles                                | Any  | `Java`, `R`                               |
-  | `eulerAPE`        | Hill climbing            | Ellipses                               |  3   | `Java`                                    |
-  | `venn.js`         | MDS + final layout       | Circles                                | Any  | `JavaScript`                              |
-  | `matplotlib-venn` | Analytic placement       | Circles                                |  3   | `Python`                                  |
-  | `nVenn`           | Physics-based simulation | Polygons                               | Any  | `C++`, `R`                                |
-  | `Edeap`           | Hill climbing            | Ellipses                               | Any  | `JavaScript`                              |
-  | **`Eunoia`**      | MDS + final layout       | Circles, ellipses, squares, rectangles | Any  | `Rust`, `R`, `Julia`, `Python`, `C`, `JS` |
+  | Package                 | Algorithm                | Shapes                                 | Sets  | Language                                  |
+  | --------------------    | ------------------------ | ---------------------                  | :---: | -------------------                       |
+  | `venneuler`             | Stress minimization      | Circles                                |  Any  | `Java`, `R`                               |
+  | `eulerAPE`              | Hill climbing            | Ellipses                               |   3   | `Java`                                    |
+  | `venn.js`               | MDS + final layout       | Circles                                |  Any  | `JavaScript`                              |
+  | `matplotlib-venn`       | Analytic placement       | Circles                                |   3   | `Python`                                  |
+  | `nVenn`                 | Physics-based simulation | Polygons                               |  Any  | `C++`, `R`                                |
+  | `Edeap`                 | Hill climbing            | Ellipses                               |  Any  | `JavaScript`                              |
+  | **`Eunoia`**            | MDS + final layout       | Circles, ellipses, squares, rectangles |  Any  | `Rust`, `R`, `Julia`, `Python`, `C`, `JS` |
 
   : Related software for area-proportional Euler and Venn diagrams: fitting
     algorithm, supported shapes, maximum number of sets, and implementation
     language. \label{tab:packages}
 
-Eunoia is a separate library rather than another host-specific eulerr backend
-because eulerr's C++ implementation was coupled to R and could not serve
-WebAssembly and the other bindings directly. Centralizing fitting, diagnostics,
-and geometry in an independent Rust crate keeps those interfaces consistent and
-avoids duplication of effort.
+Eunoia is a separate library because eulerr's C++ implementation was coupled to
+R and could not directly support WebAssembly and the other bindings.
+Centralizing fitting, diagnostics, and geometry in an independent Rust crate
+keeps the interfaces consistent and avoids duplicating this work across
+bindings.
 
 # Example
 
-A diagram is specified by naming the sets and their intersections and giving the
-size of each region. Below, we give an example in Rust.
+A diagram specification names the sets and their intersections and gives the
+size of each region. For example, in Rust:
 
 ```rust
 use eunoia::geometry::shapes::Ellipse;
@@ -134,16 +133,16 @@ let spec = DiagramSpecBuilder::new()
 let layout = Fitter::<Ellipse>::new(&spec).seed(1).fit().unwrap();
 ```
 
-The four sets here---SE, Treat, Anti-CCP, and DAS28---are clinical variables
-from rheumatoid-arthritis research, taken from @junta2009. The fitted layout is
-shown in \autoref{fig:ellipse}. Eunoia reports how well it succeeded: here the
-diagError is $9 \times 10^{-5}$, which means that the diagram reproduces the
-data essentially exactly. The figure also shows the automatic label placement,
-which positions set labels and region quantities at poles of inaccessibility of
-the region polygons and moves labels that do not fit outside the diagram.
+The four sets---SE, Treat, Anti-CCP, and DAS28---correspond to clinical
+variables in the rheumatoid arthritis data from @junta2009. The fitted layout is
+shown in \autoref{fig:ellipse}. Its diagError of $10^{-4}$ indicates that the
+diagram reproduces the data essentially exactly. The figure also shows Eunoia's
+automatic label placement: set labels and region quantities are positioned at
+poles of inaccessibility of the region polygons, with labels placed outside the
+diagram when they do not fit inside their regions.
 
 ![A four-set Euler diagram fitted with ellipses, with region quantities shown.
-Eunoia fits it to a diagError of $9 \times 10^{-5}$, an essentially exact
+Eunoia fits it to a diagError of $10^{-4}$, an essentially exact
 diagram.\label{fig:ellipse}](images/euler_4set.pdf)
 
 The bindings mirror this interface; the equivalent call in Python is:
@@ -176,10 +175,9 @@ ellipses.\label{fig:venn}](images/venn5.pdf)
 
 # Software Design
 
-The library follows a trait-based design, where shapes are provided at compile
-time. Circles, ellipses, squares, and axis-aligned and rotated rectangles are
-all implemented this way, and a given specification can be fitted with each of
-them. \autoref{fig:shapes} illustrates the four axis-aligned families.
+The library uses a trait-based design, with shapes selected at compile time. A
+given specification can be fitted with circles, ellipses, squares, or
+rectangles, as illustrated in \autoref{fig:shapes}.
 
 ![A three-set specification fitted with circles, ellipses, squares, and
 rectangles. Not every shape family can represent the input exactly: the
@@ -188,19 +186,18 @@ and $4.5 \times 10^{-2}$ for rectangles, compared to $2.3 \times 10^{-14}$ for
 ellipses.\label{fig:shapes}](images/shape_families.pdf)
 
 Fitting proceeds in two phases, roughly following the approach of
-venneuler\ [@wilkinson2012], venn.js\ [@frederickson2015] and the original
-eulerr package\ [@larsson2018]. The first phase computes an initial layout by
-multidimensional scaling: shapes of fixed size are placed so that their pairwise
-distances approximate the distances required by the pairwise intersections,
-using the relaxed loss suggested by @frederickson2015 for disjoint and contained
-set pairs. The second phase refines all shape parameters to minimize a loss over
-the differences between the fitted and requested region areas^[the default loss
-is a normalized sum of squared errors]. Region areas for every shape are
-computed analytically---ellipse intersections through a projective-conic
-construction\ [@richtergebert2011] and the resulting overlaps from circular and
-elliptical segments in closed form\ [@eberly2016]. For circles, ellipses,
-squares, and axis-aligned rectangles, the smooth losses come with exact
-analytical gradients.
+venneuler\ [@wilkinson2012], venn.js\ [@frederickson2015], and the original
+eulerr package\ [@larsson2018]. The first phase uses multidimensional scaling to
+place shapes of fixed size so that their pairwise distances approximate those
+required by the pairwise intersections. For disjoint and contained set pairs, it
+uses the relaxed loss suggested by @frederickson2015. The second phase refines
+all shape parameters to minimize a loss computed from the differences between
+the fitted and requested region areas^[The default loss is a normalized sum of
+squared errors.]. Eunoia computes region areas analytically for every shape. It
+finds ellipse intersections through a projective-conic
+construction\ [@richtergebert2011] and computes the resulting overlaps from
+circular and elliptical segments in closed form\ [@eberly2016]. For several
+shape families, the smooth losses have exact analytical gradients.
 
 For shapes with analytical gradients, refinement begins with Levenberg-Marquardt
 least squares, with a bounded Levenberg-Marquardt retry if the loss remains
@@ -214,93 +211,86 @@ Non-smooth losses---such as the maximum absolute region error---use
 derivative-free methods (Nelder--Mead or mesh-adaptive direct search) or can be
 replaced by a smooth surrogate.
 
-The fitted layout is returned with its residuals, loss, and the stress (a
-venneuler-style normalized least-squares measure) and diagError (the maximum
-absolute difference between requested and fitted region shares) statistics, so
-that the quality of the diagram can be assessed numerically rather than by eye.
-A plotting module extracts the region polygons through polygon clipping and
-computes label positions, which is what the R, Python, Julia, and JavaScript
-packages use for rendering. Because the core has no dependency on any host
-language's runtime, it compiles to WebAssembly, and the [web
-app](https://eunoia.bz/app) fits diagrams entirely in the browser without a
-server.
+Eunoia returns the fitted layout with its residuals, loss, and two
+goodness-of-fit statistics: stress, a venneuler-style normalized least-squares
+measure, and diagError, the maximum absolute difference between requested and
+fitted region shares. These diagnostics allow users to assess the diagram's
+quality numerically. A plotting module extracts the region polygons through
+polygon clipping and computes label positions. The R, Python, Julia, and
+JavaScript packages use this output for rendering. The core has no dependency on
+any host language's runtime and compiles to WebAssembly. The [web
+app](https://eunoia.bz/app) therefore fits diagrams entirely in the browser
+without a server.
 
-# Features
+# Annotation and Interactivity
 
 Area-proportional Euler diagrams encode the size of each set intersection as the
-area of a region. Eunoia extends this with three complementary additions. Unit
-glyphs show how many elements a region contains, member labels show which
-elements they are, and interactive output exposes regions that are too small to
-annotate (\autoref{fig:features}).
+area of a region. Eunoia adds three complementary features: unit glyphs show how
+many elements a region contains, member labels identify those elements, and
+interactive output reveals information about regions too small to annotate
+(\autoref{fig:features}).
 
 ![A three-set Euler diagram fitted with ellipses, shown with glyphs (left)
-and member labels (right).\label{fig:features}](images/features.pdf)
+and member labels (right). Callouts identify members in regions too narrow for
+their names.\label{fig:features}](images/features.pdf)
 
 ## Glyphs
 
-Glyphs are equally sized circular marks, one per data unit, packed inside the
-region they belong to, following the eulerGlyphs approach of @micallef2012.
-Glyphs can also be added to Venn diagrams.
+Glyphs are circular marks, one per data unit, packed inside their regions
+following the eulerGlyphs approach of @micallef2012. They can also be added to
+Venn diagrams.
 
-All glyphs in a diagram are the same size, so that counts can be compared across
-regions. By default, Eunoia searches for the largest common size that fits every
-region's count. In Python, a fixed size can be set instead, and a warning is
-given if any glyphs do not fit. In Python and the web app, glyphs are kept clear
-of the diagram's labels where space allows.
+All glyphs in a diagram are the same size, so counts can be compared across
+regions. By default, Eunoia searches for the largest size that fits all the
+glyphs in every region. The placement routines also accept a fixed size and
+report any glyphs that do not fit. Glyphs can be kept clear of the diagram's
+labels where space allows.
 
-The web app and the JavaScript package offer four arrangements, namely a
-hexagonal grid (the default), a rectangular grid, an even scatter, and a random
-scatter. The Python package offers the hexagonal grid and the random scatter.
+The shared placement routines offer four arrangements: a hexagonal grid (the
+default), a rectangular grid, an even, deterministic scatter, and a random
+scatter.
 
 ## Member Labels
 
-Member labels add the elements themselves to the diagram, so that each region
-shows which elements it contains rather than only a set name or a count. In
-Python, member names are available when the input is given as member lists, or
-as array or DataFrame input with identifiers. They are drawn with
-`plot(members=...)` in one of two modes.
+Member labels show the names of the elements in each region. The shared packing
+routine places each name individually inside its region and reduces all font
+sizes by the same factor when space is limited, down to a minimum size. Names
+that still do not fit are reported as unplaced.
 
-List mode *(the default)*
+Python also offers a list mode, the default for `plot(members=...)`, which draws
+each region's names as a single block of text. A block that does not fit inside
+its region is placed outside with a leader line. Member names can come from
+membership lists, arrays with identifiers, or DataFrames with identifiers. Users
+can limit the number of displayed names per region, with a "+N more" line
+indicating any remaining names.
 
-:   Draws each region's names as a single block of text. A block that does not
-    fit inside its region is placed outside it with a leader line. If a maximum
-    number of names per region is set, only that many are shown, followed by a
-    "+N more" line.
-
-Packed mode
-
-:   Places each name individually inside its region. When space is limited, all
-    names are reduced by the same factor, down to a minimum size, and names that
-    still do not fit are left out with a warning.
-
-In the web app, names are typed in for each region and drawn in packed mode. If
-a region's names do not all fit, they are shown as a single block instead, as in
-list mode, so no names are left out. Names are not drawn when a diagram has more
-than 500 in total.
+In the web app, users enter names for each region, and the app draws them in
+packed mode. If a region's names do not all fit, they are shown as a single
+block instead, as in list mode, so no names are left out. The app does not draw
+member labels for diagrams with more than 500 names in total.
 
 ## Interactivity
 
-The Python package provides an interactive plotly backend through
-`fit.plot_plotly()`. It adds a hover tooltip to each region showing the
-intersection label, its sample size, and its members. This is primarily useful
-for dense multi-set diagrams, in which small regions cannot hold any text. The
-JavaScript SVG serializer similarly supports native tooltips and data attributes
-on each region, so that host pages can add their own interaction. The web app
-provides controls for glyph mode, spacing, and styling.
+The Python package provides an interactive Plotly backend through
+`fit.plot_plotly()`. Each region has a hover tooltip showing its intersection
+label, sample size, and members. These tooltips are primarily useful for dense
+multi-set diagrams, in which small regions cannot hold any text. The JavaScript
+SVG serializer similarly supports native tooltips and data attributes on each
+region, so host pages can add their own interaction. The web app provides
+controls for glyph mode, spacing, and styling.
 
 # Research Impact Statement
 
 Eunoia descends from eulerr, which has been distributed on CRAN since 2016 and
 has been cited in over 700 academic publications^[Google Scholar, accessed Aug
-11, 2026], predominantly in the life sciences. Since version\ 8.0, eulerr's C++
-backend has been replaced by Eunoia, which means that all current eulerr users
-are now also using Eunoia. Other packages build on eulerr, and therefore on
-Eunoia, as a dependency, including the Bioconductor genomics packages cola,
-hicVennDiagram, and seqsetvis and the CRAN package RulesTools, which use it to
-draw the area-proportional diagrams in their own analyses. Six more
-packages---DOTSeq, highdir, IlluminaHumanMethylationEPICv2manifest, ISAnalytics,
-overviewR, and pcutils---use eulerr optionally and therefore can also invoke
-Eunoia.
+11, 2026], predominantly in the life sciences. Since version\ 8.0, eulerr has
+used Eunoia in place of its C++ backend, so all current eulerr users also use
+Eunoia. Other packages depend on eulerr, and therefore on Eunoia, to draw
+area-proportional diagrams in their analyses. These include three Bioconductor
+genomics packages---cola, hicVennDiagram, and seqsetvis---and the CRAN package
+RulesTools. Six more packages---DOTSeq, highdir,
+IlluminaHumanMethylationEPICv2manifest, ISAnalytics, overviewR, and
+pcutils---use eulerr optionally and can therefore also invoke Eunoia.
 
 The Python, Julia, and JavaScript packages and the web app extend the same
 underlying library to communities that previously had no access to ellipse-based
@@ -308,15 +298,14 @@ area-proportional diagrams.
 
 # AI Usage Disclosure
 
-The predecessor eulerr, which Eunoia builds on, was written entirely by JL,
-without the use of AI. For Eunoia, JL used generative AI tools including Claude
-Code Opus (versions 4.5, 4.8, and 5.0), Claude Code Fable 5, GitHub Copilot GPT
-5.1 and 5.4, and Codex GPT 5.6-sol and GPT 6.1-sol, and NL used Claude Code Opus
-5.5. These tools were used to assist with writing code, parts of the
-documentation, unit tests, and reviewing and editing the manuscript. NL
-performed user testing and bug detection independently of AI. JL and NL
-reviewed, modified, and validated all AI-assisted content and made the final
-design and implementation decisions.
+JL wrote Eunoia's predecessor, eulerr, entirely without AI. For Eunoia, JL used
+generative AI tools including Claude Code Opus (versions 4.5, 4.8, and 5.0),
+Claude Code Fable 5, GitHub Copilot GPT 5.1 and 5.4, and Codex GPT 5.6-sol and
+GPT 6.1-sol. NL used Claude Code Opus 5.5. The authors used these tools to help
+write code, parts of the documentation, and unit tests and to review and edit
+the manuscript. NML performed user testing and detected bugs independently of AI.
+JL and NML reviewed, modified, and validated all AI-assisted content and made the
+final design and implementation decisions.
 
 # Acknowledgements
 
