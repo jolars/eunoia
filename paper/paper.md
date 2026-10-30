@@ -238,13 +238,11 @@ their names.\label{fig:features}](images/features.pdf)
 
 Glyphs are circular marks, one per data unit, packed inside their regions
 following the eulerGlyphs approach of @micallef2012. They can also be added to
-Venn diagrams.
-
-All glyphs in a diagram are the same size, so counts can be compared across
-regions. By default, Eunoia searches for the largest size that fits all the
-glyphs in every region. The placement routines also accept a fixed size and
-report any glyphs that do not fit. Glyphs can be kept clear of the diagram's
-labels where space allows.
+Venn diagrams. All glyphs in a diagram are the same size, so counts can be
+compared across regions. By default, Eunoia searches for the largest size that
+fits all the glyphs in every region. The placement routines also accept a fixed
+size and report any glyphs that do not fit. Glyphs can be kept clear of the
+diagram's labels where space allows.
 
 The shared placement routines offer four arrangements: a hexagonal grid (the
 default), a rectangular grid, an even, deterministic scatter, and a random
