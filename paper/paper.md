@@ -255,18 +255,6 @@ routine places each name individually inside its region and reduces all font
 sizes by the same factor when space is limited, down to a minimum size. Names
 that still do not fit are reported as unplaced.
 
-Python also offers a list mode, the default for `plot(members=...)`, which draws
-each region's names as a single block of text. A block that does not fit inside
-its region is placed outside with a leader line. Member names can come from
-membership lists, arrays with identifiers, or DataFrames with identifiers. Users
-can limit the number of displayed names per region, with a "+N more" line
-indicating any remaining names.
-
-In the web app, users enter names for each region, and the app draws them in
-packed mode. If a region's names do not all fit, they are shown as a single
-block instead, as in list mode, so no names are left out. The app does not draw
-member labels for diagrams with more than 500 names in total.
-
 ## Interactivity
 
 The Python package provides an interactive Plotly backend through
