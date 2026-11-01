@@ -89,7 +89,7 @@ venn.js\ [@frederickson2015], matplotlib-venn\ [@tretyakov2024],
 nVenn\ [@perezsilva2018], Edeap\ [@wybrow2021], and eulerr\ [@larsson2018].
 
   | Package                 | Algorithm                | Shapes                                 | Sets  | Language                                  |
-  | --------------------    | ------------------------ | ---------------------                  | :---: | -------------------                       |
+  | ----------------------  | ----------------------   | ---------------------                  | :---: | -------------------                       |
   | `venneuler`             | Stress minimization      | Circles                                |  Any  | `Java`, `R`                               |
   | `eulerAPE`              | Hill climbing            | Ellipses                               |   3   | `Java`                                    |
   | `venn.js`               | MDS + final layout       | Circles                                |  Any  | `JavaScript`                              |
