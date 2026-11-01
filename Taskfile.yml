@@ -233,6 +233,11 @@ tasks:
         -o pdf,preprint
         paper.md
 
+  arxiv:
+    desc: Build and validate the arXiv source bundle and preview PDF
+    cmds:
+      - node paper/make-arxiv.mjs
+
   paper-preview:
     desc: Rebuild the JOSS paper on change and open it in zathura
     watch: true

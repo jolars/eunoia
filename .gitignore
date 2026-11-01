@@ -204,6 +204,8 @@ dist
 /.task/checksum
 /paper/jats
 /paper/paper.pdf
+/paper/arxiv.tar.gz
+/paper/arxiv.pdf
 
 # Pinned documentation sources, snapshots, and generated Python reference pages.
 /.docs-sources/
