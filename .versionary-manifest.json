@@ -1,16 +1,16 @@
 {
   "manifest-version": 1,
-  "baseline-sha": "33340494fe16be3766eb870c5c0449bc02fea06e",
+  "baseline-sha": "ee0b8034a58803598b2482397b8b3aa0f7da16d3",
   "release-targets": [
     {
       "path": ".",
-      "version": "1.10.1",
-      "tag": "v1.10.1"
+      "version": "1.10.2",
+      "tag": "v1.10.2"
     },
     {
       "path": "ts",
-      "version": "1.10.1",
-      "tag": "eunoia-npm-v1.10.1",
+      "version": "1.10.2",
+      "tag": "eunoia-npm-v1.10.2",
       "dependencies": [
         "."
       ]
@@ -19,13 +19,13 @@
   "pending-release-targets": [
     {
       "path": ".",
-      "version": "1.10.1",
-      "tag": "v1.10.1"
+      "version": "1.10.2",
+      "tag": "v1.10.2"
     },
     {
       "path": "ts",
-      "version": "1.10.1",
-      "tag": "eunoia-npm-v1.10.1",
+      "version": "1.10.2",
+      "tag": "eunoia-npm-v1.10.2",
       "dependencies": [
         "."
       ]
