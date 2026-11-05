@@ -205,20 +205,18 @@
     <section class="space-y-3">
       <h2 class="text-xl font-semibold">Citing Eunoia</h2>
       <p class="text-sm text-muted">
-        If you use Eunoia or any of its derived packages (eulerr in R and
-        `@jolars/eunoia` in npm) in academic work, please cite the paper:
+        If you use Eunoia or any of its language bindings in academic work,
+        please cite the paper:
       </p>
       <p
         class="text-sm bg-surface border border-line rounded p-4 leading-relaxed text-ink"
       >
-        Larsson, J., &amp; Gustafsson, P. (2018). A case study in fitting
-        area-proportional Euler diagrams with ellipses using eulerr. In
-        Proceedings of International Workshop on Set Visualization and Reasoning
-        2018.
+        Larsson, J., &amp; Lee, N. M. (2026). Eunoia: Area-proportional Euler
+        and Venn diagrams in Rust, Julia, Python, R, and JavaScript. arXiv.
         <a
-          href="https://ceur-ws.org/Vol-2116/paper7.pdf"
+          href="https://doi.org/10.48550/arXiv.2611.02198"
           class="text-accent hover:underline"
-          >https://ceur-ws.org/Vol-2116/paper7.pdf</a
+          >https://doi.org/10.48550/arXiv.2611.02198</a
         >
       </p>
       <p class="text-sm text-muted">

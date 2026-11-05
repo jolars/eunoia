@@ -5,6 +5,6 @@ export function load() {
   return {
     title: "Citation",
     description:
-      "How to cite Eunoia and eulerr: ready-to-copy BibTeX, BibLaTeX, CSL, APA, Vancouver, and Chicago entries for the area-proportional Euler diagram paper by Larsson and Gustafsson (2018).",
+      "How to cite Eunoia and its language bindings: ready-to-copy BibTeX, BibLaTeX, CSL, APA, Vancouver, and Chicago entries for the Eunoia preprint by Larsson and Lee (2026).",
   };
 }

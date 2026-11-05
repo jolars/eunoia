@@ -14,27 +14,34 @@
       key: "bibtex",
       label: "BibTeX",
       code: true,
-      value: `@inproceedings{larsson2018,
-  author    = {Larsson, Johan and Gustafsson, Peter},
-  title     = {A Case Study in Fitting Area-Proportional {Euler} Diagrams with Ellipses Using eulerr},
-  booktitle = {Proceedings of International Workshop on Set Visualization and Reasoning 2018},
-  year      = {2018},
-  address   = {Edinburgh, UK},
-  url       = {https://ceur-ws.org/Vol-2116/paper7.pdf},
+      value: `@misc{larsson2026f,
+  title = {Eunoia: {Area}-Proportional {Euler} and {Venn} Diagrams in {Rust}, {Julia}, {Python}, {R}, and {JavaScript}},
+  shorttitle = {Eunoia},
+  author = {Larsson, Johan and Lee, Nicole M.},
+  year = 2026,
+  month = nov,
+  number = {arXiv:2611.02198},
+  eprint = {2611.02198},
+  primaryclass = {stat.CO},
+  publisher = {arXiv},
+  doi = {10.48550/arXiv.2611.02198},
+  archiveprefix = {arXiv}
 }`,
     },
     {
       key: "biblatex",
       label: "BibLaTeX",
       code: true,
-      value: `@inproceedings{larsson2018,
-  author       = {Larsson, Johan and Gustafsson, Peter},
-  title        = {A Case Study in Fitting Area-Proportional {Euler} Diagrams with Ellipses Using eulerr},
-  date         = {2018-06-18},
-  eventtitle   = {Set Visualization and Reasoning 2018},
-  venue        = {Edinburgh, UK},
-  booktitle    = {Proceedings of International Workshop on Set Visualization and Reasoning 2018},
-  url          = {https://ceur-ws.org/Vol-2116/paper7.pdf},
+      value: `@online{larsson2026f,
+  title = {Eunoia: {Area}-Proportional {Euler} and {Venn} Diagrams in {Rust}, {Julia}, {Python}, {R}, and {JavaScript}},
+  shorttitle = {Eunoia},
+  author = {Larsson, Johan and Lee, Nicole M.},
+  date = {2026-11-01},
+  eprint = {2611.02198},
+  eprinttype = {arXiv},
+  eprintclass = {stat.CO},
+  doi = {10.48550/arXiv.2611.02198},
+  pubstate = {prepublished}
 }`,
     },
     {
@@ -43,20 +50,22 @@
       code: true,
       value: `---
 references:
-  - id: larsson2018
-    type: paper-conference
-    title: "A Case Study in Fitting Area-Proportional Euler Diagrams with Ellipses Using eulerr"
+  - id: larsson2026f
+    type: article
+    title: "Eunoia: Area-Proportional Euler and Venn Diagrams in Rust, Julia, Python, R, and JavaScript"
     author:
       - family: Larsson
         given: Johan
-      - family: Gustafsson
-        given: Peter
+      - family: Lee
+        given: Nicole M.
     issued:
-      - year: 2018
-    container-title: "Proceedings of International Workshop on Set Visualization and Reasoning 2018"
-    event: "Set Visualization and Reasoning 2018"
-    event-place: "Edinburgh, UK"
-    URL: "https://ceur-ws.org/Vol-2116/paper7.pdf"
+      - year: 2026
+        month: 11
+        day: 1
+    publisher: arXiv
+    number: "arXiv:2611.02198"
+    DOI: "10.48550/arXiv.2611.02198"
+    URL: "https://arxiv.org/abs/2611.02198"
 ---`,
     },
     {
@@ -64,21 +73,21 @@ references:
       label: "APA",
       code: false,
       value:
-        "Larsson, J., & Gustafsson, P. (2018). A case study in fitting area-proportional Euler diagrams with ellipses using eulerr. In Proceedings of International Workshop on Set Visualization and Reasoning 2018. https://ceur-ws.org/Vol-2116/paper7.pdf",
+        "Larsson, J., & Lee, N. M. (2026). Eunoia: Area-proportional Euler and Venn diagrams in Rust, Julia, Python, R, and JavaScript. arXiv. https://doi.org/10.48550/arXiv.2611.02198",
     },
     {
       key: "vancouver",
       label: "Vancouver",
       code: false,
       value:
-        "Larsson J, Gustafsson P. A case study in fitting area-proportional Euler diagrams with ellipses using eulerr. In: Proceedings of International Workshop on Set Visualization and Reasoning 2018; 2018 Jun 18; Edinburgh, UK. Available from: https://ceur-ws.org/Vol-2116/paper7.pdf",
+        "Larsson J, Lee NM. Eunoia: Area-Proportional Euler and Venn Diagrams in Rust, Julia, Python, R, and JavaScript [preprint]. arXiv; 2026 Nov 1. arXiv:2611.02198. Available from: https://doi.org/10.48550/arXiv.2611.02198",
     },
     {
       key: "chicago",
       label: "Chicago",
       code: false,
       value:
-        "Larsson, Johan, and Peter Gustafsson. 2018. “A Case Study in Fitting Area-Proportional Euler Diagrams with Ellipses Using eulerr.” In Proceedings of International Workshop on Set Visualization and Reasoning 2018. https://ceur-ws.org/Vol-2116/paper7.pdf.",
+        "Larsson, Johan, and Nicole M. Lee. 2026. “Eunoia: Area-Proportional Euler and Venn Diagrams in Rust, Julia, Python, R, and JavaScript.” arXiv preprint arXiv:2611.02198. https://doi.org/10.48550/arXiv.2611.02198.",
     },
   ];
 
@@ -113,8 +122,8 @@ references:
       <h1 class="text-3xl font-bold mb-2">Citation</h1>
       <p class="text-muted">
         If you use Eunoia or any of its derived packages (eulerr in R, eunoia in
-        Python, or `@jolars/eunoia` in npm) in academic work, please cite the
-        paper below.
+        Python, Eunoia.jl in Julia, or `@jolars/eunoia` in npm) in academic
+        work, please cite the paper below.
       </p>
     </header>
 
