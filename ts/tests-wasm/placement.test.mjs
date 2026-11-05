@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import * as wasm from "../../npm/eunoia_wasm.js";
-import { placeLabelsForRegions } from "../../npm/index.js";
+import { placeLabelsForRegions, placeSetLabels } from "../../npm/index.js";
 
 const fixture = JSON.parse(
   readFileSync(
@@ -15,6 +15,51 @@ const fixture = JSON.parse(
   ),
 );
 const point = ([x, y]) => ({ x, y });
+
+test("nested set label stays inside enclosing set through TS and WASM", () => {
+  const outlines = {
+    A: [
+      [-5, -5],
+      [5, -5],
+      [5, 5],
+      [-5, 5],
+    ],
+    B: [
+      [2.5, -1],
+      [4.5, -1],
+      [4.5, 1],
+      [2.5, 1],
+    ],
+  };
+  const sizes = { A: [0.6, 0.3], B: [0.6, 0.3] };
+  const raw = JSON.parse(
+    wasm.place_set_labels(
+      JSON.stringify(outlines),
+      undefined,
+      JSON.stringify(sizes),
+      undefined,
+    ),
+  );
+  const typed = placeSetLabels({
+    outlines: Object.entries(outlines).map(([label, vertices]) => ({
+      label,
+      vertices: vertices.map(point),
+    })),
+    sizes: Object.fromEntries(
+      Object.entries(sizes).map(([key, [w, h]]) => [key, { w, h }]),
+    ),
+  });
+  const p = typed.B;
+  assert.deepEqual(p.anchor, point(raw.B.anchor));
+  assert.ok(p.anchor.x + 0.3 < 2.5);
+  assert.ok(Math.abs(p.anchor.x) + 0.3 < 5);
+  assert.ok(Math.abs(p.anchor.y) + 0.15 < 5);
+  assert.equal(p.kind, "exteriorSet");
+  assert.equal(p.tether, undefined);
+  assert.equal(p.leaderEnd, undefined);
+  assert.deepEqual(p.leaderWaypoints, []);
+});
+
 const regions = Object.entries(fixture.regions).map(
   ([combination, pieces]) => ({
     combination,

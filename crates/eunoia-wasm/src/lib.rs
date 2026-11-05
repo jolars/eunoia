@@ -2983,6 +2983,11 @@ pub fn place_region_labels(
 /// convention `place_glyphs` uses) — pass the measured region-label boxes
 /// here so set labels avoid them.
 ///
+/// For nested sets, the sweep favors keeping the inner label inside the
+/// enclosing outline, clear of its boundary, while still outside its own shape.
+/// Shape clearance remains best-effort when space is tight or the collision
+/// guard moves a label.
+///
 /// Returns `{ set: { "anchor": [x, y], "kind": "ExteriorSet" } }`. Sets
 /// missing from either input map, or carrying a non-finite / non-positive
 /// size or a degenerate outline, are absent from the result. No `tether`,

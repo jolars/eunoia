@@ -164,6 +164,9 @@ const setPlacements = placeSetLabels({
 
 Each label rotates around its shape to the angle with the most clearance to the
 other sets' outlines, the labels already placed, and any `strategy.obstacles`.
+For nested sets, the sweep favors keeping the inner label inside the enclosing
+outline, clear of its boundary. Shape clearance remains best-effort when space
+is tight or the collision guard moves a label.
 Label boxes never overlap each other; clearance from the shapes is best-effort.
 The knobs (`margin`, `angularSteps`, `obstacles`, `precision`) and the algorithm
 are covered in [Label Placement](/docs/concepts/label-placement/).

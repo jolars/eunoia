@@ -318,6 +318,12 @@ The algorithm is a rotation, in three steps:
 Sets are placed one at a time in descending shape-area order, each seeing the
 ones before it as obstacles, so the result never depends on map iteration order.
 
+For nested sets, the sweep favors keeping the inner set's label **inside the
+enclosing set**, clear of its boundary, while still hugging the outside of its
+own shape. Partially overlapping sets remain obstacles to avoid from outside.
+Shape clearance is best-effort: if the gap cannot fit the label, or the
+collision guard moves it, the box can still cross a shape boundary.
+
 ```ts
 import { euler, labelObstacles, placeLabelsForRegions, placeSetLabels } from "@jolars/eunoia";
 

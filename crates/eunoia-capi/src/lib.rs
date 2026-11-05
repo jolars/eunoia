@@ -1626,6 +1626,11 @@ pub extern "C" fn eunoia_label_boxes(input: *const c_char) -> *mut c_char {
 /// outlines + caller-measured label sizes + an optional strategy); the success
 /// envelope carries a `placements` map keyed by set name. Free the result with
 /// [`eunoia_free`].
+///
+/// For nested sets, the sweep favors keeping the inner label inside the
+/// enclosing outline, clear of its boundary, while still outside its own shape.
+/// Shape clearance remains best-effort when space is tight or the collision
+/// guard moves a label.
 #[unsafe(no_mangle)]
 pub extern "C" fn eunoia_place_set_labels(input: *const c_char) -> *mut c_char {
     run(input, place_set_labels_impl)
@@ -2331,6 +2336,29 @@ mod tests {
         let ax = v["placements"]["A"]["anchor"][0].as_f64().unwrap();
         let bx = v["placements"]["B"]["anchor"][0].as_f64().unwrap();
         assert!(ax < bx, "A's label ({ax}) should sit left of B's ({bx})");
+    }
+
+    #[test]
+    fn place_set_labels_keeps_nested_label_inside_enclosing_set() {
+        let input = serde_json::json!({
+            "outlines": {
+                "A": [[-5, -5], [5, -5], [5, 5], [-5, 5]],
+                "B": [[2.5, -1], [4.5, -1], [4.5, 1], [2.5, 1]],
+            },
+            "sizes": { "A": [0.6, 0.3], "B": [0.6, 0.3] },
+        })
+        .to_string();
+        let out = call(eunoia_place_set_labels, &input);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["ok"], true);
+        let p = &v["placements"]["B"];
+        let x = p["anchor"][0].as_f64().unwrap();
+        let y = p["anchor"][1].as_f64().unwrap();
+        assert!(x + 0.3 < 2.5, "nested label should sit left of its own set");
+        assert!(x.abs() + 0.3 < 5.0 && y.abs() + 0.15 < 5.0);
+        assert_eq!(p["kind"], "exterior_set");
+        assert!(p.get("tether").is_none());
+        assert!(p.get("leader_end").is_none());
     }
 
     #[test]

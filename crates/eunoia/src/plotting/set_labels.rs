@@ -42,6 +42,7 @@ use std::f64::consts::TAU;
 use crate::geometry::primitives::{Bounds, Point};
 use crate::geometry::shapes::{Polygon, Rectangle};
 use crate::geometry::traits::BoundingBox;
+use crate::plotting::clip::{ClipOperation, polygon_clip};
 use crate::plotting::placement::{
     ExteriorEntry, LabelPlacement, PlacementKind, closest_point_on_piece, raycast_anchor_union,
     resolve_exterior_collisions,
@@ -179,6 +180,11 @@ impl SetLabelStrategy {
 /// single-set diagram has no outward direction either, and falls back to
 /// `+x`.
 ///
+/// When another set fully contains this set, the sweep favors keeping the
+/// label inside that enclosing outline, clear of its boundary. The label
+/// still sits outside its own shape. Shape clearance remains best-effort
+/// when no angle has enough room for the label box.
+///
 /// # Examples
 ///
 /// ```
@@ -277,11 +283,23 @@ pub fn place_set_labels(
     let mut entries: Vec<ExteriorEntry> = Vec::with_capacity(candidates.len());
     for (i, cand) in candidates.iter().enumerate() {
         let margin = strategy.margin.unwrap_or(0.5 * cand.h);
-        let foreign: Vec<&RegionPiece> = candidates
+        let foreign: Vec<OutlineObstacle<'_>> = candidates
             .iter()
             .enumerate()
             .filter(|(j, _)| *j != i)
-            .flat_map(|(_, other)| other.pieces.iter())
+            .flat_map(|(_, other)| {
+                other.pieces.iter().map(|piece| OutlineObstacle {
+                    piece,
+                    // A containing set leaves usable space around the inner
+                    // set. Coincident outlines must still send labels outside.
+                    encloses: other.area > cand.area
+                        && piece.holes.is_empty()
+                        && cand.pieces.iter().all(|own| {
+                            polygon_clip(&own.outer, &piece.outer, ClipOperation::Difference)
+                                .is_empty()
+                        }),
+                })
+            })
             .collect();
 
         let (anchor, direction) = best_angle(
@@ -379,6 +397,12 @@ struct Candidate {
     h: f64,
 }
 
+/// A foreign outline, with the side the current label should stay on.
+struct OutlineObstacle<'a> {
+    piece: &'a RegionPiece,
+    encloses: bool,
+}
+
 /// Anchor for `cand`'s label pushed out along `dir` until its box clears the
 /// set's own outline by `margin`.
 ///
@@ -421,7 +445,7 @@ fn best_angle(
     cand: &Candidate,
     margin: f64,
     steps: usize,
-    foreign: &[&RegionPiece],
+    foreign: &[OutlineObstacle<'_>],
     placed: &[Rectangle],
     obstacles: &[Rectangle],
     container: Option<&Rectangle>,
@@ -495,20 +519,27 @@ fn best_angle(
 }
 
 /// Smallest clearance from the `w × h` box centred at `anchor` to any
-/// obstacle — foreign shape outlines, already-placed label boxes, and
-/// caller-supplied keep-outs. Negative when the box overlaps something;
+/// obstacle — foreign shapes (the boundary for enclosing sets), already-placed
+/// label boxes, and caller-supplied keep-outs. Negative when clearance fails;
 /// [`f64::MAX`] when there is nothing to avoid.
 fn min_clearance(
     anchor: &Point,
     w: f64,
     h: f64,
-    foreign: &[&RegionPiece],
+    foreign: &[OutlineObstacle<'_>],
     placed: &[Rectangle],
     obstacles: &[Rectangle],
 ) -> f64 {
     let mut worst = f64::MAX;
-    for piece in foreign {
-        worst = worst.min(box_polygon_clearance(anchor, w, h, piece));
+    for obstacle in foreign {
+        let clearance = if obstacle.encloses {
+            // The box's circumradius bounds its whole footprint, including
+            // corners that may be closer to a curving boundary than its center.
+            signed_clearance(anchor.x(), anchor.y(), obstacle.piece) - 0.5 * w.hypot(h)
+        } else {
+            box_polygon_clearance(anchor, w, h, obstacle.piece)
+        };
+        worst = worst.min(clearance);
     }
     for rect in placed.iter().chain(obstacles.iter()) {
         worst = worst.min(box_box_clearance(anchor, w, h, rect));
@@ -681,6 +712,79 @@ mod tests {
             "B's label should sit right of B, got x = {}",
             placements["B"].anchor.x()
         );
+    }
+
+    #[test]
+    fn test_nested_label_stays_inside_enclosing_set() {
+        let outlines = outlines_of(&[("A", 0.0, 0.0, 5.0), ("B", 3.5, 0.0, 1.0)]);
+        let sizes = sizes_of(&["A", "B"], 0.6, 0.3);
+        let placements = place_set_labels(&outlines, &sizes, None, &SetLabelStrategy::default());
+        let label = &placements["B"];
+
+        assert!(label.anchor.x() < 3.5, "nested label should turn inward");
+        assert_eq!(label.kind, PlacementKind::ExteriorSet);
+        assert!(label.tether.is_none());
+        assert!(label.leader_end.is_none());
+        assert!(label.leader_waypoints.is_empty());
+        for dx in [-0.3, 0.3] {
+            for dy in [-0.15, 0.15] {
+                let x = label.anchor.x() + dx;
+                let y = label.anchor.y() + dy;
+                assert!(x.hypot(y) < 5.0, "label corner escaped enclosing set");
+                assert!((x - 3.5).hypot(y) > 1.0, "label corner entered own set");
+            }
+        }
+    }
+
+    #[test]
+    fn test_concentric_labels_stay_between_nested_boundaries() {
+        let outlines = outlines_of(&[
+            ("A", 0.0, 0.0, 5.0),
+            ("B", 0.0, 0.0, 3.0),
+            ("C", 0.0, 0.0, 1.0),
+        ]);
+        let sizes = sizes_of(&["A", "B", "C"], 0.6, 0.3);
+        let placements = place_set_labels(&outlines, &sizes, None, &SetLabelStrategy::default());
+
+        for (name, inner, outer) in [("B", 3.0, 5.0), ("C", 1.0, 3.0)] {
+            let anchor = placements[name].anchor;
+            let nearest_x = (anchor.x().abs() - 0.3).max(0.0);
+            let nearest_y = (anchor.y().abs() - 0.15).max(0.0);
+            assert!(nearest_x.hypot(nearest_y) > inner);
+            for dx in [-0.3, 0.3] {
+                for dy in [-0.15, 0.15] {
+                    assert!(
+                        (anchor.x() + dx).hypot(anchor.y() + dy) < outer,
+                        "{name} label corner escaped enclosing set"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_partial_overlap_is_not_treated_as_enclosure() {
+        // B's center is inside A, but part of its outline is outside.
+        let outlines = outlines_of(&[("A", 0.0, 0.0, 3.0), ("B", 2.5, 0.0, 1.0)]);
+        let sizes = sizes_of(&["A", "B"], 0.6, 0.3);
+        let placements = place_set_labels(&outlines, &sizes, None, &SetLabelStrategy::default());
+        assert!(placements["B"].anchor.x() - 0.3 > 3.0);
+    }
+
+    #[test]
+    fn test_coincident_outlines_keep_both_labels_outside() {
+        let outlines = outlines_of(&[("A", 0.0, 0.0, 1.0), ("B", 0.0, 0.0, 1.0)]);
+        let sizes = sizes_of(&["A", "B"], 0.6, 0.3);
+        let placements = place_set_labels(&outlines, &sizes, None, &SetLabelStrategy::default());
+        assert_eq!(placements.len(), 2);
+        for name in ["A", "B"] {
+            let anchor = placements[name].anchor;
+            let nearest_x = (anchor.x().abs() - 0.3).max(0.0);
+            let nearest_y = (anchor.y().abs() - 0.15).max(0.0);
+            assert!(nearest_x.hypot(nearest_y) > 1.0);
+        }
+        let other = Rectangle::new(placements["A"].anchor, 0.6, 0.3);
+        assert!(box_box_clearance(&placements["B"].anchor, 0.6, 0.3, &other) >= 0.0);
     }
 
     /// The label boxes must not overlap each other, even when the shapes are

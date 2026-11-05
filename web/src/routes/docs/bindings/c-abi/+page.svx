@@ -248,6 +248,11 @@ name rather than region, and it needs the shape outlines
 is the set's own silhouette. See [Label
 placement](/docs/concepts/label-placement/).
 
+For nested sets, the sweep favors keeping the inner label inside the enclosing
+outline, clear of its boundary, while still outside its own shape. Shape
+clearance remains best-effort when space is tight or the collision guard moves
+a label.
+
 ```json
 {
   "outlines": { "A": [[x, y], …], "B": [[x, y], …] },

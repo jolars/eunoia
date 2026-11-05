@@ -1694,10 +1694,12 @@ export interface PlaceSetLabelsOptions {
  * from either `outlines` or `sizes`, or carrying a non-finite or
  * non-positive size, are absent from the result.
  *
- * Label boxes are guaranteed not to overlap **each other**. Clearance from
- * the *shapes* is best-effort: a set nested inside a much larger one, or a
- * label wide relative to its shape, may have no free angle at all, in which
- * case the sweep returns the least-bad one.
+ * When another set fully contains this set, the sweep favors keeping its
+ * label inside that enclosing outline, clear of the boundary, while still
+ * outside its own shape. Label boxes are guaranteed not to overlap **each
+ * other**. Clearance from the *shapes* is best-effort: a tight gap between
+ * nested sets or a wide label may leave no free angle, in which case the
+ * sweep returns the least-bad one.
  *
  * @example
  * ```ts
