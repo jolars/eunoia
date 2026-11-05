@@ -4,55 +4,8 @@
 
 - [ ] Remove the deprecated TRF optimizer aliases from Rust and WASM (`Trf`,
   `CmaEsTrf`), TypeScript (`trf`, `cmaEsTrf`), and the C ABI (`trf`,
-  `cmaes_trf`). Update the compatibility tests and documentation accordingly.
-
-## Surfaced fitter issues (regressions to investigate)
-
-The corpus / proptest surfaced these. None were introduced by the harness;
-they're pre-existing behaviour the harness now exposes.
-
-- [ ] **`random_4_set`ellipses land at `diag_error ≈ 2.6e-2`**. The corpus
-  ceiling is tightened to `3e-2` (was `5e-2`) since this basin is a
-  deterministic floor across most master seeds. There are at least two
-  distinct local minima: - **basin A** (loss `7.786e-3`, diag `2.606e-2`) ---
-  reached by \~13/16 `QUALITY_SEEDS` master seeds at default
-  `n_restarts=10`. - **basin B** (loss `4.335e-3`, diag `1.147e-2`) ---
-  reached by the other \~3/16. An even slightly better basin (loss
-  `4.086e-3`) shows up at `n_restarts ≥ 40` but only as the global-min,
-  never the median.
-
-  The basins differ in which ellipse area maps to which set's target (basin A
-  nails `C ≈ 4.24`, `E ≈ 4.56` and undershoots `A`/`B`; basin B spreads the
-  error more evenly). Neither raising `n_restarts` to 100 nor forcing
-  `Optimizer::CmaEsLm` to fire on every restart
-  (`cmaes_fallback_threshold = 1.0`) shifts the median off basin A --- CMA-ES at
-  default budget / box doesn't span the basin gap from this MDS init. Probed via
-  a throwaway example (deleted after measurement).
-
-  Worth re-checking after any optimizer redesign that touches the global stage;
-  tighten the ceiling further if a future change closes basin A.
-
-- [ ] **issue89 (17-set) ellipse fits are highly multimodal and the global
-  escape doesn't help**. Best-of-`n_restarts=10` ellipse stress swings
-  wildly with the master seed: `1.8e-3`/`1.9e-3`/`2.3e-3`/`2.4e-3` (good) on
-  seeds 8/5/3/7, but `2.9e-2`, `1.6e-1`, `6.1e-1`, `9.8e-1` (poor → failed)
-  on seeds 1/4/6/2. The CMA-ES global escape provides **no** benefit here:
-  every restart's plain-LM loss is above `cmaes_fallback_threshold` (1e-3)
-  so the escape fires on all of them, yet `Optimizer::CmaEsBoundedLm`,
-  `Optimizer::CmaEsLm`, and bare `Optimizer::LevenbergMarquardt` produce
-  *bit-identical* per-seed stress --- i.e. the escape + polish never beats
-  the plain-LM result, and the lower loss kept is always LM's. So quality is
-  determined entirely by the MDS init + local LM convergence, and the escape
-  stage is pure wasted compute for this spec. Not caused by the LM→bounded LM
-  default switch in 8eda26d (CmaEsLm ≡ CmaEsBoundedLm here) nor by the sparse-mask
-  perf fix (mathematically identical; circle fits are bit-identical
-  before/after). Most likely root cause is the circle-equivalent ellipse MDS
-  warm-start (see "Ellipse MDS still warm-starts as a circle" below): 17
-  ellipses seeded with no rotational information land in bad rotational
-  basins the local solver can't leave and CMA-ES can't span. Probed via a
-  throwaway example (deleted after measurement). Surfaced 2026-05-27.
-  Circles fit fine (stress consistently `~2e-3`). Worth re-checking after
-  any MDS or global-stage redesign.
+  `cmaes_trf`). Update the compatibility tests and documentation
+  accordingly.
 
 ## Loss / topology follow-ups
 
@@ -109,32 +62,6 @@ they're pre-existing behaviour the harness now exposes.
   global optimality. The low-level packer intentionally ignores absent region
   keys, so the Python omission diagnostic is a separate renderer follow-up.
 
-## MDS architecture follow-ups
-
-- [ ] **Ellipse MDS still warm-starts as a circle**.
-  `Ellipse::mds_target_distance` delegates to `Circle::mds_target_distance`
-  (treating each ellipse as a circle of equal area), and the MDS phase
-  optimises only 2D centers --- orientation `φ` and the `a/b` ratio never
-  enter the MDS loss. This is defensible (the final-stage optimizer takes
-  over and reshapes from there, and most corpus specs hit machine precision)
-  but it has a real blind spot: ellipses with large axis ratio overlapping
-  along their major vs minor axis produce the same overlap area at very
-  different center distances, and the circle-equivalent inversion picks one
-  canonical distance somewhere between. Ellipse fits then have no rotational
-  seed information; the optimizer rediscovers `φ` from scratch, which is
-  part of why ellipse fits need higher `n_restarts` and the CMA-ES escape
-  stage. A correct ellipse MDS would optimise over `[x, y, a, b, φ]` per
-  shape against overlap targets directly (the larger refactor sketched as
-  option (1) during the Square design --- kept out of the Square PR because
-  the existing MDS solver pool --- Lbfgs, TrustRegion, NewtonCg,
-  LevenbergMarquardt --- all have analytical gradients/Hessians/Jacobians
-  wired to the 2D positional cost, and rederiving them for ellipse
-  parameters means inheriting ellipse's intricate boundary-integral
-  derivative. Worth revisiting when (a) we have concrete specs where ellipse
-  fits miss because of a wrong rotational basin out of MDS, or (b) we're
-  doing the shape-aware-MDS refactor anyway for triangles or another shape
-  that can't reasonably warm-start as a circle.
-
 ## Label placement follow-ups
 
 - [ ] **Nested sets in `place_set_labels`**. The exterior set-label mode
@@ -157,17 +84,6 @@ spacing bisection) and random (seeded dart-throwing) arrangements, a
 diagram-wide radius auto-sized by feasibility bisection, and a `gap` knob
 padding both glyph-vs-glyph spacing and the boundary inset. These are the loose
 ends that work deliberately deferred. Surfaced 2026-08-06.
-
-- [ ] **`max_scale` for glyph boxes** (minor). The auto-scale bracket's upper
-  end is hardcoded to `1.0`, so a roomy diagram renders sparse text at the
-  caller's reference size rather than growing to fill --- deliberately
-  asymmetric with `place_glyphs`, which does grow. `GlyphBoxOptions` is
-  `#[non_exhaustive]`, so a `max_scale` field defaulting to `1.0` can land
-  later without a break if the asymmetry proves annoying in practice. Python
-  report items 2/4 demonstrate this behavior; `python_report_repro` prints
-  scale `1.0` for both roomy fixtures. Explicit `.scale(k)` already permits
-  `k > 1`; the missing capability is automatic growth. Python owns reference
-  font sizes, the label/member size ratio, and readability floors.
 
 - [ ] **Relaxation pass for the box footprint**. The disc packer's `random`
   arrangement now finishes with a force-directed relaxation
@@ -200,20 +116,3 @@ ends that work deliberately deferred. Surfaced 2026-08-06.
   `glyphCountsFromLayout(layout)`) so other consumers don't re-derive it.
   Core stays counts-only --- spec quantities are `f64` areas, not
   cardinalities, so the rounding policy belongs to the caller.
-
-## RotatedRectangle follow-ups
-
-The `RotatedRectangle` shape shipped across core/fitter/capi/wasm/ts (commit
-`12b272d`, 2026-06-21): an oriented box fitted derivative-free (exact
-Sutherland--Hodgman convex-clip overlap is only piecewise-C¹, so it carries no
-analytic gradient and the capability-driven default pool routes it to
-`[NelderMead, CmaEs]`). These are the loose ends that PR did not cover.
-
-- [ ] **Fit quality may motivate corner-rounding**. The shape is fitted
-  derivative-free by design (no analytic gradient). If the quality harness
-  above shows it underperforming the gradient shapes, the principled upgrade
-  is a rounded-rectangle / superellipse family: rounding the corners makes
-  the overlap area C¹ again, which restores a usable analytic gradient and
-  re-enables the LM/bounded LM path (flip `SUPPORTS_ANALYTIC_GRADIENT` to `true`).
-  This is the "smooth the shape" option from the original design discussion;
-  revisit only if derivative-free quality proves insufficient.
