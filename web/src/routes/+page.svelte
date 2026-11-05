@@ -208,17 +208,21 @@
         If you use Eunoia or any of its language bindings in academic work,
         please cite the paper:
       </p>
-      <p
+      <blockquote
         class="text-sm bg-surface border border-line rounded p-4 leading-relaxed text-ink"
       >
-        Larsson, J., &amp; Lee, N. M. (2026). Eunoia: Area-proportional Euler
-        and Venn diagrams in Rust, Julia, Python, R, and JavaScript. arXiv.
+        Larsson, J., &amp; Lee, N. M. (2026).
+        <em
+          >Eunoia: Area-Proportional Euler and Venn Diagrams in Rust, Julia,
+          Python, R, and JavaScript</em
+        >
+        (arXiv:2611.02198). arXiv.
         <a
           href="https://doi.org/10.48550/arXiv.2611.02198"
           class="text-accent hover:underline"
           >https://doi.org/10.48550/arXiv.2611.02198</a
         >
-      </p>
+      </blockquote>
       <p class="text-sm text-muted">
         Other formats (BibTeX, BibLaTeX, CSL, Vancouver, Chicago) are available
         on the

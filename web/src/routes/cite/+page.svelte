@@ -15,16 +15,16 @@
       label: "BibTeX",
       code: true,
       value: `@misc{larsson2026f,
-  title = {Eunoia: {Area}-Proportional {Euler} and {Venn} Diagrams in {Rust}, {Julia}, {Python}, {R}, and {JavaScript}},
-  shorttitle = {Eunoia},
-  author = {Larsson, Johan and Lee, Nicole M.},
-  year = 2026,
-  month = nov,
-  number = {arXiv:2611.02198},
-  eprint = {2611.02198},
-  primaryclass = {stat.CO},
-  publisher = {arXiv},
-  doi = {10.48550/arXiv.2611.02198},
+  title         = {Eunoia: {{Area}}-Proportional {{Euler}} and {{Venn}} Diagrams in {{Rust}}, {{Julia}}, {{Python}}, {{R}}, and {{JavaScript}}},
+  shorttitle    = {Eunoia},
+  author        = {Larsson, Johan and Lee, Nicole M.},
+  year          = {2026},
+  month         = nov,
+  number        = {arXiv:2611.02198},
+  eprint        = {2611.02198},
+  primaryclass  = {stat.CO},
+  publisher     = {arXiv},
+  doi           = {10.48550/arXiv.2611.02198},
   archiveprefix = {arXiv}
 }`,
     },
@@ -33,15 +33,15 @@
       label: "BibLaTeX",
       code: true,
       value: `@online{larsson2026f,
-  title = {Eunoia: {Area}-Proportional {Euler} and {Venn} Diagrams in {Rust}, {Julia}, {Python}, {R}, and {JavaScript}},
-  shorttitle = {Eunoia},
-  author = {Larsson, Johan and Lee, Nicole M.},
-  date = {2026-11-01},
-  eprint = {2611.02198},
-  eprinttype = {arXiv},
+  title       = {Eunoia: {{Area}}-Proportional {{Euler}} and {{Venn}} Diagrams in {{Rust}}, {{Julia}}, {{Python}}, {{R}}, and {{JavaScript}}},
+  shorttitle  = {Eunoia},
+  author      = {Larsson, Johan and Lee, Nicole M.},
+  date        = {2026-11-01},
+  eprint      = {2611.02198},
+  eprinttype  = {arXiv},
   eprintclass = {stat.CO},
-  doi = {10.48550/arXiv.2611.02198},
-  pubstate = {prepublished}
+  doi         = {10.48550/arXiv.2611.02198},
+  pubstate    = {prepublished}
 }`,
     },
     {
@@ -73,7 +73,7 @@ references:
       label: "APA",
       code: false,
       value:
-        "Larsson, J., & Lee, N. M. (2026). Eunoia: Area-proportional Euler and Venn diagrams in Rust, Julia, Python, R, and JavaScript. arXiv. https://doi.org/10.48550/arXiv.2611.02198",
+        "Larsson, J., & Lee, N. M. (2026). Eunoia: Area-Proportional Euler and Venn Diagrams in Rust, Julia, Python, R, and JavaScript (arXiv:2611.02198). arXiv. https://doi.org/10.48550/arXiv.2611.02198",
     },
     {
       key: "vancouver",
@@ -127,6 +127,22 @@ references:
       </p>
     </header>
 
+    <blockquote
+      class="text-sm bg-surface border border-line rounded p-4 leading-relaxed text-ink"
+    >
+      Larsson, J., &amp; Lee, N. M. (2026).
+      <em
+        >Eunoia: Area-Proportional Euler and Venn Diagrams in Rust, Julia,
+        Python, R, and JavaScript</em
+      >
+      (arXiv:2611.02198). arXiv.
+      <a
+        href="https://doi.org/10.48550/arXiv.2611.02198"
+        class="text-accent hover:underline"
+        >https://doi.org/10.48550/arXiv.2611.02198</a
+      >
+    </blockquote>
+
     <div
       class="flex flex-wrap gap-1.5"
       role="tablist"
@@ -166,5 +182,24 @@ references:
         </p>
       {/if}
     </div>
+
+    <p class="text-sm text-muted">
+      For reproducibility, also cite the software release you used. Select that
+      release in the
+      <a
+        href="https://doi.org/10.5281/zenodo.20665805"
+        class="text-accent hover:underline">Zenodo archive</a
+      >
+      and export its citation. The concept DOI
+      <code>10.5281/zenodo.20665805</code>
+      identifies Eunoia across all releases.
+    </p>
+    <p class="text-sm text-muted">
+      <a
+        href="https://github.com/jolars/eunoia/blob/main/CITATION.cff"
+        class="text-accent hover:underline">CITATION.cff</a
+      >
+      contains the software metadata and preferred paper citation.
+    </p>
   </main>
 </div>
