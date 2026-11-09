@@ -6,6 +6,9 @@ runs:
     - uses: astral-sh/setup-uv@v7
       with:
         python-version: "3.12"
+    - name: Install documentation Python
+      shell: bash
+      run: uv python install
     - id: versions
       shell: bash
       run: |
