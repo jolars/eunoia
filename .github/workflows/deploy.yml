@@ -63,10 +63,13 @@ jobs:
         with:
           toolchain: 1.98.0
 
-      - name: Check Python reference integration
+      - name: Prepare package documentation
+        uses: ./.github/actions/prepare-docs
+
+      - name: Check package documentation integration
         run: |
           pnpm check
-          pnpm test:python-docs
+          pnpm test:docs
         working-directory: web
 
       - name: Build web app

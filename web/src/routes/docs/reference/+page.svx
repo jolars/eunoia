@@ -15,8 +15,9 @@ Each language binding has its own API reference:
   its longer guides.
 - **R:** the [eulerr reference](https://jolars.github.io/eulerr/), now backed by
   the eunoia engine.
-- **Julia:** the [`Eunoia.jl`
-  reference](https://jolars.github.io/Eunoia.jl/stable).
+- **Julia:** the [`Eunoia.jl` API reference](/docs/reference/julia/api/)
+  documents fitting, result types, label placement, and Makie plotting. The
+  [gallery](/docs/reference/julia/gallery/) demonstrates the plotting options.
 - **Repository conventions:** [CONTRIBUTING.md](https://github.com/jolars/eunoia/blob/main/CONTRIBUTING.md)
   describes how to set up the workspace, run the test and lint gates, and submit
   changes.

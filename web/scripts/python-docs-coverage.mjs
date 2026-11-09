@@ -35,7 +35,7 @@ function requireContent(condition, message) {
   if (!condition) throw new Error(`Python API coverage failed: ${message}`);
 }
 
-function anchors(content, markdown) {
+export function anchors(content, markdown) {
   if (markdown) content = content.replace(/```[\s\S]*?```/g, "");
   const found = new Set(
     [...content.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]),
@@ -54,7 +54,7 @@ function anchors(content, markdown) {
   return found;
 }
 
-function links(content, markdown) {
+export function links(content, markdown) {
   if (markdown) {
     content = content.replace(/```[\s\S]*?```/g, "");
     return [...content.matchAll(/\]\((?:<([^>]+)>|([^\s)]+))\)/g)].map(

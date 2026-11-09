@@ -1,0 +1,28 @@
+name: Prepare package documentation
+description: Prepare pinned Python and Julia sources for Diplodocus extraction.
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v7
+      with:
+        python-version: "3.12"
+    - id: versions
+      shell: bash
+      run: |
+        node --input-type=module - <<'JS' >> "$GITHUB_OUTPUT"
+        import { readFileSync } from 'node:fs';
+        const pins = JSON.parse(readFileSync('web/docs-sources.lock.json', 'utf8'));
+        console.log(`julia=${pins.julia.runtime}`);
+        JS
+    - uses: julia-actions/setup-julia@v2
+      with:
+        version: ${{ steps.versions.outputs.julia }}
+    - uses: julia-actions/cache@v2
+    - uses: actions/cache@v5
+      with:
+        path: |
+          .docs-sources
+          .diplodocus
+        key: package-docs-${{ runner.os }}-${{ hashFiles('web/docs-sources.lock.json', 'web/scripts/docs-environment.mjs') }}
+    - shell: bash
+      run: node web/scripts/prepare-docs.mjs

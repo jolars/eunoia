@@ -90,6 +90,14 @@ cd web && pnpm build
 
 ## Architecture and invariants
 
+Package documentation is generated before `pnpm dev`, `pnpm check`, and
+`pnpm build`. See `web/PACKAGE-DOCS.md` for source pins, prepared Python and
+Julia environments, and snapshot-only builds. Use `task docs-packages`,
+`task docs-python`, or `task docs-julia` to regenerate it. Do not hand-edit the
+owned route directories under `web/src/routes/docs/reference/python/` and
+`web/src/routes/docs/reference/julia/`, or their `_diplodocus` assets. Run
+`pnpm test:docs`, `pnpm check`, and `pnpm build` after changing this integration.
+
 The core pipeline is:
 
 ```text

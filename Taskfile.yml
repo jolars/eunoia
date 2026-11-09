@@ -153,6 +153,21 @@ tasks:
     cmds:
       - node web/scripts/python-docs.mjs {{.CLI_ARGS}}
 
+  docs-julia:
+    desc: Generate the Julia guides, gallery, and API reference
+    cmds:
+      - node web/scripts/julia-docs.mjs {{.CLI_ARGS}}
+
+  docs-prepare:
+    desc: Prepare the pinned Python and Julia documentation environments
+    cmds:
+      - node web/scripts/prepare-docs.mjs {{.CLI_ARGS}}
+
+  docs-packages:
+    desc: Generate both package references and the Julia guides
+    cmds:
+      - node web/scripts/docs.mjs {{.CLI_ARGS}}
+
   lighthouse:
     desc: "Lighthouse desktop audit of the docs (perf, a11y, best-practices, SEO). Args: URL=..."
     # Audits the live docs site by default. Point URL at a local preview

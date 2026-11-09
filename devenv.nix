@@ -23,9 +23,14 @@
     perf
     shfmt
     biome
+    uv
   ];
 
+  env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.zlib ];
+
   languages = {
+    python.enable = true;
+
     rust = {
       enable = true;
       channel = "stable";

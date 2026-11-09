@@ -18,7 +18,7 @@
   const pypiUrl = "https://pypi.org/project/eunoia/";
   const pyDocsUrl = "https://jolars.github.io/eunoia-py";
   const juliaRepoUrl = "https://github.com/jolars/Eunoia.jl";
-  const juliaDocsUrl = "https://jolars.github.io/Eunoia.jl/stable";
+  const juliaDocsUrl = "/docs/reference/julia/";
   const eulerrUrl = "https://cran.r-project.org/package=eulerr";
   const eulerrRepoUrl = "https://github.com/jolars/eulerr";
   const eulerrDocsUrl = "https://jolars.github.io/eulerr/";
@@ -170,7 +170,7 @@
           <p class="text-xs text-muted">
             Bindings to the Rust core with Makie plotting; docs at
             <a href={juliaDocsUrl} class="text-accent hover:underline"
-              >jolars.github.io/Eunoia.jl</a
+              >Julia documentation</a
             >.
           </p>
         </div>

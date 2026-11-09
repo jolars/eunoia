@@ -1,11 +1,13 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { SUMMARY } from "#lib/docs/SUMMARY.ts";
+  import DocsSearch from "./DocsSearch.svelte";
 
   const currentPath = $derived(page.url.pathname);
 </script>
 
-<nav class="space-y-6 text-sm">
+<DocsSearch />
+<nav class="space-y-6 text-sm" aria-label="Documentation">
   {#each SUMMARY as section}
     <div>
       {#if section.title}

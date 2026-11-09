@@ -26,7 +26,6 @@ export const SUMMARY: DocSection[] = [
       { title: "Rust", slug: "/docs/quickstart/rust/" },
       { title: "JavaScript", slug: "/docs/quickstart/javascript/" },
       { title: "R", slug: "/docs/quickstart/r/" },
-      { title: "Julia", slug: "/docs/quickstart/julia/" },
     ],
   },
   {
@@ -34,6 +33,16 @@ export const SUMMARY: DocSection[] = [
     chapters: [
       { title: "Quickstart", slug: "/docs/quickstart/python/" },
       { title: "API reference", slug: "/docs/reference/python/" },
+    ],
+  },
+  {
+    title: "Julia",
+    chapters: [
+      { title: "Overview", slug: "/docs/reference/julia/" },
+      { title: "Quickstart", slug: "/docs/quickstart/julia/" },
+      { title: "Gallery", slug: "/docs/reference/julia/gallery/" },
+      { title: "API reference", slug: "/docs/reference/julia/api/" },
+      { title: "Changelog", slug: "/docs/reference/julia/changelog/" },
     ],
   },
   {

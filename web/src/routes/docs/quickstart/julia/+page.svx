@@ -101,7 +101,8 @@ and circles, squares, and axis-aligned rectangles up to three.
 ## Next Steps
 
 The full reference lives on the
-[Eunoia.jl docs site](https://jolars.github.io/Eunoia.jl/stable). For how the fit
+[Julia API reference](/docs/reference/julia/api/) and
+[gallery](/docs/reference/julia/gallery/). For how the fit
 works across all bindings, see the
 [Fitter Pipeline](/docs/concepts/fitter-pipeline/) and
 [Goodness of Fit](/docs/concepts/goodness-of-fit/) chapters.

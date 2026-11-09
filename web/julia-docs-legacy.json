@@ -1,0 +1,81 @@
+{
+  "format_version": 1,
+  "origin": "https://jolars.github.io/Eunoia.jl/stable/",
+  "pages": {
+    "": {
+      "source": "https://jolars.github.io/Eunoia.jl/stable/",
+      "anchors": ["Eunoia", "Installation", "Quick-start", "Plotting"]
+    },
+    "api": {
+      "source": "https://jolars.github.io/Eunoia.jl/stable/api/",
+      "anchors": ["API-Reference"]
+    },
+    "gallery": {
+      "source": "https://jolars.github.io/Eunoia.jl/stable/gallery/",
+      "anchors": [
+        "A-gallery-of-Euler-and-Venn-diagrams",
+        "Euler-Diagrams",
+        "Uniform-Intersections",
+        "Disjoint-Sets",
+        "A-Set-Contained-in-the-Intersection-of-Two-Sets",
+        "Two-Sets-Intersecting-Inside-a-Third",
+        "Difficult-Set-(For-Circles!)",
+        "Russian-Doll",
+        "Wilkinson-Set-Relationship",
+        "Gene-Set",
+        "Three-sets-intersecting-inside-a-fourth",
+        "eulerAPE-Combination",
+        "Four-Uniform-Interactions",
+        "Rotated-Rectangles",
+        "Two-Circles-Intersecting-Completely",
+        "Styling-and-the-Complement",
+        "A-Universe-(Complement)-Box",
+        "Colors-As-a-Sequence-or-a-Mapping",
+        "A-Legend-Instead-of-Inline-Labels",
+        "Custom-label-text-and-style",
+        "Original-versus-Fitted-Quantities",
+        "Exterior-Set-Labels",
+        "Countable-Glyphs",
+        "Packed-Member-Names",
+        "Counts-and-Percentages",
+        "Venn-Diagrams",
+        "Two-and-Three-Sets",
+        "Four-and-Five-Sets",
+        "Squares",
+        "Rotated-Rectangles-for-Four-Sets",
+        "A-Complement-Box",
+        "From-Membership-Lists"
+      ]
+    },
+    "changelog": {
+      "source": "https://jolars.github.io/Eunoia.jl/stable/CHANGELOG/",
+      "anchors": ["Changelog", "1.0.1", "1.0.0"]
+    }
+  },
+  "api": {
+    "Eunoia.Eunoia": "module",
+    "Eunoia.BoundingBox": "BoundingBox",
+    "Eunoia.Circle": "Circle",
+    "Eunoia.Container": "Container",
+    "Eunoia.Ellipse": "Ellipse",
+    "Eunoia.EulerFit": "EulerFit",
+    "Eunoia.GlyphBoxPlacements": "GlyphBoxPlacements",
+    "Eunoia.GlyphPlacements": "GlyphPlacements",
+    "Eunoia.LabelPlacement": "LabelPlacement",
+    "Eunoia.Point": "Point",
+    "Eunoia.Rectangle": "Rectangle",
+    "Eunoia.RotatedRectangle": "RotatedRectangle",
+    "Eunoia.Square": "Square",
+    "Eunoia.VennFit": "VennFit",
+    "Eunoia.euler-Tuple{AbstractDict}": "euler",
+    "Eunoia.eunoiaplot": "eunoiaplot",
+    "Eunoia.eunoiaplot!": "eunoiaplot!",
+    "Eunoia.label_boxes-Tuple{AbstractDict, AbstractDict}": "label_boxes",
+    "Eunoia.place_glyph_boxes-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "place_glyph_boxes",
+    "Eunoia.place_glyphs-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "place_glyphs",
+    "Eunoia.place_labels-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "place_labels",
+    "Eunoia.place_set_labels-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "place_set_labels",
+    "Eunoia.venn-Tuple{Any}": "venn",
+    "Eunoia.version-Tuple{}": "version"
+  }
+}

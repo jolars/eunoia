@@ -107,7 +107,7 @@ jobs:
         run: cargo test --doc
 
   web:
-    name: Website and Python reference
+    name: Website and package documentation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -149,10 +149,13 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: web
 
+      - name: Prepare package documentation
+        uses: ./.github/actions/prepare-docs
+
       - name: Check and test website
         run: |
           pnpm check
-          pnpm test:python-docs
+          pnpm test:docs
           pnpm test:members
           pnpm test:markdown
           pnpm build
