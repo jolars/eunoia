@@ -23,6 +23,12 @@ configuration or source pins. On NixOS, devenv runs the lockfile's Workerd
 with the Nix dynamic loader. Local package overrides are described in
 [PACKAGE-DOCS.md](PACKAGE-DOCS.md).
 
+Wait for Wrangler's `Ready on ...` message, then press `b` to open a browser or
+`x` to stop the server. If Workerd reports a dynamically linked executable error
+on NixOS, refresh the environment by running `devenv shell -- task web-dev` from
+the repository root. The dev command exits if Wrangler fails, closing its file
+watchers.
+
 ```sh
 pnpm check
 pnpm build

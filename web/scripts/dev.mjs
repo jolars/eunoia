@@ -7,25 +7,8 @@ import { buildSite, cliOptions, prepareSources } from "./site.mjs";
 
 const options = cliOptions(process.argv.slice(2));
 await buildSite(options);
-const preview = spawn(
-  "pnpm",
-  [
-    "exec",
-    "wrangler",
-    "dev",
-    "--local",
-    "--infer-origin-from-routes=false",
-    "--live-reload",
-    "--config",
-    "cloudflare/wrangler.jsonc",
-    "--port",
-    options.port ?? "5173",
-    "--ip",
-    options.host ?? "127.0.0.1",
-  ],
-  { cwd: webRoot, stdio: "inherit" },
-);
 const watchers = [];
+let preview;
 let bundleWatcher;
 let timer;
 let pending = false;
@@ -52,38 +35,58 @@ function schedule() {
   timer = setTimeout(rebuild, 200);
 }
 
-if (!options.snapshot && !process.env.EUNOIA_DOCS_SNAPSHOT) {
-  const { sources } = await prepareSources(options);
-  for (const path of [
-    join(webRoot, "content"),
-    join(webRoot, "python"),
-    join(webRoot, "static"),
-    join(sources.python, "python/eunoia"),
-    join(sources.julia, "src"),
-    join(sources.julia, "ext"),
-    join(sources.julia, "docs/src"),
-  ])
-    watchers.push(watch(path, { recursive: true }, schedule));
-  bundleWatcher = await build({
-    root: webRoot,
-    configFile: join(webRoot, "vite.config.ts"),
-    build: { watch: {}, emptyOutDir: true },
-  });
-  let first = true;
-  bundleWatcher.on("event", (event) => {
-    if (event.code === "START") bundling = true;
-    if (event.code === "END") {
-      bundling = false;
-      if (first) first = false;
-      else schedule();
-    }
-  });
-}
-
-const stop = () => preview.kill("SIGTERM");
-process.once("SIGINT", stop);
-process.once("SIGTERM", stop);
+const stop = () => preview?.kill("SIGTERM");
 try {
+  if (!options.snapshot && !process.env.EUNOIA_DOCS_SNAPSHOT) {
+    const { sources } = await prepareSources(options);
+    for (const path of [
+      join(webRoot, "content"),
+      join(webRoot, "python"),
+      join(webRoot, "static"),
+      join(sources.python, "python/eunoia"),
+      join(sources.julia, "src"),
+      join(sources.julia, "ext"),
+      join(sources.julia, "docs/src"),
+    ])
+      watchers.push(watch(path, { recursive: true }, schedule));
+    bundleWatcher = await build({
+      root: webRoot,
+      configFile: join(webRoot, "vite.config.ts"),
+      build: { watch: {}, emptyOutDir: true },
+    });
+    let first = true;
+    bundleWatcher.on("event", (event) => {
+      if (event.code === "START") bundling = true;
+      if (event.code === "END") {
+        bundling = false;
+        if (first) first = false;
+        else schedule();
+      }
+    });
+  }
+
+  // Observe Wrangler immediately so a startup failure cannot leave watchers
+  // running after its exit event has already been emitted.
+  preview = spawn(
+    "pnpm",
+    [
+      "exec",
+      "wrangler",
+      "dev",
+      "--local",
+      "--infer-origin-from-routes=false",
+      "--live-reload",
+      "--config",
+      "cloudflare/wrangler.jsonc",
+      "--port",
+      options.port ?? "5173",
+      "--ip",
+      options.host ?? "127.0.0.1",
+    ],
+    { cwd: webRoot, stdio: "inherit" },
+  );
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
   await new Promise((resolve, reject) => {
     preview.once("error", reject);
     preview.once("exit", (code) =>
@@ -91,8 +94,10 @@ try {
     );
   });
 } finally {
+  process.removeListener("SIGINT", stop);
+  process.removeListener("SIGTERM", stop);
   clearTimeout(timer);
   for (const watcher of watchers) watcher.close();
   await bundleWatcher?.close();
-  preview.kill("SIGTERM");
+  preview?.kill("SIGTERM");
 }
