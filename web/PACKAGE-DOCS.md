@@ -29,6 +29,10 @@ The first run fetches pinned sources, builds the Python extension in an isolated
 environment, and prepares Julia with CairoMakie. An absolute `EUNOIA_CAPI_LIB`
 selects a local native library instead of Julia's matching downloaded artifact.
 CI uses `.github/actions/prepare-docs` to prepare these environments explicitly.
+Julia preparation always instantiates and precompiles the documentation
+environment and renders a small PNG, including when the environment marker is
+cached. The Julia depot and site caches can restore independently, so compilation
+and font setup must finish before Diplodocus starts its execution deadlines.
 
 Checkouts and Julia's prepared source copy live under `.docs-sources/`.
 Snapshots, environments, and extraction and rendering caches live under

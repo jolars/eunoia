@@ -49,6 +49,31 @@ async function stageJulia(source, workspace) {
   return directory;
 }
 
+function warmJulia(runtime, source) {
+  run(
+    runtime,
+    [
+      "--startup-file=no",
+      `--project=${join(source, "docs")}`,
+      "-e",
+      [
+        "using Pkg",
+        "Pkg.instantiate()",
+        "Pkg.precompile()",
+        "using Eunoia, CairoMakie",
+        'CairoMakie.activate!(type="png")',
+        "mktemp() do _, io",
+        'show(io, MIME("image/png"), eunoiaplot(euler(Dict("A" => 2, "B" => 1, "A&B" => 1))))',
+        "end",
+        'println("Prepared native Eunoia ", Eunoia.version())',
+      ].join("; "),
+    ],
+    source,
+    false,
+    { ...process.env, JULIA_PKG_PRECOMPILE_AUTO: "0" },
+  );
+}
+
 export async function prepareEnvironment(
   language,
   originalSource,
@@ -117,6 +142,9 @@ export async function prepareEnvironment(
       cached.key === (await key()) &&
       (language !== "python" || (await exists(interpreter)))
     ) {
+      // The site and Julia depot caches restore independently, so the marker
+      // cannot prove that compiled packages and plotting assets are ready.
+      if (language === "julia") warmJulia(runtime, source);
       return { source, env: cached.env };
     }
   }
@@ -181,18 +209,7 @@ export async function prepareEnvironment(
       false,
       env,
     );
-    run(
-      runtime,
-      [
-        "--startup-file=no",
-        `--project=${join(source, "docs")}`,
-        "-e",
-        'using Eunoia, CairoMakie; CairoMakie.activate!(type="png"); println("Prepared native Eunoia ", Eunoia.version())',
-      ],
-      source,
-      false,
-      env,
-    );
+    warmJulia(runtime, source);
   }
   const env =
     language === "python"
