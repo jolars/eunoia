@@ -1,0 +1,18 @@
+{
+  "/docs/": "Introduction to Eunoia: a Rust engine for area-proportional Euler and Venn diagrams, with bindings for R, Python, Julia, and JavaScript.",
+  "/docs/concepts/complement/": "How Eunoia fits a bounding container (the universe) whose leftover area matches a target, for complement-aware Euler diagrams.",
+  "/docs/concepts/fitter-pipeline/": "Inside Eunoia's spec-to-fit pipeline: MDS initialization, loss-driven refinement, and how ellipses handle lopsided overlaps that circles cannot.",
+  "/docs/concepts/glyphs/": "How Eunoia packs equally-sized unit glyphs (eulerGlyphs-style dots) inside diagram regions, with uniform or random arrangements and an auto-sized shared radius.",
+  "/docs/concepts/goodness-of-fit/": "The scalar metrics Eunoia reports (stress, diagError, and residuals) that summarize how faithfully the fitted geometry reproduces the requested region sizes.",
+  "/docs/concepts/label-placement/": "How Eunoia positions region labels using poles of inaccessibility, keeping text inside the correct area even for complex overlaps.",
+  "/docs/concepts/shapes/": "The five fittable shapes in Eunoia (circles, ellipses, squares, rectangles, and rotated rectangles), their Venn limits, and when to use each.",
+  "/docs/quickstart/javascript/": "Generate area-proportional Euler and Venn diagrams in JavaScript with the @jolars/eunoia WebAssembly package.",
+  "/docs/quickstart/r/": "Generate area-proportional Euler and Venn diagrams in R with eulerr, the original Eunoia binding.",
+  "/docs/quickstart/rust/": "Generate area-proportional Euler and Venn diagrams in Rust with the eunoia crate, the pure-Rust core behind every binding.",
+  "/docs/reference/": "API reference index for Eunoia, linking the Rust, R, Python, Julia, and JavaScript binding documentation.",
+  "/docs/reference/javascript/": "The public API of @jolars/eunoia: exported functions, their options, and return types for the JavaScript and WebAssembly build.",
+  "/app/": "Interactive area-proportional Euler and Venn diagram builder: enter set sizes and intersections, tune the fit, and export SVG. Runs entirely in your browser.",
+  "/cite/": "How to cite Eunoia and its language bindings: ready-to-copy BibTeX, BibLaTeX, CSL, APA, Vancouver, and Chicago entries for the Eunoia preprint by Larsson and Lee (2026).",
+  "/docs/quickstart/python/": "Generate area-proportional Euler and Venn diagrams in Python with the eunoia package.",
+  "/docs/quickstart/julia/": "Generate area-proportional Euler and Venn diagrams in Julia with the Eunoia.jl binding."
+}

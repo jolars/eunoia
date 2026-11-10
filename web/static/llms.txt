@@ -27,9 +27,9 @@ at authors of downstream bindings.
 
 ## Julia documentation
 
-- [Julia overview](https://eunoia.bz/docs/reference/julia/): Installation, fitting, Makie plotting, and citation information for Eunoia.jl.
-- [Julia gallery](https://eunoia.bz/docs/reference/julia/gallery/): Executed Julia examples and figures demonstrating shapes, styling, labels, and glyphs.
-- [Julia changelog](https://eunoia.bz/docs/reference/julia/changelog/): Release notes maintained in the Eunoia.jl repository.
+- [Julia overview](https://eunoia.bz/packages/julia/): Installation, fitting, Makie plotting, and citation information for Eunoia.jl.
+- [Julia gallery](https://eunoia.bz/packages/julia/gallery): Executed Julia examples and figures demonstrating shapes, styling, labels, and glyphs.
+- [Julia changelog](https://eunoia.bz/packages/julia/CHANGELOG): Release notes maintained in the Eunoia.jl repository.
 
 ## Concepts
 
@@ -44,8 +44,8 @@ at authors of downstream bindings.
 
 - [Reference overview](https://eunoia.bz/docs/reference/): Where the per-language API references live.
 - [JavaScript API Reference](https://eunoia.bz/docs/reference/javascript/): The public surface of `@jolars/eunoia`.
-- [Python API Reference](https://eunoia.bz/docs/reference/python/): The `eunoia` Python API, including fitting, result objects, geometry, and plotting options.
-- [Julia API Reference](https://eunoia.bz/docs/reference/julia/api/): The Eunoia.jl API, including fitting, result fields, label and glyph placement, and Makie methods.
+- [Python API Reference](https://eunoia.bz/packages/python/): The `eunoia` Python API, including fitting, result objects, geometry, and plotting options.
+- [Julia API Reference](https://eunoia.bz/packages/julia/api): The Eunoia.jl API, including fitting, result fields, label and glyph placement, and Makie methods.
 - [Bindings: C ABI Contract](https://eunoia.bz/docs/bindings/c-abi/): The C ABI for native hosts that reach the core without wasm-bindgen, PyO3, or extendr.
 
 ## Optional

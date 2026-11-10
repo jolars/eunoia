@@ -1,0 +1,282 @@
+{
+  "docs-concepts-complement-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 8,
+        "B": 6,
+        "A&B": 2
+      },
+      "shape": "circle",
+      "complement": 25,
+      "seed": 7,
+      "caption": "A two-set diagram with a complement: the dashed frame is the container, and the shaded margin around the circles is the universe."
+    }
+  },
+  "docs-concepts-fitter-pipeline-1": {
+    "component": "pipeline",
+    "props": {
+      "sets": {
+        "A": 12,
+        "B": 11,
+        "C": 9,
+        "A&B": 5,
+        "A&C": 1.5,
+        "B&C": 4.5,
+        "A&B&C": 0.8
+      },
+      "shape": "circle",
+      "caption": "A real recording of the fitter, played back one optimizer step at a time. Run the initial layout, then the final layout. Re-run draws a new random start; a real fit keeps the lowest-loss of several such starts."
+    }
+  },
+  "docs-concepts-label-placement-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 10,
+        "B": 10,
+        "C": 10,
+        "D": 10,
+        "A&B": 4,
+        "A&C": 4,
+        "A&D": 4,
+        "B&C": 4,
+        "B&D": 4,
+        "C&D": 4,
+        "A&B&C": 1.5,
+        "A&B&D": 1.5,
+        "A&C&D": 1.5,
+        "B&C&D": 1.5,
+        "A&B&C&D": 0.5
+      },
+      "shape": "ellipse",
+      "strategy": "raycast",
+      "caption": "Raycast (default). Exterior labels follow the centroid→POI ray; collisions are resolved by a sweep that nudges along the perimeter."
+    }
+  },
+  "docs-concepts-label-placement-2": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 10,
+        "B": 10,
+        "C": 10,
+        "D": 10,
+        "A&B": 4,
+        "A&C": 4,
+        "A&D": 4,
+        "B&C": 4,
+        "B&D": 4,
+        "C&D": 4,
+        "A&B&C": 1.5,
+        "A&B&D": 1.5,
+        "A&C&D": 1.5,
+        "B&C&D": 1.5,
+        "A&B&C&D": 0.5
+      },
+      "shape": "ellipse",
+      "strategy": "forceDirected",
+      "caption": "ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion."
+    }
+  },
+  "docs-concepts-label-placement-3": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 10,
+        "B": 10,
+        "C": 10,
+        "D": 10,
+        "A&B": 4,
+        "A&C": 4,
+        "A&D": 4,
+        "B&C": 4,
+        "B&D": 4,
+        "C&D": 4,
+        "A&B&C": 1.5,
+        "A&B&D": 1.5,
+        "A&C&D": 1.5,
+        "B&C&D": 1.5,
+        "A&B&C&D": 0.5
+      },
+      "shape": "ellipse",
+      "strategy": "matched",
+      "caption": "Matched (boundary labeling). Labels are assigned to a ring of slots by an order-preserving, shortest-total-leader matching, so the leaders never cross and stay close to the diagram."
+    }
+  },
+  "docs-concepts-label-placement-4": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "Mammals": 12,
+        "Birds": 9,
+        "Nocturnal": 7,
+        "Mammals&Birds": 1,
+        "Mammals&Nocturnal": 4,
+        "Birds&Nocturnal": 2,
+        "Mammals&Birds&Nocturnal": 0.6
+      },
+      "shape": "circle",
+      "setLabels": true,
+      "labelSize": 4,
+      "caption": "Set names placed outside their own shapes: each rotates around its circle to the angle with the most free space, and needs no leader line to say what it names. The intersection labels come from placeLabelsForRegions as usual — that is where the leaders are from — and their boxes were handed to the set placer as keep-outs."
+    }
+  },
+  "docs-concepts-shapes-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 10,
+        "B": 10,
+        "C": 10,
+        "A&B": 3,
+        "A&C": 3,
+        "B&C": 3,
+        "A&B&C": 1
+      },
+      "shape": "circle",
+      "seed": 7,
+      "caption": "A symmetric three-set spec fitted with circles."
+    }
+  },
+  "docs-concepts-shapes-2": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 10,
+        "B": 10,
+        "C": 10,
+        "D": 10,
+        "A&B": 4,
+        "A&C": 4,
+        "A&D": 4,
+        "B&C": 4,
+        "B&D": 4,
+        "C&D": 4,
+        "A&B&C": 1.5,
+        "A&B&D": 1.5,
+        "A&C&D": 1.5,
+        "B&C&D": 1.5,
+        "A&B&C&D": 0.5
+      },
+      "shape": "ellipse",
+      "seed": 3,
+      "caption": "A four-set spec fitted with ellipses; no four-circle diagram realizes every region."
+    }
+  },
+  "docs-concepts-shapes-3": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 10,
+        "B": 10,
+        "C": 10,
+        "A&B": 3,
+        "A&C": 3,
+        "B&C": 3,
+        "A&B&C": 1
+      },
+      "shape": "square",
+      "seed": 7,
+      "caption": "The same three-set spec fitted with axis-aligned squares."
+    }
+  },
+  "docs-concepts-shapes-4": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 12,
+        "B": 7,
+        "A&B": 3
+      },
+      "shape": "rectangle",
+      "seed": 5,
+      "caption": "A two-set spec with unequal sizes fitted with rectangles."
+    }
+  },
+  "docs-concepts-shapes-5": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 10,
+        "B": 10,
+        "C": 10,
+        "D": 10,
+        "A&B": 4,
+        "A&C": 4,
+        "A&D": 4,
+        "B&C": 4,
+        "B&D": 4,
+        "C&D": 4,
+        "A&B&C": 1.5,
+        "A&B&D": 1.5,
+        "A&C&D": 1.5,
+        "B&C&D": 1.5,
+        "A&B&C&D": 0.5
+      },
+      "shape": "rotatedRectangle",
+      "seed": 3,
+      "caption": "The four-set spec fitted with rectangles that can turn as well as stretch."
+    }
+  },
+  "docs-quickstart-javascript-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 5,
+        "B": 3,
+        "A&B": 1.5
+      },
+      "shape": "circle",
+      "caption": "The diagram fitted by the first example below."
+    }
+  },
+  "docs-quickstart-r-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 5,
+        "B": 3,
+        "A&B": 1.5
+      },
+      "shape": "circle",
+      "caption": "The diagram fitted by the first example below."
+    }
+  },
+  "docs-quickstart-rust-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 5,
+        "B": 3,
+        "A&B": 1.5
+      },
+      "shape": "circle",
+      "caption": "The diagram fitted by the first example below."
+    }
+  },
+  "docs-quickstart-python-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 5,
+        "B": 3,
+        "A&B": 1.5
+      },
+      "shape": "circle",
+      "caption": "The diagram fitted by the first example below."
+    }
+  },
+  "docs-quickstart-julia-1": {
+    "component": "diagram",
+    "props": {
+      "sets": {
+        "A": 5,
+        "B": 3,
+        "A&B": 1.5
+      },
+      "shape": "circle",
+      "caption": "The diagram fitted by the first example below."
+    }
+  }
+}

@@ -76,13 +76,6 @@ export async function sourceInputs(root, names, prefix) {
   return inputs;
 }
 
-export async function generatedDigest(routes, assets) {
-  return digest([
-    ...(await sourceInputs(routes, ["."], "routes")),
-    ...(await sourceInputs(assets, ["."], "assets")),
-  ]);
-}
-
 export async function checkout(name, pin, override, cacheRoot = projectRoot) {
   if (override) return resolve(override);
   const destination = join(

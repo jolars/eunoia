@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 // Single source of truth for the version shown in the web app and docs.
 // `ts/package.json` is kept in lockstep with the Rust crate by versionary
 // (the `ts` package `follows` `.` in versionary.jsonc), so this is the
-// published crate/npm version. Read once at build time by `vite.config.ts`
-// for the `__EUNOIA_VERSION__` define and `%EUNOIA_VERSION%` markdown tokens.
+// published crate/npm version. Vite injects `__EUNOIA_VERSION__` into widgets,
+// and the site publisher resolves version tokens in generated documentation.
 const pkg = JSON.parse(
   readFileSync(new URL("../ts/package.json", import.meta.url), "utf8"),
 );

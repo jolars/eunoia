@@ -1,86 +1,127 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import worker, { wantsMarkdown } from "../cloudflare/markdown-worker.js";
-import { cleanDocsSource } from "./build-markdown.mjs";
+import worker from "../cloudflare/markdown-worker.js";
 
-test("docs source keeps prose and code but removes Svelte internals", async () => {
-  const source = await readFile(
-    new URL(
-      "../src/routes/docs/quickstart/javascript/+page.svx",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  const markdown = cleanDocsSource(source);
-  assert.match(markdown, /^# Quickstart: JavaScript/m);
-  assert.match(markdown, /```html\n<script type="module">/);
-  assert.doesNotMatch(markdown, /import DiagramExample from/);
-  assert.doesNotMatch(markdown, /<DiagramExample/);
-});
-
-test("Markdown negotiation respects disabled media ranges", () => {
-  assert.equal(wantsMarkdown("text/html, text/markdown;q=0.8"), true);
-  assert.equal(wantsMarkdown("text/markdown;q=0, text/html"), false);
-  assert.equal(wantsMarkdown("*/*"), false);
-});
-
-test("Worker serves Markdown for an explicit request and HTML by default", async () => {
-  const requested = [];
-  const env = {
+function assetBinding({ missingMarkdown = false } = {}) {
+  const requests = [];
+  return {
+    requests,
     ASSETS: {
       async fetch(request) {
-        requested.push(request.url);
-        return request.url.includes("_agent_markdown")
-          ? new Response("# Shapes\n", {
-              headers: { "Content-Type": "text/plain" },
-            })
-          : new Response("<h1>Shapes</h1>", {
-              headers: { "Content-Type": "text/html", Vary: "Accept-Encoding" },
-            });
+        requests.push(request);
+        const path = new URL(request.url).pathname;
+        if (path === "/missing/")
+          return new Response("Missing", { status: 404 });
+        if (path === "/old/")
+          return new Response(null, {
+            status: 301,
+            headers: { Location: "/docs/" },
+          });
+        const markdown = path.endsWith(".md");
+        if (markdown && missingMarkdown)
+          return new Response("Missing", { status: 404 });
+        const asset = path.endsWith(".js");
+        return new Response(
+          request.method === "HEAD"
+            ? null
+            : markdown
+              ? "# Shapes\n"
+              : asset
+                ? "asset"
+                : "<h1>Shapes</h1>",
+          {
+            headers: {
+              "Content-Type": markdown
+                ? "text/plain"
+                : asset
+                  ? "text/javascript"
+                  : "text/html",
+              Vary: "Accept-Encoding",
+              ETag: markdown ? '"markdown"' : '"html"',
+            },
+          },
+        );
       },
     },
   };
-  const markdown = await worker.fetch(
-    new Request("https://eunoia.bz/docs/concepts/shapes/", {
+}
+
+test("the generated Worker negotiates adjacent Markdown for directory and clean API URLs", async () => {
+  for (const [path, expected] of [
+    ["/docs/concepts/shapes/", "/docs/concepts/shapes/index.md"],
+    [
+      "/packages/python/reference/example",
+      "/packages/python/reference/example.md",
+    ],
+  ]) {
+    const env = assetBinding();
+    const response = await worker.fetch(
+      new Request(`https://eunoia.bz${path}`, {
+        headers: { Accept: "text/markdown" },
+      }),
+      env,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(
+      response.headers.get("Content-Type"),
+      "text/markdown; charset=utf-8",
+    );
+    assert.equal(response.headers.get("Vary"), "Accept-Encoding, Accept");
+    assert.equal(await response.text(), "# Shapes\n");
+    assert.equal(new URL(env.requests[1].url).pathname, expected);
+  }
+});
+
+test("media quality, HEAD, and representation validators remain correct", async () => {
+  for (const [accept, markdown] of [
+    ["text/markdown", true],
+    ["text/html, text/markdown;q=0.8", false],
+    ["text/markdown;q=0", false],
+    ["text/markdown;q=1.1", false],
+    ["*/*", false],
+  ]) {
+    const env = assetBinding();
+    const response = await worker.fetch(
+      new Request("https://eunoia.bz/docs/", {
+        method: "HEAD",
+        headers: { Accept: accept, "If-None-Match": '"html"' },
+      }),
+      env,
+    );
+    assert.equal(
+      response.headers.get("Content-Type")?.startsWith("text/markdown"),
+      markdown,
+    );
+    assert.equal(await response.text(), "");
+    if (markdown) {
+      assert.equal(env.requests[0].headers.get("If-None-Match"), null);
+      assert.equal(response.headers.get("ETag"), '"markdown"');
+    }
+  }
+});
+
+test("missing Markdown falls back to HTML and assets, redirects, and 404s pass through", async () => {
+  const fallback = await worker.fetch(
+    new Request("https://eunoia.bz/docs/", {
       headers: { Accept: "text/markdown" },
     }),
-    env,
+    assetBinding({ missingMarkdown: true }),
   );
-  assert.equal(
-    markdown.headers.get("Content-Type"),
-    "text/markdown; charset=utf-8",
-  );
-  assert.equal(markdown.headers.get("Vary"), "Accept");
-  assert.equal(await markdown.text(), "# Shapes\n");
-  assert.equal(
-    requested[0],
-    "https://eunoia.bz/_agent_markdown/docs/concepts/shapes/index.txt",
-  );
-
-  const html = await worker.fetch(
-    new Request("https://eunoia.bz/docs/concepts/shapes/"),
-    env,
-  );
-  assert.equal(html.headers.get("Content-Type"), "text/html");
-  assert.equal(html.headers.get("Vary"), "Accept-Encoding, Accept");
-  assert.equal(await html.text(), "<h1>Shapes</h1>");
-});
-
-test("Worker serves non-page assets from its asset binding", async () => {
-  const requested = [];
-  const env = {
-    ASSETS: {
-      async fetch(request) {
-        requested.push(request.url);
-        return new Response("asset", { status: 200 });
-      },
-    },
-  };
-  const response = await worker.fetch(
-    new Request("https://eunoia.bz/_app/example.js"),
-    env,
-  );
-  assert.equal(await response.text(), "asset");
-  assert.deepEqual(requested, ["https://eunoia.bz/_app/example.js"]);
+  assert.equal(await fallback.text(), "<h1>Shapes</h1>");
+  assert.match(fallback.headers.get("Vary"), /Accept/);
+  for (const [path, status] of [
+    ["/assets/app.js", 200],
+    ["/old/", 301],
+    ["/missing/", 404],
+  ]) {
+    const env = assetBinding();
+    const response = await worker.fetch(
+      new Request(`https://eunoia.bz${path}`, {
+        headers: { Accept: "text/markdown" },
+      }),
+      env,
+    );
+    assert.equal(response.status, status);
+    assert.equal(env.requests.length, 1);
+  }
 });

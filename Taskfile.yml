@@ -138,7 +138,7 @@ tasks:
       - task: build-wasm
 
   web-dev:
-    desc: Start Svelte development server
+    desc: Watch the Diplodocus site and Svelte widgets
     # `build-ts` first: vite resolves `@jolars/eunoia` through the `file:../npm`
     # link, and a stale `npm/index.js` fails at runtime with a missing-export
     # SyntaxError rather than anything pointing back at `ts/`. Edits made while
@@ -149,14 +149,16 @@ tasks:
       - pnpm dev
 
   docs-python:
-    desc: Generate the Python API reference with pinned Diplodocus sources
+    desc: Build the site, including the Python API (compatibility alias)
     cmds:
-      - node web/scripts/python-docs.mjs {{.CLI_ARGS}}
+      - task: docs-packages
+        vars: { CLI_ARGS: "{{.CLI_ARGS}}" }
 
   docs-julia:
-    desc: Generate the Julia guides, gallery, and API reference
+    desc: Build the site, including Julia documentation (compatibility alias)
     cmds:
-      - node web/scripts/julia-docs.mjs {{.CLI_ARGS}}
+      - task: docs-packages
+        vars: { CLI_ARGS: "{{.CLI_ARGS}}" }
 
   docs-prepare:
     desc: Prepare the pinned Python and Julia documentation environments
@@ -164,9 +166,14 @@ tasks:
       - node web/scripts/prepare-docs.mjs {{.CLI_ARGS}}
 
   docs-packages:
-    desc: Generate both package references and the Julia guides
+    desc: Build the complete Diplodocus website and package documentation
     cmds:
-      - node web/scripts/docs.mjs {{.CLI_ARGS}}
+      - node web/scripts/site.mjs build {{.CLI_ARGS}}
+
+  docs-extract:
+    desc: Extract a portable snapshot of the complete website
+    cmds:
+      - node web/scripts/site.mjs extract {{.CLI_ARGS}}
 
   lighthouse:
     desc: "Lighthouse desktop audit of the docs (perf, a11y, best-practices, SEO). Args: URL=..."

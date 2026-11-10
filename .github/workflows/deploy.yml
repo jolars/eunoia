@@ -66,14 +66,14 @@ jobs:
       - name: Prepare package documentation
         uses: ./.github/actions/prepare-docs
 
-      - name: Check package documentation integration
-        run: |
-          pnpm check
-          pnpm test:docs
+      - name: Check website sources
+        run: pnpm check
         working-directory: web
 
       - name: Build web app
-        run: pnpm run build
+        run: |
+          pnpm build
+          pnpm test:docs
         working-directory: web
 
       - name: Test member roster placement

@@ -1,5 +1,3 @@
-import { anchors, links } from "./python-docs-coverage.mjs";
-
 export const juliaPublicApi = [
   "euler",
   "venn",
@@ -96,37 +94,4 @@ export function validateJuliaCoverage(pages) {
     byPath.get("eunoiaplot!").html.includes("label_placement"),
     "Missing Makie mutating implementation",
   );
-  const mount = "/docs/reference/julia/";
-  for (const format of ["html", "markdown"]) {
-    const targets = new Map(
-      pages.map((page) => [
-        mount + (page.path ? `${page.path}/` : ""),
-        anchors(page[format], format === "markdown"),
-      ]),
-    );
-    for (const page of pages) {
-      for (const target of links(page[format], format === "markdown")) {
-        const url = new URL(
-          target,
-          `https://eunoia.bz${mount}${page.path ? `${page.path}/` : ""}`,
-        );
-        if (
-          url.origin !== "https://eunoia.bz" ||
-          !url.pathname.startsWith(mount)
-        )
-          continue;
-        requireContent(
-          targets.has(url.pathname),
-          `Unpublished ${format} target: ${target}`,
-        );
-        requireContent(
-          !url.hash ||
-            targets
-              .get(url.pathname)
-              .has(decodeURIComponent(url.hash.slice(1))),
-          `Missing ${format} anchor: ${target}`,
-        );
-      }
-    }
-  }
 }

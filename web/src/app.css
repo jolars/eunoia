@@ -1,15 +1,12 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
 
-/* Drive the `dark:` variant from a `.dark` class on <html> instead of the
-   default `prefers-color-scheme` media query — we toggle that class ourselves
-   (see lib/theme.svelte.ts). Used for `dark:prose-invert` and the few
-   state-color (red/green/amber) exceptions that aren't worth a token. */
+/* Diplodocus owns the site theme; the adapter mirrors its choice onto each
+   widget so Tailwind variants stay inside the interactive island. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Semantic theme tokens. `@theme inline` exposes them as Tailwind color
    utilities (bg-surface, text-ink, border-line, …) that resolve to the CSS
-   variables below, so a single `.dark` toggle reskins the whole site. */
+   variables below, so the widget can follow the site without overriding its palette. */
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -67,69 +64,8 @@
 }
 
 body {
+  font-size: 1rem;
+  line-height: 1.5;
   margin: 0;
-  min-height: 100vh;
-  background: var(--canvas);
   color: var(--ink);
-}
-
-/* Shiki syntax highlighting. The highlighter (see vite.config.ts) emits
-   dual-theme token colors as CSS variables; map them to the active theme.
-   The `.dark` rule needs `span` specificity to beat the light-mode `.shiki
-   span` rule, so both sides target spans. The code-block frame (background,
-   border, padding) stays owned by the prose-pre:* utilities for theme
-   consistency, so we only colorize tokens here. */
-.shiki span {
-  color: var(--shiki-light);
-}
-.dark .shiki span {
-  color: var(--shiki-dark);
-}
-
-/* Neutralize the inline-code chrome (bg, padding, rounding) that the
-   prose-code:* utilities would otherwise apply to the <code> wrapping a
-   highlighted block. */
-.prose .shiki code {
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  font-weight: inherit;
-}
-
-/* API fragments inherit the host typography and theme. Long signatures and
-   parameter tables scroll inside the article on narrow screens. */
-.diplodocus-content {
-  min-width: 0;
-}
-.diplodocus-content pre {
-  max-width: 100%;
-  overflow-x: auto;
-  white-space: pre;
-}
-.prose .diplodocus-content pre code {
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  font-weight: inherit;
-}
-.diplodocus-content table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-}
-.diplodocus-content img {
-  max-width: 100%;
-  height: auto;
-}
-.diplodocus-content .package,
-.diplodocus-content .source-links {
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-.diplodocus-content dt {
-  margin-top: 1rem;
-  font-weight: 600;
-}
-.diplodocus-content dd {
-  margin-left: 1rem;
 }

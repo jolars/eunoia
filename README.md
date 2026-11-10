@@ -80,7 +80,9 @@ fn main() {
 Eunoia powers a web app for interactive diagram fitting and exploration, located
 at <https://eunoia.bz/app>. The source code for the app resides in the `web/`
 directory of this repo and is built on the JavaScript (npm) package, using
-[Svelte](https://svelte.dev/).
+[Svelte](https://svelte.dev/) components, hosted in a
+[Diplodocus](https://diplodocus.cc/) documentation site. See
+[web/README.md](web/README.md) for development commands.
 
 ## The Eunoia Ecosystem
 

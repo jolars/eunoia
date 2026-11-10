@@ -155,10 +155,10 @@ jobs:
       - name: Check and test website
         run: |
           pnpm check
+          pnpm build
           pnpm test:docs
           pnpm test:members
           pnpm test:markdown
-          pnpm build
         working-directory: web
 
   slow-tests:

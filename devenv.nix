@@ -1,4 +1,5 @@
 {
+  config,
   pkgs,
   ...
 }:
@@ -26,7 +27,23 @@
     uv
   ];
 
-  env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.zlib ];
+  env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+    pkgs.stdenv.cc.cc.lib
+    pkgs.zlib
+  ];
+
+  # Run the lockfile's Workerd with Nix's loader, keeping its protocol version
+  # matched to Wrangler without relying on a system-wide nix-ld installation.
+  env.MINIFLARE_WORKERD_PATH = pkgs.writeShellScript "eunoia-workerd" ''
+    set -euo pipefail
+    eunoia_workerd="$(${pkgs.nodejs}/bin/node -e '
+      const { createRequire } = require("node:module");
+      const project = createRequire(process.argv[1]);
+      const wrangler = createRequire(project.resolve("wrangler/package.json"));
+      process.stdout.write(wrangler("workerd").default);
+    ' "${config.env.DEVENV_ROOT}/web/package.json")"
+    exec ${pkgs.stdenv.cc.bintools.dynamicLinker} "$eunoia_workerd" "$@"
+  '';
 
   languages = {
     python.enable = true;

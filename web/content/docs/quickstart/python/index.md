@@ -1,0 +1,102 @@
+# Quickstart: Python {#quickstart-python}
+
+[`eunoia`](https://pypi.org/project/eunoia/) is the Python binding. You hand
+`euler()` a dict of set sizes, it fits an area-proportional diagram, and
+`.plot()` renders it with matplotlib.
+
+::: {.component name="eunoia" #docs-quickstart-python-1}
+
+The diagram fitted by the first example below.
+
+:::
+
+## Install {#install}
+
+```bash
+pip install eunoia
+```
+
+Wheels ship for all common platforms, so no Rust toolchain is needed. Plotting
+uses matplotlib (a dependency).
+
+## Fit a Diagram {#fit-a-diagram}
+
+```python
+import eunoia as eu
+import matplotlib.pyplot as plt
+
+fit = eu.euler({"A": 5, "B": 3, "A&B": 1.5})
+print(fit)  # residual table + goodness-of-fit metrics
+fit.plot()
+plt.show()
+```
+
+The input dict is keyed by **combination expression**: a single set (`"A"`) or
+sets joined with `&` (`"A&B"`). Values are *exclusive* by default: the part of
+`A` outside `B` is `5`, the overlap is `1.5`. Pass `input="inclusive"` if your
+numbers are full set sizes and the core will decompose them:
+
+```python
+fit = eu.euler({"A": 8, "B": 4.5, "A&B": 1.5}, input="inclusive")
+```
+
+The result carries the fitted geometry and fit statistics:
+
+```python
+fit.shapes  # fitted Circle, Ellipse, Square, Rectangle, or RotatedRectangle objects
+fit.loss  # objective value (lower is better)
+fit.diag_error  # largest single-region error
+```
+
+## Pick a Different Shape {#pick-a-different-shape}
+
+```python
+fit = eu.euler({"A": 5, "B": 3, "A&B": 1.5}, shape="ellipse")
+fit.plot(quantities=True)
+```
+
+`shape` is one of `"circle"` (default), `"ellipse"`, `"square"`,
+`"rectangle"`, or `"rotated_rectangle"`. Ellipses are more flexible and often
+fit three or more sets noticeably better. Rotated rectangles add an angle to
+the width and height and use derivative-free fitting; see
+[Shapes](../../concepts/shapes/index.md).
+
+## Customize the Plot {#customize-the-plot}
+
+```python
+fit.plot(
+    colors=["#e41a1c", "#377eb8"],  # per-set
+    quantities="fitted",  # show fitted areas at region anchors
+    labels=True,
+    edges={"linewidth": 1.5},
+)
+```
+
+`eunoia.options(...)` sets defaults for every subsequent plot; `reset_options()`
+reverts to the built-ins.
+
+## Venn Diagrams {#venn-diagrams}
+
+For a fixed, *non*-proportional Venn template (every intersection shown
+regardless of size), use `venn()`; it accepts a set count, a list of names, or a
+mapping:
+
+```python
+fit = eu.venn(["A", "B", "C"])
+fit.plot(quantities=True)
+```
+
+Ellipse Venn diagrams support 1–5 sets; circle, square, and rectangle support
+1–3, and rotated rectangles support 1–4:
+
+```python
+eu.venn(4, shape="rotated_rectangle").plot()
+```
+
+## Next Steps {#next-steps}
+
+Browse the [Python API reference](https://eunoia.bz/docs/reference/python/) for the complete
+public interface. The [eunoia-py docs site](https://jolars.github.io/eunoia-py/)
+retains the longer Python guides. For how the fit works across all
+bindings, see the [Fitter Pipeline](../../concepts/fitter-pipeline/index.md) and
+[Goodness of Fit](../../concepts/goodness-of-fit/index.md) chapters.

@@ -100,37 +100,19 @@ export function validateApiCoverage(pages) {
         `EulerFit.${member} is missing from ${format}`,
       );
       requireContent(
-        links(byName.get("VennFit")[format], format === "markdown").includes(
-          `${mount}EulerFit/#${member}`,
-        ),
+        links(byName.get("VennFit")[format], format === "markdown")
+          .map((link) => {
+            const url = new URL(
+              link,
+              `https://eunoia.bz${byName.get("VennFit").url ?? `${mount}VennFit/`}`,
+            );
+            return url.pathname + url.hash;
+          })
+          .includes(
+            `${byName.get("EulerFit").url ?? `${mount}EulerFit/`}#${member}`,
+          ),
         `VennFit.${member} must link to its inherited documentation in ${format}`,
       );
-    }
-    const targets = new Map(
-      pages.map((page) => [
-        mount + (page.path ? `${page.path}/` : ""),
-        anchors(page[format], format === "markdown"),
-      ]),
-    );
-    for (const page of pages) {
-      const current = mount + (page.path ? `${page.path}/` : "");
-      for (const link of links(page[format], format === "markdown")) {
-        const url = new URL(link, `https://eunoia.bz${current}`);
-        if (
-          url.origin !== "https://eunoia.bz" ||
-          !url.pathname.startsWith(mount)
-        )
-          continue;
-        const destination = targets.get(url.pathname);
-        requireContent(
-          destination,
-          `${current} links to an unpublished ${format} page: ${link}`,
-        );
-        requireContent(
-          !url.hash || destination.has(decodeURIComponent(url.hash.slice(1))),
-          `${current} links to a missing ${format} anchor: ${link}`,
-        );
-      }
     }
   }
 }

@@ -1,0 +1,809 @@
+{
+  "/app/": {
+    "artifact": "app/index.html"
+  },
+  "/cite/": {
+    "artifact": "cite/index.html"
+  },
+  "/docs/bindings/c-abi/": {
+    "artifact": "docs/bindings/c-abi/index.html",
+    "headings": {
+      "c-abi-contract": "C ABI Contract",
+      "the-contract-in-one-paragraph": "The Contract in One Paragraph",
+      "exported-symbols": "Exported Symbols",
+      "building-the-library": "Building the Library",
+      "eunoia_euler": "eunoia_euler",
+      "eunoia_venn": "eunoia_venn",
+      "eunoia_place_labels": "eunoia_place_labels",
+      "eunoia_place_set_labels": "eunoia_place_set_labels",
+      "eunoia_place_glyphs": "eunoia_place_glyphs",
+      "eunoia_place_glyph_boxes": "eunoia_place_glyph_boxes",
+      "eunoia_version-and-eunoia_free": "eunoia_version and eunoia_free",
+      "combination-keying": "Combination Keying",
+      "memory-ownership": "Memory Ownership",
+      "errors": "Errors",
+      "thread-safety": "Thread-Safety",
+      "worked-example-c": "Worked Example (C)"
+    }
+  },
+  "/docs/concepts/complement/": {
+    "artifact": "docs/concepts/complement/index.html",
+    "headings": {
+      "complement-universecontainer": "Complement (Universe/Container)",
+      "opting-in": "Opting In",
+      "how-the-container-is-fitted": "How the Container Is Fitted",
+      "the-complement-region-": "The Complement Region (\"\")",
+      "rendering-the-container-as-a-frame": "Rendering the Container as a Frame",
+      "venn-diagrams": "Venn Diagrams",
+      "in-rust": "In Rust",
+      "see-also": "See Also"
+    }
+  },
+  "/docs/concepts/fitter-pipeline/": {
+    "artifact": "docs/concepts/fitter-pipeline/index.html",
+    "headings": {
+      "fitter-pipeline": "Fitter Pipeline",
+      "1-initial-layout-mds": "1. Initial Layout (MDS)",
+      "2-optimizer-encoding": "2. Optimizer Encoding",
+      "3-final-optimization": "3. Final Optimization",
+      "4-normalization": "4. Normalization"
+    }
+  },
+  "/docs/concepts/glyphs/": {
+    "artifact": "docs/concepts/glyphs/index.html",
+    "headings": {
+      "glyphs": "Glyphs",
+      "mental-model": "Mental Model",
+      "arrangements": "Arrangements",
+      "radius-auto-or-fixed": "Radius: Auto or Fixed",
+      "dot-appearance": "Dot appearance",
+      "label-keep-out": "Label Keep-Out",
+      "member-labels": "Member Labels",
+      "how-the-boxes-are-laid-out": "How the boxes are laid out",
+      "scale-shrink-only": "Scale: shrink-only",
+      "dropped-items-are-normal-here": "Dropped items are normal here",
+      "javascripttypescript": "JavaScript/TypeScript",
+      "rust": "Rust",
+      "other-bindings": "Other Bindings",
+      "notes-and-roadmap": "Notes and Roadmap"
+    }
+  },
+  "/docs/concepts/goodness-of-fit/": {
+    "artifact": "docs/concepts/goodness-of-fit/index.html",
+    "headings": {
+      "goodness-of-fit": "Goodness of Fit",
+      "metrics": "Metrics",
+      "when-a-diagram-cant-be-drawn-exactly": "When a Diagram Can’t Be Drawn Exactly",
+      "references": "References"
+    }
+  },
+  "/docs/concepts/label-placement/": {
+    "artifact": "docs/concepts/label-placement/index.html",
+    "headings": {
+      "label-placement": "Label Placement",
+      "mental-model": "Mental Model",
+      "size-measurement-contract": "Size Measurement Contract",
+      "resize-loop-size--place--measure": "Resize Loop (Size → Place → Measure)",
+      "native-rust-place_labels_to_fixed_point": "Native Rust: place_labels_to_fixed_point",
+      "javascripttypescript": "JavaScript/TypeScript",
+      "rpython-sketch": "R/Python (Sketch)",
+      "strategy-knobs": "Strategy Knobs",
+      "set-labels-outside-next-to-the-shape": "Set Labels: Outside, Next to the Shape",
+      "rendering-recipe": "Rendering Recipe"
+    }
+  },
+  "/docs/concepts/shapes/": {
+    "artifact": "docs/concepts/shapes/index.html",
+    "headings": {
+      "shapes": "Shapes",
+      "circle": "Circle",
+      "ellipse": "Ellipse",
+      "square": "Square",
+      "rectangle": "Rectangle",
+      "rotated-rectangle": "Rotated Rectangle",
+      "choosing-a-shape": "Choosing a Shape",
+      "selecting-a-shape-in-code": "Selecting a Shape in Code",
+      "see-also": "See Also"
+    }
+  },
+  "/docs/": {
+    "artifact": "docs/index.html",
+    "headings": {
+      "introduction": "Introduction",
+      "who-this-is-for": "Who This Is For",
+      "where-to-start": "Where to Start"
+    }
+  },
+  "/docs/quickstart/javascript/": {
+    "artifact": "docs/quickstart/javascript/index.html",
+    "headings": {
+      "quickstart-javascript": "Quickstart: JavaScript",
+      "install": "Install",
+      "without-a-bundler": "Without a Bundler",
+      "fit-a-diagram": "Fit a Diagram",
+      "choose-what-comes-back": "Choose What Comes Back",
+      "render-to-svg": "Render to SVG",
+      "pick-a-different-shape": "Pick a Different Shape",
+      "venn-diagrams": "Venn Diagrams",
+      "labels": "Labels"
+    }
+  },
+  "/docs/quickstart/julia/": {
+    "artifact": "docs/quickstart/julia/index.html",
+    "headings": {
+      "quickstart-julia": "Quickstart: Julia",
+      "install": "Install",
+      "fit-a-diagram": "Fit a Diagram",
+      "plot-with-makie": "Plot with Makie",
+      "pick-a-different-shape": "Pick a Different Shape",
+      "venn-diagrams": "Venn Diagrams",
+      "next-steps": "Next Steps"
+    }
+  },
+  "/docs/quickstart/python/": {
+    "artifact": "docs/quickstart/python/index.html",
+    "headings": {
+      "quickstart-python": "Quickstart: Python",
+      "install": "Install",
+      "fit-a-diagram": "Fit a Diagram",
+      "pick-a-different-shape": "Pick a Different Shape",
+      "customize-the-plot": "Customize the Plot",
+      "venn-diagrams": "Venn Diagrams",
+      "next-steps": "Next Steps"
+    }
+  },
+  "/docs/quickstart/r/": {
+    "artifact": "docs/quickstart/r/index.html",
+    "headings": {
+      "quickstart-r": "Quickstart: R",
+      "install": "Install",
+      "fit-a-diagram": "Fit a Diagram",
+      "pick-a-different-shape": "Pick a Different Shape",
+      "customize-the-plot": "Customize the Plot",
+      "venn-diagrams": "Venn Diagrams",
+      "next-steps": "Next Steps"
+    }
+  },
+  "/docs/quickstart/rust/": {
+    "artifact": "docs/quickstart/rust/index.html",
+    "headings": {
+      "quickstart-rust": "Quickstart: Rust",
+      "install": "Install",
+      "fit-a-diagram": "Fit a Diagram",
+      "read-the-result": "Read the Result",
+      "pick-a-different-shape": "Pick a Different Shape",
+      "regions-for-rendering": "Regions for Rendering",
+      "complement-the-universe": "Complement (the “Universe”)",
+      "next-steps": "Next Steps"
+    }
+  },
+  "/docs/reference/": {
+    "artifact": "docs/reference/index.html",
+    "headings": {
+      "reference": "Reference"
+    }
+  },
+  "/docs/reference/javascript/": {
+    "artifact": "docs/reference/javascript/index.html",
+    "headings": {
+      "javascript-api-reference": "JavaScript API Reference",
+      "euleroptions": "euler(options)",
+      "vennoptions": "venn(options)",
+      "the-layout-object": "The Layout Object",
+      "placelabelsforregionsoptions": "placeLabelsForRegions(options)",
+      "placesetlabelsoptions": "placeSetLabels(options)",
+      "placementsbboxoptions": "placementsBbox(options)",
+      "placeglyphsforregionsoptions": "placeGlyphsForRegions(options)",
+      "placeglyphboxesforregionsoptions": "placeGlyphBoxesForRegions(options)",
+      "labelobstaclesoptions": "labelObstacles(options)",
+      "svg-serializer-jolarseunoiasvg": "SVG Serializer: @jolars/eunoia/svg",
+      "interactivity-tooltips-and-data-hooks": "Interactivity: tooltips and data hooks",
+      "bundler-less-entry-jolarseunoiaweb": "Bundler-Less Entry: @jolars/eunoia/web"
+    }
+  },
+  "/docs/reference/julia/BoundingBox/": {
+    "artifact": "packages/julia/reference/9f7f709918b54780f3fc0f5043b77fa14a9b8a50b9ee8cc8b77e2b99d8176885.html",
+    "headings": {
+      "fields": "Fields",
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.BoundingBox": "Eunoia.BoundingBox",
+      "field-center": "center::Point",
+      "field-width": "width::Float64",
+      "field-height": "height::Float64",
+      "method-0b2eabdaf271be9c2476dd149b0a7b7b73862aeb100ca1c28440ccd047e93557": "BoundingBox(x::Real, y::Real, width::Real, height::Real)"
+    }
+  },
+  "/docs/reference/julia/Circle/": {
+    "artifact": "packages/julia/reference/6a26b3b25de936a3e3c3245e607fd97e68fea7a43b87aa0178ae5abf977c7272.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.Circle": "Eunoia.Circle",
+      "field-set": "set::String",
+      "field-center": "center::Point",
+      "field-radius": "radius::Float64",
+      "field-label_anchor": "label_anchor::Point"
+    }
+  },
+  "/docs/reference/julia/Container/": {
+    "artifact": "packages/julia/reference/29bbe7ac525da2f8be0ebdf7f2027a4515bb5194ba33c8c8ba9ed6a10c961782.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.Container": "Eunoia.Container",
+      "field-center": "center::Point",
+      "field-width": "width::Float64",
+      "field-height": "height::Float64"
+    }
+  },
+  "/docs/reference/julia/Ellipse/": {
+    "artifact": "packages/julia/reference/94638ac013815ba25554356459b4516815ca3ac3133829dc0d072688d7873dcd.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.Ellipse": "Eunoia.Ellipse",
+      "field-set": "set::String",
+      "field-center": "center::Point",
+      "field-semi_major": "semi_major::Float64",
+      "field-semi_minor": "semi_minor::Float64",
+      "field-rotation": "rotation::Float64",
+      "field-label_anchor": "label_anchor::Point"
+    }
+  },
+  "/docs/reference/julia/EulerFit/": {
+    "artifact": "packages/julia/reference/4ed69989ba26556a9f6f1924004c8ef9d3a879be2533c31ba480a63a0d640b42.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.EulerFit": "Eunoia.EulerFit",
+      "field-shapes": "shapes::Vector{S}",
+      "field-original_values": "original_values::Dict{String, Float64}",
+      "field-fitted_values": "fitted_values::Dict{String, Float64}",
+      "field-residuals": "residuals::Dict{String, Float64}",
+      "field-region_error": "region_error::Dict{String, Float64}",
+      "field-diag_error": "diag_error::Float64",
+      "field-stress": "stress::Float64",
+      "field-loss": "loss::Float64",
+      "field-iterations": "iterations::Int",
+      "field-container": "container::Union{Container, Nothing}",
+      "field-plot_data": "plot_data::JSON3.Object"
+    }
+  },
+  "/docs/reference/julia/EunoiaMakieExt/": {
+    "artifact": "packages/julia/reference/4be3426b1adfa064e411ebe7f58fd3eaab6b7c22b395a9e8c0490f267396c3b4.html",
+    "aliases": {
+      "EunoiaMakieExt": "EunoiaMakieExt"
+    }
+  },
+  "/docs/reference/julia/GlyphBoxPlacements/": {
+    "artifact": "packages/julia/reference/5e027fde245c91cbcb841b500d0dd99d5df54215ed4ec646da7c6ea13397143c.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.GlyphBoxPlacements": "Eunoia.GlyphBoxPlacements",
+      "field-scale": "scale::Float64",
+      "field-boxes": "boxes::Dict{String, Vector{BoundingBox}}",
+      "field-unplaced": "unplaced::Dict{String, Int}"
+    }
+  },
+  "/docs/reference/julia/GlyphPlacements/": {
+    "artifact": "packages/julia/reference/9fed1e8e33687d5f7c4dcc320a3ed3a04eff837fc3036aa71f16076799f56ae0.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.GlyphPlacements": "Eunoia.GlyphPlacements",
+      "field-radius": "radius::Float64",
+      "field-positions": "positions::Dict{String, Vector{Point}}",
+      "field-unplaced": "unplaced::Dict{String, Int}"
+    }
+  },
+  "/docs/reference/julia/LabelPlacement/": {
+    "artifact": "packages/julia/reference/b4506487ededf0a7c82aba939d73026bffbc453a51b1db85ce982e56778f36fc.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.LabelPlacement": "Eunoia.LabelPlacement",
+      "field-anchor": "anchor::Point",
+      "field-kind": "kind::Symbol",
+      "field-tether": "tether::Union{Point, Nothing}",
+      "field-leader_end": "leader_end::Union{Point, Nothing}",
+      "field-leader_waypoints": "leader_waypoints::Vector{Point}"
+    }
+  },
+  "/docs/reference/julia/Point/": {
+    "artifact": "packages/julia/reference/2ec2df124d7e8789e9efd70421bd9b0e20f7006e8e627a9181f8846fd40580c8.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.Point": "Eunoia.Point",
+      "field-x": "x::Float64",
+      "field-y": "y::Float64"
+    }
+  },
+  "/docs/reference/julia/Rectangle/": {
+    "artifact": "packages/julia/reference/018c2eb6fa8c850db997d35505d3f313ba1c31186232a23457bab4e58b373dbb.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.Rectangle": "Eunoia.Rectangle",
+      "field-set": "set::String",
+      "field-center": "center::Point",
+      "field-width": "width::Float64",
+      "field-height": "height::Float64",
+      "field-label_anchor": "label_anchor::Point"
+    }
+  },
+  "/docs/reference/julia/RotatedRectangle/": {
+    "artifact": "packages/julia/reference/5dcb87deb604ab6b6aed706353fb30d2b20a30ede49b73f0d8be53f065312b57.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.RotatedRectangle": "Eunoia.RotatedRectangle",
+      "field-set": "set::String",
+      "field-center": "center::Point",
+      "field-width": "width::Float64",
+      "field-height": "height::Float64",
+      "field-rotation": "rotation::Float64",
+      "field-label_anchor": "label_anchor::Point"
+    }
+  },
+  "/docs/reference/julia/Square/": {
+    "artifact": "packages/julia/reference/9a52470d1f683137d10beaf164ea6d63889b4338db42788295d6c438b50766c8.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.Square": "Eunoia.Square",
+      "field-set": "set::String",
+      "field-center": "center::Point",
+      "field-side": "side::Float64",
+      "field-label_anchor": "label_anchor::Point"
+    }
+  },
+  "/docs/reference/julia/VennFit/": {
+    "artifact": "packages/julia/reference/aaeedc476b437f51a25680a2e40c9055c9ecd3ca856c0fe73f756ff578293692.html",
+    "headings": {
+      "fields": "Fields"
+    },
+    "aliases": {
+      "Eunoia.VennFit": "Eunoia.VennFit",
+      "field-shapes": "shapes::Vector{S}",
+      "field-original_values": "original_values::Dict{String, Float64}",
+      "field-fitted_values": "fitted_values::Dict{String, Float64}",
+      "field-residuals": "residuals::Dict{String, Float64}",
+      "field-region_error": "region_error::Dict{String, Float64}",
+      "field-diag_error": "diag_error::Float64",
+      "field-stress": "stress::Float64",
+      "field-loss": "loss::Float64",
+      "field-iterations": "iterations::Int",
+      "field-container": "container::Union{Container, Nothing}",
+      "field-plot_data": "plot_data::JSON3.Object"
+    }
+  },
+  "/docs/reference/julia/api/": {
+    "artifact": "packages/julia/api.html",
+    "headings": {
+      "api-reference": "API Reference"
+    },
+    "aliases": {
+      "API-Reference": "API Reference",
+      "api-1edb34b8352fe6ff52496e63ba9f9bf421b6b944e2eae02fb4f897af26e351b2": "Eunoia.BoundingBox",
+      "api-a2b8d2c79b6c0de403c7686fbe8e2ff541b150d8ae0e43abf7305f2219977e70": "Eunoia.Circle",
+      "api-e0571b45e42b05337a197e7419f2737e325514269e07cb2bfb074c1f4a0cf27a": "Eunoia.Container",
+      "api-90e52e7a5341c5651f39c26bd1e25082ede7c9697702cef96b79f632c20b33b1": "Eunoia.Ellipse",
+      "api-38793b773173351175774044ae02d6db6ae42036d57f93f2e560761c2d3a7cb8": "Eunoia.EulerFit",
+      "api-c54a75daa24a4b9f8dfbe0acc2f584c0cc511b813a1d0cb6c6651c315f13bdd2": "Eunoia.GlyphBoxPlacements",
+      "api-8c6464c4a6a30e4667d482ada4d617880298c3f9999907764bc17f724f602ae9": "Eunoia.GlyphPlacements",
+      "api-396189f5c92fb2129aa52584b2aa1dabb01827894fcd54b1ecd056b27313d9f1": "Eunoia.LabelPlacement",
+      "api-59cafb5e612fa31b8a7df1da6dcd411ea2309143edbfd92222e3d51f1ffdb87a": "Eunoia.Point",
+      "api-d742cb110d5554395e61d4cab52f480da1b76d480f6814be559ce7e9dfe26a2d": "Eunoia.Rectangle",
+      "api-a31a664c3fcf2f8cc1d34973cfe8cf4fc7ffb74c199f75ba313d219755715dcf": "Eunoia.RotatedRectangle",
+      "api-eda227d2ddd61a61a6b553701ea57ae2386bc5ac7e0b1630283bd523cbd60c99": "Eunoia.Square",
+      "api-021ce5ec48c3579f0199b7ea8e9936e42245578c07726352258592cb23160fd7": "Eunoia.VennFit",
+      "api-8b7524db3c1fb27bbe047fcc8f63578c7d49abb69f89d70901c195ffc77d70f7": "Eunoia.euler",
+      "api-f0755c50a7728ef7b423f17de54d67c79b1bad1196d46706151507b4742eff75": "Eunoia.eunoiaplot",
+      "api-28d52222aa982a1126edcfeb7099de3c3d9779397c0eeddf1711b91e4d806a06": "Eunoia.eunoiaplot!",
+      "api-3b4a192281b21a9db5ab6a0d1849ba6c3f30de899e31521ae58d5e198610767b": "Eunoia.label_boxes",
+      "api-e3d7dede611ad25f1b207e205c4012d2d93aa8816690ce9ad9da34845a803098": "Eunoia.place_glyph_boxes",
+      "api-8d65ec1f04c356dd4d1d2d8a94b846dcde496702ceb7abfcdf347ffca4341b13": "Eunoia.place_glyphs",
+      "api-778c90452c0276620e21bd3d408e516a41b407161cd8d7607b208c4d919b756a": "Eunoia.place_labels",
+      "api-fa7e61a0139899b85c7200e736036ebbef3bbcbb58547b083d5b28d44619a1ab": "Eunoia.place_set_labels",
+      "api-a85bd3e16b7af482a998ba06c52e24412b2cb88721275e2238502ebb0ed93313": "Eunoia.venn",
+      "api-c750f95e742dc4cb73063b55c1b27370d799c04c1b14293d7b05cf32c809d4e5": "Eunoia.version"
+    }
+  },
+  "/docs/reference/julia/changelog/": {
+    "artifact": "packages/julia/CHANGELOG.html",
+    "headings": {
+      "changelog": "Changelog",
+      "101": "1.0.1",
+      "100": "1.0.0"
+    },
+    "aliases": {
+      "Changelog": "Changelog",
+      "1.0.1": "1.0.1",
+      "1.0.0": "1.0.0"
+    }
+  },
+  "/docs/reference/julia/euler/": {
+    "artifact": "packages/julia/reference/724ed6727eeae60915c72bfade1aba4de6ed59849fa7c8c0907cf91088d062d1.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.euler": "Eunoia.euler",
+      "Eunoia.euler-Tuple{AbstractDict}": "Eunoia.euler",
+      "method-47eb4e091fa71038114de66dafb86469eb229be71264881e2eabd8d299f06d30": "euler( values::AbstractDict; shape::AbstractString = \"circle\", input_type::AbstractString = \"exclusive\", complement::Union{Nothing, Real} = nothing, seed::Union{Nothing, Integer} = nothing, max_sets::Union{Nothing, Integer} = nothing, loss::Union{Nothing, AbstractString} = nothing, loss_eps::Union{Nothing, Real} = nothing, n_restarts::Union{Nothing, Integer} = nothing, optimizer::Union{Nothing, AbstractString} = nothing, mds_solver::Union{Nothing, AbstractString} = nothing, initial_sampler::Union{Nothing, AbstractString} = nothing, cmaes_fallback_threshold::Union{Nothing, Real} = nothing, max_iterations::Union{Nothing, Integer} = nothing, tolerance::Union{Nothing, Real} = nothing, xtol::Union{Nothing, Real} = nothing, ftol::Union{Nothing, Real} = nothing, gtol::Union{Nothing, Real} = nothing, jobs::Union{Nothing, Integer} = nothing, n_vertices::Union{Nothing, Integer} = nothing, label_precision::Union{Nothing, Real} = nothing, sliver_threshold::Union{Nothing, Real} = nothing )"
+    }
+  },
+  "/docs/reference/julia/eunoiaplot/": {
+    "artifact": "packages/julia/reference/64c23a11690b420c37333e95ed51ddc80a26b8edd06ecb5463752a6e8f752650.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.eunoiaplot": "Eunoia.eunoiaplot",
+      "method-85c4c2b612ca7d96541a9c0c6289717db0d112b61a0a51efadd5a3228252b49a": "eunoiaplot(::AbstractEulerFit, args...; kwargs...)",
+      "method-70e5f1f2e11c8a2e5d8616503524feaa9281bd457aa903b7cecbf98e2f8507dd": "eunoiaplot( fit::AbstractEulerFit; figure = (;), axis = (;), legend = false, kwargs... )",
+      "method-e27132eb4fb6be538005085a4cfee62227bca84fe4808e28bf145f0a2f77b3c5": "eunoiaplot( gp::Union{Makie.GridPosition, Makie.GridSubposition}, fit::AbstractEulerFit; axis = (;), kwargs... )"
+    }
+  },
+  "/docs/reference/julia/eunoiaplot!/": {
+    "artifact": "packages/julia/reference/12dd42932855daa77e22ae0e1c3929cc167b9dfd821afa28d54f9a8fed523419.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.eunoiaplot!": "Eunoia.eunoiaplot!",
+      "method-0f78bae31c87d18d5eb4d1b79a73fdb6746486044b580f80176f4f913615acd0": "eunoiaplot!(::Any, ::AbstractEulerFit, args...; kwargs...)",
+      "method-046c5b815a2b4ed4ec1a1b16681ffb378aa4590568a1408e131c1c742b26a2f3": "eunoiaplot!( ax, fit::AbstractEulerFit; label_placement = true, set_label_placement = false, glyphs = nothing, glyph_options = (;), glyph_style = (;), members = nothing, member_options = (;), member_style = (;), leader_style = (;), kwargs... )"
+    }
+  },
+  "/docs/reference/julia/gallery/": {
+    "artifact": "packages/julia/gallery.html",
+    "headings": {
+      "a-gallery-of-euler-and-venn-diagrams": "A gallery of Euler and Venn diagrams",
+      "euler-diagrams": "Euler Diagrams",
+      "uniform-intersections": "Uniform Intersections",
+      "disjoint-sets": "Disjoint Sets",
+      "a-set-contained-in-the-intersection-of-two-sets": "A Set Contained in the Intersection of Two Sets",
+      "two-sets-intersecting-inside-a-third": "Two Sets Intersecting Inside a Third",
+      "difficult-set-for-circles": "Difficult Set (For Circles!)",
+      "russian-doll": "Russian Doll",
+      "wilkinson-set-relationship": "Wilkinson Set Relationship",
+      "gene-set": "Gene Set",
+      "three-sets-intersecting-inside-a-fourth": "Three sets intersecting inside a fourth",
+      "eulerape-combination": "eulerAPE Combination",
+      "four-uniform-interactions": "Four Uniform Interactions",
+      "rotated-rectangles": "Rotated Rectangles",
+      "two-circles-intersecting-completely": "Two Circles Intersecting Completely",
+      "styling-and-the-complement": "Styling and the Complement",
+      "a-universe-complement-box": "A Universe (Complement) Box",
+      "colors-as-a-sequence-or-a-mapping": "Colors As a Sequence or a Mapping",
+      "a-legend-instead-of-inline-labels": "A Legend Instead of Inline Labels",
+      "custom-label-text-and-style": "Custom label text and style",
+      "original-versus-fitted-quantities": "Original versus Fitted Quantities",
+      "exterior-set-labels": "Exterior Set Labels",
+      "countable-glyphs": "Countable Glyphs",
+      "packed-member-names": "Packed Member Names",
+      "counts-and-percentages": "Counts and Percentages",
+      "venn-diagrams": "Venn Diagrams",
+      "two-and-three-sets": "Two and Three Sets",
+      "four-and-five-sets": "Four and Five Sets",
+      "squares": "Squares",
+      "rotated-rectangles-for-four-sets": "Rotated Rectangles for Four Sets",
+      "a-complement-box": "A Complement Box",
+      "from-membership-lists": "From Membership Lists"
+    },
+    "aliases": {
+      "A-gallery-of-Euler-and-Venn-diagrams": "A gallery of Euler and Venn diagrams",
+      "Euler-Diagrams": "Euler Diagrams",
+      "Uniform-Intersections": "Uniform Intersections",
+      "Disjoint-Sets": "Disjoint Sets",
+      "A-Set-Contained-in-the-Intersection-of-Two-Sets": "A Set Contained in the Intersection of Two Sets",
+      "Two-Sets-Intersecting-Inside-a-Third": "Two Sets Intersecting Inside a Third",
+      "Difficult-Set-(For-Circles!)": "Difficult Set (For Circles!)",
+      "Russian-Doll": "Russian Doll",
+      "Wilkinson-Set-Relationship": "Wilkinson Set Relationship",
+      "Gene-Set": "Gene Set",
+      "Three-sets-intersecting-inside-a-fourth": "Three sets intersecting inside a fourth",
+      "eulerAPE-Combination": "eulerAPE Combination",
+      "Four-Uniform-Interactions": "Four Uniform Interactions",
+      "Rotated-Rectangles": "Rotated Rectangles",
+      "Two-Circles-Intersecting-Completely": "Two Circles Intersecting Completely",
+      "Styling-and-the-Complement": "Styling and the Complement",
+      "A-Universe-(Complement)-Box": "A Universe (Complement) Box",
+      "Colors-As-a-Sequence-or-a-Mapping": "Colors As a Sequence or a Mapping",
+      "A-Legend-Instead-of-Inline-Labels": "A Legend Instead of Inline Labels",
+      "Custom-label-text-and-style": "Custom label text and style",
+      "Original-versus-Fitted-Quantities": "Original versus Fitted Quantities",
+      "Exterior-Set-Labels": "Exterior Set Labels",
+      "Countable-Glyphs": "Countable Glyphs",
+      "Packed-Member-Names": "Packed Member Names",
+      "Counts-and-Percentages": "Counts and Percentages",
+      "Venn-Diagrams": "Venn Diagrams",
+      "Two-and-Three-Sets": "Two and Three Sets",
+      "Four-and-Five-Sets": "Four and Five Sets",
+      "Squares": "Squares",
+      "Rotated-Rectangles-for-Four-Sets": "Rotated Rectangles for Four Sets",
+      "A-Complement-Box": "A Complement Box",
+      "From-Membership-Lists": "From Membership Lists"
+    }
+  },
+  "/docs/reference/julia/": {
+    "artifact": "packages/julia/index.html",
+    "headings": {
+      "eunoia": "Eunoia",
+      "installation": "Installation",
+      "quick-start": "Quick start",
+      "plotting": "Plotting",
+      "citation": "Citation"
+    },
+    "aliases": {
+      "Eunoia": "Eunoia",
+      "Installation": "Installation",
+      "Quick-start": "Quick start",
+      "Plotting": "Plotting"
+    }
+  },
+  "/docs/reference/julia/label_boxes/": {
+    "artifact": "packages/julia/reference/d77d2d4d9d5c50a1ac3c9ea6a01fbb808e7a5f246b88b8218e47475fd19e9b40.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.label_boxes": "Eunoia.label_boxes",
+      "Eunoia.label_boxes-Tuple{AbstractDict, AbstractDict}": "Eunoia.label_boxes",
+      "method-9d718112f723a9f361bacb7afa4f22941863b4a004ede9a014cc7e536b6662d0": "label_boxes(placements::AbstractDict, sizes::AbstractDict; padding::Real = 0)"
+    }
+  },
+  "/docs/reference/julia/license/": {
+    "artifact": "packages/julia/license.html"
+  },
+  "/docs/reference/julia/module/": {
+    "artifact": "packages/julia/reference/422f4f3861af602e811fee37d281086bd52059ab16569887a037dc1421a66fca.html",
+    "headings": {
+      "locating-the-library": "Locating the library"
+    },
+    "aliases": {
+      "Eunoia": "Eunoia",
+      "Eunoia.Eunoia": "Eunoia"
+    }
+  },
+  "/docs/reference/julia/place_glyph_boxes/": {
+    "artifact": "packages/julia/reference/449597d1fea745b3444efeb31886d7a3531288f1e3e8b56231a8aaeadf55c3dc.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.place_glyph_boxes": "Eunoia.place_glyph_boxes",
+      "Eunoia.place_glyph_boxes-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "Eunoia.place_glyph_boxes",
+      "method-f2d25f9de22acd7c5aafdb928e9e7d261eda0509235d4f018ba079b2e255fe5b": "place_glyph_boxes( fit::AbstractEulerFit, sizes::AbstractDict; arrangement::Union{Nothing, AbstractString} = nothing, scale::Union{Nothing, Real} = nothing, min_scale::Union{Nothing, Real} = nothing, gap::Union{Nothing, Real} = nothing, seed::Union{Nothing, Integer} = nothing, precision::Union{Nothing, Real} = nothing, max_attempts::Union{Nothing, Integer} = nothing, obstacles::Union{Nothing, AbstractVector} = nothing )"
+    }
+  },
+  "/docs/reference/julia/place_glyphs/": {
+    "artifact": "packages/julia/reference/b66db21c9529819142a1b80eb69d4ae88e40378d3e3cae82c75ab7ab95b0790c.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.place_glyphs": "Eunoia.place_glyphs",
+      "Eunoia.place_glyphs-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "Eunoia.place_glyphs",
+      "method-5abb74af4697882abaa2ad6091a9d016f87a8f343e59aac232e9f6009f10ac73": "place_glyphs( fit::AbstractEulerFit, counts::AbstractDict; arrangement::Union{Nothing, AbstractString} = nothing, radius::Union{Nothing, Real} = nothing, gap::Union{Nothing, Real} = nothing, seed::Union{Nothing, Integer} = nothing, precision::Union{Nothing, Real} = nothing, max_attempts::Union{Nothing, Integer} = nothing, obstacles::Union{Nothing, AbstractVector} = nothing )"
+    }
+  },
+  "/docs/reference/julia/place_labels/": {
+    "artifact": "packages/julia/reference/2def8faa859f1c87d063429a7fddf6e003ae7162236076c186185ccd29e44288.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.place_labels": "Eunoia.place_labels",
+      "Eunoia.place_labels-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "Eunoia.place_labels",
+      "method-bf1f028cf24f5cea0a7e3103c066b159cd800d99dc581f9db47cfd621887a5e3": "place_labels( fit::AbstractEulerFit, sizes::AbstractDict; placement::Union{Nothing, AbstractString} = nothing, leader::Union{Nothing, AbstractString} = nothing, margin::Union{Nothing, Real} = nothing, iterations::Union{Nothing, Integer} = nothing, precision::Union{Nothing, Real} = nothing, tether::Union{Nothing, AbstractString} = nothing, leader_gap::Union{Nothing, Real} = nothing, min_gap::Union{Nothing, Real} = nothing )"
+    }
+  },
+  "/docs/reference/julia/place_set_labels/": {
+    "artifact": "packages/julia/reference/9066afa58a6e34badcb91c34927b78ab6dae1725d3d585e1b4e33ea77584cff8.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.place_set_labels": "Eunoia.place_set_labels",
+      "Eunoia.place_set_labels-Tuple{Eunoia.AbstractEulerFit, AbstractDict}": "Eunoia.place_set_labels",
+      "method-250b8a50b501fa703eb54c712ddc6f788e38288d13f4566513fc6dd4d59054fc": "place_set_labels( fit::AbstractEulerFit, sizes::AbstractDict; margin::Union{Nothing, Real} = nothing, angular_steps::Union{Nothing, Integer} = nothing, obstacles::Union{Nothing, AbstractVector} = nothing, precision::Union{Nothing, Real} = nothing )"
+    }
+  },
+  "/docs/reference/julia/venn/": {
+    "artifact": "packages/julia/reference/ec83f7b45a38f089fd97e9db1c19d0d5658bd2545e079bba777e3dbb45934bd6.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.venn": "Eunoia.venn",
+      "Eunoia.venn-Tuple{Any}": "Eunoia.venn",
+      "method-bbbc714ff4ee04865114c6da9ff4c367b2810c90b81d069f444213f78e966d5c": "venn( sets; shape::AbstractString = \"circle\", complement::Union{Nothing, Real} = nothing )"
+    }
+  },
+  "/docs/reference/julia/version/": {
+    "artifact": "packages/julia/reference/abcf43bea28dbcca3663000676b5deb006e8c4e3422a196b66cd03aa75cb3af1.html",
+    "headings": {
+      "methods": "Methods"
+    },
+    "aliases": {
+      "Eunoia.version": "Eunoia.version",
+      "Eunoia.version-Tuple{}": "Eunoia.version",
+      "method-d5f7cc8d42cc8366b96c01a970cb05feff567405ac5545a1cc50ce654ea02a67": "version()"
+    }
+  },
+  "/docs/reference/python/Circle/": {
+    "artifact": "packages/python/reference/8ce9ea4097e008f8229c157f826cdd27916122d4c2840e40f675789e76041c25.html",
+    "headings": {
+      "set": "set",
+      "center": "center",
+      "radius": "radius"
+    },
+    "aliases": {
+      "constructor": "set"
+    }
+  },
+  "/docs/reference/python/Container/": {
+    "artifact": "packages/python/reference/928c6ac01b8192356bdae04421545f86d93d7aa99aca6cbc74b400d2c6511cae.html",
+    "headings": {
+      "center": "center",
+      "width": "width",
+      "height": "height"
+    },
+    "aliases": {
+      "constructor": "center"
+    }
+  },
+  "/docs/reference/python/Ellipse/": {
+    "artifact": "packages/python/reference/ca29520bebc61ec73b3e7c4c0d659b7b7b3df6b1e6aa2598b922a47f56b5daa1.html",
+    "headings": {
+      "set": "set",
+      "center": "center",
+      "semi_major": "semi_major",
+      "semi_minor": "semi_minor",
+      "rotation": "rotation"
+    },
+    "aliases": {
+      "constructor": "set"
+    }
+  },
+  "/docs/reference/python/EulerFit/": {
+    "artifact": "packages/python/reference/368c6eef5f44d1af6db73a3b8b4a2c7058500ce15acc586ff7b67311c0627c97.html",
+    "headings": {
+      "attributes": "Attributes",
+      "shapes": "shapes",
+      "original_values": "original_values",
+      "fitted_values": "fitted_values",
+      "residuals": "residuals",
+      "region_error": "region_error",
+      "diag_error": "diag_error",
+      "stress": "stress",
+      "loss": "loss",
+      "container": "container",
+      "members": "members",
+      "plot_data": "plot_data",
+      "plot": "plot",
+      "plot_plotly": "plot_plotly"
+    },
+    "aliases": {
+      "constructor": "Attributes"
+    }
+  },
+  "/docs/reference/python/EunoiaError/": {
+    "artifact": "packages/python/reference/fc5375cf55defbd19695ed3bcd389fd2ab533221213ce5ef07233c80c90a35c0.html"
+  },
+  "/docs/reference/python/Point/": {
+    "artifact": "packages/python/reference/62c2984f34ca44c4bff1218f5bc5e679ec5d120a9eea656d6dac5bbea506cad9.html",
+    "headings": {
+      "x": "x",
+      "y": "y"
+    },
+    "aliases": {
+      "constructor": "x"
+    }
+  },
+  "/docs/reference/python/Rectangle/": {
+    "artifact": "packages/python/reference/1b814b3b39a260bb10213c7966496185cf15db01ca2b069d40160d1aabb88a05.html",
+    "headings": {
+      "set": "set",
+      "center": "center",
+      "width": "width",
+      "height": "height"
+    },
+    "aliases": {
+      "constructor": "set"
+    }
+  },
+  "/docs/reference/python/RotatedRectangle/": {
+    "artifact": "packages/python/reference/25285d3fa09e3ee59e56616fb19b548f8245b7bf7bb3fd675852b291c0910f45.html",
+    "headings": {
+      "set": "set",
+      "center": "center",
+      "width": "width",
+      "height": "height",
+      "rotation": "rotation"
+    },
+    "aliases": {
+      "constructor": "set"
+    }
+  },
+  "/docs/reference/python/Square/": {
+    "artifact": "packages/python/reference/e065935b57f60e9e0389e70c65e63d56eb383041fc2b69335d754aac7eceef46.html",
+    "headings": {
+      "set": "set",
+      "center": "center",
+      "side": "side"
+    },
+    "aliases": {
+      "constructor": "set"
+    }
+  },
+  "/docs/reference/python/VennFit/": {
+    "artifact": "packages/python/reference/f3db9d4c14d408a2963e653df85b6f8608fa6756eee7e138914bd374f632562c.html",
+    "aliases": {
+      "constructor": "Inherited members"
+    }
+  },
+  "/docs/reference/python/euler/": {
+    "artifact": "packages/python/reference/8291fbac4859d2666a285086e662f92046f7942a91545da3ed0ecae6abfdafcf.html",
+    "headings": {
+      "parameters": "Parameters",
+      "returns": "Returns"
+    },
+    "aliases": {
+      "overload-83195a567a5ec9af514cbc8d375f43660b6f84fc8428cf5ddabc422d29234290": "Parameters",
+      "overload-e99a27d71a98723ade3469eff42307d8f7c15ba200b9fdede191f02d57936225": "Parameters",
+      "overload-69b2fa4912e8c32221fa6301757f22096b743c94e45a0206f27bded4fb937ade": "Parameters",
+      "overload-880e6e889884725dbaad1ac500040c20ddb71abf91c7bccea1abea5169c9598a": "Parameters",
+      "overload-023afbe3c789d929509c3eb24706d118c1ef292b81dbb1a765a885cf629a55a4": "Parameters"
+    }
+  },
+  "/docs/reference/python/get_options/": {
+    "artifact": "packages/python/reference/63add39c59bd0d29dc6904d8c480c5766f9f3b4c70f8c67fcec58e95fc48da1e.html"
+  },
+  "/docs/reference/python/": {
+    "artifact": "packages/python/index.html",
+    "headings": {
+      "version": "Version"
+    }
+  },
+  "/docs/reference/python/options/": {
+    "artifact": "packages/python/reference/f80da0cf3188da510c13eb483c4a57de2ec64680c5aa4eed065adf2c00396c30.html"
+  },
+  "/docs/reference/python/reset_options/": {
+    "artifact": "packages/python/reference/742b53889438ba0289ffb51e5d31e9220ed527791ae846b2269065f7e1be64de.html"
+  },
+  "/docs/reference/python/venn/": {
+    "artifact": "packages/python/reference/3ac0bd059b626c245c0fa4b5b4f2d8bc01a14fa752c94a09412b6bc88079ac85.html",
+    "headings": {
+      "parameters": "Parameters",
+      "returns": "Returns"
+    },
+    "aliases": {
+      "overload-d2554e96385dc978df4770d96c2c1b82018c1a056ae62034986e1777b46027c4": "Parameters",
+      "overload-3a3c0617a791bb9dc2589ca5a06658ad32e03703edc635caf56986e5e3b8f363": "Parameters",
+      "overload-ec32dbb6402e4cd20b2f784ddbaeea0ace977592a39c76f7fa51639e130ef38a": "Parameters",
+      "overload-02252078608aeed48ce7bd71431d0b907e9dfa545624b171270a81c623334ee3": "Parameters",
+      "overload-2213c706c263238e8ede739b95f0e696473730a2545ed619f6166cab9c3eaeea": "Parameters"
+    }
+  },
+  "/": {
+    "artifact": "index.html"
+  }
+}

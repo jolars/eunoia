@@ -23,7 +23,6 @@
  *
  * Both fonts are Apache-2.0 licensed — see `assets/fonts/NOTICE.md`.
  */
-import { browser } from "$app/env";
 
 import arimo400 from "./assets/fonts/arimo-400.woff2";
 import arimo400i from "./assets/fonts/arimo-400-italic.woff2";
@@ -33,6 +32,8 @@ import tinos400 from "./assets/fonts/tinos-400.woff2";
 import tinos400i from "./assets/fonts/tinos-400-italic.woff2";
 import tinos700 from "./assets/fonts/tinos-700.woff2";
 import tinos700i from "./assets/fonts/tinos-700-italic.woff2";
+
+const browser = typeof window !== "undefined";
 
 type FontWeight = 400 | 700;
 type FontStyleName = "normal" | "italic";

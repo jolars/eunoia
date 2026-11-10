@@ -1,9 +1,10 @@
-# Python API documentation
+# Python documentation
 
-The Python API uses the shared package documentation importer described in
-[PACKAGE-DOCS.md](PACKAGE-DOCS.md). The source pin is now in
-`docs-sources.lock.json`, alongside Julia and Diplodocus.
+Python documentation is part of the complete Diplodocus site. See
+[PACKAGE-DOCS.md](PACKAGE-DOCS.md) for pinned sources, environment preparation,
+source overrides, and portable snapshots, and [README.md](README.md) for site
+development.
 
-Existing `task docs-python`, `pnpm docs:python`, source overrides, and
-`EUNOIA_PYTHON_DOCS_SNAPSHOT` commands remain available. Run `pnpm test:docs`
-for the combined Python and Julia checks.
+`task docs-python` remains an alias for the complete site build. Package-only
+snapshots from the former SvelteKit importer must be extracted again as one
+complete site snapshot.

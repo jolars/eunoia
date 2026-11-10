@@ -10,8 +10,12 @@
       "!.cargo",
       "!dist",
       "!node_modules",
-      // Generated / build output (SvelteKit, wasm-pack, the assembled npm pkg).
+      // Generated output from Diplodocus, Vite, and wasm-pack.
       "!**/.svelte-kit",
+      "!web/.widgets",
+      "!web/dist",
+      "!.docs-sources",
+      "!.diplodocus",
       "!web/pkg",
       "!web/static",
       "!npm",

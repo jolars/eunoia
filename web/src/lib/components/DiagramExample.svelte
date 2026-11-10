@@ -2,9 +2,10 @@
   import type { LabelPlacement, SetOutline, ShapeType } from "@jolars/eunoia";
   import { leaderPath } from "@jolars/eunoia/svg";
   import { onMount } from "svelte";
-  import { browser } from "$app/env";
   import { defaultColorFor } from "#lib/colors.ts";
   import { DEFAULT_FONT_FAMILY } from "#lib/fonts.ts";
+
+  const browser = typeof window !== "undefined";
 
   interface Props {
     /** Set sizes keyed by combination, e.g. `{ A: 5, B: 3, "A&B": 1.5 }`. */

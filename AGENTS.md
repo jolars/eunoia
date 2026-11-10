@@ -2,7 +2,7 @@
 
 Eunoia is a Rust library for area-proportional Euler and Venn diagrams. The same
 core engine is exposed through WebAssembly, a TypeScript package, a C ABI, and a
-statically generated SvelteKit documentation site.
+statically generated Diplodocus documentation site.
 
 Use this file for repository-wide expectations. Prefer the nearest README and
 existing code when you need component-level detail.
@@ -16,7 +16,7 @@ existing code when you need component-level detail.
   | `crates/eunoia-capi/` | JSON-in/JSON-out C ABI used by Eunoia.jl                           |
   | `ts/`                 | High-level TypeScript API and npm build scripts                    |
   | `npm/`                | Generated publishable `@jolars/eunoia` package; gitignored         |
-  | `web/`                | SvelteKit docs and demo app, linked to `npm/`                      |
+  | `web/`                | Diplodocus site and Svelte browser widgets, linked to `npm/`                      |
   | `paper/`              | JOSS paper and generated figures                                   |
 
 The Cargo workspace uses Rust edition 2024 and has an MSRV of 1.88.0. Rust
@@ -90,13 +90,13 @@ cd web && pnpm build
 
 ## Architecture and invariants
 
-Package documentation is generated before `pnpm dev`, `pnpm check`, and
-`pnpm build`. See `web/PACKAGE-DOCS.md` for source pins, prepared Python and
-Julia environments, and snapshot-only builds. Use `task docs-packages`,
-`task docs-python`, or `task docs-julia` to regenerate it. Do not hand-edit the
-owned route directories under `web/src/routes/docs/reference/python/` and
-`web/src/routes/docs/reference/julia/`, or their `_diplodocus` assets. Run
-`pnpm test:docs`, `pnpm check`, and `pnpm build` after changing this integration.
+Diplodocus builds the complete website, including the Python reference and Julia
+manual, gallery, and API. See `web/README.md` and `web/PACKAGE-DOCS.md` for the
+site configuration, pinned sources, prepared environments, and portable
+snapshots. Use `task docs-packages` to build it. Do not hand-edit generated files
+under `web/dist/`, `web/.widgets/`, `.docs-sources/`, or `.diplodocus/`. Run
+`pnpm check`, `pnpm build`, `pnpm test:docs`, and `pnpm test:markdown` in `web/`
+after changing the site integration.
 
 The core pipeline is:
 
@@ -152,7 +152,7 @@ same change:
 3. C API input types, hand-written snake_case token parsers, implementation, and
    tests in `crates/eunoia-capi/`.
 4. TypeScript wrapper and declarations under `ts/`.
-5. The matching bindings documentation under `web/src/routes/docs/bindings/`.
+5. The matching bindings documentation under `web/content/docs/bindings/`.
 
 Do not assume serde exposes a new core enum through the C API; those mappings
 are deliberately manual.
@@ -163,19 +163,26 @@ package `exports` map.
 
 ## Documentation site
 
-Narrative documentation lives in `web/src/routes/docs/**` as `.svx` (mdsvex)
-pages. A page's first `# H1` is its title; do not add YAML frontmatter. A page
-may begin with a `<script>` block for interactive Svelte components.
+Narrative documentation lives in `web/content/` as Markdown. A page's first
+`# H1` supplies its title. Use `layout: full` in YAML front matter for wide
+application pages. Keep explicit heading IDs when editing existing pages so
+published fragments remain stable.
 
-Files under `web/static/` are served verbatim. Keep the two site indexes
-distinct:
+`web/site.config.mjs` declares Diplodocus presentation, navigation, packages, and
+collections. Interactive examples use fenced component blocks with
+`name="eunoia"` and a unique ID registered in `web/src/widgets/examples.json`.
+The shared browser bundle retains the existing Svelte components, worker, fonts,
+and WASM. Keep widget styles scoped to `.eunoia-widget`.
 
-- `web/src/routes/sitemap.xml/+server.ts` discovers `+page.svelte` and
-  `+page.svx` routes automatically. Do not hand-maintain page entries there.
-- `web/static/llms.txt` is hand-curated. When adding, removing, renaming, or
-  substantially re-scoping a docs page, update its link and one-line description
-  and keep it in the correct section. It also contains off-site links that route
-  discovery cannot supply.
+Files under `web/static/` are copied verbatim, except that Diplodocus owns
+`robots.txt`. Diplodocus also generates the sitemap. `web/static/llms.txt` is
+hand-curated; update its canonical links and descriptions when adding, removing,
+renaming, or substantially re-scoping a docs page.
+
+`web/legacy-routes.json` records the previous site's published routes and
+anchors. Keep these routes working through native pages or permanent redirects,
+and preserve their fragments. The site build validates this contract before
+replacing `web/dist/`.
 
 ## Code review rules
 

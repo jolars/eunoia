@@ -1,0 +1,348 @@
+# Glyphs {#glyphs}
+
+Glyphs are equally-sized circular marks—one per data unit—packed inside the
+region they belong to, in the style of
+[eulerGlyphs](https://www.eulerdiagrams.com/eulerGlyphs/) (Micallef,
+Dragicevic & Fekete, IEEE TVCG 2012). Where an area-proportional diagram
+encodes quantities as region areas, glyphs encode them as **countable
+frequencies**: a region with 20 members shows 20 dots. Combining both gives a
+hybrid visualization where the areas and the dot counts reinforce each other.
+
+The placer runs in the Rust core, so every binding (npm, R, Python, Julia)
+gets identical output for the same input: hand it decomposed region polygons
+plus a `{ combination → count }` map and it returns a center point per glyph
+plus the single radius shared by every glyph in the diagram.
+
+## Mental Model {#mental-model}
+
+Call `place_glyphs` (Rust) / `placeGlyphsForRegions` (npm) with a decomposed
+diagram and per-region counts. You get back:
+
+- `radius`: the one glyph radius used diagram-wide. Equal glyph size is what makes counts comparable across regions, so there is deliberately no per-region radius.
+- `positions`: a `{ combination → [point, …] }` map of glyph centers, up to `counts[combination]` per region.
+- `unplaced`: per-region shortfall. Check it with either sizing mode; strict obstacles can prevent placement even at the automatic radius floor.
+
+By default, every center keeps a clearance of at least `radius * (1 + gap)` to the region
+boundary (outer ring **and** holes), and centers within a region stay at
+least `2 * radius * (1 + gap)` apart — the same `gap` fraction pads both, so
+rendered circles never overlap each other, never leak across a boundary, and
+keep visible breathing room from region edges and their strokes. Regions that
+are split into several disconnected pieces have their count apportioned
+across the pieces proportionally to piece area (largest-remainder rounding,
+fully deterministic).
+
+## Arrangements {#arrangements}
+
+Four arrangements are available; both are deterministic:
+
+- **`uniform`** *(default)*: centers sit on a hexagonal lattice anchored at the region's pole of inaccessibility. The lattice spacing is widened as far as the region allows, so the glyphs spread across the region instead of clumping at the center. No randomness at all—the same input always gives the same output.
+- **`rectangular`**: an axis-aligned grid with equal horizontal and vertical spacing, useful for square and rectangular diagrams. Select **Rectangular grid** in the app, or set `style.glyphArrangement` to `"rectangular"`. Placement is deterministic and ignores `seed`. Member labels use uniform row packing.
+- **`lowDiscrepancy`**: candidates follow a deterministic Halton sequence, filtered by minimum spacing and clearance to region boundaries and labels. Select **Low discrepancy (Halton)** in the app, or set `style.glyphArrangement` to `"lowDiscrepancy"` in a saved configuration. This gives an even scatter without a lattice and ignores `seed`. Filtering enforces separation but does not preserve the raw sequence’s discrepancy guarantees. C callers use `low_discrepancy`.
+- **`random`**: seeded dart throwing with the same minimum-spacing guarantee, giving the scattered look of the original eulerGlyphs tool. Deterministic for a fixed `seed` (default `0`); each region draws from its own seed-derived stream, so one region's scatter does not move when another region's count changes. Darts guarantee a *minimum* spacing and nothing more, which reads as lumpy—pairs sitting right at the minimum next to glyph-wide voids—so a force-directed relaxation pass runs afterwards: near neighbors push each other apart and the region boundary pushes inward, over a fixed number of sweeps with no randomness of its own. Every move is accepted only if it keeps the spacing, boundary, and keep-out guarantees intact, so the pass evens the scatter out without ever moving or dropping a glyph it shouldn't.
+
+## Radius: Auto or Fixed {#radius-auto-or-fixed}
+
+Omit `radius` for the **auto mode**: the placer bisects for the largest
+radius at which *every* requested region holds its full count. Easy diagrams
+get big, readable dots; a crowded region shrinks the radius for the whole
+diagram (that is the price of the equal-size invariant).
+
+Pass an explicit `radius` to take control—for instance to keep glyph size
+consistent across a series of related diagrams. If a region then cannot hold
+its count, the placer fills it as far as it can and reports the rest in
+`unplaced` rather than erroring; check that map if dropping marks silently is
+not acceptable for your use case.
+
+The `gap` knob (default `0.25`) adds breathing room around glyphs as a
+fraction of the radius: the minimum center-to-center distance is
+`2 * radius * (1 + gap)`, and centers keep a clearance of
+`radius * (1 + gap)` to the region boundary. Raise it for a sparser, airier
+look; set it to `0` to let circles touch each other and the edges.
+
+Set `boundaryGap` (`boundary_gap` in Rust and C) to control clearance to
+region boundaries, holes, and label boxes separately. Centers then keep
+`radius * (1 + boundaryGap)` clearance, while the minimum dot spacing still
+uses `gap`. Omit it to retain the shared setting. For example, `gap: 0.25`
+and `boundaryGap: 1` leave a visible gap of at least half a radius between
+dots and one radius at boundaries. Uniform placement retains its hexagonal
+lattice, so actual gaps can exceed these minimums.
+
+The app exposes these as **Dot spacing** and **Boundary gap**, with defaults
+of `0.25` and `1`, respectively.
+
+## Dot appearance {#dot-appearance}
+
+In the app's **Dots** mode, use **Fill color**, **Border color**, and **Border
+width** to style the glyphs independently of the sets. Set the border width to
+zero to hide borders. **Reset** restores automatic styling: colors derived from
+each region and a border width equal to half the set border width.
+
+Saved configurations store these settings as `style.glyphFill`,
+`style.glyphStroke`, and `style.glyphStrokeWidth`. Each defaults to `null` for
+automatic styling. Color settings accept color strings, and the width uses
+layout units. SVG and image exports use the same styling as the preview.
+
+## Label Keep-Out {#label-keep-out}
+
+Labels are painted over glyphs, so anything a label covers is invisible. Pass
+the boxes you measured for [label placement](../label-placement/index.md)
+as `obstacles` and glyph centers will keep the same `radius * (1 + gap)`
+clearance from them as they do from region edges, unless `boundaryGap`
+overrides it:
+
+```ts
+import { labelObstacles, placeGlyphsForRegions, placeLabelsForRegions } from "@jolars/eunoia";
+
+const placements = placeLabelsForRegions({ regions: layout.regions, sizes });
+const glyphs = placeGlyphsForRegions({
+  regions: layout.regions,
+  counts,
+  options: {
+    obstacles: labelObstacles({ placements, sizes, padding: 0.15 }),
+    obstaclePolicy: "strict",
+  },
+});
+```
+
+`labelObstacles` is the convenience bridge (`label_boxes` in Rust): it turns
+every placement—interior *and* exterior, since an exterior box is the one
+most likely to land on a region that is not its own—into a padded rectangle.
+Obstacles are a diagram-wide list, not per region: occlusion is a question of
+what is painted over what. You can add boxes of your own for a legend, a
+title, or anything else drawn on top.
+
+The list also feeds the auto-radius bisection, since a keep-out box shrinks a
+region's usable capacity. The radius can shrink only to half of what it would
+have been without obstacles. Without that floor, one small region whose label
+nearly fills it would shrink every glyph in the diagram to a dot.
+
+`obstaclePolicy` decides what happens when items still do not fit:
+
+- `"bestEffort"` (default) prefers clear positions but permits overlap.
+- `"strict"` requires clearance for every returned glyph and reports the rest in `unplaced`. This also holds after random scatter relaxation.
+
+Both policies keep the same sizing floors. Strict mode can therefore leave a
+region empty. Check `unplaced` and show a callout or omission warning when
+needed; the packing algorithm does not create these for you. In Rust, use
+`.obstacle_policy(ObstaclePolicy::Strict)` on either options type. The C API
+uses `"obstacle_policy": "strict"` (default `"best_effort"`); the raw WASM
+JSON uses `"obstaclePolicy": "Strict"` (default `"BestEffort"`).
+
+Boxes with a non-positive or non-finite extent (an empty label measures
+exactly `0 x 0`) are ignored under both policies.
+
+## Member Labels {#member-labels}
+
+Glyphs answer "how many"; **member labels** answer "which ones". Instead of
+packing anonymous dots, `place_glyph_boxes` (Rust) / `placeGlyphBoxesForRegions`
+(npm) packs the per-item `w × h` boxes you measured for the member *names*, and
+returns one rectangle per item plus the single diagram-wide `scale` they were
+packed at. Render your text at `fontSize * scale`.
+
+```ts
+import { placeGlyphBoxesForRegions } from "@jolars/eunoia";
+import { toSvg } from "@jolars/eunoia/svg";
+
+const members = {
+  A: ["Ada", "Grace", "Barbara"],
+  B: ["Alan", "Edsger"],
+  "A&B": ["Katherine"],
+};
+const FONT = 12;
+const sizes = Object.fromEntries(
+  Object.entries(members).map(([k, names]) => [k, names.map(measureAtFont(FONT))]),
+);
+
+const placed = placeGlyphBoxesForRegions({ regions: layout.regions, sizes });
+const svg = toSvg(layout, {
+  glyphBoxes: { ...placed, labels: members, fontSize: FONT },
+});
+```
+
+The core stays font-blind, exactly as [label
+placement](../label-placement/index.md) does: you measure, it packs. The
+returned `scale` is the bridge back—it is the one number you need to re-render
+text at the size the geometry assumes.
+
+### How the boxes are laid out {#how-the-boxes-are-laid-out}
+
+The `uniform` arrangement packs **rows**. Every row shares one height (the
+diagram-wide maximum scaled box height), boxes fill a row left to right at
+their own widths, the run is centered in the space it found, and the block of
+rows is centered on the region's pole of inaccessibility. Text reads in rows,
+and a max-cell grid would let one long name inflate every cell. The `random`
+arrangement throws rectangular darts instead, for the scattered look—without
+the relaxation pass the dot footprint gets, since heterogeneous boxes have no
+single spacing to relax toward.
+
+By default, uniform packing returns the first row count that holds every
+item, which can produce horizontal strips in roomy regions. Set
+`options.targetAspectRatio: 1` in JavaScript or
+`GlyphBoxOptions::default().target_aspect_ratio(1.0)` in Rust to favor a
+roughly square occupied block. Larger ratios favor wider blocks, and smaller
+ratios favor taller ones. The ratio includes the block's halo. The packer
+balances measured widths while preserving input order, prioritizing the
+placed prefix and clearance over the preferred ratio. It keeps the automatic
+scale selection, so balancing rows does not enlarge fonts. Omit the option
+to retain the default. Non-positive or non-finite values disable it, and the
+random arrangement ignores it. This option controls rows of packed boxes;
+renderers still compose columns for list displays.
+
+`gap` works the same way it does for discs, but as a fraction of the **row
+height** rather than of a radius: each box carries a halo of
+`0.5 * gap * rowHeight`, so adjacent boxes end up `gap * rowHeight` apart and
+every box keeps half that to region boundaries, holes, and obstacles. The
+shared default of `0.25` therefore reads as "a quarter of a line-height apart,
+half that from the edge" in both modes.
+
+### Scale: shrink-only {#scale-shrink-only}
+
+Omit `scale` for the auto mode: a bisection for the largest factor in
+`[minScale, 1]` at which *every* region holds all of its items. Note the
+asymmetry with the disc packer, which grows to fill—this one **only ever
+shrinks**, because you own the reference font size and the packer has no
+business enlarging past what you measured. A roomy diagram therefore renders
+sparse text at your chosen size rather than blowing it up.
+
+`minScale` (default `0.35`) is a readability floor, not a hint: below it the
+packer would rather drop items than render text nobody can read.
+
+### Dropped items are normal here {#dropped-items-are-normal-here}
+
+A member name is typically five to ten times wider than tall, so a region with
+ample *area* can still fail to seat a single row of them. Expect `unplaced` to
+be populated far more often than it ever is for discs—that is the geometry, not
+a bug.
+
+The packer takes each region's items **in order** and stops at the first that
+fits nowhere, so `boxes[combo]` is a prefix of `sizes[combo]` and
+`boxes[combo][i]` belongs to your `labels[combo][i]`. Which items get dropped is
+therefore decided by the order you supply them in: sort meaningfully
+(alphabetically, by salience), check `unplaced`, and consider rendering a
+"+n more" affordance. You can also measure **wrapped, multi-line** boxes and
+pass those—the packer needs no special support for it, and a two-line box is a
+much easier shape to seat.
+
+Obstacles compose exactly as above: pass `labelObstacles(...)` and select
+`obstaclePolicy: "strict"` to require clearance around region labels. The
+automatic scale stays at least half of its obstacle-free value and at least
+`minScale`; items that do not fit are reported in `unplaced`. The returned
+boxes remain a prefix of the input under either policy.
+
+To see it without writing any code, type names into the per-combination roster
+fields in the [playground](../../../app/index.md) and set **Glyphs → Draw → Member names**.
+The playground uses strict label obstacles and keeps each region's roster
+together. If individual names do not all fit, it replaces that packing with a
+single measured block containing the region heading, count when enabled, and
+the entire roster. The label placer keeps the block inside when it fits and
+otherwise places it outside with a leader. The other regions are repacked
+without that roster, so one oversized name no longer shrinks every region's
+text to the readability floor.
+
+Regions stay in callout mode for the rest of that layout pass. Measurements
+remain in layout units as the viewport expands, so adding a callout does not
+start a cycle of shrinking the diagram and evicting more names. A requested
+region with no drawable geometry appears in a separate list marked **no
+geometry**, without a leader to a region that does not exist. These lists are
+included in diagram exports. Python rendering remains a separate integration;
+the core packer's prefix contract is unchanged.
+
+## JavaScript/TypeScript {#javascripttypescript}
+
+```ts
+import { euler, placeGlyphsForRegions } from "@jolars/eunoia";
+import { toSvg } from "@jolars/eunoia/svg";
+
+const layout = euler({
+  sets: { A: 20, B: 12, "A&B": 5 },
+  output: "regions",
+});
+
+const glyphs = placeGlyphsForRegions({
+  regions: layout.regions,
+  counts: { A: 20, B: 12, "A&B": 5 },
+});
+
+// The SVG serializer renders them above region fills, below labels.
+const svg = toSvg(layout, { glyphs });
+```
+
+`toSvg`/`svgBody` accept the result directly via the `glyphs` option and
+render one `<circle class="eunoia-glyph">` per point, grouped per region in a
+`<g data-glyphs="...">`. Since glyphs are strictly interior, the `viewBox`
+needs no expansion.
+
+By default the marks borrow their region's color: the fill is that color
+lightened by `tint` (default `0.45`), and the edge is the same color darkened,
+at half the diagram's `strokeWidth` so glyph outlines stay finer than the set
+outlines. Give `tint` a negative value for marks that sit *darker* than their
+region—useful with pale palettes, since the default palette opens on white.
+`fill`, `stroke` (`"none"` for flat dots), `strokeWidth`, `opacity`, and
+`className` all override the defaults.
+
+Options ride along under `options`:
+
+```ts
+const scattered = placeGlyphsForRegions({
+  regions: layout.regions,
+  counts: { A: 20, B: 12, "A&B": 5 },
+  options: { arrangement: "random", seed: 7, gap: 0.4 },
+});
+```
+
+## Rust {#rust}
+
+```rust
+use std::collections::HashMap;
+use eunoia::plotting::{place_glyphs, GlyphOptions};
+
+let regions = layout.region_polygons(&spec, 200);
+let counts = HashMap::from([
+    ("A".to_string(), 20),
+    ("B".to_string(), 12),
+    ("A&B".to_string(), 5),
+]);
+
+let glyphs = place_glyphs(&regions, &counts, &GlyphOptions::default());
+for (combo, points) in &glyphs.positions {
+    for p in points {
+        draw_circle(p.x(), p.y(), glyphs.radius);
+    }
+}
+```
+
+Member labels use the sibling call, with measured boxes in place of counts:
+
+```rust
+use eunoia::plotting::{place_glyph_boxes, GlyphBoxOptions};
+
+let sizes = HashMap::from([
+    ("A".to_string(), vec![(0.30, 0.10), (0.24, 0.10)]),
+    ("A&B".to_string(), vec![(0.20, 0.10)]),
+]);
+
+let placed = place_glyph_boxes(&regions, &sizes, &GlyphBoxOptions::default());
+for (combo, rects) in &placed.boxes {
+    for (i, r) in rects.iter().enumerate() {
+        // `rects` is a prefix of `sizes[combo]`, so `i` indexes your names.
+        draw_text(&names[combo][i], r.center(), font_size * placed.scale);
+    }
+}
+```
+
+## Other Bindings {#other-bindings}
+
+The C ABI exposes the same calls as
+[`eunoia_place_glyphs`](../../bindings/c-abi/index.md#eunoia_place_glyphs) and
+[`eunoia_place_glyph_boxes`](../../bindings/c-abi/index.md#eunoia_place_glyph_boxes)
+(JSON in, JSON out), which is what the R, Python, and Julia packages build on.
+Counts and sizes are keyed by the
+[canonical combination string](../../bindings/c-abi/index.md#combination-keying)
+(`"A"`, `"A&B"`, `""` for the complement region), the same keying as
+[label placement](../label-placement/index.md).
+
+## Notes and Roadmap {#notes-and-roadmap}
+
+- **Counts are yours to supply.** Spec quantities are `f64` areas and are not assumed to be cardinalities; pass the integer counts you want visualized (usually the same numbers you fed the spec, when those are frequencies).
+- **Both work on a Venn diagram too.** Venn geometry is topological, so its regions carry no quantities of their own—supply them yourself, as counts for the packer and (with `showCounts`) as `ToSvgOptions.counts` for the printed numbers. The [app](../../../app/index.md) takes both, plus a roster, per Venn region.
+- A blue-noise (Poisson-disk) sampler for the `random` arrangement, a phyllotaxis arrangement, and a relaxation pass for the *box* footprint (the dot footprint has one) are on the roadmap.

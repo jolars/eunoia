@@ -222,7 +222,7 @@ eunoia/
 │       ├── Cargo.toml
 │       └── src/
 │           └── lib.rs      # WASM exports
-├── web/                    # Svelte web application
+├── web/                    # Diplodocus site and Svelte browser widgets
 └── README.md
 ```
 

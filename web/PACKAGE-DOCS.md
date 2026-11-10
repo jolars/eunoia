@@ -1,46 +1,40 @@
 # Package documentation
 
-Diplodocus imports the pinned Python API and the Julia guides, gallery, and API
-into this SvelteKit site. Python sources remain in `jolars/eunoia-py`. Julia
-docstrings, `docs/src/`, and `CHANGELOG.md` remain in `jolars/Eunoia.jl`.
-The website supplies navigation, search, metadata, and Markdown negotiation.
+Diplodocus builds the entire Eunoia website. Python API sources remain in
+`jolars/eunoia-py`; Julia docstrings, guides, gallery, and changelog remain in
+`jolars/Eunoia.jl`. The site configuration declares both packages alongside the
+project's authored Markdown and browser components.
 
-The source revisions and Julia runtime are pinned in `docs-sources.lock.json`.
-Update the full revision and package version together when advancing a package.
-The Diplodocus pin includes Documenter disclosure support and uses snapshot IR
-version 13. Older snapshots must be extracted again.
+`docs-sources.lock.json` pins source revisions, package versions, Diplodocus, and
+Julia. Update a package's revision and version together. The toolchain needs
+`uv`, Python 3.11 or newer, Julia, and Rust 1.98.0 for Diplodocus. The core and
+WASM builds continue to use Rust 1.88.0. The generator builder can enter the
+Diplodocus checkout's devenv shell when the active Cargo is older.
 
-## Building
+## Build from sources
 
-Enter the project's devenv shell on NixOS. The build needs `uv`, Python 3.11 or
-newer, Julia, and the separate Rust 1.98.0 toolchain used by Diplodocus. Eunoia's
-core and WASM builds continue to use Rust 1.88.0. The source builder can enter
-the Diplodocus checkout's devenv shell when the active Cargo is older.
+From the repository's devenv shell:
 
 ```sh
+task build-wasm
 task docs-prepare
 task docs-packages
 cd web
-pnpm check
-pnpm build
+pnpm test:docs
+pnpm test:markdown
 ```
 
-`pnpm dev`, `pnpm check`, and `pnpm build` also generate the documentation
-before starting SvelteKit. The first run fetches the sources, builds the Python
-extension in an isolated environment, and prepares Julia and CairoMakie.
-Julia's matching native artifact is downloaded if needed. An absolute
-`EUNOIA_CAPI_LIB` path selects a locally built native library instead.
+`pnpm check`, `pnpm build`, and `pnpm dev` prepare package environments as needed.
+The first run fetches pinned sources, builds the Python extension in an isolated
+environment, and prepares Julia with CairoMakie. An absolute `EUNOIA_CAPI_LIB`
+selects a local native library instead of Julia's matching downloaded artifact.
+CI uses `.github/actions/prepare-docs` to prepare these environments explicitly.
 
-Source checkouts live in `.docs-sources/`. Julia uses a prepared source copy
-there, including the generated changelog page, so dependency preparation does
-not alter the original guides. Snapshots, virtual environments, and caches live
-in `.diplodocus/`. The generator checks input contents and generated output
-before reusing its cache. Each language's owned routes and assets are replaced
-together, with rollback on failure.
-
-CI uses `.github/actions/prepare-docs` to install the language runtimes and
-prepare the package environments. Diplodocus runs after preparation; the
-generator itself does not install package dependencies.
+Checkouts and Julia's prepared source copy live under `.docs-sources/`.
+Snapshots, environments, and extraction and rendering caches live under
+`.diplodocus/`. Cache keys include source contents, generator bytes,
+configuration, browser bundles, and environment metadata. Cached outputs are
+verified before reuse.
 
 ## Local sources
 
@@ -48,7 +42,6 @@ From the repository root:
 
 ```sh
 task docs-packages -- --python-source ../eunoia-py --julia-source ../Eunoia.jl --diplodocus-source ../diplodocus
-task docs-julia -- --julia-source ../Eunoia.jl
 ```
 
 Paths resolve from the current working directory. From `web/`, sibling paths
@@ -56,42 +49,39 @@ start with `../../`. `EUNOIA_PYTHON_SOURCE`, `EUNOIA_JULIA_SOURCE`, and
 `DIPLODOCUS_SOURCE` provide the same overrides. Prefer absolute environment
 variable paths when running commands from several directories.
 
-`DIPLODOCUS_BIN` selects an existing executable and skips its source checkout
-and build. `DIPLODOCUS_CARGO` selects another Cargo executable.
-`EUNOIA_DOCS_PYTHON` and `EUNOIA_DOCS_JULIA` select the package runtimes. After
-editing sibling sources while the dev server runs, regenerate or restart the
-server; startup hooks do not watch sibling repositories.
+`DIPLODOCUS_BIN` selects an existing executable and skips its checkout and build.
+`DIPLODOCUS_CARGO` selects another Cargo executable. `EUNOIA_DOCS_PYTHON` and
+`EUNOIA_DOCS_JULIA` select package runtimes. Restart the development command after
+changing overrides or environment dependencies. It watches the prepared Julia
+sources; edits to the original Julia checkout require restarting preparation.
 
 ## Portable snapshots
 
+The site now uses one snapshot containing all authored pages, both packages,
+executed figures, branding, and browser bundles:
+
 ```sh
-task docs-python -- --snapshot /path/to/python.sqlite --diplodocus-bin /path/to/diplodocus
-task docs-julia -- --snapshot /path/to/julia.sqlite --diplodocus-bin /path/to/diplodocus
+task docs-extract
+EUNOIA_DOCS_SNAPSHOT="$PWD/.diplodocus/site/documentation.sqlite" \
+  DIPLODOCUS_BIN=/path/to/diplodocus task docs-packages
 ```
 
-For subsequent website commands, set `EUNOIA_PYTHON_DOCS_SNAPSHOT` and
-`EUNOIA_JULIA_DOCS_SNAPSHOT` together with `DIPLODOCUS_BIN`. This mode needs
-neither package checkout nor Python or Julia. Figures and source links come
-from the snapshots.
+`--snapshot /path/to/documentation.sqlite` supplies the same override. This mode
+skips package checkouts, environment preparation, extraction, and the Vite build.
+It requires neither Python nor Julia. The generator receives
+`--allow-components` because this is a trusted snapshot of our own browser code.
+The Eunoia checkout still supplies its publication metadata and public assets.
 
-## Compatibility and validation
+The former `EUNOIA_PYTHON_DOCS_SNAPSHOT` and `EUNOIA_JULIA_DOCS_SNAPSHOT` settings
+belonged to the retired fragment importer. Re-extract those package-only
+snapshots as a complete site snapshot. `task docs-python` and `task docs-julia`
+remain compatibility aliases for the complete site build.
 
-Julia documentation lives under `/docs/reference/julia/`. The importer retains
-Documenter heading and method-signature anchors recorded in
-`julia-docs-legacy.json`. It includes the supplied Makie extension and groups
-fields with their types. Private items needed by public links remain accessible
-but are excluded from navigation and search.
+## Compatibility
 
-Run `pnpm test:docs`, `pnpm test:markdown`, `pnpm check`, and `pnpm build` after
-changing the integration. Checks cover Python overloads and inherited members,
-all 23 Julia exports, result fields, Makie methods, the 30 Julia figures,
-disclosures, legacy anchors, links, the sitemap, and Markdown negotiation.
-Generated pages export `reference.md`, which the Markdown build uses
-automatically. Sitemap discovery also remains automatic.
-
-The Julia site emits `/_diplodocus/julia/redirects.json`. After deploying this
-site, run Eunoia.jl's manual **Redirect current documentation** workflow. It
-verifies all destinations before changing the old root, `stable`, and `dev`
-entry points. Redirects preserve queries and fragments. Historical versions and
-existing HTML and figure assets remain available; the old CI no longer
-publishes over those redirects.
+Native package pages live under `/packages/python/` and `/packages/julia/`.
+Diplodocus generates permanent redirects from the old `/docs/reference/`
+routes. The publication step retains the old Julia heading and dispatch
+fragments and the `/_diplodocus/julia/redirects.json` contract used by the
+Eunoia.jl redirect workflow. The site checks these routes and fragments before
+publishing local build output.

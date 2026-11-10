@@ -1,0 +1,384 @@
+# JavaScript API Reference {#javascript-api-reference}
+
+The public surface of [`@jolars/eunoia`](https://www.npmjs.com/package/@jolars/eunoia).
+This page catalogs the exported functions and their options; the shipped
+TypeScript definitions remain the exhaustive, field-level source. New here? Start
+with the [JavaScript quickstart](../../quickstart/javascript/index.md).
+
+All functions are pure (no shared state) and synchronous, except `init()` on the
+`./web` entry, which must be awaited once before fitting.
+
+## `euler(options)` {#euleroptions}
+
+Fits an area-proportional Euler diagram from set sizes and returns a `Layout`.
+
+```js
+import { euler } from "@jolars/eunoia";
+
+const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
+```
+
+| Option            | Type                                                              | Default        | Meaning                                                             |
+| ----------------- | ---------------------------------------------------------------- | -------------- | ------------------------------------------------------------------ |
+| `sets`            | `Record<string, number>`                                         | *(required)*   | Sizes keyed by combination expression (`"A"`, `"A&B"`, …).         |
+| `inputType`       | `"exclusive" \| "inclusive"`                                     | `"exclusive"`  | Whether values are exclusive pieces or full set unions.            |
+| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle" \| "rotatedRectangle"` | `"circle"`     | Shape family to fit with.                                          |
+| `output`          | `"shapes" \| "polygons" \| "regions"`                           | `"shapes"`     | What the `Layout` carries (see [Layout](#the-layout-object)).      |
+| `seed`            | `number \| bigint`                                               | —              | RNG seed for reproducible fits.                                    |
+| `optimizer`       | `Optimizer`                                                       | core default   | Optimization algorithm (see below).                               |
+| `loss`            | `LossType`                                                       | optimizer's    | Region-error loss function.                                       |
+| `tolerance`       | `number`                                                         | `1e-3`         | Finite, nonnegative convergence tolerance; see below.               |
+| `restarts`        | `number`                                                        | `10`           | Random restarts of the two-phase fit; lowest loss is kept.        |
+| `polygonVertices` | `number`                                                        | `256`          | Vertices per polygon outline (`"polygons"`/`"regions"`).           |
+| `complement`      | `number`                                                        | —              | Items outside every set; fits a bounding container. See [Complement](../../concepts/complement/index.md). |
+
+`Optimizer` is one of `"cmaEsBoundedLm"`, `"cmaEsLm"`, `"cmaEs"`,
+`"levenbergMarquardt"`, `"boundedLevenbergMarquardt"`, `"lbfgs"`, or `"nelderMead"`.
+The default for shapes with analytic gradients is `"cmaEsBoundedLm"`, which
+uses an LM baseline, a bounded LM retry, and CMA-ES escape with bounded LM
+polishing when needed. `"cmaEsTrf"` and `"trf"` remain accepted as deprecated
+synonyms for `"cmaEsBoundedLm"` and `"boundedLevenbergMarquardt"`, respectively.
+
+`LossType` is one of
+`"sumSquared"`, `"sumAbsolute"`, `"sumAbsoluteRegionError"`,
+`"sumSquaredRegionError"`, `"maxAbsolute"`, `"maxSquared"`, `"rootMeanSquared"`,
+`"stress"`, `"diagError"`. The defaults match the Rust core and are what you
+want unless you are deliberately exploring; see the
+[Fitter Pipeline](../../concepts/fitter-pipeline/index.md) chapter.
+
+Rotated rectangles use derivative-free Nelder–Mead and CMA-ES by default
+because their exact polygon overlap areas do not supply analytical gradients.
+
+For final-layout unbounded LM stages, `tolerance` controls relative model reduction:
+both the actual and predicted cost reductions must be small before this test
+stops the solver.
+Zero disables that test. For L-BFGS, it controls the absolute gradient norm
+and cost change. Bounded LM, CMA-ES, and Nelder-Mead stages ignore this option.
+Invalid tolerances throw an error.
+
+## `venn(options)` {#vennoptions}
+
+Lays out a canonical n-set Venn diagram (fixed template, *not*
+proportional—set sizes are ignored). Returns a `Layout`.
+
+```js
+import { venn } from "@jolars/eunoia";
+
+const layout = venn({ n: 3 }); // 1 ≤ n ≤ 5
+```
+
+| Option            | Type                                                  | Default      | Meaning                                       |
+| ----------------- | ---------------------------------------------------- | ------------ | --------------------------------------------- |
+| `n`               | `number`                                             | *(required)* | Number of sets.                               |
+| `shape`           | `"circle" \| "ellipse" \| "square" \| "rectangle" \| "rotatedRectangle"` | `"ellipse"`  | Shape family.                                 |
+| `output`          | `"polygons" \| "regions"`                           | `"polygons"` | What the `Layout` carries.                    |
+| `polygonVertices` | `number`                                             | `256`        | Vertices per outline.                         |
+| `complement`      | `number`                                             | —            | Optional complement container.                |
+
+Only `"ellipse"` reaches `n = 5`; `"circle"` gives the classic 1–3-circle
+diagrams, and `"square"`/`"rectangle"` are axis-aligned and cap at `n = 3`.
+`"rotatedRectangle"` supports `n = 1..4`.
+
+## The `Layout` Object {#the-layout-object}
+
+Both `euler` and `venn` return a `Layout`, a union discriminated on `mode`,
+which follows the `output` option:
+
+| `output`     | `mode`         | Carries                                                                 |
+| ------------ | -------------- | ----------------------------------------------------------------------- |
+| `"shapes"`   | `"shapes"`     | The selected shape's geometric parameters, listed below.                 |
+| `"polygons"` | `"polygons"`   | the shapes **plus** `polygons`, one closed outline per set.             |
+| `"regions"`  | `"regions"`    | `regions`, the exclusive pieces (`A` only, `A&B`, …) + `setAnchors` + `shapeOutlines`. |
+
+Every `Layout` also carries:
+
+- `shape`: the shape family used (`"circle"`, `"ellipse"`, …).
+- `metrics`: `{ loss, stress, diagError, iterations, targetAreas, fittedAreas, regionError, residuals }`. See [Goodness of Fit](../../concepts/goodness-of-fit/index.md).
+- `container`: present only when `complement` was set: `{ x, y, width, height }`.
+
+In `"shapes"` and `"polygons"` modes, `shape` selects the array of primitives:
+
+| `shape`              | Array               | Geometry fields                         |
+| -------------------- | ------------------- | --------------------------------------- |
+| `"circle"`           | `circles`           | `x`, `y`, `radius`                      |
+| `"ellipse"`          | `ellipses`          | `x`, `y`, `semiMajor`, `semiMinor`, `rotation` |
+| `"square"`           | `squares`           | `x`, `y`, `side`                        |
+| `"rectangle"`        | `rectangles`        | `x`, `y`, `width`, `height`             |
+| `"rotatedRectangle"` | `rotatedRectangles` | `x`, `y`, `width`, `height`, `rotation` |
+
+Each primitive also has a `label` and a `labelAnchor`. For ellipses and rotated
+rectangles, `rotation` is in radians, counterclockwise from the positive
+x-axis; the axis lengths describe the shape before rotation.
+
+Each shape and region carries a `labelAnchor` (`{ x, y }`) for interior labels;
+`"regions"` mode adds `setAnchors` and `shapeOutlines`. The latter is one closed
+ring per set — the set's own silhouette, which region decomposition clips away
+and so cannot be recovered from `regions` without a union pass. Use it for
+seam-free per-set strokes, or to feed `placeSetLabels`. Coordinates are
+abstract, centered units—compute a bounding box for your `viewBox`.
+
+## `placeLabelsForRegions(options)` {#placelabelsforregionsoptions}
+
+Places one label per region, choosing interior or exterior positions (with
+leader lines) based on whether each region can hold its measured label. Returns
+`Record<string, LabelPlacement>` keyed by combination.
+
+```js
+import { placeLabelsForRegions } from "@jolars/eunoia";
+
+const placements = placeLabelsForRegions({
+  regions: layout.regions,
+  container: layout.container,
+  sizes: { A: { w: 0.4, h: 0.2 }, "A&B": { w: 0.3, h: 0.15 } },
+  strategy: { leader: { type: "straight" }, tether: "poi" },
+});
+```
+
+`sizes` are the measured label dimensions in diagram units, which usually means
+a render → measure → re-place loop. The `strategy` knobs (`leader`, `precision`,
+`tether`, `leaderGap`) and that loop are covered in
+[Label Placement](../../concepts/label-placement/index.md).
+
+All three straight strategies refine exit directions to reduce traversal
+through other regions, including regions without labels. The refinement
+preserves label clearance and matched angular order; enclosed sources can
+require some traversal. Elbow leaders use their separate column placement.
+
+## `placeSetLabels(options)` {#placesetlabelsoptions}
+
+Places one label per **set**, just outside that set's own shape and with no
+leader line — the label is adjacent to the thing it names. Returns
+`Record<string, LabelPlacement>` keyed by set name, every entry with
+`kind: "exteriorSet"`.
+
+```js
+import { placeSetLabels } from "@jolars/eunoia";
+
+const setPlacements = placeSetLabels({
+  outlines: layout.shapeOutlines,
+  sizes: { A: { w: 0.4, h: 0.2 }, B: { w: 0.4, h: 0.2 } },
+  strategy: { obstacles: labelObstacles({ placements, sizes, padding: 0.15 }) },
+});
+```
+
+Each label rotates around its shape to the angle with the most clearance to the
+other sets' outlines, the labels already placed, and any `strategy.obstacles`.
+For nested sets, the sweep favors keeping the inner label inside the enclosing
+outline, clear of its boundary. Shape clearance remains best-effort when space
+is tight or the collision guard moves a label.
+Label boxes never overlap each other; clearance from the shapes is best-effort.
+The knobs (`margin`, `angularSteps`, `obstacles`, `precision`) and the algorithm
+are covered in [Label Placement](../../concepts/label-placement/index.md).
+
+## `placementsBbox(options)` {#placementsbboxoptions}
+
+Returns the bounding box (`{ x, y, width, height }`, or `undefined`) enclosing a
+set of placed label boxes; useful for extending the viewport so exterior labels
+aren't clipped.
+
+## `placeGlyphsForRegions(options)` {#placeglyphsforregionsoptions}
+
+Packs equally-sized circular glyphs—one mark per data unit,
+eulerGlyphs-style—inside each region. Returns
+`{ radius, positions, unplaced? }`: the single diagram-wide radius plus the
+glyph centers per combination.
+
+```js
+import { placeGlyphsForRegions } from "@jolars/eunoia";
+
+const glyphs = placeGlyphsForRegions({
+  regions: layout.regions,
+  counts: { A: 20, B: 12, "A&B": 5 },
+  options: { arrangement: "uniform" }, // or "random" with a seed
+});
+```
+
+Omit `options.radius` to auto-size the glyphs (largest radius at which every
+region holds its count). Arrangements, the `gap` knob, and the fixed-radius
+overflow behavior are covered in [Glyphs](../../concepts/glyphs/index.md). Pass the
+result straight to the SVG serializer via `ToSvgOptions.glyphs`.
+
+`options.obstacles` takes keep-out boxes (`{ x, y, width, height }`, center
+plus full extents) that glyph centers steer clear of—see
+[Label keep-out](../../concepts/glyphs/index.md#label-keep-out).
+
+Set `options.obstaclePolicy` to `"strict"` to require obstacle clearance and
+report overflow in `unplaced`, including with automatic sizing. The default
+`"bestEffort"` permits overlap when the glyphs do not fit. Both policies keep
+the automatic radius floor of half the radius chosen without obstacles.
+
+## `placeGlyphBoxesForRegions(options)` {#placeglyphboxesforregionsoptions}
+
+Packs per-item text boxes—member names—inside each region. The
+rectangular-footprint sibling of `placeGlyphsForRegions`: hand it the
+`{ w, h }` you measured for every item and it returns
+`{ scale, boxes, unplaced? }`—one centered `{ x, y, width, height }` per item,
+plus the single diagram-wide factor those boxes were packed at.
+
+```js
+import { placeGlyphBoxesForRegions } from "@jolars/eunoia";
+
+const members = { A: ["Ada", "Grace"], "A&B": ["Katherine"] };
+const sizes = Object.fromEntries(
+  Object.entries(members).map(([k, names]) => [k, names.map(measure)]),
+);
+
+const placed = placeGlyphBoxesForRegions({
+  regions: layout.regions,
+  sizes,
+  options: { arrangement: "uniform" }, // or "random" with a seed
+});
+// Render your text at `fontSize * placed.scale`.
+```
+
+Omit `options.scale` to auto-fit. Auto-scale only ever *shrinks* (the bracket
+is `[minScale, 1]`, default floor `0.35`), since you own the reference font
+size—deliberately asymmetric with the disc packer, which grows to fill.
+
+Set `options.targetAspectRatio` to a positive width-to-height ratio to
+balance uniform rows. For example, `1` favors a roughly square occupied
+block, including its halo. The packer maximizes the placed prefix before
+choosing the closest candidate ratio, keeping boundary, hole, and obstacle
+clearance. This preference does not change automatic scale selection.
+Omitted, non-positive, or non-finite values keep the first complete packing;
+`"random"` ignores it. Raw WASM JSON uses the same `targetAspectRatio` name.
+
+`boxes[combo]` is a **prefix** of `sizes[combo]`, so `boxes[combo][i]` belongs
+to your `labels[combo][i]`. Pass the result plus the strings to the SVG
+serializer via `ToSvgOptions.glyphBoxes`. `options.obstacles` takes the same
+keep-out boxes as `placeGlyphsForRegions`, and `options.obstaclePolicy` accepts
+`"bestEffort"` (default) or `"strict"`. Strict mode reports overflow while
+preserving `minScale`, the floor of half the obstacle-free scale, and input
+order. See
+[Member labels](../../concepts/glyphs/index.md#member-labels).
+
+## `labelObstacles(options)` {#labelobstaclesoptions}
+
+Turns a `placeLabelsForRegions` result plus the sizes you measured into the
+keep-out boxes `placeGlyphsForRegions` expects, each padded by an optional
+`padding` on every side. Pure JS—no WebAssembly call.
+
+```js
+import { labelObstacles, placeGlyphsForRegions, placeLabelsForRegions } from "@jolars/eunoia";
+
+const placements = placeLabelsForRegions({ regions: layout.regions, sizes });
+const glyphs = placeGlyphsForRegions({
+  regions: layout.regions,
+  counts: { A: 20, B: 12, "A&B": 5 },
+  options: { obstacles: labelObstacles({ placements, sizes, padding: 0.15 }) },
+});
+```
+
+## SVG Serializer: `@jolars/eunoia/svg` {#svg-serializer-jolarseunoiasvg}
+
+A wasm-free, DOM-free entry that turns a `Layout` into SVG. It never touches
+WebAssembly, so it works during server-side rendering and from a CDN as-is.
+
+```js
+import { toSvg } from "@jolars/eunoia/svg";
+
+document.body.innerHTML = toSvg(layout, { showLabels: true });
+```
+
+- `toSvg(layout, opts?)`: a complete standalone `<svg>` document string.
+- `svgBody(layout, opts?)`: inner markup only, when you own the `<svg>` element.
+- `viewBox(layout, opts?)`: the `{ x, y, w, h }` viewBox for a layout.
+- `boundingBox(layout, opts?)`: geometry bounds, including exterior labels when placements + sizes are supplied.
+- `polygonPath`, `regionPath`, `leaderPath`: SVG `d` path builders.
+- Color helpers: `PALETTES`, `paletteColors`, `defaultColorFor`, `colorForSet`, `mixColors`, plus `nestedSets`/`regionTitleLines` for region labeling.
+
+For rotated rectangles, request `output: "polygons"` or `output: "regions"`
+when using the serializer.
+
+`ToSvgOptions` covers palettes and per-set color overrides, opacity, strokes,
+label and count rendering, a legend, padding, the `placements`/`labelSizes`
+from `placeLabelsForRegions` for exterior labels with leader lines, the
+`setLabelPlacements`/`setLabelSizes` from `placeSetLabels` (which move every set
+name outside its shape and suppress the interior copies), and the
+`glyphs` result from `placeGlyphsForRegions` (rendered above region fills,
+below labels; tinted from each region's own color with a finer, darker edge by
+default, tunable via `tint`, `fill`, `stroke`, and `strokeWidth`).
+
+`showCounts` prints each region's own area. When the numbers you want are not
+the geometry — a Venn layout is topological, so its areas are not quantities at
+all — pass `counts`, keyed by canonical combination:
+
+```js
+toSvg(vennLayout, { showCounts: true, counts: { A: 12, "A&B": 4 } });
+```
+
+A supplied `counts` map is authoritative: a region with no entry draws no count,
+which is what lets you annotate only the regions you have numbers for.
+
+`glyphBoxes` renders a `placeGlyphBoxesForRegions` result in the same slot.
+The placer deliberately carries no text, so pass the strings alongside it as
+`labels`, index-aligned with `boxes`:
+
+```js
+toSvg(layout, {
+  glyphBoxes: { scale: placed.scale, boxes: placed.boxes, labels: members, fontSize: 12 },
+});
+```
+
+`fontSize` is the reference size you measured at—the rendered size is
+`fontSize * scale`, emitted once on each region's `<g>`. `color`, `fontWeight`,
+`fontFamily`, and `className` override the defaults, and `background` (off by
+default) adds a rounded chip behind each label, tinted from the region color
+like the glyph discs. `glyphs` and `glyphBoxes` may both be set; discs draw
+first.
+
+`memberCallouts` renders complete roster blocks composed by the caller. Each
+combination maps to a `MemberCallout` with a `placement` from the label placer,
+the measured `size: { w, h }` of the entire block, and `lines` containing
+`{ text, y, fontSize, fontWeight?, fontStyle? }`. Each line's `y` is its vertical
+center relative to the block's anchor. Supply the region heading and count as
+lines when wanted: a callout replaces that region's ordinary label. Blocks
+expand the viewport and draw the placement's leader when it has a tether.
+A block whose region has no geometry can omit the tether and label the missing
+region explicitly. Text inherits the SVG's font family and uses `labelColor`.
+The serializer does not measure, pack, or choose which rosters become callouts.
+
+### Interactivity: tooltips and data hooks {#interactivity-tooltips-and-data-hooks}
+
+The serializer can attach hover tooltips and identifying attributes to each
+region (and each set shape) so a host page can layer interactivity on top of the
+static markup. Three `ToSvgOptions` fields drive this, and each hook receives a
+`RegionInfo` (`{ combination, sets, area }`):
+
+- `tooltip(info) => string | null` — a non-empty return becomes a `<title>` child on the fill element, giving native (zero-JS) browser hover tooltips.
+- `interactive: boolean` — emits `data-combination` and `data-area` on every fill, a payload-free hook for event delegation.
+- `regionAttrs(info) => Record<string, string | number | null>` — arbitrary extra attributes (typically `data-*`); nullish values are skipped, and keys override the `interactive` defaults.
+
+```js
+const svg = toSvg(layout, {
+  interactive: true, // -> data-combination, data-area on each fill
+  tooltip: (r) => `${r.combination}: ${r.area.toFixed(0)}`,
+});
+```
+
+**Member names.** Eunoia only sees set and intersection *sizes*, never the
+underlying elements, so the `combination -> members` mapping is yours to build
+(set algebra over your own data). For small lists, format them in `tooltip`. For
+large lists (e.g. gene sets), don't bake them into the file — enable
+`interactive` and look the members up on hover from a JS-side map keyed on
+`data-combination`, keeping the SVG small.
+
+## Bundler-Less Entry: `@jolars/eunoia/web` {#bundler-less-entry-jolarseunoiaweb}
+
+A single self-contained ESM file with the WebAssembly inlined. Re-exports
+everything from the default entry, plus:
+
+- `init(): Promise<void>`: instantiate the embedded wasm once; idempotent. Must be awaited before `euler`/`venn`.
+
+```html
+<script type="module">
+  import { euler, init } from "https://esm.sh/@jolars/eunoia/web";
+  await init();
+  const layout = euler({ sets: { A: 5, B: 3, "A&B": 1.5 } });
+</script>
+```
+
+---
+
+For exact field-level types, rely on the TypeScript definitions shipped with the
+package; your editor's "go to definition"/IntelliSense will surface them.

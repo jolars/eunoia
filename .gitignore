@@ -210,10 +210,3 @@ dist
 # Pinned documentation sources, snapshots, and generated package documentation.
 /.docs-sources/
 /.diplodocus/
-/web/src/routes/docs/reference/python/
-/web/src/routes/docs/reference/python.staging-*/
-/web/src/routes/docs/reference/python.previous-*/
-/web/src/routes/docs/reference/julia/
-/web/src/routes/docs/reference/julia.staging-*/
-/web/src/routes/docs/reference/julia.previous-*/
-/web/static/_diplodocus/
