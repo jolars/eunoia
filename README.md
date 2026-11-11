@@ -14,7 +14,8 @@ Eunoia is a Rust library for area-proportional **Euler and Venn diagrams**. Give
 it a set of sizes and intersections and it fits a layout of shapes whose areas
 match your data as closely as possible. It is a ground-up rewrite of the R
 package [eulerr](https://github.com/jolars/eulerr): faster, more flexible, and
-built to power bindings across many languages.
+built to power bindings across many languages. Read the documentation at
+[eunoia.bz](https://eunoia.bz/docs/).
 
 ## Highlights
 
@@ -79,11 +80,7 @@ fn main() {
 ## Web App
 
 Eunoia powers a web app for interactive diagram fitting and exploration, located
-at <https://eunoia.bz/app>. The source code for the app resides in the `web/`
-directory of this repo and is built on the JavaScript (npm) package, using
-[Svelte](https://svelte.dev/) components, hosted in a
-[Diplodocus](https://diplodocus.cc/) documentation site. See
-[web/README.md](web/README.md) for development commands.
+at <https://eunoia.bz/app>.
 
 ## The Eunoia Ecosystem
 
@@ -161,11 +158,6 @@ directly from a CDN with no `init()`.
 
 Full runnable examples (a Quarto document and a standalone HTML page) are in
 [`examples/`](examples/).
-
-## Documentation
-
-- Narrative docs: [eunoia.bz/docs/](https://eunoia.bz/docs/)
-- Rust API reference: [docs.rs/eunoia](https://docs.rs/eunoia/)
 
 ## Citation
 
