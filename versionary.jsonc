@@ -20,5 +20,10 @@
         "."
       ]
     }
+  },
+  "commit-overrides": {
+    "4ce7e8b31c4669dcf002b83ad7900eee4e8fe173": {
+      "message": "docs: move site to diplodocus"
+    }
   }
 }
