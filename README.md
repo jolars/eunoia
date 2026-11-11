@@ -4,8 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/eunoia.svg?logo=rust)](https://crates.io/crates/eunoia)
 [![npm](https://img.shields.io/npm/v/@jolars/eunoia?label=npm&logo=npm)](https://badge.fury.io/js/@jolars%2Feunoia)
 [![pypi](https://img.shields.io/pypi/v/eunoia?label=pypi&logo=python)](https://badge.fury.io/py/eunoia)
-[![CRAN
-Badge](http://www.r-pkg.org/badges/version/eulerr)](https://cran.r-project.org/package=eulerr)
+[![CRAN](https://img.shields.io/cran/v/eulerr?logo=r)](https://cran.r-project.org/package=eulerr)
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
 [![arXiv](https://img.shields.io/badge/arXiv-2611.02198-b31b1b)](https://arxiv.org/abs/2611.02198)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20665805-blue)](https://doi.org/10.5281/zenodo.20665805)
