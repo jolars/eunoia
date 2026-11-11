@@ -157,10 +157,8 @@ layout = eunoia.euler({ sets: { A: 5, B: 2, "A&B": 1 } });
 ```
 
 `@jolars/eunoia/svg` is pure JavaScript (no WebAssembly), so it already works
-directly from a CDN with no `init()`.
-
-Full runnable examples (a Quarto document and a standalone HTML page) are in
-[`examples/`](examples/).
+directly from a CDN with no `init()`. Full runnable examples (a Quarto document
+and a standalone HTML page) are in [`examples/`](examples/).
 
 ## Citation
 
