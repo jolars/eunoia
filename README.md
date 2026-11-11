@@ -38,6 +38,9 @@ built to power bindings across many languages. Read the documentation at
 cargo add eunoia
 ```
 
+Then run the following example to fit an Euler diagram of three overlapping
+sets.
+
 ```rust
 use eunoia::geometry::shapes::Ellipse;
 use eunoia::{DiagramSpecBuilder, Fitter, InputType};
