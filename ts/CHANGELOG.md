@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.2](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.10.1...eunoia-npm-v1.10.2) (2026-11-11)
+
+### Bug Fixes
+
+- **plotting:** keep nested labels inside enclosing sets ([`ee0b803`](https://github.com/jolars/eunoia/commit/ee0b8034a58803598b2482397b8b3aa0f7da16d3))
+
+### Dependencies
+
+- updated eunoia to v1.10.2
+
 ## [1.10.1](https://github.com/jolars/eunoia/compare/eunoia-npm-v1.10.0...eunoia-npm-v1.10.1) (2026-10-28)
 
 ### Bug Fixes

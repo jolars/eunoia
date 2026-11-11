@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.2](https://github.com/jolars/eunoia/compare/v1.10.1...v1.10.2) (2026-11-11)
+
+### Bug Fixes
+
+- **geometry:** retain finite conic intersection points ([`feeaf09`](https://github.com/jolars/eunoia/commit/feeaf09ab63b9d6dc43db916f26d655d10fda9f1))
+- **ci:** install Python before preparing docs ([`775e838`](https://github.com/jolars/eunoia/commit/775e838262472cc57854131fd25a27e5b7743a4c))
+- **plotting:** keep nested labels inside enclosing sets ([`ee0b803`](https://github.com/jolars/eunoia/commit/ee0b8034a58803598b2482397b8b3aa0f7da16d3))
+
 ## [1.10.1](https://github.com/jolars/eunoia/compare/v1.10.0...v1.10.1) (2026-10-28)
 
 ### Bug Fixes
