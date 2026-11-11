@@ -112,6 +112,11 @@ export async function finishSite(root) {
     const markdownPath = path.replace(/\.html$/, ".md");
     let html = await readFile(path, "utf8");
     let markdown = await readFile(markdownPath, "utf8");
+    // Diplodocus adds an icon for every source repository, including bindings.
+    html = html.replace(
+      /<a class="repository-link" href="([^"]*)"[^>]*>[\s\S]*?<\/a>/g,
+      (link, url) => (url === "https://github.com/jolars/eunoia" ? link : ""),
+    );
     const previous = aliases.get(artifact);
     if (previous)
       ({ html, markdown } = preserveAnchors(html, markdown, previous));
