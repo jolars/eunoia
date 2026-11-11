@@ -191,14 +191,18 @@ impl Conic {
             return points; // Matrix A is all zeros
         }
 
+        // Homogeneous coordinates have arbitrary scale. An absolute cutoff
+        // on w can discard finite points when the entire row or column is small.
+        let point_eps = EPSILON * a[(i0, i1)].abs();
+
         // Extract first point from row i0, normalize by element (i0, 2)
-        if a[(i0, 2)].abs() > EPSILON {
+        if a[(i0, 2)].abs() > point_eps {
             let p0 = HomogeneousPoint::new(a[(i0, 0)] / a[(i0, 2)], a[(i0, 1)] / a[(i0, 2)], 1.0);
             points.push(p0);
         }
 
         // Extract second point from column i1, normalize by element (2, i1)
-        if a[(2, i1)].abs() > EPSILON {
+        if a[(2, i1)].abs() > point_eps {
             let p1 = HomogeneousPoint::new(a[(0, i1)] / a[(2, i1)], a[(1, i1)] / a[(2, i1)], 1.0);
             points.push(p1);
         }

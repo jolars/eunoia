@@ -2845,6 +2845,145 @@ mod tests {
         );
     }
 
+    // Keep the captured parameters from eulerr's issue114_4_set_dominant_quad
+    // case: rounding them can change which homogeneous point is dropped.
+    #[allow(clippy::excessive_precision)]
+    fn dominant_quad_ellipses() -> [Ellipse; 4] {
+        [
+            Ellipse::new(
+                Point::new(-192.60950581830963, -206.43066002834374),
+                547.49995006676215,
+                260.53685283375995,
+                -0.66764526452086814,
+            ),
+            Ellipse::new(
+                Point::new(-5.6843418860808015e-14, -206.43066002834371),
+                681.10887753079032,
+                139.99746947868005,
+                -0.045830887477159354,
+            ),
+            Ellipse::new(
+                Point::new(-3.5656797940661704, -211.43832254018449),
+                287.84006241669664,
+                410.84381687189619,
+                2.3324125956490702,
+            ),
+            Ellipse::new(
+                Point::new(-107.56350693802312, -2.8421709430404007e-14),
+                665.51754343677374,
+                344.29946155709814,
+                -1.4813471457179308,
+            ),
+        ]
+    }
+
+    #[test]
+    fn test_dominant_quad_pair_intersections() {
+        let [a, b, _, _] = dominant_quad_ellipses();
+        for (first, second) in [(a, b), (b, a)] {
+            let points = first.intersection_points(&second);
+            assert_eq!(points.len(), 4);
+            for (i, point) in points.iter().enumerate() {
+                for shape in [a, b] {
+                    assert!((ellipse_implicit_value(point, &shape) - 1.0).abs() < 1e-9);
+                }
+                assert!(points[..i].iter().all(|other| point.distance(other) > 1.0));
+            }
+        }
+    }
+
+    #[test]
+    fn test_exclusive_regions_dominant_quad_conserve_area() {
+        let shapes = dominant_quad_ellipses();
+        let areas = Ellipse::compute_exclusive_regions(&shapes);
+        for (i, shape) in shapes.iter().enumerate() {
+            let marginal: f64 = areas
+                .iter()
+                .filter(|(mask, _)| *mask & (1 << i) != 0)
+                .map(|(_, area)| area)
+                .sum();
+            assert!(
+                (marginal - shape.area()).abs() < 1e-12 * shape.area(),
+                "set {i}: marginal {marginal} vs area {}",
+                shape.area()
+            );
+        }
+    }
+
+    #[test]
+    fn test_exclusive_regions_dominant_quad_match_polygon_clipping() {
+        use crate::geometry::diagram::to_exclusive_areas;
+        use crate::plotting::{ClipOperation, polygon_clip};
+
+        let shapes = dominant_quad_ellipses();
+        let polygons = shapes.map(|e| e.polygonize(1600));
+        let mut overlaps = std::collections::HashMap::new();
+        for mask in 1..16 {
+            let mut indices = (0..4).filter(|i| mask & (1 << i) != 0);
+            let mut rings = vec![polygons[indices.next().unwrap()].clone()];
+            for i in indices {
+                rings = rings
+                    .iter()
+                    .flat_map(|ring| polygon_clip(ring, &polygons[i], ClipOperation::Intersection))
+                    .collect();
+            }
+            overlaps.insert(mask, rings.iter().map(Polygon::area).sum());
+        }
+        let expected = to_exclusive_areas(&overlaps);
+        let areas = Ellipse::compute_exclusive_regions(&shapes);
+        // Allow the inscribed polygons' O(vertices^-2) area error.
+        let tolerance = 1e-5 * shapes.iter().map(Area::area).fold(0.0, f64::max);
+        for mask in 1..16 {
+            let actual = areas.get(&mask).copied().unwrap_or(0.0);
+            assert!(
+                (actual - expected[&mask]).abs() < tolerance,
+                "mask {mask:04b}: native {actual} vs polygon {}",
+                expected[&mask]
+            );
+        }
+    }
+
+    #[test]
+    fn test_exclusive_regions_dominant_quad_gradient_matches_fd() {
+        let shapes = dominant_quad_ellipses();
+        let direct = Ellipse::compute_exclusive_regions(&shapes);
+        let (areas, gradients) = Ellipse::compute_exclusive_regions_with_gradient(&shapes).unwrap();
+        assert_eq!(areas, direct);
+        let params: Vec<f64> = shapes
+            .iter()
+            .flat_map(Ellipse::to_optimizer_params)
+            .collect();
+        for k in 0..params.len() {
+            // Match the step to each parameter's scale: centers are hundreds
+            // of units, while log axes and rotation have unit-scale changes.
+            let h = if k % 5 < 2 { 1e-3 } else { 1e-5 };
+            let mut plus = params.clone();
+            let mut minus = params.clone();
+            plus[k] += h;
+            minus[k] -= h;
+            let perturbed_areas = |p: &[f64]| {
+                let ellipses: Vec<_> = p
+                    .chunks_exact(5)
+                    .map(Ellipse::from_optimizer_params)
+                    .collect();
+                Ellipse::compute_exclusive_regions(&ellipses)
+            };
+            let plus_areas = perturbed_areas(&plus);
+            let minus_areas = perturbed_areas(&minus);
+            for mask in 1..16 {
+                let fd = (plus_areas.get(&mask).copied().unwrap_or(0.0)
+                    - minus_areas.get(&mask).copied().unwrap_or(0.0))
+                    / (2.0 * h);
+                let analytic = gradients.get(&mask).map_or(0.0, |g| g[k]);
+                let relative_error = (analytic - fd).abs() / analytic.abs().max(fd.abs()).max(1.0);
+                assert!(
+                    relative_error < 1e-4,
+                    "mask {mask:04b}, parameter {k}: analytic {analytic} vs FD {fd} (error {relative_error})"
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_exclusive_regions_two_ellipses_contained() {
         use crate::geometry::traits::DiagramShape;

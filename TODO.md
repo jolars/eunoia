@@ -67,11 +67,12 @@
 - [x] **Nested sets in `place_set_labels`**. Fully enclosing sets now score
   clearance on their inside, so a nested set's label favors room between its
   own outline and the enclosing boundary. Polygon containment distinguishes
-  nesting from partial overlap; coincident outlines still send labels outside.
-  The label keeps hugging its own shape, with no leader. Shape clearance is
-  still best-effort when the gap cannot fit the label or the collision guard
-  moves it. An exterior escape with a leader would require a joint design with
-  `place_labels`. Surfaced 2026-08-14 when the mode landed.
+  nesting from partial overlap; coincident outlines still send labels
+  outside. The label keeps hugging its own shape, with no leader. Shape
+  clearance is still best-effort when the gap cannot fit the label or the
+  collision guard moves it. An exterior escape with a leader would require a
+  joint design with `place_labels`. Surfaced 2026-08-14 when the mode
+  landed.
 
 ## Glyph placement follow-ups
 
