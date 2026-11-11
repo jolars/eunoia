@@ -18,13 +18,6 @@ match your data as closely as possible. It is a ground-up rewrite of the R
 package [eulerr](https://github.com/jolars/eulerr): faster, more flexible, and
 built to power bindings across many languages.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jolars/eunoia/refs/heads/main/images/example-dark.svg" />
-    <img src="https://raw.githubusercontent.com/jolars/eunoia/refs/heads/main/images/example.svg" width="380" alt="An area-proportional Euler diagram of three overlapping sets labelled Adventure, Comedy, and Drama." />
-  </picture>
-</p>
-
 ## Highlights
 
 - **Five shape families**: fit with circles, ellipses, squares, axis-aligned
@@ -73,6 +66,13 @@ fn main() {
     );
 }
 ```
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jolars/eunoia/refs/heads/main/images/example-dark.svg" />
+    <img src="https://raw.githubusercontent.com/jolars/eunoia/refs/heads/main/images/example.svg" width="380" alt="An area-proportional Euler diagram of three overlapping sets labelled Adventure, Comedy, and Drama." />
+  </picture>
+</p>
 
 `layout.shapes()` returns the fitted geometry; the `plotting` module turns a
 `Layout` into region polygons and label anchors for rendering. See the
