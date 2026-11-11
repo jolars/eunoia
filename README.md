@@ -1,12 +1,9 @@
 # Eunoia <img src='https://raw.githubusercontent.com/jolars/eunoia/refs/heads/main/images/logo.png' align="right" width="139" />
 
-[![Build and
-Test](https://github.com/jolars/eunoia/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/jolars/eunoia/actions/workflows/build-and-test.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/jolars/eunoia/build-and-test.yml?label=CI)](https://github.com/jolars/eunoia/actions/workflows/build-and-test.yml)
 [![Crates.io](https://img.shields.io/crates/v/eunoia.svg?logo=rust)](https://crates.io/crates/eunoia)
-[![npm
-version](https://badge.fury.io/js/@jolars%2Feunoia.svg?icon=si%3Anpm)](https://badge.fury.io/js/@jolars%2Feunoia)
-[![PyPI
-version](https://badge.fury.io/py/eunoia.svg?icon=si%3Apython)](https://badge.fury.io/py/eunoia)
+[![npm](https://img.shields.io/npm/v/@jolars/eunoia?label=npm)](https://badge.fury.io/js/@jolars%2Feunoia)
+[![pypi](https://img.shields.io/pypi/v/eunoia?label=pypi)](https://badge.fury.io/py/eunoia)
 [![CRAN
 Badge](http://www.r-pkg.org/badges/version/eulerr)](https://cran.r-project.org/package=eulerr)
 [![codecov](https://codecov.io/gh/jolars/eunoia/graph/badge.svg?token=hpXwdIe58E)](https://codecov.io/gh/jolars/eunoia)
