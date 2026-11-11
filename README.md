@@ -32,7 +32,7 @@ built to power bindings across many languages. Read the documentation at
 - **Many targets**: pure Rust core that ships to JavaScript via WebAssembly and
   to other languages through a small C ABI.
 
-## Quick Start (Rust)
+## Quick start (Rust)
 
 ```sh
 cargo add eunoia
@@ -77,12 +77,12 @@ fn main() {
 `Layout` into region polygons and label anchors for rendering. See the
 [rustdoc](https://docs.rs/eunoia/) for the full API.
 
-## Web App
+## Web app
 
 Eunoia powers a web app for interactive diagram fitting and exploration, located
 at <https://eunoia.bz/app>.
 
-## The Eunoia Ecosystem
+## The Eunoia ecosystem
 
 The pure-Rust core powers bindings in several languages, all backed by the same
 fitting engine:
@@ -126,7 +126,7 @@ A renderer-agnostic SVG serializer is available at `@jolars/eunoia/svg`. The
 default entry is built with `wasm-pack --target bundler`, so it works with any
 modern bundler (Vite, Webpack, Rollup, esbuild) and Node 20+.
 
-### Browser/Observable (No Bundler)
+### Browser/Observable (no Bundler)
 
 The default entry imports the `.wasm` module directly, which only a bundler can
 resolve. For a plain HTML page, an [Observable](https://observablehq.com)
