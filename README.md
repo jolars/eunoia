@@ -148,7 +148,7 @@ inlined. Call `init()` once before fitting:
 </script>
 ```
 
-In Observable:
+### Observable
 
 ```js
 eunoia = import("https://esm.sh/@jolars/eunoia/web");
