@@ -22,8 +22,8 @@ built to power bindings across many languages. Read the documentation at
 - **Five shape families**: fit with circles, ellipses, squares, axis-aligned
   rectangles, or rotated rectangles; the engine is shape-agnostic until fit
   time.
-- **Robust fitting**: MDS initialization followed by a global/local optimization
-  pipeline (LM, CMA-ES, trust-region) that mirrors and improves on eulerr.
+- **Robust fitting**: initial initialization followed by a global/local
+  optimization pipeline that mirrors and improves on eulerr.
 - **Venn diagrams too**: canonical arrangements for up to three sets with
   circles, squares, or rectangles, four with rotated rectangles, and five with
   ellipses, independent of the fitter.
