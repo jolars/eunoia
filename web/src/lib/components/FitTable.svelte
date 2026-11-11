@@ -31,32 +31,34 @@
   }
 </script>
 
-<div class="bg-surface rounded-lg shadow p-6">
+<div class="bg-surface border border-line rounded-lg px-2 py-3 sm:p-4">
   <h2 class="text-lg font-semibold mb-4">Fit table</h2>
   {#if rows.length === 0}
     <p class="text-sm text-muted">No data.</p>
   {:else}
-    <table class="w-full text-sm">
-      <thead>
-        <tr
-          class="border-b border-line text-left text-muted text-xs uppercase tracking-wide"
-        >
-          <th class="py-1.5 pr-2">Combination</th>
-          <th class="py-1.5 pr-2 text-right">Input</th>
-          <th class="py-1.5 pr-2 text-right">Fit</th>
-          <th class="py-1.5 text-right">regionError</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each rows as row}
-          <tr class="border-b border-line last:border-0">
-            <td class="py-1 pr-2 font-mono">{row.combo}</td>
-            <td class="py-1 pr-2 text-right font-mono">{fmt(row.target)}</td>
-            <td class="py-1 pr-2 text-right font-mono">{fmt(row.fitted)}</td>
-            <td class="py-1 text-right font-mono">{fmt(row.regionError)}</td>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-muted text-xs uppercase tracking-wide"
+          >
+            <th class="py-1.5 pr-2">Combination</th>
+            <th class="py-1.5 pr-2 text-right">Input</th>
+            <th class="py-1.5 pr-2 text-right">Fit</th>
+            <th class="py-1.5 text-right">regionError</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each rows as row}
+            <tr class="border-b border-line last:border-0">
+              <td class="py-1 pr-2 font-mono">{row.combo}</td>
+              <td class="py-1 pr-2 text-right font-mono">{fmt(row.target)}</td>
+              <td class="py-1 pr-2 text-right font-mono">{fmt(row.fitted)}</td>
+              <td class="py-1 text-right font-mono">{fmt(row.regionError)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 </div>

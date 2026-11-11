@@ -9,7 +9,7 @@
   }
 </script>
 
-<div class="bg-surface rounded-lg shadow p-6">
+<div class="bg-surface border border-line rounded-lg px-2 py-3 sm:p-4">
   <h2 class="text-lg font-semibold mb-4">Goodness of fit</h2>
   {#if metrics}
     <dl class="grid grid-cols-3 gap-4 text-sm">

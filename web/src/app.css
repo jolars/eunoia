@@ -4,6 +4,21 @@
    widget so Tailwind variants stay inside the interactive island. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The host's unlayered heading styles otherwise override Tailwind's layers.
+   Restore the widget's heading utilities and reset, including their spacing. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: revert-layer;
+  font-size: revert-layer;
+  line-height: revert-layer;
+  letter-spacing: revert-layer;
+  font-weight: revert-layer;
+}
+
 /* Semantic theme tokens. `@theme inline` exposes them as Tailwind color
    utilities (bg-surface, text-ink, border-line, …) that resolve to the CSS
    variables below, so the widget can follow the site without overriding its palette. */

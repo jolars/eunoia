@@ -114,9 +114,9 @@
   });
 </script>
 
-<div class="max-w-7xl mx-auto p-6">
+<div class="min-w-0">
   {#if appState.loading}
-    <div class="bg-surface rounded-lg shadow p-8 text-center">
+    <div class="py-8 text-center">
       <div
         class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"
       ></div>
@@ -131,8 +131,8 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)] gap-6">
-      <aside class="space-y-3">
+    <div class="grid grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)] gap-4">
+      <aside class="min-w-0 space-y-3">
         <Section title="Diagram">
           <SpecEditor />
         </Section>
@@ -151,17 +151,19 @@
         <button
           type="button"
           onclick={resetAll}
-          class="w-full px-3 py-2 text-xs text-muted border border-line rounded-lg bg-surface hover:bg-inset"
+          class="w-full px-3 py-2 text-xs text-muted border border-line rounded bg-surface hover:bg-inset"
           >Reset to defaults</button
         >
       </aside>
 
-      <section class="space-y-4">
+      <section class="min-w-0 space-y-4">
         <!-- `paper`: the diagram artboard stays light in dark mode so the
              renderer's hardcoded-black strokes/labels stay readable and match
              the (always-white) PNG/SVG exports. -->
-        <div class="paper bg-surface rounded-lg shadow p-6">
-          <div class="flex items-center justify-between gap-4 mb-4">
+        <div
+          class="paper bg-surface border border-line rounded-lg px-2 py-3 sm:p-4"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold">Diagram</h2>
               {#if appState.fitting}
@@ -191,7 +193,7 @@
     </div>
   {/if}
 
-  <footer class="mt-12 border-t border-line pt-6 text-xs text-muted">
+  <footer class="mt-8 border-t border-line pt-4 text-xs text-muted">
     <span>
       Eunoia
       <a href={RELEASE_URL} class="text-accent hover:underline">v{VERSION}</a>

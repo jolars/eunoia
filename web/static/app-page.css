@@ -1,0 +1,15 @@
+body:has(#diagram-builder) {
+  background: light-dark(#f9fafb, #0a0a0a);
+}
+
+@media (min-width: 761px) {
+  body:has(#diagram-builder) > header {
+    /* Keep the navigation aligned while its background spans the full bar. */
+    margin-left: 0;
+    padding-left: calc(var(--outer-gutter) + var(--sidebar-width) + 2.5rem);
+  }
+}
+
+body:has(#diagram-builder) .site-footer {
+  background: transparent;
+}

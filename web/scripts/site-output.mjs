@@ -194,7 +194,7 @@ export async function finishSite(root) {
       );
     html = html.replace(
       "</head>",
-      '<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/site.webmanifest"></head>',
+      '<link rel="stylesheet" href="/app-page.css"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/site.webmanifest"></head>',
     );
     const tokens = (text) =>
       text
