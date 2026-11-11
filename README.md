@@ -208,7 +208,7 @@ export its citation. The concept DOI `10.5281/zenodo.20665805` identifies Eunoia
 across all releases.
 
 [CITATION.cff](CITATION.cff) contains the software metadata and preferred paper
-citation. The [Eunoia citation page](https://eunoia.bz/cite/) renders the paper
+citation. The [Eunoia citation page](https://eunoia.bz/docs/cite/) renders the paper
 in APA, BibTeX, BibLaTeX, and other formats.
 
 ## License

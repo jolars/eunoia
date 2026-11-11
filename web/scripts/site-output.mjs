@@ -182,7 +182,8 @@ export async function finishSite(root) {
       html.match(/<title>([^<]*)<\/title>/)[1],
     ).replace(/ · Eunoia$/, "");
     const description =
-      descriptions[previous?.route ?? current] ??
+      descriptions[current] ??
+      descriptions[previous?.route] ??
       (language
         ? `${pageName}: eunoia ${pins[language].version} ${language === "python" ? "Python" : "Julia"} documentation.`
         : undefined);

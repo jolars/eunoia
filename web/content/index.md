@@ -80,5 +80,5 @@ If you use Eunoia or its language bindings in academic work, please cite:
 
 > Larsson, J., & Lee, N. M. (2026). *Eunoia: Area-Proportional Euler and Venn Diagrams in Rust, Julia, Python, R, and JavaScript* (arXiv:2611.02198). arXiv. [doi:10.48550/arXiv.2611.02198](https://doi.org/10.48550/arXiv.2611.02198).
 
-The [citation page](cite/index.md) provides BibTeX, BibLaTeX, CSL, APA,
+The [citation page](docs/cite/index.md) provides BibTeX, BibLaTeX, CSL, APA,
 Vancouver, and Chicago formats, along with software-release citations.

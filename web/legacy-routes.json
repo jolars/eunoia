@@ -3,7 +3,16 @@
     "artifact": "app/index.html"
   },
   "/cite/": {
-    "artifact": "cite/index.html"
+    "artifact": "docs/cite/index.html",
+    "headings": {
+      "citation": "Citation",
+      "bibtex": "BibTeX",
+      "biblatex": "BibLaTeX",
+      "csl-yaml": "CSL YAML",
+      "apa": "APA",
+      "vancouver": "Vancouver",
+      "chicago": "Chicago"
+    }
   },
   "/docs/bindings/c-abi/": {
     "artifact": "docs/bindings/c-abi/index.html",

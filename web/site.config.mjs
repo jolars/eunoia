@@ -54,10 +54,7 @@ export function configuration(root, sources, revisions) {
           },
         ],
       },
-      sections: [
-        { label: "App", path: "app/index.html" },
-        { label: "Cite", path: "cite/index.html" },
-      ],
+      sections: [{ label: "App", path: "app/index.html" }],
       sidebar: {
         "/docs/": [
           chapter("Introduction", ""),
@@ -88,6 +85,7 @@ export function configuration(root, sources, revisions) {
               { text: "Julia API", link: "packages/julia/api.html" },
             ],
           },
+          chapter("Citation", "cite/"),
         ],
       },
       footer: {

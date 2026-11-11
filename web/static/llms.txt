@@ -51,7 +51,7 @@ at authors of downstream bindings.
 ## Optional
 
 - [Interactive app](https://eunoia.bz/app/): Build and preview diagrams in the browser.
-- [Citation](https://eunoia.bz/cite/): Cite the Eunoia preprint by Larsson and Lee (2026), with ready-to-copy citation formats.
+- [Citation](https://eunoia.bz/docs/cite/): Cite the Eunoia preprint by Larsson and Lee (2026), with ready-to-copy citation formats.
 - [Rust API docs (docs.rs)](https://docs.rs/eunoia/): Full rustdoc for the core crate.
 - [npm package](https://www.npmjs.com/package/@jolars/eunoia): The JavaScript/TypeScript package.
 - [PyPI package](https://pypi.org/project/eunoia/): The Python package.
