@@ -188,6 +188,7 @@
                 type="text"
                 bind:value={appState.rows[i].input}
                 placeholder="A or A&B"
+                aria-label="Combination {i + 1}"
                 class="flex-1 min-w-0 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               <input
@@ -195,6 +196,7 @@
                 bind:value={appState.rows[i].size}
                 min="0"
                 step="0.1"
+                aria-label="Size for {row.input || `combination ${i + 1}`}"
                 class="w-20 px-2 py-1.5 border border-line rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               <button

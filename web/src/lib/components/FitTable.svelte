@@ -37,7 +37,12 @@
     <p class="text-sm text-muted">No data.</p>
   {:else}
     <div class="overflow-x-auto">
-      <table class="w-full text-sm">
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users need to focus the scrolling table.) -->
+      <table
+        class="w-full text-sm rounded focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+        aria-label="Fit table"
+        tabindex="0"
+      >
         <thead>
           <tr
             class="border-b border-line text-left text-muted text-xs uppercase tracking-wide"

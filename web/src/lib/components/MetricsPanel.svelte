@@ -30,7 +30,8 @@
       stress: venneuler-style. diagError: max region error. iterations: {metrics.iterations}.
       <a
         href="/docs/concepts/goodness-of-fit/"
-        class="text-accent hover:underline">Learn more</a
+        class="text-accent hover:underline"
+        >Understand goodness-of-fit metrics</a
       >.
     </p>
   {:else}
