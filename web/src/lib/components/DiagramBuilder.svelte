@@ -13,7 +13,6 @@
   import type { FitInputs } from "#lib/fit.ts";
   import { appState, saveToStorage } from "#lib/state.svelte.ts";
   import type { FitResult } from "#lib/types/diagram.ts";
-  import { RELEASE_URL, VERSION } from "#lib/version.ts";
 
   type WorkerResponse =
     | { id: number; ready: true }
@@ -192,11 +191,4 @@
       </section>
     </div>
   {/if}
-
-  <footer class="mt-8 border-t border-line pt-4 text-xs text-muted">
-    <span>
-      Eunoia
-      <a href={RELEASE_URL} class="text-accent hover:underline">v{VERSION}</a>
-    </span>
-  </footer>
 </div>
