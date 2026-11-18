@@ -24,15 +24,15 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^26.6.6",
-    "prettier": "^3.9.10",
+    "prettier": "^3.10.1",
     "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
     "tailwindcss": "^4.3.5",
     "typescript": "~6.0.3",
-    "vite": "^8.3.6",
+    "vite": "^8.3.8",
     "vite-plugin-wasm": "^3.5.0",
-    "wrangler": "^4.158.0"
+    "wrangler": "^4.162.0"
   },
   "dependencies": {
     "@jolars/eunoia": "link:../npm",
