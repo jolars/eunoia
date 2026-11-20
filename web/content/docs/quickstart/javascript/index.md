@@ -5,7 +5,7 @@ sizes, it fits an area-proportional Euler (or canonical Venn) diagram, and hands
 back plain JavaScript objects describing the fitted shapes, polygons, or
 per-region pieces that you draw however you like (SVG, Canvas, D3).
 
-::: {.component name="eunoia" #docs-quickstart-javascript-1}
+::: {.component name="eunoia" #docs-quickstart-javascript-1 props='{"component":"diagram","props":{"sets":{"A":5,"B":3,"A&B":1.5},"shape":"circle","caption":"The diagram fitted by the first example below."}}'}
 
 The diagram fitted by the first example below.
 

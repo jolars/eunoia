@@ -1,50 +1,49 @@
 import { type ComponentProps, mount as mountSvelte, unmount } from "svelte";
+import type DiagramExample from "#lib/components/DiagramExample.svelte";
+import type PipelinePlayer from "#lib/components/PipelinePlayer.svelte";
 import { hydrateFromStorage } from "#lib/state.svelte.ts";
 import { observeTheme } from "#lib/theme.svelte.ts";
-import examples from "./examples.json";
 import "../app.css";
 
 interface Context {
   signal: AbortSignal;
-  assetBaseUrl: string;
+  props:
+    | { component: "hero" | "builder" }
+    | { component: "diagram"; props: ComponentProps<typeof DiagramExample> }
+    | { component: "pipeline"; props: ComponentProps<typeof PipelinePlayer> };
 }
 
-export async function mount(element: HTMLElement, { signal }: Context) {
-  // The authored block ID selects an example while all instances share one
-  // retained bundle and the same cached WASM and worker resources.
-  const id = element.parentElement?.id;
+export async function mount(element: HTMLElement, { signal, props }: Context) {
   let create: () => ReturnType<typeof mountSvelte>;
-  if (id === "home-diagram") {
+  if (props.component === "hero") {
     const { default: Hero } = await import("#lib/components/HeroWidget.svelte");
     create = () => mountSvelte(Hero, { target: element });
-  } else if (id === "diagram-builder") {
+  } else if (props.component === "builder") {
     const { default: Builder } = await import(
       "#lib/components/DiagramBuilder.svelte"
     );
     hydrateFromStorage();
     create = () => mountSvelte(Builder, { target: element });
+  } else if (props.component === "pipeline") {
+    const { default: Pipeline } = await import(
+      "#lib/components/PipelinePlayer.svelte"
+    );
+    create = () =>
+      mountSvelte(Pipeline, {
+        target: element,
+        props: props.props,
+      });
+  } else if (props.component === "diagram") {
+    const { default: Diagram } = await import(
+      "#lib/components/DiagramExample.svelte"
+    );
+    create = () =>
+      mountSvelte(Diagram, {
+        target: element,
+        props: props.props,
+      });
   } else {
-    const example = examples[id as keyof typeof examples];
-    if (!example) throw new Error(`Unknown Eunoia example: ${id}`);
-    if (example.component === "pipeline") {
-      const { default: Pipeline } = await import(
-        "#lib/components/PipelinePlayer.svelte"
-      );
-      create = () =>
-        mountSvelte(Pipeline, {
-          target: element,
-          props: example.props as ComponentProps<typeof Pipeline>,
-        });
-    } else {
-      const { default: Diagram } = await import(
-        "#lib/components/DiagramExample.svelte"
-      );
-      create = () =>
-        mountSvelte(Diagram, {
-          target: element,
-          props: example.props as ComponentProps<typeof Diagram>,
-        });
-    }
+    throw new Error("Unknown Eunoia widget");
   }
   if (signal.aborted) return;
   element.classList.add("eunoia-widget");

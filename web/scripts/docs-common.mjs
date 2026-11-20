@@ -122,31 +122,3 @@ export async function checkout(name, pin, override, cacheRoot = projectRoot) {
   }
   return destination;
 }
-
-export async function buildDiplodocus(source, pin, binary) {
-  if (binary) return resolve(binary);
-  const args = [
-    "build",
-    "--locked",
-    "--manifest-path",
-    join(source, "Cargo.toml"),
-    "--bin",
-    "diplodocus",
-  ];
-  const cargo = process.env.DIPLODOCUS_CARGO ?? "cargo";
-  if (run(cargo, ["--version"], source, true).startsWith(`cargo ${pin.rust} `))
-    run(cargo, args, source, false, {
-      ...process.env,
-      CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
-    });
-  else if (spawnSync("devenv", ["--version"], { stdio: "ignore" }).status === 0)
-    run("devenv", ["shell", "--", "cargo", ...args], source, false, {
-      ...process.env,
-      CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
-    });
-  else
-    throw new Error(
-      `Diplodocus needs Rust ${pin.rust}; provide DIPLODOCUS_CARGO or --diplodocus-bin.`,
-    );
-  return join(source, "target/debug/diplodocus");
-}

@@ -4,11 +4,6 @@
     "revision": "af16491d64a6d1f3b87b8645bd9697593daa0f02",
     "version": "0.6.0"
   },
-  "diplodocus": {
-    "repository": "https://github.com/jolars/diplodocus.git",
-    "revision": "10f0ea285df227fd73ea1fa23788ca9ebce73078",
-    "rust": "1.98.0"
-  },
   "julia": {
     "repository": "https://github.com/jolars/Eunoia.jl.git",
     "revision": "db1275ffc768591b8c9271c56d8dfa2f3351bfcd",

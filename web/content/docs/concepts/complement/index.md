@@ -17,7 +17,7 @@ The `complement` option on `euler()` is the area of the region outside
 every set, in the same units as the set sizes. With it set, the fitter
 solves for a bounding rectangle in addition to the shapes:
 
-::: {.component name="eunoia" #docs-concepts-complement-1}
+::: {.component name="eunoia" #docs-concepts-complement-1 props='{"component":"diagram","props":{"sets":{"A":8,"B":6,"A&B":2},"shape":"circle","complement":25,"seed":7,"caption":"A two-set diagram with a complement: the dashed frame is the container, and the shaded margin around the circles is the universe."}}'}
 
 A two-set diagram with a complement: the dashed frame is the container, and the shaded margin around the circles is the universe.
 

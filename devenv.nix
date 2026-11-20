@@ -1,5 +1,6 @@
 {
   config,
+  inputs,
   pkgs,
   ...
 }:
@@ -25,6 +26,10 @@
     shfmt
     biome
     uv
+    # The upstream flake currently omits the system SQLite link dependency.
+    (inputs.diplodocus.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (previous: {
+      buildInputs = (previous.buildInputs or [ ]) ++ [ sqlite ];
+    }))
   ];
 
   env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

@@ -109,6 +109,7 @@ export async function prepareEnvironment(
           "docs/Project.toml",
           "docs/Manifest.toml",
         ];
+  const sphinx = "sphinx>=9.0.4,<10";
   const key = async () =>
     createHash("sha256")
       .update(
@@ -124,6 +125,7 @@ export async function prepareEnvironment(
           source,
           runtime,
           observed,
+          sphinx: language === "python" ? sphinx : undefined,
           depot: process.env.JULIA_DEPOT_PATH,
         }),
       )
@@ -170,6 +172,7 @@ export async function prepareEnvironment(
         interpreter,
         "--editable",
         source,
+        sphinx,
         "--config-setting=build-args=--locked",
         "--reinstall-package",
         "eunoia",

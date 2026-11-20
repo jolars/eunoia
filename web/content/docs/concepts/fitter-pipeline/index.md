@@ -13,7 +13,7 @@ every shape to minimize the loss. Each button plays its stage and stops
 on the result; **Re-run** draws a fresh random start, and you can switch
 between circles and ellipses.
 
-::: {.component name="eunoia" #docs-concepts-fitter-pipeline-1}
+::: {.component name="eunoia" #docs-concepts-fitter-pipeline-1 props='{"component":"pipeline","props":{"sets":{"A":12,"B":11,"C":9,"A&B":5,"A&C":1.5,"B&C":4.5,"A&B&C":0.8},"shape":"circle","caption":"A real recording of the fitter, played back one optimizer step at a time. Run the initial layout, then the final layout. Re-run draws a new random start; a real fit keeps the lowest-loss of several such starts."}}'}
 
 A real recording of the fitter, played back one optimizer step at a time. Run the initial layout, then the final layout. Re-run draws a new random start; a real fit keeps the lowest-loss of several such starts.
 

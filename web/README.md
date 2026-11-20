@@ -51,15 +51,15 @@ rebuilding. See [Cloudflare hosting](cloudflare/README.md) for deployment.
 - `src/lib/` contains the existing diagram rendering, controls, export, and
   fitting worker code.
 - `src/widgets/index.ts` implements Diplodocus's mount and cleanup interface.
-  Component block IDs select configurations from `src/widgets/examples.json`.
+  Component blocks pass their settings through Diplodocus's `props` attribute.
 - `static/` contains public assets and the hand-curated `llms.txt`.
 - `legacy-routes.json` records published routes and anchors from the old site.
 
-Keep existing explicit heading IDs. For a new interactive example, add a
-configuration to `examples.json` and use its key as the block ID:
+Keep existing explicit heading IDs. Give each interactive example a unique ID
+and pass its settings as a single-line JSON object in the block:
 
 ```markdown
-::: {.component name="eunoia" #example-id}
+::: {.component name="eunoia" #example-id props='{"component":"diagram","props":{"sets":{"A":5,"B":3,"A&B":1}}}'}
 
 A useful static description or image remains available without JavaScript.
 
@@ -67,7 +67,8 @@ A useful static description or image remains available without JavaScript.
 ```
 
 All examples use one declared bundle so navigation reuses cached WASM and fonts.
-The mount adapter reads the authored block's ID from its containing element.
+The mount adapter uses `component` to select a widget and passes the nested
+`props` to it. Escape apostrophes in the JSON as `\u0027`.
 Widget CSS is scoped during the Vite build, and the theme adapter follows
 Diplodocus's theme without changing its styles.
 

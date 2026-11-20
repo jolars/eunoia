@@ -5,7 +5,7 @@
 A three-set diagram, fitted in your browser by the same WASM core the packages
 ship. Drag the region sizes or switch the shape and watch it re-solve live.
 
-::: {.component name="eunoia" #home-diagram}
+::: {.component name="eunoia" #home-diagram props='{"component":"hero"}'}
 
 Eunoia fits shapes to the sizes of sets and their intersections. Use the
 [diagram builder](app/index.md) to explore your own data, or follow a

@@ -5,7 +5,7 @@ original package, now backed by the eunoia engine. You hand `euler()` a named
 vector of set sizes, it fits an area-proportional diagram, and `plot()` draws it
 with grid graphics.
 
-::: {.component name="eunoia" #docs-quickstart-r-1}
+::: {.component name="eunoia" #docs-quickstart-r-1 props='{"component":"diagram","props":{"sets":{"A":5,"B":3,"A&B":1.5},"shape":"circle","caption":"The diagram fitted by the first example below."}}'}
 
 The diagram fitted by the first example below.
 

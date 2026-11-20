@@ -180,19 +180,19 @@ The two examples below are the same n=4 spec under each strategy. Drag the page
 wider to see them side by side; the difference is visible mostly when labels
 need exterior placement.
 
-::: {.component name="eunoia" #docs-concepts-label-placement-1}
+::: {.component name="eunoia" #docs-concepts-label-placement-1 props='{"component":"diagram","props":{"sets":{"A":10,"B":10,"C":10,"D":10,"A&B":4,"A&C":4,"A&D":4,"B&C":4,"B&D":4,"C&D":4,"A&B&C":1.5,"A&B&D":1.5,"A&C&D":1.5,"B&C&D":1.5,"A&B&C&D":0.5},"shape":"ellipse","strategy":"raycast","caption":"Raycast (default). Exterior labels follow the centroid→POI ray; collisions are resolved by a sweep that nudges along the perimeter."}}'}
 
 Raycast (default). Exterior labels follow the centroid→POI ray; collisions are resolved by a sweep that nudges along the perimeter.
 
 :::
 
-::: {.component name="eunoia" #docs-concepts-label-placement-2}
+::: {.component name="eunoia" #docs-concepts-label-placement-2 props='{"component":"diagram","props":{"sets":{"A":10,"B":10,"C":10,"D":10,"A&B":4,"A&C":4,"A&D":4,"B&C":4,"B&D":4,"C&D":4,"A&B&C":1.5,"A&B&D":1.5,"A&C&D":1.5,"B&C&D":1.5,"A&B&C&D":0.5},"shape":"ellipse","strategy":"forceDirected","caption":"ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion."}}'}
 
 ForceDirected. Same warm-start positions, then iterated against label–label and label–region repulsion.
 
 :::
 
-::: {.component name="eunoia" #docs-concepts-label-placement-3}
+::: {.component name="eunoia" #docs-concepts-label-placement-3 props='{"component":"diagram","props":{"sets":{"A":10,"B":10,"C":10,"D":10,"A&B":4,"A&C":4,"A&D":4,"B&C":4,"B&D":4,"C&D":4,"A&B&C":1.5,"A&B&D":1.5,"A&C&D":1.5,"B&C&D":1.5,"A&B&C&D":0.5},"shape":"ellipse","strategy":"matched","caption":"Matched (boundary labeling). Labels are assigned to a ring of slots by an order-preserving, shortest-total-leader matching, so the leaders never cross and stay close to the diagram."}}'}
 
 Matched (boundary labeling). Labels are assigned to a ring of slots by an order-preserving, shortest-total-leader matching, so the leaders never cross and stay close to the diagram.
 
@@ -221,7 +221,7 @@ the largest region that contains it. `place_set_labels` (Rust)/`placeSetLabels`
 boundary, with **no leader line**. The label is adjacent to the thing it names,
 so nothing needs to be drawn to connect them.
 
-::: {.component name="eunoia" #docs-concepts-label-placement-4}
+::: {.component name="eunoia" #docs-concepts-label-placement-4 props='{"component":"diagram","props":{"sets":{"Mammals":12,"Birds":9,"Nocturnal":7,"Mammals&Birds":1,"Mammals&Nocturnal":4,"Birds&Nocturnal":2,"Mammals&Birds&Nocturnal":0.6},"shape":"circle","setLabels":true,"labelSize":4,"caption":"Set names placed outside their own shapes: each rotates around its circle to the angle with the most free space, and needs no leader line to say what it names. The intersection labels come from placeLabelsForRegions as usual — that is where the leaders are from — and their boxes were handed to the set placer as keep-outs."}}'}
 
 Set names placed outside their own shapes: each rotates around its circle to the angle with the most free space, and needs no leader line to say what it names. The intersection labels come from placeLabelsForRegions as usual — that is where the leaders are from — and their boxes were handed to the set placer as keep-outs.
 

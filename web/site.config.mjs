@@ -10,6 +10,8 @@ export const pageTitles = {
   "/packages/julia/": "Eunoia for Julia · Eunoia",
   "/packages/python/license": "Python license · Eunoia",
   "/packages/julia/license": "Julia license · Eunoia",
+  [canonicalPath(legacyRoutes["/docs/reference/julia/module/"].artifact)]:
+    "Eunoia module · Julia API · Eunoia",
 };
 
 export function canonicalPath(artifact) {

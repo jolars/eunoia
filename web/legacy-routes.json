@@ -695,7 +695,7 @@
   "/docs/reference/python/EulerFit/": {
     "artifact": "packages/python/reference/368c6eef5f44d1af6db73a3b8b4a2c7058500ce15acc586ff7b67311c0627c97.html",
     "headings": {
-      "attributes": "Attributes",
+      "attributes": "Variables",
       "shapes": "shapes",
       "original_values": "original_values",
       "fitted_values": "fitted_values",
@@ -711,7 +711,7 @@
       "plot_plotly": "plot_plotly"
     },
     "aliases": {
-      "constructor": "Attributes"
+      "constructor": "Variables"
     }
   },
   "/docs/reference/python/EunoiaError/": {

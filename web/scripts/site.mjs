@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  access,
+  cp,
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configuration } from "../site.config.mjs";
 import { validateSite } from "./check-site.mjs";
 import {
-  buildDiplodocus,
   checkout,
   digest,
   exists,
@@ -22,7 +30,6 @@ export function cliOptions(args = process.argv.slice(3)) {
   const names = {
     "--python-source": "pythonSource",
     "--julia-source": "juliaSource",
-    "--diplodocus-source": "diplodocusSource",
     "--diplodocus-bin": "diplodocusBin",
     "--snapshot": "snapshot",
     "--python": "python",
@@ -75,16 +82,24 @@ export async function prepareSources(options = {}) {
 }
 
 export async function generator(options = {}) {
-  const pins = await json(join(webRoot, "docs-sources.lock.json"));
   const supplied = options.diplodocusBin ?? process.env.DIPLODOCUS_BIN;
-  const source = supplied
-    ? null
-    : await checkout(
-        "diplodocus",
-        pins.diplodocus,
-        options.diplodocusSource ?? process.env.DIPLODOCUS_SOURCE,
-      );
-  return buildDiplodocus(source, pins.diplodocus, supplied);
+  if (supplied) return resolve(supplied);
+
+  // Resolve the executable so the site caches can hash its contents.
+  const name = process.platform === "win32" ? "diplodocus.exe" : "diplodocus";
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    const binary = resolve(directory, name);
+    if (
+      await access(binary, constants.X_OK).then(
+        () => true,
+        () => false,
+      )
+    )
+      return binary;
+  }
+  throw new Error(
+    "Diplodocus was not found on PATH. Enter the devenv shell or set DIPLODOCUS_BIN.",
+  );
 }
 
 export async function extractSite(

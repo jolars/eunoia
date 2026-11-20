@@ -4,7 +4,7 @@
 `euler` a `Dict` of set sizes, it fits an area-proportional diagram, and
 `eunoiaplot` renders it through a Makie extension.
 
-::: {.component name="eunoia" #docs-quickstart-julia-1}
+::: {.component name="eunoia" #docs-quickstart-julia-1 props='{"component":"diagram","props":{"sets":{"A":5,"B":3,"A&B":1.5},"shape":"circle","caption":"The diagram fitted by the first example below."}}'}
 
 The diagram fitted by the first example below.
 

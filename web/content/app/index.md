@@ -4,7 +4,7 @@ layout: full
 
 # Diagram builder
 
-::: {.component name="eunoia" #diagram-builder}
+::: {.component name="eunoia" #diagram-builder props='{"component":"builder"}'}
 
 Build area-proportional Euler and Venn diagrams, adjust their appearance, and
 export SVG, PNG, PDF, or a JSON specification. The interactive builder requires

@@ -79,10 +79,12 @@ export function validateApiCoverage(pages) {
   for (const name of ["euler", "venn"]) {
     const page = byName.get(name);
     for (const format of ["html", "markdown"]) {
+      const signature =
+        format === "html"
+          ? /<div id="overload-[^"]+"><pre\b/g
+          : /<a id="overload-[^"]+"><\/a>\s+```python\b/g;
       requireContent(
-        [...anchors(page[format], format === "markdown")].filter((anchor) =>
-          anchor.startsWith("overload-"),
-        ).length === 5,
+        [...page[format].matchAll(signature)].length === 5,
         `${name} must retain five overloads in ${format}`,
       );
       requireContent(

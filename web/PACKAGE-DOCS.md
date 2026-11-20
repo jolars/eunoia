@@ -5,11 +5,12 @@ Diplodocus builds the entire Eunoia website. Python API sources remain in
 `jolars/Eunoia.jl`. The site configuration declares both packages alongside the
 project's authored Markdown and browser components.
 
-`docs-sources.lock.json` pins source revisions, package versions, Diplodocus, and
-Julia. Update a package's revision and version together. The toolchain needs
-`uv`, Python 3.11 or newer, Julia, and Rust 1.98.0 for Diplodocus. The core and
-WASM builds continue to use Rust 1.88.0. The generator builder can enter the
-Diplodocus checkout's devenv shell when the active Cargo is older.
+`docs-sources.lock.json` records the Python and Julia source revisions, package
+versions, and Julia runtime used in CI. Update a package's revision and version
+together. Site commands use `diplodocus` on `PATH`. The devenv shell supplies it
+from the upstream flake, and CI installs the latest release with
+`jolars/setup-diplodocus`. Run `devenv update diplodocus` to refresh the local
+input. Source builds also need `uv`, Python 3.11 or newer, and Julia.
 
 ## Build from sources
 
@@ -25,9 +26,10 @@ pnpm test:markdown
 ```
 
 `pnpm check`, `pnpm build`, and `pnpm dev` prepare package environments as needed.
-The first run fetches pinned sources, builds the Python extension in an isolated
-environment, and prepares Julia with CairoMakie. An absolute `EUNOIA_CAPI_LIB`
-selects a local native library instead of Julia's matching downloaded artifact.
+The first run fetches pinned sources, builds the Python extension and installs
+Sphinx in an isolated environment, and prepares Julia with CairoMakie. An
+absolute `EUNOIA_CAPI_LIB` selects a local native library instead of Julia's
+matching downloaded artifact.
 CI uses `.github/actions/prepare-docs` to prepare these environments explicitly.
 Julia preparation always instantiates and precompiles the documentation
 environment and renders a small PNG, including when the environment marker is
@@ -45,18 +47,19 @@ verified before reuse.
 From the repository root:
 
 ```sh
-task docs-packages -- --python-source ../eunoia-py --julia-source ../Eunoia.jl --diplodocus-source ../diplodocus
+DIPLODOCUS_BIN=../diplodocus/target/debug/diplodocus \
+  task docs-packages -- --python-source ../eunoia-py --julia-source ../Eunoia.jl
 ```
 
 Paths resolve from the current working directory. From `web/`, sibling paths
-start with `../../`. `EUNOIA_PYTHON_SOURCE`, `EUNOIA_JULIA_SOURCE`, and
-`DIPLODOCUS_SOURCE` provide the same overrides. Prefer absolute environment
+start with `../../`. `EUNOIA_PYTHON_SOURCE` and `EUNOIA_JULIA_SOURCE`
+provide the same source overrides. Prefer absolute environment
 variable paths when running commands from several directories.
 
-`DIPLODOCUS_BIN` selects an existing executable and skips its checkout and build.
-`DIPLODOCUS_CARGO` selects another Cargo executable. `EUNOIA_DOCS_PYTHON` and
-`EUNOIA_DOCS_JULIA` select package runtimes. Restart the development command after
-changing overrides or environment dependencies. It watches the prepared Julia
+`DIPLODOCUS_BIN` or `--diplodocus-bin` selects an existing executable.
+`EUNOIA_DOCS_PYTHON` and `EUNOIA_DOCS_JULIA` select package runtimes.
+Restart the development command after changing overrides or environment
+dependencies. It watches the prepared Julia
 sources; edits to the original Julia checkout require restarting preparation.
 
 ## Portable snapshots

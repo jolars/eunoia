@@ -58,10 +58,10 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: web
 
-      - name: Install documentation toolchain
-        uses: dtolnay/rust-toolchain@master
+      - name: Set up Diplodocus
+        uses: jolars/setup-diplodocus@v1
         with:
-          toolchain: 1.98.0
+          version: latest
 
       - name: Prepare package documentation
         uses: ./.github/actions/prepare-docs

@@ -5,7 +5,7 @@ Julia) wraps the same engine. You describe a diagram with set sizes, pick a shap
 type, and fit. You get back fitted shapes plus goodness-of-fit metrics and,
 optionally, the region polygons to draw.
 
-::: {.component name="eunoia" #docs-quickstart-rust-1}
+::: {.component name="eunoia" #docs-quickstart-rust-1 props='{"component":"diagram","props":{"sets":{"A":5,"B":3,"A&B":1.5},"shape":"circle","caption":"The diagram fitted by the first example below."}}'}
 
 The diagram fitted by the first example below.
 

@@ -17,6 +17,29 @@
         "type": "github"
       }
     },
+    "diplodocus": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": [
+          "rust-overlay"
+        ]
+      },
+      "locked": {
+        "lastModified": 1795172007,
+        "narHash": "sha256-M3t7eArW5p1lUPHSMI/ZWOtvqEpXxFIJb6QK4ReX7wA=",
+        "owner": "jolars",
+        "repo": "diplodocus",
+        "rev": "8fc0bc9e3ab8a195f5197adbcff2a0c1729234fb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jolars",
+        "repo": "diplodocus",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -93,6 +116,7 @@
     "root": {
       "inputs": {
         "devenv": "devenv",
+        "diplodocus": "diplodocus",
         "git-hooks": "git-hooks",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"

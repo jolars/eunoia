@@ -1,4 +1,11 @@
 inputs:
+  diplodocus:
+    url: github:jolars/diplodocus
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+      rust-overlay:
+        follows: rust-overlay
   git-hooks:
     url: github:cachix/git-hooks.nix
     inputs:

@@ -27,7 +27,7 @@ easiest to read, and for two or three sets they are usually all you
 need. Circles are the default for `euler()`, and eunoia has canonical
 Venn layouts for them up to three sets.
 
-::: {.component name="eunoia" #docs-concepts-shapes-1}
+::: {.component name="eunoia" #docs-concepts-shapes-1 props='{"component":"diagram","props":{"sets":{"A":10,"B":10,"C":10,"A&B":3,"A&C":3,"B&C":3,"A&B&C":1},"shape":"circle","seed":7,"caption":"A symmetric three-set spec fitted with circles."}}'}
 
 A symmetric three-set spec fitted with circles.
 
@@ -48,7 +48,7 @@ surface, so ellipse fits benefit from more restarts and lean more often
 on the optimizer's global-escape stage (see the
 [fitter pipeline](../fitter-pipeline/index.md) for how that works).
 
-::: {.component name="eunoia" #docs-concepts-shapes-2}
+::: {.component name="eunoia" #docs-concepts-shapes-2 props='{"component":"diagram","props":{"sets":{"A":10,"B":10,"C":10,"D":10,"A&B":4,"A&C":4,"A&D":4,"B&C":4,"B&D":4,"C&D":4,"A&B&C":1.5,"A&B&D":1.5,"A&C&D":1.5,"B&C&D":1.5,"A&B&C&D":0.5},"shape":"ellipse","seed":3,"caption":"A four-set spec fitted with ellipses; no four-circle diagram realizes every region."}}'}
 
 A four-set spec fitted with ellipses; no four-circle diagram realizes every region.
 
@@ -65,7 +65,7 @@ computed exactly in closed form, with no polygon clipping. Like circles,
 squares support canonical Venn layouts up to three sets; there is no
 axis-aligned-square Venn for four or more sets.
 
-::: {.component name="eunoia" #docs-concepts-shapes-3}
+::: {.component name="eunoia" #docs-concepts-shapes-3 props='{"component":"diagram","props":{"sets":{"A":10,"B":10,"C":10,"A&B":3,"A&C":3,"B&C":3,"A&B&C":1},"shape":"square","seed":7,"caption":"The same three-set spec fitted with axis-aligned squares."}}'}
 
 The same three-set spec fitted with axis-aligned squares.
 
@@ -80,7 +80,7 @@ closed-form region areas and the same three-set limit on canonical Venn
 layouts. Prefer rectangles over squares when your sets differ enough in
 size that a fixed aspect ratio is too constraining.
 
-::: {.component name="eunoia" #docs-concepts-shapes-4}
+::: {.component name="eunoia" #docs-concepts-shapes-4 props='{"component":"diagram","props":{"sets":{"A":12,"B":7,"A&B":3},"shape":"rectangle","seed":5,"caption":"A two-set spec with unequal sizes fitted with rectangles."}}'}
 
 A two-set spec with unequal sizes fitted with rectangles.
 
@@ -104,7 +104,7 @@ Rotation also makes a true four-set Venn arrangement possible. Eunoia
 provides canonical rotated-rectangle Venn layouts for one through four
 sets; the axis-aligned rectangle stops at three.
 
-::: {.component name="eunoia" #docs-concepts-shapes-5}
+::: {.component name="eunoia" #docs-concepts-shapes-5 props='{"component":"diagram","props":{"sets":{"A":10,"B":10,"C":10,"D":10,"A&B":4,"A&C":4,"A&D":4,"B&C":4,"B&D":4,"C&D":4,"A&B&C":1.5,"A&B&D":1.5,"A&C&D":1.5,"B&C&D":1.5,"A&B&C&D":0.5},"shape":"rotatedRectangle","seed":3,"caption":"The four-set spec fitted with rectangles that can turn as well as stretch."}}'}
 
 The four-set spec fitted with rectangles that can turn as well as stretch.
 

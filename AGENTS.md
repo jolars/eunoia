@@ -170,7 +170,7 @@ published fragments remain stable.
 
 `web/site.config.mjs` declares Diplodocus presentation, navigation, packages, and
 collections. Interactive examples use fenced component blocks with
-`name="eunoia"` and a unique ID registered in `web/src/widgets/examples.json`.
+`name="eunoia"`, a unique ID, and inline JSON `props` as shown in `web/README.md`.
 The shared browser bundle retains the existing Svelte components, worker, fonts,
 and WASM. Keep widget styles scoped to `.eunoia-widget`.
 

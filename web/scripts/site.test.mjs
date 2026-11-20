@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { canonicalPath, legacyRoutes } from "../site.config.mjs";
-import { checkout, files, json, webRoot } from "./docs-common.mjs";
+import { checkout, files, webRoot } from "./docs-common.mjs";
 import { assetUrl, preserveAnchors, rewriteUrl } from "./site-output.mjs";
 
 test("old heading and method anchors retain their intended positions", () => {
@@ -58,25 +58,32 @@ test("responsive image candidates remain valid after client navigation", () => {
   );
 });
 
-test("every authored component has a unique, configured widget ID", async () => {
-  const examples = await json(join(webRoot, "src/widgets/examples.json"));
-  const expected = new Set([
-    "home-diagram",
-    "diagram-builder",
-    ...Object.keys(examples),
-  ]);
+test("authored widgets have unique IDs and inline props", async () => {
   const found = new Set();
   for (const path of await files(join(webRoot, "content"))) {
     const source = await readFile(path, "utf8");
-    for (const [, id] of source.matchAll(
-      /\.component name="eunoia" #([\w-]+)/g,
+    for (const [block, attrs] of source.matchAll(
+      /^::: \{\.component name="eunoia"([^\n]*)\}$/gm,
     )) {
-      assert.ok(expected.has(id), `Unknown widget: ${id}`);
+      const id = attrs.match(/ #([\w-]+)/)?.[1];
+      const props = attrs.match(/ props='([^']+)'/)?.[1];
+      assert.ok(id && props, `Missing ID or props: ${block}`);
       assert.ok(!found.has(id), `Repeated widget: ${id}`);
       found.add(id);
+      const config = JSON.parse(props);
+      assert.ok(
+        ["hero", "builder", "diagram", "pipeline"].includes(config.component),
+        `Unknown component: ${id}`,
+      );
+      if (["diagram", "pipeline"].includes(config.component))
+        assert.ok(
+          Object.keys(config.props.sets).length > 0,
+          `Missing sets: ${id}`,
+        );
     }
   }
-  assert.deepEqual(found, expected);
+  assert.ok(found.has("home-diagram"));
+  assert.ok(found.has("diagram-builder"));
 });
 
 test("an interrupted source fetch can recover its initialized checkout", async (context) => {
