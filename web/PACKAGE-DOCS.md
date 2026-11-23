@@ -8,7 +8,7 @@ project's authored Markdown and browser components.
 `docs-sources.lock.json` records the Python and Julia source revisions, package
 versions, and Julia runtime used in CI. Update a package's revision and version
 together. Site commands use `diplodocus` on `PATH`. The devenv shell supplies it
-from the upstream flake, and CI installs the latest release with
+from the upstream development branch, and CI uses the default release from
 `jolars/setup-diplodocus`. Run `devenv update diplodocus` to refresh the local
 input. Source builds also need `uv`, Python 3.11 or newer, and Julia.
 

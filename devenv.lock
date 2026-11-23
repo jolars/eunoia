@@ -27,11 +27,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1795172007,
-        "narHash": "sha256-M3t7eArW5p1lUPHSMI/ZWOtvqEpXxFIJb6QK4ReX7wA=",
+        "lastModified": 1795459422,
+        "narHash": "sha256-dinjvi9vBqePFkrYDf3spvzXVs0vADGBkh55QK3byfw=",
         "owner": "jolars",
         "repo": "diplodocus",
-        "rev": "8fc0bc9e3ab8a195f5197adbcff2a0c1729234fb",
+        "rev": "38e397d864e756319007a36859f0c06043388b91",
         "type": "github"
       },
       "original": {

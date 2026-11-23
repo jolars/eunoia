@@ -60,8 +60,6 @@ jobs:
 
       - name: Set up Diplodocus
         uses: jolars/setup-diplodocus@v1
-        with:
-          version: latest
 
       - name: Prepare package documentation
         uses: ./.github/actions/prepare-docs

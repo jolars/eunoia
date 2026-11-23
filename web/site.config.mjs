@@ -5,14 +5,23 @@ export const legacyRoutes = JSON.parse(
   readFileSync(new URL("./legacy-routes.json", import.meta.url), "utf8"),
 );
 
-export const pageTitles = {
-  "/": "Eunoia",
-  "/packages/julia/": "Eunoia for Julia · Eunoia",
-  "/packages/python/license": "Python license · Eunoia",
-  "/packages/julia/license": "Julia license · Eunoia",
-  [canonicalPath(legacyRoutes["/docs/reference/julia/module/"].artifact)]:
+const pageTitles = {
+  "index.html": "Eunoia",
+  "packages/julia/index.html": "Eunoia for Julia · Eunoia",
+  "packages/python/license.html": "Python license · Eunoia",
+  "packages/julia/license.html": "Julia license · Eunoia",
+  [legacyRoutes["/docs/reference/julia/module/"].artifact]:
     "Eunoia module · Julia API · Eunoia",
 };
+
+export const iconAssets = [
+  "favicon.svg",
+  "favicon.ico",
+  "apple-touch-icon.png",
+  "site.webmanifest",
+  "web-app-manifest-192x192.png",
+  "web-app-manifest-512x512.png",
+];
 
 export function canonicalPath(artifact) {
   return `/${artifact.replace(/index\.html$/, "").replace(/\.html$/, "")}`;
@@ -36,6 +45,21 @@ export function configuration(root, sources, revisions) {
       "site-url": "https://eunoia.bz/",
       "canonical-url-style": "clean",
       redirects,
+      header: { repositories: ["eunoia"] },
+      pages: Object.fromEntries(
+        Object.entries(pageTitles).map(([path, title]) => [path, { title }]),
+      ),
+      assets: iconAssets.map((path) => ({
+        repository: "eunoia",
+        path: `web/static/${path}`,
+        publish: path,
+      })),
+      icons: [
+        { path: "favicon.svg", type: "image/svg+xml" },
+        { path: "favicon.ico" },
+        { path: "apple-touch-icon.png", rel: "apple-touch-icon" },
+        { path: "site.webmanifest", rel: "manifest" },
+      ],
       logo: { repository: "eunoia", path: "web/static/logo.png" },
       "open-graph": {
         repository: "eunoia",

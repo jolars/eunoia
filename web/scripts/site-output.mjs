@@ -1,6 +1,6 @@
 import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { canonicalPath, legacyRoutes, pageTitles } from "../site.config.mjs";
+import { canonicalPath, iconAssets, legacyRoutes } from "../site.config.mjs";
 import { VERSION, VERSION_MINOR } from "../version.config.js";
 import { escapeHtml, files, json, webRoot } from "./docs-common.mjs";
 
@@ -91,7 +91,12 @@ export async function finishSite(root) {
   for (const entry of await readdir(join(webRoot, "static"), {
     withFileTypes: true,
   })) {
-    if (entry.name === "_diplodocus" || entry.name === "robots.txt") continue;
+    if (
+      entry.name === "_diplodocus" ||
+      entry.name === "robots.txt" ||
+      iconAssets.includes(entry.name)
+    )
+      continue;
     await cp(join(webRoot, "static", entry.name), join(root, entry.name), {
       recursive: true,
     });
@@ -112,11 +117,6 @@ export async function finishSite(root) {
     const markdownPath = path.replace(/\.html$/, ".md");
     let html = await readFile(path, "utf8");
     let markdown = await readFile(markdownPath, "utf8");
-    // Diplodocus adds an icon for every source repository, including bindings.
-    html = html.replace(
-      /<a class="repository-link" href="([^"]*)"[^>]*>[\s\S]*?<\/a>/g,
-      (link, url) => (url === "https://github.com/jolars/eunoia" ? link : ""),
-    );
     const previous = aliases.get(artifact);
     if (previous)
       ({ html, markdown } = preserveAnchors(html, markdown, previous));
@@ -166,17 +166,6 @@ export async function finishSite(root) {
           : `](${target.includes(" ") ? `<${target}>` : target})`;
       },
     );
-    const title = pageTitles[current];
-    if (title) {
-      html = html.replace(
-        /<title>[^<]*<\/title>/,
-        `<title>${escapeHtml(title)}</title>`,
-      );
-      html = html.replace(
-        /(<meta (?:property="og:title"|name="twitter:title") content=")[^"]*(")/g,
-        (_, start, end) => start + escapeHtml(title) + end,
-      );
-    }
     const language = current.match(/^\/packages\/(python|julia)\//)?.[1];
     const pageName = plainText(
       html.match(/<title>([^<]*)<\/title>/)[1],
@@ -194,7 +183,7 @@ export async function finishSite(root) {
       );
     html = html.replace(
       "</head>",
-      '<link rel="stylesheet" href="/app-page.css"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/site.webmanifest"></head>',
+      '<link rel="stylesheet" href="/app-page.css"></head>',
     );
     const tokens = (text) =>
       text

@@ -142,8 +142,6 @@ jobs:
 
       - name: Set up Diplodocus
         uses: jolars/setup-diplodocus@v1
-        with:
-          version: latest
 
       - name: Install web dependencies
         run: pnpm install --frozen-lockfile
