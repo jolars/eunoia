@@ -38,8 +38,7 @@ pnpm test:members
 pnpm preview --port 8787
 ```
 
-Build and test commands should run inside `compute run --` when using the
-shared development machine. `pnpm preview` serves the current `dist/` without
+`pnpm preview` serves the current `dist/` without
 rebuilding. See [Cloudflare hosting](cloudflare/README.md) for deployment.
 
 ## Sources
